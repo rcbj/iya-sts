@@ -129,6 +129,12 @@ const config = require('./common/config');
 // any of this.
 // ---------------------------------------------------------------------------
 const persistence = require('./persistence/persistence');
+// The worker pool. Required here and STARTED from listen() below, for the same
+// reason the KDC's and the directory's sockets are started there: forking can
+// fail, and a service that is otherwise fine should report that rather than
+// refuse to come up. Every one of its entry points falls back to computing in
+// this process, so a pool that never forked costs speed and nothing else.
+const workerPool = require('./common/worker_pool');
 
 // Which LDAP attributes the four claim sets carry. A LIBRARY — it registers no
 // route, so this line adds nothing to /admin/sts-metadata and its position in
@@ -463,6 +469,11 @@ function announce() {
   // instead of preventing it from starting at all. GET /krb5/principals says what
   // this KDC knows; GET /admin/sts-metadata cannot see a raw socket, so the
   // listener has its own entry there.
+  // The workers, before the sockets. They are what keeps this thread free
+  // while a post-quantum signature is computed, and the first request can
+  // arrive the instant a socket is bound — so the children are forked first,
+  // and a request that beats them simply signs here as it always did.
+  workerPool.start();
   const kdcListeners = krb5.listen();
   kdcListeners.whenReady.then(function (ready) {
     log.info('krb5: the KDC is reachable on TCP and UDP ' + ready.port + '; MS-KKDCP at /KdcProxy; ' +
@@ -581,6 +592,13 @@ function shutdown(signal) {
            'down, then exiting. Sessions, tokens, codes, artifacts and ' +
            'tickets are not persisted and are going with this process, which ' +
            'is what they have always done.');
+  // The children go first and synchronously: each is holding nothing but
+  // arithmetic, and a worker outliving its parent is an orphan holding a CPU.
+  try {
+    workerPool.stop();
+  } catch (e) {
+    log.warn('sts: the worker pool would not stop cleanly: ' + e.message);
+  }
   persistence.stop().then(function () {
     log.info('sts: stopped.');
     process.exit(0);

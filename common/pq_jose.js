@@ -411,6 +411,108 @@ function akpPublicJwk(alg, pub, kid) {
   return jwk;
 }
 
+// ---------------------------------------------------------------------------
+// THE SAME THREE OPERATIONS, OFF THIS THREAD.
+//
+// sign(), verify() and generate() above are synchronous and stay that way:
+// they are what the worker runs, they are what every test drives directly, and
+// they are the fallback whenever there is no pool. These three are the same
+// functions reached through common/worker_pool.js, and the ONLY difference a
+// caller sees is that the answer arrives in a promise.
+//
+// Each falls back to computing in this process when the pool is unavailable —
+// not forked, `workers.count` set to 0, every child dead at once. That is the
+// behaviour this service had before the pool existed, so the degraded mode is
+// the old mode: slower, identical on the wire, and logged.
+//
+// `session` is passed through to the pool's routing and is optional. Nothing
+// these three do depends on which worker runs them — they are functions of
+// their arguments — so it is a hint for locality rather than a requirement.
+// ---------------------------------------------------------------------------
+function pool() {
+  log.debug("Entering pool().");
+  try {
+    // Required lazily: worker_pool.js requires config.js, and this file is
+    // required from the crypto path that config.js's own logger sits above.
+    const wp = require('./worker_pool');
+    log.debug("Leaving pool(). Got it.");
+    return wp;
+  } catch (e) {
+    log.debug("Leaving pool(). " + e.message);
+    return null;
+  }
+}
+
+function signAsync(alg, priv, message, session) {
+  log.debug("Entering signAsync(). alg=" + alg);
+  const wp = pool();
+  if (!wp || !wp.available()) {
+    log.debug("Leaving signAsync(). No pool; signing here.");
+    return Promise.resolve(sign(alg, priv, message));
+  }
+  const p = wp.submit('pq.sign', {
+    alg: alg,
+    priv: Buffer.from(priv).toString('base64'),
+    message: Buffer.from(message).toString('base64')
+  }, session).then(function (out) {
+    return Buffer.from(out.signature, 'base64');
+  }).catch(function (e) {
+    // A worker that died mid-signature must not fail a token this service can
+    // still produce. The cost is a stall of exactly the kind the pool exists
+    // to prevent, which is why it is logged at warn rather than swallowed.
+    log.warn('the worker could not sign with ' + alg + ' (' + e.message +
+      '); signing in this process instead, which blocks it.');
+    return sign(alg, priv, message);
+  });
+  log.debug("Leaving signAsync().");
+  return p;
+}
+
+function verifyAsync(alg, pub, message, signature, session) {
+  log.debug("Entering verifyAsync(). alg=" + alg);
+  const wp = pool();
+  if (!wp || !wp.available()) {
+    log.debug("Leaving verifyAsync(). No pool; verifying here.");
+    return Promise.resolve(verify(alg, pub, message, signature));
+  }
+  const p = wp.submit('pq.verify', {
+    alg: alg,
+    pub: Buffer.from(pub).toString('base64'),
+    message: Buffer.from(message).toString('base64'),
+    signature: Buffer.from(signature).toString('base64')
+  }, session).then(function (out) {
+    return !!out.ok;
+  }).catch(function (e) {
+    log.warn('the worker could not verify ' + alg + ' (' + e.message +
+      '); verifying in this process instead, which blocks it.');
+    return verify(alg, pub, message, signature);
+  });
+  log.debug("Leaving verifyAsync().");
+  return p;
+}
+
+function generateAsync(alg, session) {
+  log.debug("Entering generateAsync(). alg=" + alg);
+  const wp = pool();
+  if (!wp || !wp.available()) {
+    log.debug("Leaving generateAsync(). No pool; generating here.");
+    return Promise.resolve(generate(alg));
+  }
+  const p = wp.submit('pq.generate', { alg: alg }, session)
+    .then(function (out) {
+      return {
+        pub: Buffer.from(out.pub, 'base64'),
+        priv: Buffer.from(out.priv, 'base64')
+      };
+    }).catch(function (e) {
+      log.warn('the worker could not generate ' + alg + ' (' + e.message +
+        '); generating in this process instead, which blocks it.');
+      return generate(alg);
+    });
+  log.debug("Leaving generateAsync().");
+  return p;
+}
+
 module.exports = {
   PQ_ALGS: PQ_ALGS,
   COMPOSITES: COMPOSITES,
@@ -419,6 +521,9 @@ module.exports = {
   generate: generate,
   sign: sign,
   verify: verify,
+  signAsync: signAsync,
+  verifyAsync: verifyAsync,
+  generateAsync: generateAsync,
   akpPublicJwk: akpPublicJwk,
   compositeMessage: compositeMessage
 };

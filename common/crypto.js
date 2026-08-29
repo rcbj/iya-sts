@@ -1132,6 +1132,147 @@ function tokenClockSkew() {
 // `key` may be a node KeyObject, a JWK, or a PEM. All three occur — a JWK from
 // a proof's own header, a PEM from a registration, a KeyObject already parsed.
 // ---------------------------------------------------------------------------
+// THE SAME TWO OPERATIONS, WITHOUT HOLDING THE EVENT LOOP.
+//
+// Only the POST-QUANTUM branch of each differs from its synchronous twin, and
+// only in WHERE the arithmetic happens — common/worker_pool.js hands it to a
+// child process. Everything else here (RSA, EC, EdDSA, HMAC) is node's OpenSSL
+// and costs microseconds, so it is computed on this thread and handed back in
+// an already-resolved promise: a process hop to save nothing is a process hop
+// that only adds a way to fail.
+//
+// WHY NOT JUST MAKE signJws() ASYNC. Because it is called from about thirty
+// places and several of them are not in a position to await — and because a
+// function that returns a string on Tuesday and a promise on Wednesday is the
+// worst of both. These are separate names, so a caller opts in, and the
+// synchronous pair keeps working unchanged for everything that has not.
+//
+// THE FRAMING IS WRITTEN OUT AGAIN rather than shared, for the reason the
+// post-quantum branch of signJws() gives for not sharing with the debugger's
+// copy: the bytes are the specification, and a helper that both call is a
+// place for the two to quietly stop agreeing. What keeps them honest is
+// tests/worker_pool.js, which signs the same claims both ways and compares.
+// ---------------------------------------------------------------------------
+function signJwsAsync(payload, key, opts) {
+  const options = opts || {};
+  const algorithm = options.algorithm || 'RS256';
+  log.debug('Entering signJwsAsync(). alg=' + algorithm);
+  if (!key) {
+    log.debug('Leaving signJwsAsync(). No key.');
+    return Promise.reject(new Error('signJws: a signing key is required.'));
+  }
+  let spec;
+  try {
+    spec = jwsSpec(algorithm);
+  } catch (e) {
+    log.debug('Leaving signJwsAsync(). No such algorithm.');
+    return Promise.reject(e);
+  }
+  if (spec.family !== 'pq') {
+    log.debug('Leaving signJwsAsync(). Not post-quantum; signing here.');
+    try {
+      return Promise.resolve(signJws(payload, key, options));
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+  const pqHeader = { alg: algorithm, typ: 'JWT' };
+  if (options.keyid) {
+    pqHeader.kid = options.keyid;
+  }
+  const pqBody = Object.assign({}, payload);
+  if (pqBody.iat === undefined) {
+    pqBody.iat = Math.floor(Date.now() / 1000);
+  }
+  const pqInput = b64u(Buffer.from(JSON.stringify(pqHeader), 'utf8')) + '.' +
+                  b64u(Buffer.from(JSON.stringify(pqBody), 'utf8'));
+  log.debug('Leaving signJwsAsync(). Handed to the pool.');
+  return pqJose.signAsync(algorithm, key, Buffer.from(pqInput, 'ascii'),
+    options.session).then(function (pqSig) {
+      return pqInput + '.' + b64u(pqSig);
+    });
+}
+
+// The verifying half. Everything the synchronous twin checks BEFORE it reaches
+// the signature — three parts, a readable header, an algorithm the caller
+// named — is checked here too and in the same order, because those are the
+// errors a caller reads and they must not change with the path taken.
+function verifyCompactJwsAsync(token, key, opts) {
+  const options = opts || {};
+  log.debug('Entering verifyCompactJwsAsync().');
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) {
+    log.debug('Leaving verifyCompactJwsAsync(). Not three parts.');
+    return Promise.reject(new Error('a compact JWS has three dot-separated ' +
+      'parts; this has ' + parts.length + '.'));
+  }
+  let header;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+  } catch (e) {
+    log.debug('Leaving verifyCompactJwsAsync(). The header is not JSON.');
+    return Promise.reject(new Error('the JWS protected header is not ' +
+      'readable base64url JSON: ' + e.message));
+  }
+  let spec;
+  try {
+    spec = jwsSpec(header.alg);
+  } catch (e) {
+    log.debug('Leaving verifyCompactJwsAsync(). No such algorithm.');
+    return Promise.reject(e);
+  }
+  if (spec.family !== 'pq') {
+    log.debug('Leaving verifyCompactJwsAsync(). Not post-quantum.');
+    try {
+      return Promise.resolve(verifyCompactJws(token, key, options));
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+  // The algorithm list is the caller's and is checked HERE as well, before any
+  // work is handed out: a token the caller would not have accepted must not
+  // reach a worker at all. RFC 8725 section 3.1.
+  const allowed = options.algorithms;
+  if (!Array.isArray(allowed) || !allowed.length) {
+    log.debug('Leaving verifyCompactJwsAsync(). No algorithm list.');
+    return Promise.reject(new Error('verifyCompactJws: the caller must name ' +
+      'the acceptable algorithms. A verifier that takes them from the token ' +
+      'is the algorithm-confusion defect (RFC 8725 section 3.1).'));
+  }
+  if (allowed.indexOf(header.alg) === -1) {
+    log.debug('Leaving verifyCompactJwsAsync(). Algorithm not accepted.');
+    return Promise.reject(new Error('this JWS is signed with "' + header.alg +
+      '" and only ' + allowed.join(', ') + ' ' +
+      (allowed.length === 1 ? 'is' : 'are') + ' accepted here.'));
+  }
+  const signingInput = Buffer.from(parts[0] + '.' + parts[1], 'ascii');
+  const signature = Buffer.from(parts[2], 'base64url');
+  const pub = (key && key.pub) ? Buffer.from(key.pub, 'base64url')
+    : (typeof key === 'string' ? Buffer.from(key, 'base64url')
+                               : Buffer.from(key));
+  log.debug('Leaving verifyCompactJwsAsync(). Handed to the pool.');
+  return pqJose.verifyAsync(header.alg, pub, signingInput, signature,
+    options.session).then(function (ok) {
+      if (!ok) {
+        log.debug('Leaving verifyCompactJwsAsync(). It does not verify.');
+        throw new Error('the ' + header.alg + ' signature does not verify.');
+      }
+      // `claims`, and the same refusal for a payload that is not JSON — the
+      // shape and the wording both match the synchronous twin, because a
+      // caller reads them and must not have to know which path ran.
+      let claims;
+      try {
+        claims = JSON.parse(Buffer.from(parts[1], 'base64url')
+          .toString('utf8'));
+      } catch (e) {
+        throw new Error('the JWS payload is not readable base64url JSON: ' +
+          e.message);
+      }
+      return { header: header, claims: claims };
+    });
+}
+
+// ---------------------------------------------------------------------------
 function verifyCompactJws(token, key, opts) {
   const options = opts || {};
   log.debug('Entering verifyCompactJws().');
@@ -1889,6 +2030,7 @@ module.exports = {
   transportByUri: transportByUri,
   // --- JWS / JWT ---
   signJws: signJws,
+  signJwsAsync: signJwsAsync,
   verifyJws: verifyJws,
   tokenClockSkew: tokenClockSkew,
   // --- JWE ---
@@ -1899,6 +2041,7 @@ module.exports = {
   JWS_ASYMMETRIC_ALGS: JWS_ASYMMETRIC_ALGS,
   jwsSpec: jwsSpec,
   verifyCompactJws: verifyCompactJws,
+  verifyCompactJwsAsync: verifyCompactJwsAsync,
   checkJwtClaims: checkJwtClaims,
   JWE_ALG: JWE_ALG,
   JWE_ALGS: JWE_ALGS,

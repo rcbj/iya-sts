@@ -686,6 +686,42 @@ function signJwtAs(payload, alg, secret) {
                            { algorithm: alg, keyid: signer.kid });
 }
 
+// The same, off this thread. Only the post-quantum algorithms actually leave
+// the process — stsCrypto.signJwsAsync() computes everything else here and
+// resolves — so this is safe to use for any algorithm and is worth using only
+// where one of the slow ones can turn up. `session` is the affinity hint the
+// pool routes on; it is optional and nothing here depends on it.
+//
+// The HMAC branch is duplicated rather than shared with signJwtAs() above for
+// the reason its own comment gives: the refusal is a sentence a client reads,
+// and a wrapper that reached the same throw through a different path would be
+// a second place for that sentence to drift.
+function signJwtAsAsync(payload, alg, secret, session) {
+  log.debug("Entering signJwtAsAsync(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (spec && spec.family === 'hmac') {
+    if (!secret) {
+      log.debug("Leaving signJwtAsAsync(). No secret for an HMAC algorithm.");
+      return Promise.reject(new Error(alg + ' is signed with the ' +
+        'client_secret, and this client has none — a public client cannot ' +
+        'use a symmetric algorithm.'));
+    }
+    log.debug("Leaving signJwtAsAsync(). HMAC.");
+    return stsCrypto.signJwsAsync(payload, secret,
+      { algorithm: alg, session: session });
+  }
+  let signer;
+  try {
+    signer = signingKeyFor(alg);
+  } catch (e) {
+    log.debug("Leaving signJwtAsAsync(). No key.");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving signJwtAsAsync(). " + alg + ".");
+  return stsCrypto.signJwsAsync(payload, signer.key,
+    { algorithm: alg, keyid: signer.kid, session: session });
+}
+
 function signJwt(payload, context) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before signing',
@@ -959,6 +995,7 @@ module.exports = {
   signingKeyFor: signingKeyFor,
   allSigningKeys: allSigningKeys,
   signJwtAs: signJwtAs,
+  signJwtAsAsync: signJwtAsAsync,
   log: log,
   logArtifact: logArtifact,
   headersOf: headersOf,

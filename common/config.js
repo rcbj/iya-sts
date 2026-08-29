@@ -537,6 +537,35 @@ const SETTINGS = [
                  'relatives) in either mode — a forwarded certificate is a ' +
                  'certificate anybody can forge.' },
 
+  // ---------------------------------------------------------------------
+  // THE WORKER POOL. Startup rather than runtime: the children are forked once
+  // from server.js, and a count changed underneath a running pool would mean
+  // deciding what to do with the jobs the departing worker was holding.
+  // ---------------------------------------------------------------------
+  { key: 'workers.count', group: 'Global', label: 'Worker processes',
+    env: 'STS_WORKERS', type: 'int', dflt: 2, runtime: false,
+    restartReason: 'the children are forked once as the process starts, and ' +
+                   'changing the count under a running pool would mean ' +
+                   'deciding what becomes of the jobs a departing worker is ' +
+                   'holding',
+    description: 'How many child processes take the post-quantum signing and ' +
+                 'verification off this service\'s one thread. Two by ' +
+                 'default and a WHOLE NUMBER rather than "one per core": an ' +
+                 'int setting here cannot express "unset" — an absent value ' +
+                 'reaches the pool as 0, which is off — and this is a mock, ' +
+                 'so a machine with 64 cores has no more signing to do than ' +
+                 'one with 8. ZERO turns the pool off and computes ' +
+                 'in this process, which is what this service did before the ' +
+                 'pool existed: correct, and answering NOBODY for as long as ' +
+                 'it takes. That matters here more than it looks — one ' +
+                 'process owns the Express app, the KDC on TCP and UDP 88, ' +
+                 'the Kerberos service, the LDAP directory, two gRPC ' +
+                 'surfaces and two HTTPS endpoints, so a 23-second ' +
+                 'SLH-DSA-SHAKE-128s signature is 23 seconds in which a KDC ' +
+                 'that is running looks exactly like a KDC that is not. The ' +
+                 'workers hold NO state; this process keeps every socket and ' +
+                 'everything mutable.' },
+
   { key: 'global.logLevel', group: 'Global', label: 'Log level',
     path: 'logLevel', env: 'STS_LOG_LEVEL', type: 'enum',
     enumValues: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],

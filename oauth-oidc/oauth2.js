@@ -71,6 +71,7 @@ const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const { log, logArtifact, STS, baseUrlOf, b64u, jsonFromB64u, nowSec, randomId,
         xmlEscape, parseBody, bodyValues, oauthError, signJwt, signJwtAs,
+        signJwtAsAsync,
         allSigningKeys, userFor,
         hasScope } = require('../common/helpers');
 const dpop = require('./dpop');
@@ -3442,7 +3443,12 @@ function recipientEncryptionKey(registered, alg) {
   return candidates[0];
 }
 
-function signUserinfo(body, alg, registered, base, claims) {
+// ASYNC because `alg` may be one of the post-quantum parameter sets, and
+// SLH-DSA-SHAKE-128s takes upwards of fourteen seconds to sign. On one thread
+// that is fourteen seconds in which this service answers nobody — including
+// the KDC it also runs — so the signature goes to a worker and this function,
+// its caller, and ITS caller all await. See common/worker_pool.js.
+async function signUserinfo(body, alg, registered, base, claims) {
   log.debug("Entering signUserinfo(). alg=" + alg);
   // `iss` and `aud` are section 5.3.2's requirement and are added HERE rather
   // than by the caller, so that a response cannot be signed without them.
@@ -3452,12 +3458,22 @@ function signUserinfo(body, alg, registered, base, claims) {
   // endpoint's — see signJwtAs(). It was written out here first and the ID
   // Token endpoint would have copied it.
   log.debug("Leaving signUserinfo().");
-  return signJwtAs(payload, alg, registered.client_secret);
+  // The affinity key is the client: everything this client is issued is
+  // computed by the same worker. Nothing here needs that — the signature is a
+  // function of its arguments — and it is passed because the moment a worker
+  // holds anything derived, this is where the locality comes from.
+  return signJwtAsAsync(payload, alg, registered.client_secret,
+                        claims.client_id);
 }
 
 // Returns { contentType, body } or throws with a sentence fit to hand back as
 // an error_description.
-function protectUserinfo(body, registered, base, claims) {
+//
+// ASYNC for signUserinfo()'s reason and no other: every check below is
+// synchronous and every refusal is thrown before any work is handed out, so a
+// registration this service cannot honour is refused at the same point in the
+// same words as it was before.
+async function protectUserinfo(body, registered, base, claims) {
   log.debug("Entering protectUserinfo().");
   const signAlg = String(registered.userinfo_signed_response_alg || 'none');
   const encAlg = registered.userinfo_encrypted_response_alg
@@ -3499,7 +3515,7 @@ function protectUserinfo(body, registered, base, claims) {
 
   const inner = signAlg === 'none'
     ? JSON.stringify(body, null, 2)
-    : signUserinfo(body, signAlg, registered, base, claims);
+    : await signUserinfo(body, signAlg, registered, base, claims);
 
   if (!encAlg) {
     log.debug("Leaving protectUserinfo(). Signed only.");
@@ -3520,7 +3536,10 @@ function protectUserinfo(body, registered, base, claims) {
   return { contentType: 'application/jwt', body: jwe };
 }
 
-function userinfoResponse(req, res) {
+// ASYNC, and every `return` below still returns: an Express 4 handler that
+// rejects is NOT caught by Express, so the one await here is inside the
+// try/catch that was already around it and everything else is unchanged.
+async function userinfoResponse(req, res) {
   log.debug("Entering userinfoResponse(). method=" + req.method);
   const base = baseUrlOf(req);
 
@@ -3678,7 +3697,7 @@ function userinfoResponse(req, res) {
   const registered = applications.registrationOf(claims.client_id) || {};
   let protectedResponse;
   try {
-    protectedResponse = protectUserinfo(body, registered, base, claims);
+    protectedResponse = await protectUserinfo(body, registered, base, claims);
   } catch (e) {
     // Everything protectUserinfo() throws is a sentence about what this client
     // registered, so it goes back as the error_description rather than being
