@@ -1282,7 +1282,12 @@ function halfHash(value) {
   return b64u(h.subarray(0, h.length / 2));
 }
 
-function idToken(base, opts) {
+// ASYNC because `id_token_signed_response_alg` may name a post-quantum
+// parameter set, and one SLH-DSA-SHAKE-128s signature is upwards of fourteen
+// seconds on the one thread this whole service shares. See
+// common/worker_pool.js; the chain that had to follow it is tokenSet(),
+// tokenEndpoint(), issueAuthorizationResponse() and authorizeEndpoint().
+async function idToken(base, opts) {
   log.debug("Entering idToken().");
   const iat = nowSec();
   const user = opts.user || userFor(opts.username);
@@ -1403,12 +1408,17 @@ function idToken(base, opts) {
     // The default keeps going through signJwt(), which is what records the
     // token in the admin console's count — see the note on that function.
     ? signJwt(payloadWithCustom, issuanceContext(opts))
-    : signJwtAs(payloadWithCustom, idAlg, registered.client_secret);
+    // The client is the affinity key, as it is for the UserInfo response:
+    // everything this client is issued is computed by the same worker.
+    : await signJwtAsAsync(payloadWithCustom, idAlg, registered.client_secret,
+                           registered.client_id);
   log.debug("Leaving idToken(). alg=" + idAlg);
   return token;
 }
 
-function tokenSet(base, opts) {
+// ASYNC for idToken()'s reason and no other. Everything else it does is
+// synchronous, and the ONE await below is the ID Token.
+async function tokenSet(base, opts) {
   log.debug("Entering tokenSet(). scope=" + (opts.scope || '(none)'));
   // A SCOPE NAMING ANOTHER APPLICATION BECOMES THE AUDIENCE — see
   // audienceScopes(). Here rather than inside accessToken(), because the
@@ -1499,7 +1509,8 @@ function tokenSet(base, opts) {
     // its audience is the CLIENT, so neither of the two things above applies to
     // it. Passing the derived audience here would readdress it to the resource
     // server and every relying party would refuse its own ID Token.
-    body.id_token = idToken(base, Object.assign({}, opts, { access_token: access }));
+    body.id_token = await idToken(base,
+      Object.assign({}, opts, { access_token: access }));
   }
   log.debug("Leaving tokenSet(). Issued: " + Object.keys(body).join(', '));
   return body;
@@ -2252,7 +2263,10 @@ function withOwnResource(base, audiences, scope) {
   return audiences.concat([own]);
 }
 
-function issueAuthorizationResponse(req, res, query, user, authTime, authInfo) {
+// ASYNC for idToken()'s reason: the implicit and hybrid response types mint
+// an ID Token here, at the AUTHORIZATION endpoint, without going through
+// tokenSet() at all.
+async function issueAuthorizationResponse(req, res, query, user, authTime, authInfo) {
   log.debug("Entering issueAuthorizationResponse().");
   // Everything minted below is this authorization server's, so the base it is
   // built from is this authorization server's.
@@ -2460,7 +2474,7 @@ function issueAuthorizationResponse(req, res, query, user, authTime, authInfo) {
     out.scope = named.scope;
   }
   if (types.indexOf('id_token') >= 0) {
-    out.id_token = idToken(base, {
+    out.id_token = await idToken(base, {
       user: user, client_id: String(query.client_id), nonce: query.nonce, auth_time: authTime,
       amr: amr, acr: acr, session_id: sessionId, grant: flow,
       access_token: out.access_token, code: out.code,
@@ -2659,7 +2673,9 @@ function redirectBack(res, base, redirectUri, state, params, fragment, mode) {
   log.debug("Leaving redirectBack().");
 }
 
-function authorizeEndpoint(req, res) {
+// ASYNC only so that the one call below can be awaited; every other path out
+// of it is unchanged and synchronous.
+async function authorizeEndpoint(req, res) {
   log.debug("Entering the authorization endpoint.");
   // This authorization server's own base, so the RFC 9207 `iss` on the response
   // and every token minted below name the server the client is talking to.
@@ -2895,7 +2911,8 @@ function authorizeEndpoint(req, res) {
   const forcePrompt = String(q.prompt || '').split(/\s+/).indexOf('login') >= 0;
   if (session && !forcePrompt) {
     log.debug("Leaving the authorization endpoint. The session stands, so the response goes out now.");
-    return issueAuthorizationResponse(req, res, q, session.user, session.authTime, session);
+    return await issueAuthorizationResponse(req, res, q, session.user,
+      session.authTime, session);
   }
   if (String(q.prompt || '').split(/\s+/).indexOf('none') >= 0) {
     // OIDC: prompt=none must not show any UI.
@@ -2950,7 +2967,33 @@ function authorizeEndpoint(req, res) {
   log.debug("Leaving the authorization endpoint. Sent to the authentication service first.");
 }
 
-app.get('/oauth2/authorize', authorizeEndpoint);
+// ---------------------------------------------------------------------------
+// THREE HANDLERS ARE ASYNC NOW, AND EXPRESS 4 DOES NOT CATCH A REJECTION.
+//
+// A handler that THROWS is caught by Express and becomes a 500. A handler that
+// REJECTS is not caught by anything: node treats an unhandled rejection as
+// fatal and takes the process down. So the moment authorizeEndpoint(),
+// tokenEndpoint() and userinfoResponse() became async — see idToken() — the
+// difference between "this client registered an algorithm this service does
+// not sign with" and "the mock STS died" became this wrapper.
+//
+// It hands the rejection to next(), which is where a synchronous throw already
+// went, so the reply a client gets is the one it got before.
+// ---------------------------------------------------------------------------
+function asyncRoute(handler) {
+  log.debug("Entering asyncRoute(). " + (handler.name || '(anonymous)'));
+  const wrapped = function (req, res, next) {
+    Promise.resolve(handler(req, res, next)).catch(function (e) {
+      log.error('the ' + (handler.name || 'anonymous') + ' handler ' +
+                'rejected: ' + ((e && e.message) || e));
+      next(e);
+    });
+  };
+  log.debug("Leaving asyncRoute().");
+  return wrapped;
+}
+
+app.get('/oauth2/authorize', asyncRoute(authorizeEndpoint));
 
 // ---------------------------------------------------------------------------
 // GET /oauth2/rfc9700 — what this mode is, and whether it is on.
@@ -3715,9 +3758,9 @@ async function userinfoResponse(req, res) {
             " claim(s) for " + body.sub + " as " + protectedResponse.contentType + ".");
 }
 
-app.get('/oauth2/userinfo', userinfoResponse);
+app.get('/oauth2/userinfo', asyncRoute(userinfoResponse));
 
-app.post('/oauth2/userinfo', userinfoResponse);
+app.post('/oauth2/userinfo', asyncRoute(userinfoResponse));
 
 // --- token endpoint ---------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -3941,7 +3984,11 @@ function replayOrRefuseRedemption(res, code, fingerprint, respond) {
   return respond(done.response);
 }
 
-function tokenEndpoint(req, res) {
+// ASYNC because every grant mints through issue(), which is tokenSet(), which
+// signs an ID Token. Each issue() below is awaited; an un-awaited one would
+// serialise a Promise into the token response as {} — which is why they are
+// counted by tests/worker_pool.js rather than left to the eye.
+async function tokenEndpoint(req, res) {
   log.debug("Entering the token endpoint.");
   const base = asBaseOf(req);
   const body = parseBody(req);
@@ -4286,7 +4333,7 @@ function tokenEndpoint(req, res) {
         'additionally for: ' + extra.join(', ') + '.');
     }
     const forResources = narrowed.length ? narrowed : granted;
-    const issued = issue({
+    const issued = await issue({
       jkt: dpopJkt,
       // One value where there is one, an array where the client asked for the
       // "small set" section 2.3 allows. `aud` takes either, and a single-element
@@ -4389,7 +4436,7 @@ function tokenEndpoint(req, res) {
         notOffered.map(function (d) { return '"' + d.credential_configuration_id + '"'; }).join(', ') +
         ' cannot be authorized by it.');
     }
-    const issued = issue({
+    const issued = await issue({
       jkt: dpopJkt,
       user: record.user, client_id: client.client_id, scope: VCI_SCOPE, withRefresh: false,
       // RFC 8707 on an OpenID4VCI Token Request, which OID4VCI section 6.1
@@ -4500,7 +4547,7 @@ function tokenEndpoint(req, res) {
     const refreshResources = requestedResources.length
       ? requestedResources : grantedResources;
 
-    const refreshed = issue({
+    const refreshed = await issue({
       // The presented token's jti, so the one it mints belongs to the same
       // FAMILY. Only this grant sets it; a root refresh token has none.
       parent_refresh_jti: claims.jti,
@@ -4600,7 +4647,7 @@ function tokenEndpoint(req, res) {
     const clientSubject = bcp.enabled()
       ? 'urn:sts-mock:client:' + (client.client_id || 'unknown-client')
       : (client.client_id || 'unknown-client');
-    return respond(issue({
+    return respond(await issue({
       jkt: dpopJkt,
       sub: clientSubject, username: client.client_id,
       client_id: client.client_id, scope: String(body.scope || ''), withRefresh: false,
@@ -4637,7 +4684,7 @@ function tokenEndpoint(req, res) {
       note: 'No password is checked here either, except the reserved string "invalid". ' +
             'A password grant creates no browser session.'
     });
-    return respond(issue({
+    return respond(await issue({
       jkt: dpopJkt,
       user: userFor(username), client_id: client.client_id, scope: String(body.scope || 'openid'),
       // RFC 8707 again. This grant DOES issue a refresh token, so the list goes
@@ -4730,7 +4777,7 @@ function tokenEndpoint(req, res) {
       requestedResources.filter(function (one) {
         return askedAudiences.indexOf(one) < 0;
       }));
-    const exchanged = issue({
+    const exchanged = await issue({
       jkt: dpopJkt,
       sub: subject.sub || 'urn:sts-mock:exchanged',
       user: Object.assign(userFor(subject.username), subject.sub ? { sub: subject.sub } : {}),
@@ -4901,7 +4948,7 @@ function tokenEndpoint(req, res) {
   return oauthError(res, 400, 'unsupported_grant_type', 'grant_type "' + grant + '" is not supported.');
 }
 
-app.post('/oauth2/token', tokenEndpoint);
+app.post('/oauth2/token', asyncRoute(tokenEndpoint));
 
 // ---------------------------------------------------------------------------
 // THE SAME ENDPOINTS, UNDER EVERY AUTHORIZATION SERVER'S OWN NAME.
