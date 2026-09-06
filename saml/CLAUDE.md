@@ -147,6 +147,19 @@ registry which application has it. That is a scan of a mock's in-memory
 directory, and it is why `/admin/saml2` exists — nobody derives that digest by
 hand.
 
+**AND THE PARENT PROJECT'S LAUNCHERS COMPUTE THAT SEGMENT THEMSELVES, WITH
+`sha256sum`.** The metadata URL carries the digest because the document is
+published per service provider, and three shell scripts over there build it
+rather than guessing it — so **a change to `slugOf()` breaks three files nothing
+in this repository can see**, and it breaks them in the parent's suite rather
+than here. That is the same standing obligation the root `CLAUDE.md`'s last
+section describes for the Kerberos COPY set: this repository moves, and the
+other one has to be moved with it in the same change. Nothing is provisioned for
+the `sts` side of those jobs — any entityID is accepted, the metadata is minted
+on the ask, and the application entry is created by the first valid AuthnRequest
+— which is why there is no `configureX` step for it anywhere in those launchers,
+and why the digest is the only thing they have to know.
+
 The other four: any entityID is accepted and nothing is verified; the assertion
 is built by `saml2.js` and not by that file; the Response is signed as well as
 the assertion and both are settings; and an artifact is one-shot.
@@ -600,6 +613,25 @@ and resolved by another, a RelayState past 80 bytes, a Response over the Redirec
 binding long enough to be truncated, and the `saml2.*` settings turned off one at
 a time — especially `signAssertion`, since an unsigned assertion being ACCEPTED
 by a service provider is the finding that matters and no happy path shows it.
+
+**`./local-run-tests.sh --saml-only=sts` IS THE FAST LOOP** and needs no
+Keycloak at all — four SAML 2.0 jobs and the SAML 1.1 one, against this service
+alone.
+
+**`tests/saml_encrypted_sso.js` IS DELIBERATELY NOT PAIRED**, and that is a
+decision rather than a gap: that job's profile encrypts no assertion, so an
+`sts` half of it could only ever fail or skip. Pairing a job with
+`SAML_IDP=keycloak|sts` is worth doing when both identity providers can be held
+to the SAME assertions; where they cannot, a skipping half is a job that reports
+green having checked nothing.
+
+**AND THE PAIRING HAS NO SAML 1.1 EQUIVALENT, WHICH IS WHY THAT TEST WRITES ITS
+OWN RELYING PARTY.** Keycloak has spoken no SAML 1.1 for years, and **the
+debugger has no SAML 1.1 service provider either** — `saml_tools.html` composes
+and signs a 1.1 assertion, and the WS-Trust and WS-Federation response pages
+consume one, but that project's SAML workflow is SAML 2.0 SP-initiated and
+returns an XML comment where a 1.x request would be. So the relying party in
+`tests/saml11_sso.js` is the only one there is.
 
 **SAML 1.1 already has exactly that test and it is the model for this one.**
 `tests/saml11_sso.js` in the parent project drives `/saml11` over HTTP with a

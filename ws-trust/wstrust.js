@@ -52,6 +52,9 @@ const app = require('../common/app');
 // that gets one of them wrong.
 const { log, logArtifact, STS, xmlEscape, iso,
         firstByLocal, textByLocal } = require('../common/helpers');
+// The input validator. A LEAF (rule 3): it registers no route and requires only
+// `config`, `bunyan`, zod and the vendored XML parser, so it closes no cycle.
+const validation = require('../common/validation');
 // wstrust.issuer. A SAML token requested THROUGH WS-Trust is built by the
 // SAML modules and carries saml.issuer instead; the two are separate
 // settings for that reason and default to the same value.
@@ -73,6 +76,16 @@ const gate = require('../common/issuance_gate');
 // Kerberos rows where something is. A library like the two above: it registers
 // no route.
 const delegation = require('../common/delegation');
+// THE SESSION STORE. A plain require in the ordinary direction, and it is why
+// this module moved BELOW authn.js in server.js on 2026-09-05 rather than
+// keeping its old place — see the note on that line. Requiring it from above
+// would have dragged every /authn route to the front of the router (rule 1);
+// `authn.js` does not require this module, so no cycle closes either way.
+const authn = require('../authn/authn');
+// The credential verifier and the mode. Both LEAVES (rule 3) that register
+// nothing and require nothing here.
+const credentials = require('../common/credentials');
+const mode = require('../common/mode');
 const WST_NS = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 
 const SOAP12_NS = 'http://www.w3.org/2003/05/soap-envelope';
@@ -257,17 +270,31 @@ function requesterCredential(doc) {
       return { ok: false,
                reason: 'UsernameToken requires a username and password.' };
     }
-    if (pass === 'invalid') {
-      log.debug("Leaving requesterCredential(). The reserved password was " +
-                "used, so this is a failure.");
+    // THE CREDENTIAL (2026-09-06). One call, both modes — `credentials.js`
+    // still refuses the reserved string `invalid` in development, which is
+    // what this branch used to do on its own, and verifies against the hashed
+    // `userPassword` in product mode.
+    //
+    // **THE FAULT SAYS THE SAME THING WHATEVER FAILED.** A SOAP Fault that
+    // distinguished "no such user" from "wrong password" would be the account
+    // enumeration answer over a protocol whose whole audience is machines; the
+    // reason goes to the log instead.
+    const checked = credentials.verify(user, pass,
+                                       { via: 'a WS-Security UsernameToken' });
+    if (!checked.ok) {
+      log.info('wstrust: the UsernameToken for "' + user + '" was refused (' +
+               checked.reason + '): ' + checked.detail);
+      log.debug("Leaving requesterCredential(). The credential was refused.");
       return { ok: false,
                reason: 'Authentication failed for user ' + user + '.' };
     }
     log.debug("Leaving requesterCredential(). A UsernameToken for " + user +
               ".");
     return { ok: true, subject: user, method: 'WS-Security UsernameToken',
-             note: 'The password is not checked, except for the reserved ' +
-                   'string "invalid".' };
+             note: mode.verifiesCredentials()
+               ? 'The password was verified against the stored userPassword.'
+               : 'The password is not checked in development mode, except ' +
+                 'for the reserved string "invalid".' };
   }
   // A SAML assertion presented directly as the credential.
   const assertion = firstOwnedByRequester(scope, 'Assertion');
@@ -449,7 +476,28 @@ function authenticate(doc) {
 function handleRst(rawBody, contentType, options) {
   log.debug("Entering handleRst().");
   options = options || {};
-  const doc = new DOMParser().parseFromString(rawBody || '', 'text/xml');
+  // ---------------------------------------------------------------------
+  // **THIS PARSE ANSWERED 500 UNTIL 2026-09-06, TO AN EMPTY BODY AMONG OTHER
+  // THINGS**, and the reason is a library change rather than carelessness.
+  // `@xmldom/xmldom` used to report a malformed document by calling a handler
+  // whose default wrote to the console and carried on, so a bare parse
+  // returned a partial tree; in 0.9.10 the default handler THROWS a
+  // ParseError. The bare parse here was outside any try/catch, so
+  // `POST /sts` with `<a><b></a>` — or with nothing at all — took the request
+  // down with an uncaught exception rather than answering a Fault.
+  //
+  // `validation.parseXml()` never throws; it answers a refusal, and this
+  // endpoint renders it as the SOAP Fault it should always have been. The
+  // version is detected from the CONTENT TYPE alone here, because there is no
+  // document to read a namespace off.
+  // ---------------------------------------------------------------------
+  const read = validation.parseXml(rawBody, 'request');
+  if (!read.ok) {
+    log.debug("Leaving handleRst(). The request is not well-formed XML.");
+    return { status: 400, version: detectSoapVersion(null, contentType),
+             body: soapFault(detectSoapVersion(null, contentType), read.detail) };
+  }
+  const doc = read.value;
   const version = detectSoapVersion(doc, contentType);
   const requestType = textByLocal(doc, 'RequestType');
   // Operation from the LAST path segment of RequestType, so any WS-Trust
@@ -764,10 +812,39 @@ function handleRst(rawBody, contentType, options) {
     '<wst:KeyType>' + keyTypeReq + '</wst:KeyType>' +
     tok.ref;
 
+  // ---------------------------------------------------------------------
+  // WHAT THIS EXCHANGE SIGNED IN, for the caller to act on (2026-09-05).
+  //
+  // **AN ISSUED CREDENTIAL IMPLIES A SESSION THIS SERVICE TRACKS**, and until
+  // this day WS-Trust was the one family here that issued one and tracked
+  // nothing: `startSession()` was called zero times in this file. What that
+  // cost was not visible from inside this endpoint — it answered correctly and
+  // always had — but from `/admin/sessions` and from a global sign-out, where
+  // an assertion this service had minted for somebody five minutes ago
+  // belonged to nobody who was signed in. An identity provider that cannot say
+  // "this is live" cannot say "I have ended it" either, which is the whole of
+  // what a sign-out is.
+  //
+  // IT IS RETURNED RATHER THAN DONE HERE, and that is deliberate: this
+  // function has no `res` and must not acquire one. It is called by the route
+  // below AND directly by callers that hand it a body and read a body back,
+  // so a cookie written from inside it would be a side effect on an object
+  // half its callers do not have. The route starts the session; this says who.
+  //
+  // ONLY ON AN ISSUE THAT AUTHENTICATED. A Renew whose requester was anonymous
+  // is signing nobody in — its subject came off the RenewTarget, which the
+  // token said and nobody presented — and Validate and Cancel issue nothing at
+  // all. Each of those returns above this line.
+  const signIn = auth.subject && auth.subject !== 'anonymous'
+    ? { username: auth.subject, method: auth.method || 'WS-Trust',
+        via: 'WS-Trust ' + op }
+    : null;
+
   if (op === 'renew') {
     const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs + '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
     log.debug("Leaving handleRst(). Renew answered with a fresh token.");
-    return { status: 200, version: version, body: envelope(version, trustNs + '/RSTR/RenewFinal', rstr) };
+    return { status: 200, version: version, signIn: signIn,
+             body: envelope(version, trustNs + '/RSTR/RenewFinal', rstr) };
   }
 
   // Issue -> RSTR Collection (WS-Trust 1.3+; pre-OASIS clients tolerate it too).
@@ -775,7 +852,8 @@ function handleRst(rawBody, contentType, options) {
     '<wst:RequestSecurityTokenResponse>' + rstrInner + '</wst:RequestSecurityTokenResponse>' +
     '</wst:RequestSecurityTokenResponseCollection>';
   log.debug("Leaving handleRst(). Issue answered with an RSTR Collection.");
-  return { status: 200, version: version, body: envelope(version, trustNs + '/RSTRC/IssueFinal', rstrc) };
+  return { status: 200, version: version, signIn: signIn,
+           body: envelope(version, trustNs + '/RSTRC/IssueFinal', rstrc) };
 }
 
 app.get('/sts/cert', function (req, res) {
@@ -797,6 +875,47 @@ app.post('/sts', function (req, res) {
   try {
     const encrypt = req.query.encrypt === '1' || req.query.encrypt === 'true';
     const result = handleRst(req.body || '', contentType, { encrypt: encrypt });
+    // THE SESSION, IF THE EXCHANGE MADE ONE. See handleRst()'s note on `signIn`
+    // for why the decision is made there and the act is performed here.
+    //
+    // The cookie goes out on a SOAP response and almost no WS-Trust client will
+    // keep it, which is fine and is not what it is for: what matters is the
+    // session RECORD, so that `/admin/sessions` can show that this person is
+    // signed in and a global sign-out can end it. A browser-based client that
+    // does keep the cookie gets single sign-on across to every other protocol
+    // here, which is the same thing every other family already gives it.
+    if (result.signIn) {
+      try {
+        // `request` so a UsernameToken exchange from a BROWSER replaces
+        // whatever session it was on. A SOAP client sends no cookie, so this
+        // ends nothing for the ordinary caller — which is right.
+        // A NULL MEANS THE ISSUANCE POLICY REFUSED THE SESSION (2026-09-06),
+        // and it is deliberately NOT a refusal of the exchange. The token was
+        // already built and the caller is entitled to it — `wstrust.token`
+        // asked the gate in its own right a few hundred lines up, with
+        // `WSTRUST_TOKEN`, and that is the decision about what this endpoint
+        // issues. This one is about the browser SESSION a UsernameToken
+        // exchange also starts, which is a side effect of the exchange rather
+        // than its product. Refusing the RSTR here would refuse a credential
+        // the policy had already permitted.
+        const signedIn = authn.startSession(res, result.signIn.username,
+                                            ['pwd'], '1', result.signIn.via,
+                                            { request: req });
+        if (!signedIn) {
+          log.info('ws-trust: the token was issued and the issuance policy ' +
+                   'refused the browser SESSION for ' +
+                   result.signIn.username + '. The RSTR is unaffected: the ' +
+                   'token was permitted in its own right.');
+        }
+      } catch (e) {
+        // Bookkeeping must never break an exchange that has already succeeded —
+        // the token is built, the caller is entitled to it, and a session this
+        // service failed to record is a gap in a console page rather than a
+        // reason to answer a SOAP Fault.
+        log.error('wstrust: starting a session for ' + result.signIn.username +
+                  ' failed and was ignored; the token is unaffected: ' + e.message);
+      }
+    }
     const ct = result.version === '1.1' ? 'text/xml; charset=utf-8' : 'application/soap+xml; charset=utf-8';
     res.status(result.status).type(ct).send(result.body);
     log.debug("Leaving the WS-Trust STS endpoint. HTTP " + result.status + ".");

@@ -1112,6 +1112,11 @@ this console, and `mayWrite()` exists for that one caller. It goes through
 * **The exporter is `common/vendored/key_material.js`, not a second one.** That
   is the debugger's own keystore code, already vendored, already doing PEM, DER,
   JWK and PKCS#12 with a password. A second exporter would be the worse copy.
+  **There are now THREE things in this file with names in that neighbourhood**
+  — `keyMaterial()` reports on the keys, `keystore` exports them, and
+  `stsKeystore` is `common/keystore.js`, which decides whether they persist and
+  how long a decrypted one stays in memory. The collision section below records
+  what getting this wrong already cost.
 * **PKCS#12 only where there is a certificate**, and the refusal is the vendored
   module's own. A `.p12` wraps a key in a certificate and this service holds one
   for the signing key and the TLS key and nothing else. Minting a throwaway so
@@ -1127,6 +1132,42 @@ this console, and `mayWrite()` exists for that one caller. It goes through
   that does not come back as a page. A download IS the response body; a 303 to a
   page saying "your key is ready" would be a page with nothing on it. A REFUSAL
   is still a page, so a bad password reads like every other refusal here.
+
+### AND SINCE 2026-09-06 IT REPORTS HOW LONG A PRIVATE KEY STAYS DECRYPTED
+
+Where key material persists, this process holds the CIPHERTEXT and decrypts a
+realm's signing key only while something signs with it. `common/CLAUDE.md`
+argues the mechanism; two things about it are this page's.
+
+**IT IS A REPORT AND DELIBERATELY NOT A CONTROL, which is rule 7 read exactly
+rather than a gap.** Everything on it is either a SETTING —
+`keys.plaintextRetention` and `keys.plaintextTtlS`, drawn on `/admin/config`
+with the rest of the `Key material` group, because that is where that group's
+`SETTING_HOMES` row sends it — or an observation. A *Purge now* button was
+considered and refused for a reason peculiar to this page: **its one POST
+answers with a FILE rather than a page**, so a second action here would be the
+only form in this console whose two buttons answer in two different shapes, and
+what it would buy is shortening a window the timer shortens anyway.
+
+**THE NUMBER IS THE POINT.** A page naming only the policy would be describing a
+promise. It names the realms whose key is decrypted RIGHT NOW, which a reader
+can watch change — the only way an operator can tell this is working rather than
+configured. The table says `no` for a realm until something signs for it and
+goes back to `no` on its own, and the note says that reading this page decrypts
+nothing while exporting a key does.
+
+**THE SAME CHANGE FIXED TWO SENTENCES THAT HAD BEEN FALSE SINCE THE KEYSTORE
+LANDED, and they are the two that matter most on this page.** `keysJson()`
+carried `regeneratedEveryStart: true` as a CONSTANT, and the warning that makes
+handing a private key to a browser defensible said these keys are "generated at
+start, held only in memory, dead when the process exits". On a product-mode
+service the signing key OUTLIVES the process — so the page was offering the
+reassurance a reader acts on, about a key for which it was not true. Both are
+computed from `keystore.report()` now, and the persisted branch says the
+opposite out loud: a key exported here goes on signing after a restart and
+anything signed with a copy goes on verifying against the live JWKS. **The TLS
+and SPIFFE keys really are per start**, which is why the rows carry the
+distinction rather than the report as a whole.
 
 ### TWO NAME COLLISIONS IN ONE FILE, AND THE SECOND ONE WAS A 500
 
@@ -2959,3 +3000,474 @@ too because it is a hazard for the ninth: the store lower-cases attribute names,
 so a page reading `xacmlEnabled` off an entry gets `undefined` — and a
 comparison against `'false'` then draws a DISABLED policy as enabled. The fix is
 in `learnName()`, not at the reading site.
+
+## `/admin/sessions` GREW A SECTION FOR UNAUTHENTICATED SESSIONS (2026-09-05)
+
+A session where nobody authenticated — somebody pressed *Continue without
+signing in* at `/authn/login`. `authn/CLAUDE.md` argues the feature; this is
+what the console does with it.
+
+### A SECTION AND NOT A COLUMN, and that is the decision
+
+A column on the live-sessions table would say the same thing on every row for
+weeks at a time, and a column like that stops being read. A section that is
+empty says so in one line, and a section with rows in it is the thing somebody
+notices.
+
+### It is NOT filtered and NOT paged, unlike the table above it
+
+The two lists answer different questions. The main one is *what is live*, which
+is long and needs narrowing. This one is *is anybody in here without having
+signed in*, which is a question about the whole service — and a search box
+somebody had left set could hide the one row that matters. That is worth the
+inconsistency of two tables on one page behaving differently, and the section
+says so out loud rather than leaving it to be discovered.
+
+### It draws whether or not the setting is on
+
+`authn.unauthenticatedSessions` is off by default. The section still draws,
+because a service that had it on this morning may still be holding sessions it
+minted then, and a section that disappeared with the setting would hide exactly
+those. **What changes with the setting is the sentence, not the presence** — a
+`note()` when it is on, a `warn()` naming the setting and linking to
+`/admin/roles` when it is off.
+
+### The fifth tile is a SLICE and not a fifth kind
+
+`live sessions`, `browser sign-on`, `Kerberos TGTs`, `LDAP connections` still
+add up. `unauthenticated` does not join that sum — it is a subset of the first
+four. It earns a tile anyway: it is the number somebody scans this page for,
+and a zero on it is as informative as a non-zero.
+
+### Rule 7 cost no new operation
+
+`GET /admin-api/sessions` grew `unauthenticatedHeld` and
+`unauthenticatedSessions` rather than the page growing a door the API did not
+have. Both the count and the rows, because *are there any* and *which ones* are
+two different questions and deriving the first from the second would make an
+empty list and an absent field look alike.
+
+### Why the page is worth having at all, in one sentence
+
+It is the only place in this console where the difference between two built-in
+roles is visible: every session in the main table holds `EVERYBODY` **and**
+`ALL_AUTHENTICATED_USERS`, and every session in this one holds `EVERYBODY` and
+`ALL_UNAUTHENTICATED_USERS` instead. The section says that, and links to
+`/admin/roles` where it is configured.
+
+## `/admin/roles`: THREE REASONS AN APPLICATION COULD NOT BE FOUND ON IT (2026-09-05)
+
+The capability was never missing. `ROLE_MEMBER_KINDS` has held `application`
+since the page was written, the *Give somebody a role* form has always offered
+it, and the table has always had a **Held by an application** column with a
+Remove on it. What was missing was any way to FIND it, and three separate
+things hid it. They are worth keeping written down because each is a general
+trap on a console with no script on it.
+
+**1. The heading and the fold's summary were both about people.** The heading
+read *Give somebody a role*, and the note under it was the three
+`ROLE_MEMBER_KINDS` joined with `<br>` — so `note()` derived the fold's summary
+from the FIRST of them and it read `a person — A username.` The one sentence
+saying an application may hold a role as itself was inside a collapsed block
+whose opening words were about people, under a heading that was also about
+people. **This is the collapsing rule's own failure mode**: a summary is the
+first sentence, so a list rendered into a note is summarised by its first item
+and the rest of the list is invisible until somebody opens it. A note that is a
+LIST needs a lead sentence naming the whole list, which is what it has now.
+
+**2. The Role `<select>` is empty on a service where nobody has made a role**,
+because the six built-in roles are computed and have no membership. So the form
+rendered complete and was inert: a `required` select with no options means the
+browser silently blocks the submit, which looks like a broken button rather
+than an unmet precondition. The button carries `disabled` now and a `warn()`
+above it links to `#create` — the fix and the reason, where the reader is.
+
+**3. The member Name field had no suggestions**, on a page that was already
+building a datalist of every application in the realm for the preview form four
+sections below. An application's identifier is whatever it registered itself
+as, so it is the one member kind nobody can guess.
+
+### The datalist is applications and only applications, and that is deliberate
+
+A datalist SUGGESTS and never constrains, which is what makes one field serving
+three kinds tolerable — a person or a group is still typed by hand and still
+need not exist yet, which is this service's rule everywhere. Applications are
+the kind with a knowable set and the kind that cannot be guessed; a person need
+not exist, and a group lives in the directory behind a hook this page has no
+reader for. The `title` on the label says exactly that rather than leaving
+somebody to infer that only the suggestions are valid.
+
+**It is its own `<datalist>` rather than the preview form's
+`role-preview-apps`.** Both render the same `applicationOptions` — one
+computation, two renderings, so they cannot disagree — but referencing an id
+another section owns would make this field's suggestions vanish silently if
+that section were ever made conditional or moved.
+
+### What it is NOT: the other relation
+
+This is MEMBERSHIP — who **holds** a role, stored on the role entry under
+`ou=roles`. What an application **requires** is `appRequiredRole` on the
+application's own entry, edited on that application's page, and drawn read-only
+further down this one. `common/CLAUDE.md` argues why collapsing the two is the
+mistake; the page draws both precisely so a reader meets the distinction.
+
+## TOOLTIPS ON EVERY FIELD AND EVERY SECTION, DERIVED (2026-09-05)
+
+Coverage before this: `tip()` was called 18 times in the whole file, and of the
+156 `<label>` elements this console emits exactly ONE carried a tooltip. The
+settings rows were the exception and they were already right — that is where
+the shape came from.
+
+Coverage after: **61 of 64 section headings and 133 of 136 fields**, measured
+across fourteen pages. The three misses in each are elements with no prose
+anywhere near them to derive from, which is the honest answer rather than a
+wrong tooltip.
+
+### `withDerivedTips()` is a pass over the RENDERED body, not 391 edited call sites
+
+It runs in `page()`, on `inner`, just before the shell wraps it. That is the
+same decision the folds made and for the same reason: **the test is on the
+rendered text, not on the caller's judgement**, so a page written tomorrow gets
+its tooltips with nothing added to it and none of them can drift from the prose
+they are taken from — they ARE that prose, read at render time. The alternative
+was 391 hand-written hints, which is a second copy of every explanation on this
+console and exactly the drift the derived-summary rule exists to prevent.
+
+Two rules, because the two things differ:
+
+* **A HEADING** takes the opening sentence of the first note that FOLLOWS it,
+  bounded by the next heading so a section with no prose borrows nothing from
+  the one below.
+* **A FIELD** takes the nearest note ABOVE it. A hand-built form is explained by
+  the paragraph introducing it rather than per control, so every field in one
+  form shares a tooltip. That is honest: the paragraph is genuinely what all of
+  them are for, and a per-field sentence does not exist to be derived.
+
+**IT ONLY EVER ADDS.** An element already carrying a `title` is skipped whole,
+so every hand-placed tooltip still wins and this can never overwrite a better
+one. That is also what keeps the settings rows — which set their own, from
+`config.describe()` — untouched.
+
+### THE ONE PLACE SOMETHING IS SAID ONLY IN A TOOLTIP, AND WHAT PAYS FOR IT
+
+The rule above this section says nothing is ever said only in a `title`,
+because a title is unreachable from a keyboard, invisible on a touch screen and
+unread by most screen readers. **That rule is now qualified rather than
+deleted**, and the qualification is narrow: a SETTING's description is in its
+tooltip and nowhere else on the page. `configRow()` used to draw it as a fold
+with the setting's short label as the summary; that fold is gone.
+
+What pays for it is that a setting's description has **three other doors** —
+`/admin/config?format=json`, `GET /admin-api/config`, and README.md's table —
+so the text is reachable without a mouse even though this page no longer draws
+it. Both were checked rather than assumed. **A field whose prose has NO other
+door does not get this treatment**, which is why the derived tooltips above add
+a title and remove nothing.
+
+`tip()` therefore takes an optional `max`, and a caller passing one is saying
+*this tooltip is the only copy*. The default 190-character teaser was right
+while a tooltip previewed a fold the reader could open; where there is no fold,
+truncating would not hide the rest of the sentence, it would DELETE it — the
+median setting description is 384 characters. The settings rows pass
+`Infinity`.
+
+### What it did NOT buy, measured
+
+Visible text fell by 2–7% on the pages that changed, and that is worth writing
+down because the intuition says otherwise. The per-setting folds were already
+hidden by the 2026-08-26 change, so removing them reclaimed only their one-line
+summaries. What is left visible on a settings page is **37% table data and 23%
+sidebar**, neither of which is prose.
+
+**The remaining lever is the fold summaries**, and it is a big one: on `/admin`
+they are 8182 of 11271 visible characters — 73%. Each is a full opening
+sentence, and there are hundreds across the console. Shortening them to a few
+words each would now cost nothing that was not already recoverable, because
+every heading carries the whole first sentence as a tooltip. That is a
+deliberate next step rather than something done here: the summaries are what
+lets a reader skim for a paragraph without opening all of them, which is the
+property the folds were built around and which has no script to replace it.
+
+## THE SIDEBAR SCROLLS TO THE PAGE YOU ARE ON (2026-09-05)
+
+`nav` is its own scroll container — `.side` is sticky, the card inside it has
+`overflow-y:auto` — and a scroll container starts at the TOP on every load. The
+list overflows by about 1200px, so navigating to a page low in it left that
+page's own entry below the fold: the reader arrived somewhere and the list did
+not show where.
+
+**`autofocus` is the whole mechanism and it needs no script**, which is the
+only reason this console can have it: a browser scrolls a focused element into
+view, including scrolling the ancestor container it lives in. `script-src
+'none'` is untouched and there is no seventh scripted page.
+
+Three things about it are decisions:
+
+* **`tabindex="-1"` and not `0`.** The active item is a `<span>` when it is the
+  page being drawn, and a span is not focusable without it — so autofocus alone
+  would do nothing. `-1` makes it focusABLE without joining the TAB ORDER,
+  which is right: it is the page you are already on, so a keyboard user tabbing
+  the nav should reach the links they can GO to and not stop on the one they
+  are standing on.
+* **It is the only `autofocus` in this console**, checked rather than assumed —
+  two of them and the first in document order wins, so one added to a form
+  field later would silently stop working. A page that needs to focus a field
+  on load has to opt this one out rather than compete with it.
+* **`scroll-margin:4.5rem`** keeps the revealed item off the container's top
+  edge, where it would read as the first item in the list rather than one in
+  the middle. What tells a reader where they are is the item's NEIGHBOURS.
+
+Measured over CDP on five pages: the nav scrolls to 0, 351, 497, 787 and 1197
+respectively, the active item is inside the visible box on every one, and
+`window.scrollY` stays 0 — only the container moved, not the document.
+
+**And the highlight was a whisper.** `.here` was `background:#eceaf6`, a
+lavender four shades off the card's own white, which on a list of thirty-odd
+links read as *very slightly different* rather than as *here*. It takes the
+solid brand fill `.pagenav .here` has had all along, so the two "you are here"
+markers in this console finally look alike. `aria-current="page"` says the same
+thing to a screen reader.
+
+**`tests/vendored/sts_metadata.js` pins all three** — the span, the
+`aria-current` and the `autofocus`+`tabindex` pair — because all three are
+invisible: nothing about the rendered page looks wrong if one is dropped, and
+the sidebar would quietly go back to starting at the top on every navigation.
+That assertion was an exact-string match on the whole `<li>` and had to be
+loosened to tolerate attributes; its INTENT, that the active item is text and
+not a link, is unchanged and still asserted.
+
+## `/admin/tokens` LISTS ISSUANCES NOW, NOT CREDENTIALS (2026-09-05)
+
+**A row of that table used to be one credential and is now one REPLY.** Nothing
+was removed: every JWT, every SAML assertion, every Kerberos ticket and every
+SPIFFE SVID is still there, and three families out of four look exactly as they
+did — because three families out of four issue ONE credential per act.
+
+**OAuth 2.0 and OIDC are the only families this service speaks that hand back
+several at once.** Redeeming an authorization code returns an access token, a
+refresh token and an ID Token in a single reply; `response_type=id_token token`
+returns two in one fragment. Drawn as three rows and two rows, the one thing the
+protocol handed over whole was left to be reassembled by comparing timestamps —
+and worse, to be GUESSED, because two people redeeming two codes at the same
+client in the same millisecond produce six records that agree on every field
+this console records.
+
+### The grouping is a fact the ISSUER stated, and that is the whole design
+
+`admin_stats.js`'s `setId` is the third thing the token registry is told that no
+token carries as a claim, beside `sessionId` and `grant`, and it arrives the
+same way: through `signJwt()`'s third parameter, from the call site that built
+the reply. There are exactly TWO such call sites and `oauth-oidc/CLAUDE.md`
+argues them — `tokenSet()`, which every grant that issues a token set goes
+through, and `issueAuthorizationResponse()`, which is where implicit and hybrid
+mint on the spot without going through `tokenSet()` at all.
+
+**Nothing here derives it, and the reason is the simultaneous-redemption case
+above.** A heuristic over `sub`, `client_id`, `scope`, `grant` and `issuedAt`
+would merge two replies into one that nobody ever received — a page reporting a
+credential handover that did not happen, which is worse than the three rows it
+replaced. `tests/issued_sets.js` asserts exactly that case, in process, because
+producing it over HTTP means winning a race against the clock on purpose.
+
+**The set id is in NO TOKEN.** No client sees it, it is not a claim, and it is
+not `sid` — that one exists because OpenID Connect Front-Channel Logout section 3
+requires it, which is the standard this repository holds a new claim to.
+
+### A SET IS ONE RESPONSE AND NOT ONE GRANT
+
+Refreshing produces a NEW set beside the old one rather than a fourth member of
+it. A set has one issued instant and one grant, and a row that grew over an
+afternoon could have neither. What joins the generations of a grant is the
+refresh lineage, which is a DIFFERENT RELATION and is already drawn as one at
+`/admin/tokens/credential` — this page is what arrived *together*, and that page
+is what one credential descends *from*. Keeping the two apart is what stops this
+becoming a second, worse drawing of the lineage.
+
+### Three columns answer differently now, and each says so on the page
+
+| Column | What it does |
+|---|---|
+| **State** | the state every member shares, or `mixed`. An access token expires in fifteen minutes and the refresh token beside it in a day, so within the hour most sets are neither valid nor expired — and reporting either would be the column deciding which member matters. The one that matters is usually the one the reader has not thought of: the refresh token that outlived the access token and will mint another. `states` carries the breakdown. |
+| **Expires** | the EARLIEST member's, then the latest. One column cannot carry both and the earlier one is what somebody debugging a refused call has arrived to find. |
+| **Detail** | the ACCESS TOKEN's scope, which the refresh token beside it deliberately does not share — see `tokenSet()`, where the refresh token keeps what was AUTHORIZED. The set page shows each, and says why they differ. |
+
+**A FILTER MATCHES A SET WHEN ANY MEMBER MATCHES, and the neighbours come with
+it.** `?kind=id_token` answers with the replies that CONTAIN an ID Token, access
+token and refresh token included. That is the one behaviour of this page a
+reader would otherwise call a bug, so it is said under the filter form rather
+than left to be discovered — a filter that hid the neighbours would be the old
+per-credential table wearing this one's name.
+
+### `/admin/tokens/set?id=…` IS THE SECOND DRILL-DOWN, AND IT IS THE OLD TABLE SCOPED TO ONE REPLY
+
+Same shape as `/admin/tokens/credential`: no `NAV` row, `active` is
+`/admin/tokens`, `up` carries the filter and the page the reader left. Its member
+table is drawn by **`issuedRow()` — the very function the list used to call** —
+so the column legend on the list describes it without a word changing, and
+somebody chasing one token gets back its own jti, its own expiry and its own
+button.
+
+**It is addressed by `setKey` and never by the set id.** A grouped set's key is
+`set:<id>`; a set of one has no issuance id at all and its key is `one:<this
+service's own row handle>`. The list only links here from a group — for one
+credential this page would be a click that added nothing, so those rows still
+open the lineage — but the KEY SPACE covers every row, which is what lets
+`GET /admin-api/tokens/set` open any of them without a caller knowing which kind
+it holds. **That is what `recordArtifact()`'s `key` was added for**: a Kerberos
+ticket carries no identifier anybody can quote, so without a handle of this
+service's own there would be nothing to address its row by at all.
+
+### Revoke set writes nowhere new
+
+Each revocable member goes through `stats.revoke()` exactly as its own button
+would send it, into the same set of revoked jtis `/oauth2/revoke` writes to. What
+it saves is the mistake this reshaping exists to prevent: **revoking two
+credentials of three and believing the grant is dead**, when the refresh token
+left behind mints a new access token on request.
+
+**A set holding nothing revocable is REFUSED rather than answered "revoked 0"**,
+which is the answer `revoke-kind` already gives for an unrevocable kind. Nothing
+consults this service about a SAML assertion, a Kerberos ticket or an SVID —
+an assertion is valid because its signature verifies and its `Conditions` hold, a
+ticket because the service it names can decrypt it — so a success would be a
+claim about the world that is not true.
+
+**The members are re-read at the moment of the act** and never taken from the
+form, which is `terminate()`'s rule for `terminate()`'s reason: a page can be
+posted an hour after it was drawn, and acting on the list it drew would revoke a
+jti since forgotten to the cap while missing one issued since. The form carries
+the set key and nothing else.
+
+### What the JSON did, and the one thing it deliberately did not do
+
+`GET /admin-api/tokens` lists `sets`. **`issued` is the FLATTEN of that array —
+the same rows, the same order, ungrouped — so every caller written against the
+per-credential shape reads exactly what it read**, and the two can never disagree
+because one is built out of the other rather than gathered again. What changed
+under it is the paging: a page is a whole number of REPLIES, so `issued` holds
+between `perPage` and three times it.
+
+`page`, `pages`, `matched` and `shown` count SETS. `held`,
+`matchedCredentials`, `shownCredentials` and `heldByFamily` count CREDENTIALS —
+`held` because it has meant that since the resource existed and quietly changing
+an old name's unit is the worst kind of breaking change, and `heldByFamily` so
+that it goes on agreeing with `/admin/metrics`. The line under the table carries
+both units and says which is which, for that reason.
+
+### One bug this cost, and it is the ordinary one
+
+`shortened()` returns MARKUP — a `<code>` carrying the whole value in its title
+so a truncated identifier can still be read — and the first draft of
+`setIdentifierCell()` passed it through `esc()`, which printed the tag. It is
+worth noting only because `identifierCell()` two lines above makes the same call
+correctly, which is the shape of mistake that survives a reading of the diff.
+
+### And one it fixed on the way past
+
+`backTo()`'s whitelist did not carry `session`, though the filter form has
+offered it since 2026-09-04 and the comment on that function says the two must
+be kept in step. Arriving from `/admin/sessions`, narrowing to one session and
+revoking anything sent the reader back to the unfiltered list — which reads as
+the console losing your place rather than as a missing line in a whitelist.
+
+## THE USERS PAGE HAD ONE BUTTON THAT PROMISED A GLOBAL SIGN-OUT AND PERFORMED A TOKEN REVOCATION (2026-09-05)
+
+`/admin/users?user=…` carried a single control labelled **"Revoke everything for
+`<name>`"**. It called `tokenAction({ action: 'revoke-user' })`, which is
+`stats.revokeWhere()` over the JWT registry — access tokens, ID Tokens and
+refresh tokens, under every spelling of the identity — and it did nothing else.
+
+**Measured against the ten families `logout/logout.js`'s `terminate()` walks, it
+touched one.** The other nine, in that module's own `endOrder`:
+
+| Family | What the button did |
+|---|---|
+| `oidc-rp`, `wsfed-rp`, `saml2-sp` | nothing — no front-channel notification reached any relying party, realm or service provider |
+| `token` | **the whole of what it did** |
+| `code`, `vci-code` | nothing — authorization codes and OID4VCI pre-authorized codes stayed redeemable |
+| `ldap` | nothing — bound connections stayed open |
+| `krb5` | nothing — no sign-out instant, so TGTs went on working at the KDC |
+| `session` | **nothing, and this is the one that mattered** |
+
+That last row is why the label was the defect rather than the behaviour. **The
+browser sign-on session survived**, so the person was still signed in and the
+next `/oauth2/authorize`, `/wsfed`, `/saml2/sso`, `/saml11/sso` or `/admin`
+request minted a fresh set of tokens on the spot. From outside this service that
+is close to a no-op — and an operator who pressed it believing they had signed
+somebody out had been told so by the button.
+
+The page's own note was honest about the narrow half ("Every access token, ID
+Token and refresh token… Assertions and tickets are untouched"), which is the
+shape of this kind of bug: **the prose was right and the label was the thing
+anybody read.**
+
+### Two buttons now, and the global one is first
+
+The narrow act stayed — "take these credentials out of circulation and leave the
+session alone" is a real thing to want, and it is what `/oauth2/revoke` does —
+renamed to **"Revoke every token for `<name>`"**, with a note saying in as many
+words that it does not sign them out and that the next authorization request will
+mint a fresh set.
+
+What was added is the act the old label promised, and **it is not a second
+implementation**: the form posts to `/admin/logout` with `action=global`, so it
+reaches `logoutReader.terminate(key, [], …)` — the same function, through the
+sixth slot, walking the same ten families in the same `endOrder`. A sign-out
+built here would have been a SECOND answer to "what is a live session", which is
+exactly what rule 3m exists to prevent, and it would have got the order wrong the
+same way `terminate()` did the first time: the notifications are built off the
+session, so ending it first leaves every federated partner believing the person
+is still signed in.
+
+**Rule 7 was already satisfied and no new operation was written.**
+`POST /admin-api/logout/global` has taken a `user` since that resource existed;
+the new control mirrors it rather than needing a mirror of its own.
+
+**`POST /admin/logout` now serves two pages**, so `from` says which to return to.
+It is read as an ENUM with both targets written out in the handler — `backTo()`'s
+rule on the tokens page, for `backTo()`'s reason: a `back` field carrying
+`//evil.example` must not be able to become a redirect off this service.
+
+### What the new button still cannot do, and both are said on the page
+
+* **A front-channel notification is an iframe in the signed-out person's own
+  browser, and this console is not that browser.** So the relying party is
+  forgotten here and the notification is REPORTED rather than sent; `/logout` is
+  where those actually load. `logoutAction()` already said this and the sentence
+  is now in front of the operator pressing the button.
+* **Nothing recalls a SAML assertion, a Kerberos service ticket or an SVID.**
+  Each is valid because somebody else can verify it without asking this service,
+  so the only thing that ends one is its own expiry. The Kerberos sign-out
+  instant is the nearest thing that exists and it is a different claim: it
+  refuses a TGS-REQ presenting an older TGT rather than recalling tickets already
+  issued.
+
+## `/admin/sessions` SHOWS API CALLERS NOW, AND THIS FILE DID NOT CHANGE FOR IT (2026-09-06)
+
+The management API, SCIM and the SPIRE Server API hold sessions since that date,
+and they appear on this page with **no edit to `admin.js` at all**. That is the
+sixth slot's design working rather than a coincidence worth mentioning in
+passing: this page draws whatever `logout/logout.js`'s `liveSessions()` returns,
+and a console that had its own idea of what a session is would have needed one.
+
+Two things a reader of this page should know, both decided in `logout/CLAUDE.md`
+and rendered here:
+
+* **The `kind` column tells them apart** — `SCIM session`, `SPIRE Server API
+  session` — because one store does not mean one kind of row, and a SCIM client
+  drawn as a *Browser sign-on session* would be the page saying something untrue
+  about the one thing it exists to report.
+* **The Expires column's rule differs for them**, and this is exactly what that
+  column was built to carry: theirs is the FOURTH rule and the only one
+  **extended by use**. The three that were there are absolute, sealed into a
+  ticket, and none at all; a column of bare timestamps would read as one rule
+  with four values, which is why the sentence travels on the row.
+
+**AND THE REVOKE BUTTON MEANS SOMETHING WEAKER ON THESE ROWS, WHICH THE ROW'S
+OWN `why` SAYS BEFORE IT IS PRESSED.** Ending an API session revokes nothing:
+the token, password or certificate behind it is accepted without consulting any
+register, so the next call authenticates again and the row comes back. That is
+the third thing this button already does differently per row — a browser session
+ends everything hanging off it, an LDAP row closes a socket, a Kerberos row
+stamps an instant on the PRINCIPAL — and it is why each row carries its own
+sentence rather than the page carrying one.

@@ -260,6 +260,11 @@ const adminRbac = require('../admin-ui/admin_rbac');
 // `oauth-oidc/consent_screen.js` and from the console, both of which server.js
 // requires long before this directory's routes should exist.
 const consent = require('../common/consent');
+// The credential store's other half. A LEAF (rule 3) that registers no route
+// and requires nothing here, so this require can neither move a route nor close
+// a cycle; what crosses is the two functions the slot below installs.
+const credentials = require('../common/credentials');
+const mode = require('../common/mode');
 
 // The port. 389 is the assigned one and this process is root in the container,
 // so it binds it directly; a host run is not root, which is why the variable
@@ -449,8 +454,15 @@ function spiffeAgentsDn() {
 // misspelled variable leaves it ON — the safe direction here, because the
 // feature is what makes the directory non-empty for somebody who has just
 // signed in and gone looking for themselves.
+// **PRODUCT MODE IS A CEILING ON THIS SETTING AND NOT A SECOND OPINION ABOUT
+// IT** (2026-09-06). `ldap.autocreateUsers` says whether an operator wants
+// entries seeded from authentications; `mode.autoCreates()` says whether this
+// service invents objects at all. Product mode refuses regardless of the
+// setting, and the setting can still turn seeding off in development — which is
+// the right shape for a policy that a mode tightens: the AND cannot be
+// loosened by editing configuration.
 function autocreateUsers() {
-  return config.value('ldap.autocreateUsers');
+  return mode.autoCreates() && config.value('ldap.autocreateUsers');
 }
 
 // The password that is refused. See the header: this is the service's standing
@@ -639,6 +651,55 @@ function inRealmOf(dn, fn) {
 // defence.
 // ---------------------------------------------------------------------------
 let directoryVersion = 0;
+
+// ---------------------------------------------------------------------------
+// A NUL BYTE IN A DIRECTORY VALUE, WHICH IS THE ONE THING THIS SOCKET REFUSES
+// ABOUT WHAT A VALUE CONTAINS (2026-09-06).
+//
+// **THIS SERVICE ACCEPTS ANY BIND, ANY DN AND ANY ATTRIBUTE, AND THAT DOES NOT
+// CHANGE.** The directory is schemaless on purpose and its permissiveness is
+// the product. What is refused here is one byte, and the argument is that a NUL
+// is not an odd value somebody might legitimately be testing with — it is
+// malformed under every LDAP string syntax there is, and it is uniquely
+// dangerous downstream in a way the other control characters are not.
+//
+// Measured before it was refused: an `ldapadd` carrying
+// `before\u0000after\r\nInjected: yes` was ACCEPTED, stored, and read back
+// byte for byte.
+//
+// The CR and LF in that value are fine and stay fine — every sink this service
+// has for a directory value already escapes them. `esc()` handles the console
+// pages, bunyan JSON-encodes a log line, the XML escaper handles a SAML
+// AttributeValue, `JSON.stringify` handles a token claim, and RFC 2849 base64s
+// an LDIF value that needs it. **The NUL is the one that is not merely
+// escaped-or-not**: half the libraries under this service are C underneath and
+// stop reading at it while node does not, so the value one layer believes it
+// has and the value the next layer acts on are different strings.
+//
+// This repository has already lost an afternoon to exactly that, one layer up:
+// a single stray NUL in a source file makes it invisible to `grep` while `sed`,
+// `node` and the tests all still see it.
+//
+// `InvalidAttributeSyntaxError` is RFC 4511's own answer (resultCode 21) and is
+// what a client can act on; the alternative was to strip the byte, which would
+// be this service quietly storing something other than what was sent.
+// ---------------------------------------------------------------------------
+function refuseNulValues(type, values) {
+  log.debug('Entering refuseNulValues(). type=' + type);
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (typeof value === 'string' && value.indexOf('\u0000') >= 0) {
+      log.warn('ldap: refused a value for "' + type + '" carrying a NUL byte.');
+      log.debug('Leaving refuseNulValues(). Refused.');
+      return new ldap.InvalidAttributeSyntaxError(
+        'The value for "' + type + '" contains a NUL byte. It is malformed ' +
+        'under every LDAP string syntax, and a value that half this stack ' +
+        'reads as shorter than the other half is worse than no value at all.');
+    }
+  }
+  log.debug('Leaving refuseNulValues(). ' + values.length + ' value(s) are clean.');
+  return null;
+}
 
 function touchDirectory() {
   directoryVersion++;
@@ -2915,6 +2976,23 @@ function observeIdentity(detail) {
     log.debug('Leaving observeIdentity().');
     return record;
   }
+  // A SECURITY KEY WAS ENROLLED (2026-09-06). The entry is created exactly as
+  // an authentication would create it — `autoCreateUser()` is the one door, so
+  // the plan, the cap, the credential-claim sweep and the audit row are all the
+  // same — and the DIFFERENCE is that nothing counts it as an authentication,
+  // because nobody authenticated by enrolling a key. That distinction is
+  // `admin_stats.js`'s to make and it makes it by not calling
+  // `recordAuthentication()`; what arrives here is only the identity.
+  //
+  // Its own event rather than reusing `authentication` for exactly that reason:
+  // the two differ in what they MEAN and not in what they write, and a shared
+  // name would make the difference invisible the moment either side changes.
+  if (event === 'enrolment') {
+    const record = autoCreateUser(info);
+    log.debug('Leaving observeIdentity(). A security key enrolment.');
+    log.debug('Leaving observeIdentity().');
+    return record;
+  }
   if (event === 'credential-status') {
     const record = recordSpiffeCredentialStatus(info);
     log.debug('Leaving observeIdentity(). A credential status change.');
@@ -3080,8 +3158,34 @@ function autoCreateUser(detail) {
   // What the entry's description says about why it exists. A plan may state its
   // own — didPlan() does, because "authenticated through W3C DID Core" would be
   // the wrong sentence for an identifier nobody signed in with.
-  const note = plan.note || ('authenticated through ' + String(info.protocol || 'an ' +
-    'unstated protocol'));
+  // **AN ENROLMENT SAYS SO RATHER THAN SAYING "authenticated"** (2026-09-06).
+  // A security key registered for somebody creates their entry through this
+  // same function — one door, so the plan, the cap and the credential-claim
+  // sweep are all the same — and the sentence it writes must not be the one a
+  // sign-in writes. Nobody authenticated by enrolling a key; for a PASSWORDLESS
+  // key the person may not have authenticated at all yet, and an entry claiming
+  // they did would be this directory asserting the one thing the whole event
+  // distinction exists to avoid.
+  //
+  // Same shape as didPlan()'s exception two lines up, and for the same reason:
+  // "authenticated through W3C DID Core" is the wrong sentence for an
+  // identifier nobody signed in with.
+  // **THE FIRST CEREMONY IS BOTH, AND THE ENTRY ENDS UP SAYING BOTH.** A
+  // `webauthn.create` that succeeds falls straight through to `startSession()`
+  // — the person really did prove possession of the key and really is signed
+  // in — so the sign-in writes its own `authenticated through WebAuthn` a few
+  // lines later and `addValues()` accumulates the two. The sentence here is
+  // therefore about the ENROLMENT alone and does not claim anything about a
+  // session either way: what it must not do is say "authenticated", because
+  // enrolment is also reachable WITHOUT a sign-in — an administrator
+  // registering a key on somebody's behalf — and that is the case the separate
+  // event exists for.
+  const note = plan.note || (String(info.event || '') === 'enrolment'
+    ? 'a security key was enrolled for them (' +
+      String(info.protocol || 'WebAuthn') + ') — a credential being GIVEN ' +
+      'rather than presented, which is a different act from signing in even ' +
+      'when the same ceremony does both'
+    : 'authenticated through ' + String(info.protocol || 'an unstated protocol'));
   if (existing) {
     // Already here. Record the protocol if it is one this entry has not seen —
     // which is what makes the entry say something a second sign-in did not
@@ -4702,6 +4806,223 @@ function listConsentValues() {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// THE CREDENTIAL STORE (2026-09-06). `userPassword` on a person's own entry.
+//
+// **RFC 4519 SECTION 2.41's ATTRIBUTE, AND THE NAME IS THE POINT**: an entry
+// this service writes a credential onto is one an ordinary LDAP client
+// recognises, and this directory has answered `compare` on `userPassword` since
+// it existed — it just never had a value to compare against, which is why
+// `crypto_metadata.js` said in as many words that no `userPassword` is stored.
+//
+// THE VALUE IS A SCRYPT HASH and never a password. `common/credentials.js`
+// hashes before it gets here, so this module never sees a plaintext credential
+// at all — which is what keeps the decision about HOW in one place, beside
+// every other cryptographic decision this service makes.
+//
+// **THE READ RETURNS THE STORED VALUE AND THE CALLER COMPARES**, rather than
+// this taking a password and answering yes or no. That looks like the weaker
+// arrangement and is the stronger one: the comparison is constant-time and
+// lives in `crypto.js` with every other secret comparison here, so a second
+// implementation of it cannot appear in this file by somebody reaching for
+// `===`.
+// ---------------------------------------------------------------------------
+function readStoredPassword(key) {
+  log.debug('Entering readStoredPassword(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readStoredPassword(). No entry at ' + located.dn + '.');
+    return '';
+  }
+  // Lower-cased attribute keys, like every other read here — the store
+  // lower-cases a name on the way in, and a reader that looks for the camel
+  // case finds nothing on an entry that plainly has it. That mistake cost
+  // `ou=roles` a page reporting `0 user(s)` for a role somebody held.
+  const values = stored.attributes.userpassword || [];
+  log.debug('Leaving readStoredPassword(). ' +
+            (values.length ? 'A credential is set.' : 'None is set.'));
+  return values.length ? String(values[0]) : '';
+}
+
+function writeStoredPassword(key, hashed) {
+  log.debug('Entering writeStoredPassword(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    // NOT created here, and that is product mode's second requirement working
+    // rather than a limitation: setting a password for somebody who does not
+    // exist would create them, which is exactly what product mode refuses.
+    log.warn('ldap: "' + key + '" has no entry in this realm, so no ' +
+             'credential was written. In product mode every referenced ' +
+             'object must be created ahead of time.');
+    log.debug('Leaving writeStoredPassword(). No entry.');
+    return false;
+  }
+  // REPLACED and not added: an entry with two `userPassword` values is an entry
+  // where the old password still works, which is the whole of what changing one
+  // is meant to stop.
+  stored.attributes.userpassword = [String(hashed)];
+  touchDirectory();
+  log.debug('Leaving writeStoredPassword(). Written to ' + stored.dn + '.');
+  return true;
+}
+
+// DOES ANYBODY IN THIS REALM HOLD ONE? What the product-mode bootstrap asks
+// before it creates anything — the question is "can somebody get in", not "does
+// the admin account exist", so a deployment whose administrator is called
+// something else does not get a second one created beside them.
+function anybodyHoldsACredential() {
+  log.debug('Entering anybodyHoldsACredential().');
+  // `eachEntryInRealm()` and not a walk of the store: it is this module's one
+  // iterator and it is scoped to the AMBIENT realm, which is what makes the
+  // bootstrap a per-realm question. A new realm switched to product mode gets
+  // its own bootstrap account rather than being judged by the default realm's.
+  let found = false;
+  eachEntryInRealm(function (entry) {
+    if (found) return;
+    if (entry && entry.attributes &&
+        (entry.attributes.userpassword || []).length > 0) {
+      found = true;
+    }
+  });
+  log.debug('Leaving anybodyHoldsACredential(). ' + (found ? 'Yes.' : 'No.'));
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// THE SECURITY KEYS, ON THE SAME ENTRY AS THE PASSWORD (2026-09-06).
+//
+// MULTI-VALUED, because a person may hold several — a laptop and a phone is the
+// ordinary case and is why WebAuthn has a credential id at all. Each value is
+// one JSON record carrying the credential id, the public key, the signature
+// counter and the ROLE (primary or mfa).
+//
+// **THE PUBLIC KEY IS NOT HASHED AND MUST NOT BE.** That is the one place this
+// departs from `userPassword` beside it: a WebAuthn public key is published by
+// design — the whole point of the scheme is that what the verifier holds is
+// useless to an attacker — so hashing it would make it useless for the only
+// thing it is for.
+// ---------------------------------------------------------------------------
+function readWebauthnValues(key) {
+  log.debug('Entering readWebauthnValues(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readWebauthnValues(). No entry.');
+    return [];
+  }
+  const values = (stored.attributes.stswebauthncredential || []).slice(0);
+  log.debug('Leaving readWebauthnValues(). ' + values.length + ' key(s).');
+  return values;
+}
+
+function writeWebauthnValue(key, value) {
+  log.debug('Entering writeWebauthnValue(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn('ldap: "' + key + '" has no entry in this realm, so no security ' +
+             'key was recorded.');
+    log.debug('Leaving writeWebauthnValue(). No entry.');
+    return false;
+  }
+  // ADDED and not replaced — a second key is a second key, not a replacement
+  // for the first, which is the whole reason the attribute is multi-valued.
+  const have = stored.attributes.stswebauthncredential || [];
+  stored.attributes.stswebauthncredential = have.concat([String(value)]);
+  touchDirectory();
+  log.debug('Leaving writeWebauthnValue(). Written to ' + stored.dn + '.');
+  return true;
+}
+
+// The whole set at once — what a counter update and a removal both need, since
+// each rewrites every value.
+function replaceWebauthnValues(key, values) {
+  log.debug('Entering replaceWebauthnValues(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving replaceWebauthnValues(). No entry.');
+    return false;
+  }
+  if (!values || !values.length) {
+    delete stored.attributes.stswebauthncredential;
+  } else {
+    stored.attributes.stswebauthncredential = values.map(String);
+  }
+  touchDirectory();
+  log.debug('Leaving replaceWebauthnValues(). ' +
+            ((values || []).length) + ' key(s) left.');
+  return true;
+}
+
+// THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
+// completes an account setup on its own, so a leaked one is an account
+// takeover — which is why it is stored the way a password is and never in the
+// clear.
+function readActivation(key) {
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) return null;
+  const hash = (stored.attributes.stsactivationtoken || [])[0];
+  if (!hash) return null;
+  return { hash: String(hash),
+           expires: Number((stored.attributes.stsactivationexpires || [])[0] || 0) };
+}
+
+function writeActivation(key, hash, expires) {
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) return false;
+  if (!hash) {
+    delete stored.attributes.stsactivationtoken;
+    delete stored.attributes.stsactivationexpires;
+  } else {
+    stored.attributes.stsactivationtoken = [String(hash)];
+    stored.attributes.stsactivationexpires = [String(expires)];
+  }
+  touchDirectory();
+  return true;
+}
+
+// The EIGHTH slot. Guarded like the seven above: an older
+// `common/credentials.js` without it costs a warning rather than a service that
+// will not start — and the warning says what is lost, which in product mode is
+// every sign-in.
+if (typeof credentials.setDirectory === 'function') {
+  credentials.setDirectory({
+    readPassword: readStoredPassword,
+    writePassword: writeStoredPassword,
+    anyCredential: anybodyHoldsACredential,
+    readWebauthn: readWebauthnValues,
+    writeWebauthn: writeWebauthnValue,
+    replaceWebauthn: replaceWebauthnValues,
+    readActivation: readActivation,
+    writeActivation: writeActivation,
+    // **THE ONE EXCEPTION TO "PRODUCT MODE CREATES NOTHING", AND IT IS NARROW
+    // ON PURPOSE.** `createUser()` is this module's ordinary door and is not
+    // mode-gated — it is what the console and /admin-api call, and an operator
+    // creating somebody deliberately is the opposite of an object appearing
+    // because a protocol named it. What is passed here is that same function,
+    // and the only caller is `credentials.bootstrap()`, which runs once,
+    // before the listener binds, and only when NOBODY in the realm holds a
+    // credential.
+    //
+    // Without it the bootstrap is caught by the rule it exists to break: a
+    // fresh product deployment has an empty directory, so the account that
+    // would be given the generated password does not exist, and product mode
+    // refuses to create it. The service then starts with every door shut and
+    // no way through any of them.
+    createPerson: function (name) { return createUser(name, {}); }
+  });
+} else {
+  log.warn('ldap: common/credentials.js offers no setDirectory(), so no ' +
+           'password can be verified or set. Development mode is unaffected ' +
+           'because it verifies nothing; PRODUCT MODE WOULD REFUSE EVERY ' +
+           'SIGN-IN, which credentials.js reports rather than passing.');
+}
+
 // The SEVENTH slot, and the second one that hands over a WRITER as well as
 // readers. Guarded like the six above: an older `common/consent.js` without the
 // slot costs a warning rather than a service that will not start — and the
@@ -5195,11 +5516,16 @@ function auditLdap(req, fields) {
 server.bind('', function (req, res, next) {
   log.debug('Entering the LDAP bind handler.');
   const dn = req.dn ? req.dn.toString() : '';
-  const credentials = req.credentials === undefined ? '' : String(req.credentials);
+  // NAMED `credentials_value` AND NOT `credentials` since 2026-09-06: the
+  // module now requires `common/credentials.js` under that name, and a local
+  // shadowing it here would make the verifier unreachable from the one handler
+  // that most needs it — silently, because the shadow is a string and calling
+  // `.verify()` on it is a TypeError at the first bind rather than at load.
+  const credentials_value = req.credentials === undefined ? '' : String(req.credentials);
   log.info('ldap: BIND dn="' + dn + '" (' +
-           (dn ? 'named' : 'anonymous') + '), ' + credentials.length +
+           (dn ? 'named' : 'anonymous') + '), ' + credentials_value.length +
            ' character password.');
-  if (credentials === REFUSED_PASSWORD) {
+  if (credentials_value === REFUSED_PASSWORD) {
     // The one refusal. See the header: it is the service's convention, not a
     // policy, and it is what makes result code 49 reachable.
     log.info('ldap: refusing the bind; the password is the literal string "' +
@@ -5229,6 +5555,38 @@ server.bind('', function (req, res, next) {
     });
     log.debug('Leaving the LDAP bind handler. LDAP_INVALID_CREDENTIALS.');
     return next(new ldap.InvalidCredentialsError());
+  }
+  // ---------------------------------------------------------------------
+  // THE CREDENTIAL (2026-09-06). Product mode verifies it; development checks
+  // nothing, which is what this door has always done.
+  //
+  // **AN ANONYMOUS BIND IS NOT VERIFIED IN EITHER MODE**, and that is RFC 4511
+  // section 5.1.1 rather than a permission: a bind with an empty name and an
+  // empty password is the unauthenticated bind the specification defines, and
+  // refusing it in product mode would be refusing a legal operation. What it
+  // gets is an unauthenticated connection, which is what it asks for.
+  //
+  // The person is named by the DN, so the verification is keyed on the DN and
+  // `credentials.js` resolves it through the same `locateEntry()` every other
+  // reader here uses — a bind as `uid=alice,ou=users,...` verifies alice's own
+  // `userPassword`, which is what an LDAP client expects and what makes this
+  // directory usable as a credential store by something that is not this
+  // service.
+  if (dn) {
+    const checked = credentials.verify(dn, credentials_value,
+                                       { via: 'an LDAP simple bind' });
+    if (!checked.ok) {
+      log.info('ldap: refusing the bind for ' + dn + ' (' + checked.reason +
+               '): ' + checked.detail);
+      auditLdap(req, {
+        action: 'directory.bind',
+        actor: consoleKeyFor(dn, getEntry(dn)), actorForm: dn,
+        target: dn, outcome: 'failure',
+        summary: 'a simple bind as ' + dn + ' was refused',
+        detail: { reason: checked.reason, note: checked.detail }
+      });
+      return next(new ldap.InvalidCredentialsError());
+    }
   }
   // A successful bind writes TWO audit rows and they are not duplicates: this
   // one says an LDAP bind happened on this socket, and the `authentication` row
@@ -5358,9 +5716,17 @@ server.add('', function (req, res, next) {
       'this directory holds its maximum of ' + maxEntries() + ' entries'));
   }
   const attributes = {};
+  let nulRefusal = null;
   req.attributes.forEach(function (attr) {
+    nulRefusal = nulRefusal || refuseNulValues(attr.type, attr.values);
     attributes[attr.type] = attr.values.slice(0);
   });
+  if (nulRefusal) {
+    // BEFORE putEntry(), so a refused add writes nothing at all — a partial
+    // entry would be worse than the value it was refused for.
+    log.debug('Leaving the LDAP add handler. A value carried a NUL byte.');
+    return next(nulRefusal);
+  }
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
   if (isPersonEntry(addedEntry)) {
     noteAccountChange('created', addedEntry.dn, {},
@@ -5482,6 +5848,14 @@ server.modify('', function (req, res, next) {
     const values = change.modification.values.map(function (v) {
       return String(v);
     });
+    const nulInChange = refuseNulValues(type, values);
+    if (nulInChange) {
+      // RFC 4511 section 4.6 says the changes are applied as one unit, so this
+      // returns before ANY of them is applied rather than part way through.
+      log.debug('Leaving the LDAP modify handler. Change ' + (i + 1) +
+                ' carried a NUL byte.');
+      return next(nulInChange);
+    }
     log.debug('ldap: change ' + (i + 1) + ' is ' + operation + ' ' + type +
               ' with ' + values.length + ' value(s).');
     if (operation === 'add') {

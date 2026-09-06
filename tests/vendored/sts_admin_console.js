@@ -1032,13 +1032,15 @@ async function noPageNestsAForm(driver, pages) {
 // ---------------------------------------------------------------------------
 // EVERY LINK THE CONSOLE DRAWS, REALLY VISITED.
 //
-// This is the section that makes the console's EIGHT routes with no nav row
+// This is the section that makes the console's NINE routes with no nav row
 // covered by construction rather than by a list somebody has to remember to
 // extend: the three delegation drill-downs, all THREE server-rendered pictures
 // (/admin/delegation/allowed joined them on 2026-09-01, reached from the
-// configured half of /admin/delegation), /admin/tokens/credential and
-// /admin/realm-switch are all reached from a page, so they are all in here,
-// and so is anything added beside them tomorrow.
+// configured half of /admin/delegation), /admin/tokens/credential,
+// /admin/tokens/set (2026-09-05, reached from any row of the tokens table
+// holding more than one credential) and /admin/realm-switch are all reached
+// from a page, so they are all in here, and so is anything added beside them
+// tomorrow.
 //
 // WHAT IS DELIBERATELY NOT CRAWLED, and why each:
 //
@@ -1749,15 +1751,27 @@ async function theDirectoryPagesWork(driver) {
   return { person: person, identifier: identifier };
 }
 // ---------------------------------------------------------------------------
-// /admin/tokens: THE BUTTON DRAWN BESIDE ONE TOKEN, AND THE FOUR BULK ONES.
+// /admin/tokens: THE BUTTON DRAWN BESIDE ONE ISSUANCE, AND THE FOUR BULK ONES.
 //
-// The row buttons are the ones worth having. The page draws a revoke button for
-// every token it is holding, each carrying that token's own `jti` and the
-// `back` that keeps the reader's place — and a page that rendered the right
+// The row buttons are the ones worth having, and a page that rendered the right
 // list with the WRONG identifier into the buttons beside it would satisfy every
-// check made against the handler. So the button is found BY THE JTI IT CARRIES
-// and pressed exactly as drawn, and the effect is read at RFC 7662
+// check made against the handler. So a button is found BY THE IDENTIFIER IT
+// CARRIES and pressed exactly as drawn, and the effect is read at RFC 7662
 // introspection, which is a different door from the one that made it.
+//
+// **WHAT A ROW IS CHANGED ON 2026-09-05 AND THIS SECTION CHANGED WITH IT.** The
+// table lists one ISSUANCE per row now, not one credential: a token endpoint
+// reply carrying an access token, a refresh token and an ID Token is one row
+// with one `Revoke set` button carrying a `setKey`. So a token minted by the
+// password grant no longer has a button of its own on this page — it has one on
+// `/admin/tokens/set`, which the row links to.
+//
+// THE ASSERTION IS THEREFORE STRONGER THAN THE ONE IT REPLACED, not weaker: it
+// FOLLOWS THE LINK. The old check proved a button beside a token named that
+// token; this proves the reader can get from the list to a working button for a
+// named credential, which is the thing the old one was standing in for — and it
+// is a route with two pages in it, so a broken link fails here rather than
+// being noticed by somebody using the console.
 //
 // For the bulk buttons the assertion that matters is the NEGATIVE one: each
 // selects a different way, and a selector that quietly matched everything would
@@ -1775,8 +1789,58 @@ async function theTokensPageRevokesWhatItDraws(driver) {
     "a freshly minted access token should introspect as active, or nothing " +
     "below distinguishes a revocation from a token that never worked.");
 
-  // The row button for OUR token, found by the jti it carries.
+  // THE ROUTE FROM THE LIST TO A BUTTON FOR ONE NAMED CREDENTIAL. The row is
+  // the reply the token came back in, so the link is what carries the reader
+  // to the credential — and the link is found by looking for the jti among
+  // the SETS, exactly as somebody scanning the page would.
   await open(driver, realm("/admin/tokens"));
+  const listed = await apiJson("/realm/" + REALM + "/admin-api/tokens?per=200");
+  const holding = (listed.body.sets || []).filter(function (set) {
+    return set.members.some(function (m) { return m.jti === mine.jti; });
+  })[0];
+  check("the token just minted is on the tokens page, inside its issuance",
+    function () {
+      assert.ok(holding,
+        "/admin/tokens lists one row per ISSUANCE, so a token minted by the " +
+        "password grant must be a member of one of them. None of the " +
+        (listed.body.sets || []).length + " set(s) held jti " + mine.jti +
+        " — which means either it is not listed at all, or the grouping has " +
+        "dropped a credential, and the second is the failure that would let " +
+        "this console quietly stop showing something it issued.");
+    });
+
+  // The LINK on that row, found by the setKey it carries — the same defect the
+  // old jti check existed for, one level up: a page that drew the right rows
+  // and the wrong key in the links beside them would satisfy every check made
+  // against the handler.
+  const link = await driver.executeScript(`
+    const key = arguments[0];
+    const wanted = '/admin/tokens/set';
+    const anchors = Array.from(document.querySelectorAll('a[href*="' + wanted + '"]'));
+    for (const a of anchors) {
+      const url = new URL(a.getAttribute('href'), document.baseURI);
+      if (url.searchParams.get('id') === key) {
+        return { href: a.getAttribute('href'), text: a.textContent.trim() };
+      }
+    }
+    return null;
+  `, holding.setKey);
+  check("a grouped row links to its issuance", function () {
+    assert.ok(holding.grouped,
+      "the password grant with `scope=openid` returns an access token, a " +
+      "refresh token and an ID Token, so this set should be a group; it " +
+      "holds " + holding.kinds.join(", ") + ".");
+    assert.ok(link,
+      "/admin/tokens should link a grouped row to /admin/tokens/set carrying " +
+      "that row's own setKey. It drew no link for " + holding.setKey +
+      " — and a link naming the WRONG set is the defect a check against the " +
+      "handler cannot see, which is why this looks for the key rather than " +
+      "for any link at all.");
+  });
+
+  // Follow it, and press the button for OUR jti on the page it leads to.
+  await open(driver, realm("/admin/tokens/set?id=" +
+                           encodeURIComponent(holding.setKey)));
   const row = await driver.executeScript(`
     const jti = arguments[0];
     const forms = Array.from(document.forms);
@@ -1791,27 +1855,95 @@ async function theTokensPageRevokesWhatItDraws(driver) {
     return null;
   `, mine.jti);
 
-  check("the page draws a revoke button carrying each token's own jti", function () {
-    assert.ok(row,
-      "/admin/tokens should draw a revoke button for every token it holds, " +
-      "each carrying that token's own jti. It drew none for " + mine.jti +
-      ", so either the token is not listed or the button beside it names " +
-      "something else — and the second is the defect a check against the " +
-      "handler cannot see.");
-    assert.strictEqual(row.action, "revoke",
-      "the row button's action should be `revoke`; it is " + row.action);
-    assert.ok(row.hasBack,
-      "AND IT MUST CARRY `back`. Every form on a list page carries the " +
-      "reader's filter and page in one opaque field, which the POST handler " +
-      "rebuilds — so a form that lost it costs the reader their place every " +
-      "time they press a button.");
-  });
+  check("the set page draws a revoke button carrying each member's own jti",
+    function () {
+      assert.ok(row,
+        "/admin/tokens/set should draw a revoke button for every revocable " +
+        "credential in the issuance, each carrying that credential's own " +
+        "jti. It drew none for " + mine.jti + ", so either the member is not " +
+        "listed or the button beside it names something else — and the " +
+        "second is the defect a check against the handler cannot see.");
+      assert.strictEqual(row.action, "revoke",
+        "the member button's action should be `revoke`; it is " + row.action);
+      assert.ok(row.hasBack,
+        "AND IT MUST CARRY `back`. Every form on a list page carries the " +
+        "reader's filter and page in one opaque field, which the POST " +
+        "handler rebuilds — so a form that lost it costs the reader their " +
+        "place every time they press a button. On this page it also has to " +
+        "carry `from=set`, or pressing a member's button lands the reader on " +
+        "the top of the whole table rather than back on the issuance.");
+    });
 
   await fillAndPress(driver, row.form, {});
   assert.strictEqual(await introspectActive(mine.access), false,
-    "PRESSING THE ROW BUTTON MUST REACH RFC 7662 INTROSPECTION. There is one " +
-    "revocation set serving both this console and /oauth2/revoke; a second " +
-    "would look correct from either side and never see the other.");
+    "PRESSING THE MEMBER BUTTON MUST REACH RFC 7662 INTROSPECTION. There is " +
+    "one revocation set serving both this console and /oauth2/revoke; a " +
+    "second would look correct from either side and never see the other.");
+  checks += 1;
+
+  // AND THE SET BUTTON, which is the control the row itself carries. It is
+  // driven separately from the member button above because it is a different
+  // act on a different page: this one kills the whole reply in one press, and
+  // the assertion that matters is that it reaches a credential NOBODY NAMED —
+  // the refresh token, which is the member a per-credential console leaves
+  // behind and which mints a new access token the moment it is used.
+  const second = await mintTokens(names.usernameFor("console-token-set"),
+                                  "console-client-" + REALM);
+  const listedAgain = await apiJson("/realm/" + REALM +
+                                    "/admin-api/tokens?per=200");
+  const secondSet = (listedAgain.body.sets || []).filter(function (set) {
+    return set.members.some(function (m) { return m.jti === second.jti; });
+  })[0];
+  assert.ok(secondSet, "the second token should be in a set of its own.");
+  await open(driver, realm("/admin/tokens"));
+  const setForm = await driver.executeScript(`
+    const key = arguments[0];
+    const forms = Array.from(document.forms);
+    for (let i = 0; i < forms.length; i += 1) {
+      const target = forms[i].elements['set'];
+      const action = forms[i].elements['action'];
+      if (target && target.value === key && action &&
+          action.value === 'revoke-set') {
+        return { form: i, hasBack: !!forms[i].elements['back'] };
+      }
+    }
+    return null;
+  `, secondSet.setKey);
+  check("a grouped row draws a Revoke set button carrying its own setKey",
+    function () {
+      assert.ok(setForm,
+        "/admin/tokens should draw a `revoke-set` form on every grouped row, " +
+        "carrying that row's setKey. It drew none for " + secondSet.setKey +
+        ".");
+      assert.ok(setForm.hasBack, "and it must carry `back` like every other " +
+        "form on a list page.");
+    });
+  await fillAndPress(driver, setForm.form, {});
+  assert.strictEqual(await introspectActive(second.access), false,
+    "`Revoke set` should kill the access token.");
+  check("and it reaches the credential nobody named", function () {
+    assert.ok(secondSet.members.some(function (m) {
+      return m.kind === "refresh_token";
+    }), "the reply should have carried a refresh token for this to mean " +
+        "anything; it carried " + secondSet.kinds.join(", "));
+  });
+  const refreshed = await common.httpJson(realm("/oauth2/token"), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "grant_type=refresh_token&refresh_token=" +
+            encodeURIComponent(second.refresh || "") +
+            "&client_id=" + encodeURIComponent("console-client-" + REALM)
+    });
+  check("THE REFRESH TOKEN IS DEAD TOO, which is the whole point of the button",
+    function () {
+      assert.notStrictEqual(refreshed.status, 200,
+        "REVOKING A SET HAS TO REACH THE REFRESH TOKEN. It is the member " +
+        "nobody thinks to revoke and the only one that can mint a new access " +
+        "token — so a console that killed the two short-lived credentials " +
+        "and left it alive would report a dead grant that comes back the " +
+        "moment the client renews. The refresh grant answered " +
+        refreshed.status + ".");
+    });
   checks += 1;
 
   // Revoke everything for ONE subject, and show it left somebody else alone.
@@ -1893,10 +2025,12 @@ async function theTokensPageRevokesWhatItDraws(driver) {
     }
   }
 
-  log.info("[tokens] OK — the row button carries its own token's jti and its " +
-           "`back`, pressing it reaches introspection, each bulk button was " +
-           "shown to leave something alone, and all " + kinds.length +
-           " per-kind buttons answered for their own kind.");
+  log.info("[tokens] OK — the list links a grouped row to its own issuance, " +
+           "the member button there carries that credential's jti and its " +
+           "`back` and reaches introspection, `Revoke set` killed the whole " +
+           "reply INCLUDING the refresh token, each bulk button was shown to " +
+           "leave something alone, and all " + kinds.length + " per-kind " +
+           "buttons answered for their own kind.");
   log.debug("Leaving theTokensPageRevokesWhatItDraws().");
 }
 
@@ -1913,6 +2047,12 @@ async function mintTokens(username, client) {
     "the realm's token endpoint should mint a token for " + username +
     "; it answered " + reply.status + " " + String(reply.raw).slice(0, 200));
   const out = { access: reply.body.access_token,
+                // The REFRESH TOKEN, kept since 2026-09-05 because the set
+                // button is checked against it: it is the member of a reply
+                // that nobody thinks to revoke and the only one that can mint
+                // a new access token, so "the grant is dead" is a claim about
+                // this credential rather than about the short-lived two.
+                refresh: reply.body.refresh_token,
                 jti: claimOf(reply.body.access_token, "jti"),
                 sub: claimOf(reply.body.access_token, "sub") };
   log.debug("Leaving mintTokens(). jti=" + out.jti);
@@ -2741,7 +2881,15 @@ async function theDrillDownsCarryTheirTrail(driver, created) {
                    "/admin/delegation/chain",
                    "/admin/delegation/allowed",
                    "/admin/delegation/cluster",
-                   "/admin/tokens/credential"];
+                   "/admin/tokens/credential",
+                   // Named here as well as being reachable from the tokens
+                   // table, because the LINK there is only drawn on a row
+                   // holding more than one credential — and whether this
+                   // realm has issued such a reply by the time the crawl
+                   // runs is not something this section should depend on.
+                   // With no `id` it draws the same "name a set" page
+                   // /admin/tokens/credential does, in the same shell.
+                   "/admin/tokens/set"];
   for (const path of orphans) {
     const page = await open(driver, realm(path));
     check(path + " is drawn in the shell", function () {

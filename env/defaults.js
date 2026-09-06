@@ -42,7 +42,8 @@
 // ---------------------------------------------------------------------------
 var config = {
   // --- The log level ---------------------------------------------------
-  logLevel: "info", // Log level
+  mode: "development", // Mode
+  logLevel: "info",    // Log level
 
   // --- Global ----------------------------------------------------------
   global: {
@@ -51,9 +52,58 @@ var config = {
     trustProxy: false  // Trust forwarded headers
   },
 
+  // --- Admin console ---------------------------------------------------
+  admin: {
+    bootstrapUsername: "admin", // Product-mode bootstrap account; restart to apply
+    readGroup: "admin-read",    // Admin Read role
+    writeGroup: "admin-write",  // Admin Write role
+    openWhenEmpty: true         // Open while no role has a member
+  },
+
+  // --- XACML -----------------------------------------------------------
+  xacml: {
+    enforceAccess: true,             // Decide access with policy
+    accessPolicy: "access-control",  // Access policy name
+    enabled: true,                   // XACML enabled
+    maxPolicies: 200,                // Policies the repository may hold
+    pepBias: "deny-biased",          // What the embedded PEP does with a non-Permit
+    returnPolicyIdList: false,       // Always return the applicable policy identifiers
+    remotePeps: true,                // Remote Policy Enforcement Points may register
+    pepRequireCertificate: true,     // A registering PEP must present a client certificate
+    maxPeps: 50,                     // Remote PEPs the register may hold
+    pepStaleAfterS: 300,             // Seconds before a registered PEP is reported stale
+    pepNotify: true,                 // Nudge a registered PEP when the repository changes
+    pepNotifyAllowedHosts: "",       // Notify endpoint allowlist
+    pepNotifyAllowInsecure: false,   // Allow http:// and untrusted TLS for a nudge
+    pepNotifyTimeoutMs: 2000,        // Nudge timeout (ms)
+    issuancePolicy: "role-issuance"  // The policy issuance decisions are made with
+  },
+
+  // --- Web security ----------------------------------------------------
+  security: {
+    rateLimitWindowS: 60,       // Rate-limit window (seconds)
+    rateLimitPerIdentity: 5,    // Attempts per identity per window
+    rateLimitPerAddress: 20,    // Attempts per address per window
+    activationTtlMinutes: 1440  // Activation link lifetime (minutes)
+  },
+
+  // --- Key material ----------------------------------------------------
+  keys: {
+    source: "auto",                  // Where signing keys come from; restart to apply
+    plaintextRetention: "timed",     // How long a decrypted private key is kept
+    plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
+    kekProvider: "file",             // Key-encryption key provider; restart to apply
+    kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
+    kekRef: "",                      // Key-encryption key reference; restart to apply
+    kekVault: "",                    // Vault or Key Vault URL; restart to apply
+    kekField: "value",               // Vault secret field; restart to apply
+    kekToken: "",                    // Vault token; restart to apply
+    kekRegion: ""                    // AWS region; restart to apply
+  },
+
   // --- Global ----------------------------------------------------------
   workers: {
-    count: 2  // Worker processes
+    count: 5  // Worker processes
   },
 
   // --- Trust realms ----------------------------------------------------
@@ -81,14 +131,6 @@ var config = {
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard
     frontchannelLogout: true                     // OpenID Connect Front-Channel Logout
-  },
-
-  // --- Admin console ---------------------------------------------------
-  admin: {
-    authRequired: true,        // Require a sign-in for /admin
-    readGroup: "admin-read",   // Admin Read role
-    writeGroup: "admin-write", // Admin Write role
-    openWhenEmpty: true        // Open while no role has a member
   },
 
   // --- Applications ----------------------------------------------------
@@ -225,7 +267,6 @@ var config = {
     maxResults: 200,             // Maximum results per page
     bulkMaxOperations: 100,      // Bulk operation limit
     bulkMaxPayloadSize: 1048576, // Bulk payload limit
-    authRequired: true,          // Require authentication
     authDiscovery: false,        // Authenticate discovery too
     authRealm: "SCIM",           // Authentication realm
     scopeRead: "scim:read",      // OAuth scope to read
@@ -239,23 +280,6 @@ var config = {
     hobaMaxAgeSeconds: 600,      // HOBA challenge lifetime
     authCookie: true,            // Offer the session cookie
     authClientCert: true         // Offer TLS client certificates
-  },
-
-  // --- XACML -----------------------------------------------------------
-  xacml: {
-    enabled: true,                   // XACML enabled
-    maxPolicies: 200,                // Policies the repository may hold
-    pepBias: "deny-biased",          // What the embedded PEP does with a non-Permit
-    returnPolicyIdList: false,       // Always return the applicable policy identifiers
-    remotePeps: true,                // Remote Policy Enforcement Points may register
-    pepRequireCertificate: true,     // A registering PEP must present a client certificate
-    maxPeps: 50,                     // Remote PEPs the register may hold
-    pepStaleAfterS: 300,             // Seconds before a registered PEP is reported stale
-    pepNotify: true,                 // Nudge a registered PEP when the repository changes
-    pepNotifyAllowedHosts: "",       // Notify endpoint allowlist
-    pepNotifyAllowInsecure: false,   // Allow http:// and untrusted TLS for a nudge
-    pepNotifyTimeoutMs: 2000,        // Nudge timeout (ms)
-    issuancePolicy: "role-issuance"  // The policy issuance decisions are made with
   },
 
   // --- SSF -------------------------------------------------------------
@@ -280,7 +304,6 @@ var config = {
     pollMaxEvents: 20,                                                                                                                                    // Events per poll
     maxReceivedEvents: 200,                                                                                                                               // Received events kept
     maxStreamLogEntries: 200,                                                                                                                             // Log lines per stream
-    authRequired: true,                                                                                                                                   // Require authentication
     authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
     authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
     receiveEnabled: true,                                                                                                                                 // Accept pushed events
@@ -334,6 +357,11 @@ var config = {
     maxRoles: 200          // Maximum roles
   },
 
+  // --- Roles -----------------------------------------------------------
+  authn: {
+    unauthenticatedSessions: false  // Offer "Continue without signing in"
+  },
+
   // --- Audit log -------------------------------------------------------
   audit: {
     maxEvents: 5000,     // Maximum events held
@@ -366,7 +394,6 @@ var config = {
     svidSubject: "C=US,O=SPIRE",                        // SVID subject DN
     autoCreateEntries: true,                            // Invent a registration entry on first sight
     requireSecurityHeader: true,                        // Require the workload.spiffe.io header
-    authRequired: true,                                 // Authenticate the SPIRE Server API; restart to apply
     trustLocalSocket: true,                             // Trust the SPIRE Server API socket as local
     adminIds: "",                                       // Administrator SPIFFE IDs
     clockSkew: 60,                                      // Clock skew (s)

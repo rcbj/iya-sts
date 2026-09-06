@@ -148,7 +148,16 @@ const calls = realms.map();       // "GET /path" -> the row below
 // ---------------------------------------------------------------------
 const nums = realms.obj(function () {
   return { callTotal: 0, callPathsDropped: 0, tokensForgotten: 0,
-           tokensWithoutJti: 0, artifactsForgotten: 0, usersForgotten: 0 };
+           tokensWithoutJti: 0, artifactsForgotten: 0, usersForgotten: 0,
+           // How many artifacts this realm has EVER recorded, which is not
+           // `artifacts.length` and must not be confused with it: the array is
+           // capped and shifts from the front, so its length falls back. This
+           // only ever rises, and it is what gives every artifact a key of its
+           // own — see recordArtifact(). A Kerberos ticket carries no
+           // identifier anybody can quote, so without this there would be
+           // nothing to address the row by, and /admin/tokens/set could not
+           // open one.
+           artifactsRecorded: 0 };
 });
 
 
@@ -311,6 +320,43 @@ function recordJwt(payload, signed, context) {
     // direct grants, the pre-authorized code, a token exchange — which is a fact
     // about the token rather than a gap in the recording.
     sessionId: issuedUnder.sessionId || '',
+    // AND WHETHER ANYBODY AUTHENTICATED FOR THAT SESSION (2026-09-05), beside
+    // it and for exactly the reason it is here: the REFRESH grant has no
+    // session and no cookie, so what it can say about the person is what this
+    // registry remembers. Without it the second generation of a token issued
+    // on an unauthenticated session would be judged as though somebody had
+    // signed in, which is the one way this feature could quietly leak.
+    //
+    // `!== false` at the write as well as at the read, so a caller that says
+    // nothing means "authenticated" — which is what every caller that existed
+    // before this field meant.
+    sessionAuthenticated: issuedUnder.sessionAuthenticated !== false,
+    // WHICH TOKEN RESPONSE THIS CAME BACK IN (2026-09-05), and it is the reason
+    // /admin/tokens lists SETS rather than credentials. OAuth 2.0 and OIDC are
+    // the only families here that hand back several credentials at once — an
+    // access token, an ID Token and a refresh token out of one code redemption,
+    // an access token and an ID Token out of one implicit response — and until
+    // this field existed there was nothing joining the three but a timestamp
+    // three rows apart. Every other family issues one thing per act, so a row
+    // with no set id is a set of one, which is the honest shape rather than a
+    // gap.
+    //
+    // It CANNOT be derived, and that is why it is stated out of band exactly as
+    // `sessionId` above is. Two clients redeeming two codes for the same person
+    // at the same client in the same millisecond produce six tokens that agree
+    // on every field this record holds; a heuristic over sub/client/issuedAt
+    // would merge them, and the page would report a set that was never issued.
+    // The two OAuth issuance sites mint one id and pass it to every token they
+    // produce — see oauth2.js's tokenSet() and issueAuthorizationResponse() —
+    // so the grouping is a FACT the issuer stated rather than a guess this file
+    // made.
+    //
+    // A REFRESH PRODUCES A NEW SET, not a bigger one. What a set is is one
+    // RESPONSE, so the second generation of a grant is its own row with its own
+    // issued instant and its own expiries; what joins the generations is the
+    // refresh lineage oauth2_bcp.js keeps and /admin/tokens/credential draws,
+    // which is a different relation and is drawn as one.
+    setId: issuedUnder.setId || '',
     grant: issuedUnder.grant || '',
     issuedAt: Date.now(),
     revoked: false,
@@ -423,7 +469,18 @@ const artifacts = realms.arr();
 
 
 function recordArtifact(kind, detail) {
-  const record = Object.assign({ kind: kind, issuedAt: Date.now(), expiresAt: 0, subject: '' }, detail);
+  nums.artifactsRecorded += 1;
+  // `key` is THIS SERVICE'S handle on the row and never the protocol's — the
+  // protocol's is `id`, and a Kerberos ticket has none at all. The two are kept
+  // apart deliberately: `identifier` is what somebody can quote back at this
+  // service (a jti, an AssertionID) and is what /admin/tokens/credential looks a
+  // lineage up by, while this is only ever a way of naming ONE ROW of the issued
+  // register — which is what /admin/tokens/set needs to open a set of one. It
+  // matches the shape the token store already had, where the key is the jti or a
+  // synthetic `no-jti-N`, so both halves of the merged list are addressable the
+  // same way.
+  const record = Object.assign({ kind: kind, issuedAt: Date.now(), expiresAt: 0, subject: '',
+                                 key: 'artifact-' + nums.artifactsRecorded }, detail);
   artifacts.push(record);
   if (artifacts.length > MAX_ARTIFACTS) {
     artifacts.shift();
@@ -553,6 +610,69 @@ function recordSvid(kind, detail) {
 //     spiffe_ca.js deliberately does not add it to this service's authorities
 //     either.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A SECURITY KEY WAS ENROLLED FOR SOMEBODY (2026-09-06).
+//
+// The FOURTH kind of event `setUserObserver()` carries, beside
+// `authentication`, `issuance` and `credential-status` — and it is here for the
+// reason the second one is: **being given a credential is not authenticating
+// with one**, and the directory has to know about the person either way.
+//
+// Before this, a WebAuthn key enrolled for somebody who had never signed in
+// left this service holding a working credential for a person it could not
+// list. For a PASSWORDLESS key that is the whole account, because the key is
+// the only credential it will ever have.
+//
+// **IT COUNTS NO AUTHENTICATION**, exactly as `issuance` does not. Nobody
+// authenticated by enrolling a key, and counting it would inflate the one
+// number /admin/users is about. What the person gets is an entry and a row
+// marked as seen without having authenticated, which is the honest answer.
+// ---------------------------------------------------------------------------
+// IS THERE ALREADY AN IDENTITY BY THIS NAME? Asked by the WebAuthn enrolment
+// door in product mode, which must not enrol a key for somebody who does not
+// exist — that would create them, and creating objects because something
+// referenced them is exactly what product mode removes.
+//
+// It answers about THIS REGISTER rather than about the directory, and the two
+// can differ: a person seeded into the directory who has never authenticated is
+// not here. That is the conservative direction for this caller — it refuses an
+// enrolment it could have allowed, rather than allowing one that creates
+// somebody — and the refusal names the fix.
+function knownUser(username) {
+  const identity = identityOf(username);
+  if (!identity.key) return false;
+  return !!users.get(identity.key);
+}
+
+function noteWebauthnEnrolled(username) {
+  log.debug("Entering noteWebauthnEnrolled(). username=" + (username || '?'));
+  const identity = identityOf(username);
+  if (!identity.key || !userObserver) {
+    log.debug("Leaving noteWebauthnEnrolled(). " +
+              (identity.key ? "There is no directory." : "There is no identity."));
+    return;
+  }
+  try {
+    userObserver({
+      event: 'enrolment',
+      key: identity.key, name: identity.name, realm: identity.realm,
+      presented: identity.form,
+      protocol: 'WebAuthn',
+      method: 'security key enrolled',
+      isClient: false, sub: '',
+      amr: [], acr: '',
+      linkedTo: ''
+    });
+  } catch (e) {
+    // The tail must not wag the dog — the same rule signJwt()'s recorder
+    // follows. An enrolment that succeeded must not be undone because the
+    // directory could not be told about it.
+    log.error('admin: the directory could not be told that a security key was ' +
+              'enrolled for ' + identity.key + ': ' + e.message);
+  }
+  log.debug("Leaving noteWebauthnEnrolled().");
+}
+
 function noteCertificateIssued(subject, certificate, detail) {
   log.debug("Entering noteCertificateIssued(). subject=" + (subject || '?'));
   const identity = identityOf(subject);
@@ -2002,23 +2122,135 @@ function tokenList() {
   return out;
 }
 
-// The same three answers for an artifact, and there are only three: nothing that is
-// not a JWT can be revoked here, so 'revoked' is not among them. Written as a
-// function beside tokenStateOf() because both are read by the merged list below and
-// two definitions of "expired" in one table is the kind of disagreement nobody
-// notices until the two rows are next to each other.
+// FOUR ANSWERS FOR AN ARTIFACT SINCE 2026-09-05, AND THE FOURTH REVERSED A
+// DOCUMENTED DECISION.
+//
+// This function had three, and said so: "nothing that is not a JWT can be
+// revoked here, so 'revoked' is not among them." That was a true statement
+// about the WORLD — nothing consults this service when a SAML assertion or a
+// Kerberos ticket is presented, so no mark here can stop one working — and it
+// was the wrong statement about this REGISTER, which is what the function
+// actually reports on.
+//
+// **WHAT THIS SERVICE KNOWS AND WHAT A RELYING PARTY WILL HONOUR ARE TWO
+// DIFFERENT CLAIMS, AND MERGING THEM COST THE ONE THAT COULD BE TRUE.** An
+// identity provider that has signed somebody out has a POSITION on every
+// credential it issued them, and being unable to enforce it does not make it
+// unavailable to say. Three things now depend on its being said:
+//
+//   * A global logout can report what it invalidated rather than only what it
+//     could reach, which is what makes "everything for this person is dead" a
+//     checkable claim instead of a hope.
+//   * CAEP can carry it. `ssf/caep.js` transmits a Security Event Token the
+//     moment a session is revoked, and a receiver that acts on one has been
+//     told about an assertion this service considers dead — which is the
+//     channel SAML and Kerberos do not have.
+//   * SAML Single Logout can carry it for the assertions that came from a
+//     browser profile.
+//
+// **WHAT HAS NOT CHANGED IS THE ONLY THING THAT MATTERED IN THE OLD
+// SENTENCE.** A revoked assertion still verifies. A revoked service ticket
+// still decrypts with the key its service holds. A revoked SVID still chains
+// to the bundle. This service is not consulted and cannot become consulted, so
+// a holder that was not TOLD goes on using it until it expires — and that is
+// why `revocationReach` rides on every row of the issued list beside
+// `revocable`: the two are different questions and one field answering both is
+// how this got merged in the first place.
 //
 // IT DELIBERATELY DOES NOT APPLY `oauth2.clockSkewS`, and that is not the
-// disagreement the paragraph above warns about. That setting exists so this
-// page agrees with the endpoint that will read the token back, and there is no
-// such endpoint for a SAML assertion or a Kerberos ticket: nothing here reads
-// one of those back at all, so there is nothing to agree with, and an OAuth
-// allowance silently stretching a ticket's lifetime on a page would be this
-// service inventing a tolerance that its KDC (which has `krb5.clockSkew`, a
-// different setting with a different owner) never applied.
+// disagreement tokenStateOf() warns about. That setting exists so this page
+// agrees with the endpoint that will read the token back, and there is no such
+// endpoint for a SAML assertion or a Kerberos ticket: nothing here reads one of
+// those back at all, so there is nothing to agree with, and an OAuth allowance
+// silently stretching a ticket's lifetime on a page would be this service
+// inventing a tolerance that its KDC (which has `krb5.clockSkew`, a different
+// setting with a different owner) never applied.
+//
+// REVOKED BEATS EXPIRED, the way it does for a token: a credential this service
+// has disowned is disowned whether or not its window has also closed, and
+// reporting the expiry would hide the act.
 function artifactStateOf(record, nowMs) {
+  if (record.revoked) return 'revoked';
   if (!record.expiresAt) return 'no expiry stated';
   return record.expiresAt <= nowMs ? 'expired' : 'valid';
+}
+
+// ---------------------------------------------------------------------------
+// MARKING ONE ARTIFACT, AND WHY THERE IS NO SET BESIDE THE RECORD.
+//
+// `revoke()` above keeps a per-realm Set of revoked jtis as well as the flag on
+// the record, and its comment says why: RFC 7009 lets a caller revoke a token
+// this registry never saw, and a jti can be revoked whose record has already
+// been dropped to `MAX_TOKENS`. The set is authoritative there because
+// `/oauth2/introspect` asks it about tokens this file may no longer hold.
+//
+// **NOTHING EVER ASKS ABOUT AN ARTIFACT.** That is the whole property this
+// service cannot change, and here it makes the design simpler rather than
+// harder: there is no endpoint that could be handed an AssertionID, so a set
+// outliving the record would answer a question nobody can ask. The flag on the
+// record is the mark, and when the record is forgotten to `MAX_ARTIFACTS` so is
+// the mark — which is correct, because at that point this service has no
+// position on that credential to state.
+// ---------------------------------------------------------------------------
+function revokeArtifact(record, via) {
+  log.debug("Entering revokeArtifact(). kind=" + (record && record.kind));
+  if (!record || record.revoked) {
+    log.debug("Leaving revokeArtifact(). It was already revoked or absent.");
+    return false;
+  }
+  record.revoked = true;
+  record.revokedAt = Date.now();
+  record.revokedVia = via || 'unstated';
+  log.info('admin: the ' + record.kind + ' ' + (record.id || '(no identifier)') +
+           ' is marked revoked (' + (via || 'unstated') + '). THE HOLDER CANNOT BE ' +
+           'TOLD: nothing consults this service when one is presented, so this is ' +
+           'this service\'s own position and not an enforcement.');
+  log.debug("Leaving revokeArtifact(). Marked.");
+  return true;
+}
+
+function restoreArtifact(record) {
+  log.debug("Entering restoreArtifact().");
+  if (!record || !record.revoked) {
+    log.debug("Leaving restoreArtifact(). It was not revoked.");
+    return false;
+  }
+  record.revoked = false;
+  record.revokedAt = 0;
+  record.revokedVia = '';
+  log.debug("Leaving restoreArtifact(). Restored.");
+  return true;
+}
+
+// THE ARTIFACT BY THE HANDLE THE ISSUED LIST GAVE IT. `key` rather than `id`,
+// for the reason recordArtifact() gives: a Kerberos ticket has no identifier
+// anybody can quote, and a console button has to be able to name every row.
+function artifactByKey(key) {
+  log.debug("Entering artifactByKey(). key=" + key);
+  const wanted = String(key == null ? '' : key).trim();
+  if (!wanted) {
+    log.debug("Leaving artifactByKey(). Nothing was asked for.");
+    return null;
+  }
+  const found = artifacts.filter(function (record) { return record.key === wanted; });
+  log.debug("Leaving artifactByKey(). " + found.length + " match(es).");
+  return found.length ? found[0] : null;
+}
+
+// EVERY ARTIFACT A PREDICATE PICKS, marked in one act — the artifact half of
+// revokeWhere(), and separate from it for the reason the two state functions
+// are separate: one store each, and a single function walking both would have
+// to be told which kind of predicate it was given.
+function revokeArtifactsWhere(predicate, via) {
+  log.debug("Entering revokeArtifactsWhere().");
+  let count = 0;
+  artifacts.forEach(function (record) {
+    if (record.revoked) return;
+    if (!predicate(record)) return;
+    if (revokeArtifact(record, via)) count += 1;
+  });
+  log.debug("Leaving revokeArtifactsWhere(). Marked " + count + " artifact(s).");
+  return count;
 }
 
 function artifactList() {
@@ -2095,7 +2327,12 @@ function issuedList() {
       family: 'token',
       state: tokenStateOf(record, nowMs),
       expiresAtMs: record.exp ? record.exp * 1000 : 0,
-      identifier: record.jti || ''
+      identifier: record.jti || '',
+      // See the artifact branch below for what this answers and why it is not
+      // `revocable`. A JWT revoked here is refused at /oauth2/introspect,
+      // UserInfo and the refresh grant, which is a client-visible fact rather
+      // than a note in this register.
+      revocationReach: 'protocol'
     }));
   });
   artifacts.forEach(function (record) {
@@ -2108,19 +2345,231 @@ function issuedList() {
       state: artifactStateOf(record, nowMs),
       expiresAtMs: record.expiresAt || 0,
       identifier: record.id || '',
-      // Carried explicitly rather than left undefined: the page's button column
-      // reads this one field for all three families, so an assertion says why it
-      // has no button in the same place a UserInfo response does.
-      revocable: false
+      // Stated rather than left undefined, for the reason `revocable` below is:
+      // every reader of this list asks the same question of every row, and a
+      // member that is absent on three families out of four is a member every
+      // one of them has to test for existence before testing for value. No
+      // artifact belongs to a token response — OAuth is the only family here
+      // that issues several credentials in one act — so the honest answer is
+      // the empty one, and issuedSets() reads it as "a set of your own".
+      setId: '',
+      // REVOCABLE SINCE 2026-09-05, AND IT WAS `false` HERE UNTIL THAT DAY.
+      // See artifactStateOf() for the argument. What decides it is whether this
+      // service can HOLD A POSITION on the credential, which it can for
+      // anything it issued and still remembers — and `revocationReach` below
+      // carries the other half of the question, which used to be folded into
+      // this one field and is the reason the two got confused.
+      //
+      // A row whose record has been dropped to `MAX_ARTIFACTS` is not here to
+      // be revoked, which is the honest end of it: at that point this service
+      // has no position on that credential to state.
+      revocable: true,
+      // WHAT A REVOCATION HERE ACTUALLY REACHES, and it is the field to read
+      // before writing any sentence on any page about what a button does.
+      //
+      //   'protocol'    the revocation is HONOURED somewhere a client will
+      //                 meet it: introspection reports the token inactive,
+      //                 UserInfo refuses it, the refresh grant fails. Every
+      //                 JWT is this.
+      //   'record-only' this service's own position, and NOTHING ELSE. The
+      //                 credential still verifies, still decrypts, still
+      //                 chains — because nothing consults this service when it
+      //                 is presented and nothing can be made to. Every
+      //                 assertion, ticket and SVID is this.
+      //
+      // The second is not a lesser version of the first and must never be
+      // drawn as one. It is what a global logout can SAY, what CAEP can
+      // TRANSMIT, and what SAML Single Logout can carry for the assertions
+      // that came from a browser profile — and for a WS-Trust assertion it is
+      // the whole of what exists, because that protocol has no logout at all.
+      revocationReach: 'record-only'
     }));
   });
+  // THE ORDER THE ROWS WERE RECORDED IN, before the sort below destroys it, and
+  // it is not the same thing as `issuedAt`. Both stores keep insertion order —
+  // a Map iterates in it and the artifact array is pushed to — but `issuedAt` is
+  // a millisecond, and the three tokens of one response are minted well inside
+  // one. So sorting by the timestamp alone leaves the members of a set in
+  // whatever order the sort happened to be stable in, and the set page would
+  // print the refresh token above the access token that was issued before it.
+  // issuedSets() sorts its members by this and gets issuance order exactly.
+  out.forEach(function (row, index) { row.order = index; });
   // Newest first, across all three families together — the point of one table is
   // that a sign-in which produced an ID Token and a SAML assertion shows both,
-  // next to each other, in the order they happened.
-  out.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+  // next to each other, in the order they happened. Ties broken by the ordinal
+  // above rather than left to the sort's stability, so two credentials minted in
+  // the same millisecond are ALWAYS the later one first.
+  out.sort(function (a, b) {
+    return (b.issuedAt - a.issuedAt) || (b.order - a.order);
+  });
   log.debug("Leaving issuedList(). " + out.length + " row(s) across " +
             ISSUED_FAMILIES.length + " family/families.");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME LIST, GROUPED INTO WHAT WAS ISSUED TOGETHER.
+//
+// **This is what /admin/tokens draws, and the reason it is a different list
+// from the one above.** A person redeeming an authorization code gets back an
+// access token, an ID Token and a refresh token in ONE reply, and a table that
+// prints them as three rows makes the reader reassemble by eye the one thing the
+// protocol handed over whole. OAuth 2.0 and OIDC are the ONLY families here that
+// do that: a SAML assertion, a Kerberos ticket and an SVID are each one
+// credential from one act, so each is a set of one and says so.
+//
+// A SET IS ONE RESPONSE AND NOT ONE GRANT. Refreshing produces a new set beside
+// the old one rather than a fourth member of it — every credential in a set
+// shares an issued instant and a grant, and a set that grew over an afternoon
+// could say neither. What joins the generations of a grant is the refresh
+// lineage, which is a different relation and is drawn as one at
+// /admin/tokens/credential.
+//
+// THE SET'S OWN FIELDS ARE DERIVED AND THREE OF THEM ARE NOT WHAT A READER
+// FIRST EXPECTS:
+//
+//   state          the state every member shares, or 'mixed'. A set whose
+//                  access token has expired while its refresh token is still
+//                  valid is neither expired nor valid, and reporting either
+//                  would be this list deciding which member matters. `states`
+//                  carries the breakdown, and the STATE FILTER matches a set
+//                  when ANY member holds the state asked for — so filtering for
+//                  'revoked' still finds the set a revoked access token is in,
+//                  which is the row somebody looking for it wants.
+//   expiresAtMs    the EARLIEST member's, which is when the set starts to come
+//                  apart rather than when it is finished. `lastExpiresAtMs` is
+//                  the other end. One column cannot carry both and the earlier
+//                  one is the one somebody debugging a refused call needs.
+//   issuedAt       the earliest member's, which is when the response was
+//                  produced. They are within a millisecond of each other in
+//                  practice; taking the earliest rather than the latest means
+//                  the set sorts where its first credential did.
+//
+// `setKey` is what a page addresses a set BY, and it is not `setId`: a row with
+// no set id is a set of its own and needs a handle too, so it gets `one:` and
+// this service's own key for that row (a jti, `no-jti-N`, `artifact-N`). Every
+// row therefore has one, including a Kerberos ticket, which is the family with
+// no identifier of its own to quote.
+// ---------------------------------------------------------------------------
+function issuedSets() {
+  log.debug("Entering issuedSets().");
+  const rows = issuedList();
+  const byKey = new Map();
+  const order = [];
+  rows.forEach(function (row) {
+    const key = row.setId ? 'set:' + row.setId : 'one:' + (row.key || row.identifier || '');
+    let set = byKey.get(key);
+    if (!set) {
+      set = { setKey: key, setId: row.setId || '', members: [] };
+      byKey.set(key, set);
+      order.push(set);
+    }
+    set.members.push(row);
+  });
+  const out = order.map(function (set) {
+    // Issuance order within the set, which is the order the token endpoint
+    // minted them in: access token, then refresh token, then ID Token. See the
+    // ordinal in issuedList() for why the timestamp cannot do this.
+    const members = set.members.slice().sort(function (a, b) { return a.order - b.order; });
+    const first = members[0];
+    const states = {};
+    let shared = '';
+    let mixed = false;
+    let earliestIssued = 0;
+    let earliestExpiry = 0;
+    let latestExpiry = 0;
+    let revocable = 0;
+    let revoked = 0;
+    members.forEach(function (row) {
+      states[row.state] = (states[row.state] || 0) + 1;
+      if (!shared) {
+        shared = row.state;
+      } else if (shared !== row.state) {
+        mixed = true;
+      }
+      if (!earliestIssued || row.issuedAt < earliestIssued) earliestIssued = row.issuedAt;
+      // A member with NO expiry stated is skipped on both ends rather than
+      // counted as zero: zero would make every set containing one look as
+      // though it had already expired in 1970, which is the units bug
+      // issuedList()'s `expiresAtMs` comment warns about, arrived at from the
+      // other direction.
+      if (row.expiresAtMs) {
+        if (!earliestExpiry || row.expiresAtMs < earliestExpiry) earliestExpiry = row.expiresAtMs;
+        if (row.expiresAtMs > latestExpiry) latestExpiry = row.expiresAtMs;
+      }
+      if (row.revocable) revocable += 1;
+      if (row.state === 'revoked') revoked += 1;
+    });
+    // The kinds IN ISSUANCE ORDER and de-duplicated. A set never holds two of a
+    // kind today — one response carries at most one of each — but a duplicate
+    // would print as `access_token + access_token` rather than being noticed,
+    // and the check costs one lookup.
+    const kinds = [];
+    members.forEach(function (row) {
+      if (kinds.indexOf(row.kind) < 0) kinds.push(row.kind);
+    });
+    return {
+      setKey: set.setKey,
+      setId: set.setId,
+      // Whether this is a GROUP or a single credential standing in for one.
+      // The page reads it to decide whether to say "3 credentials" or to draw
+      // the row as the one thing it is, and a test reads it to assert that
+      // nothing outside OAuth ever groups.
+      grouped: members.length > 1,
+      size: members.length,
+      kinds: kinds,
+      // The families present. One in every case that can occur — a set id is
+      // minted by the OAuth issuance sites and nothing else records one — but
+      // derived rather than assumed, so a family that starts grouping later
+      // does not silently report itself as `token`.
+      families: members.reduce(function (list, row) {
+        if (list.indexOf(row.family) < 0) list.push(row.family);
+        return list;
+      }, []),
+      family: first.family,
+      state: mixed ? 'mixed' : shared,
+      states: states,
+      issuedAt: earliestIssued,
+      expiresAtMs: earliestExpiry,
+      lastExpiresAtMs: latestExpiry,
+      // Taken from the FIRST member rather than merged, because every member of
+      // a set was issued by one act to one party for one person: the access
+      // token and the ID Token of one response disagree about `aud` by design
+      // and about nothing else. The ID Token's audience is the client and the
+      // access token's is the resource server, which is why the party column
+      // reads `client_id` — see partyCell() — and why merging audiences here
+      // would produce a party that was never named.
+      username: first.username || '',
+      sub: first.sub || '',
+      client_id: first.client_id || '',
+      audience: first.audience || '',
+      scope: first.scope || '',
+      sessionId: first.sessionId || '',
+      sessionAuthenticated: first.sessionAuthenticated !== false,
+      grant: first.grant || '',
+      revocableCount: revocable,
+      revokedCount: revoked,
+      members: members
+    };
+  });
+  log.debug("Leaving issuedSets(). " + out.length + " set(s) over " + rows.length + " row(s).");
+  return out;
+}
+
+// ONE SET, BY THE KEY THE LIST ABOVE GAVE IT. Null for a key nothing holds,
+// which is the ORDINARY answer for a set old enough to have been dropped to
+// `MAX_TOKENS` or `MAX_ARTIFACTS` — the caller says so rather than treating it
+// as a mistake, exactly as issuedById() does.
+function issuedSetByKey(setKey) {
+  log.debug("Entering issuedSetByKey(). setKey=" + setKey);
+  const wanted = String(setKey == null ? '' : setKey).trim();
+  if (!wanted) {
+    log.debug("Leaving issuedSetByKey(). Nothing was asked for.");
+    return null;
+  }
+  const found = issuedSets().filter(function (set) { return set.setKey === wanted; });
+  log.debug("Leaving issuedSetByKey(). " + found.length + " set(s) hold it.");
+  return found.length ? found[0] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2329,6 +2778,19 @@ function sessionIdOfJti(jti) {
   return (record && record.sessionId) || '';
 }
 
+// AND WHETHER THAT SESSION WAS AUTHENTICATED, by the same jti and for the same
+// reason: a refresh is a back-channel request with no cookie, so the only
+// record of who was behind the original sign-in is this one. A jti this
+// registry has never seen answers `true`, which is the same "an absent answer
+// means what it always meant" rule the field itself is written under — and the
+// permissive answer is the right default here because the alternative would
+// refuse a client holding a perfectly good refresh token from a process that
+// restarted.
+function sessionAuthenticatedOfJti(jti) {
+  const record = jti ? tokens.get(jti) : null;
+  return !record || record.sessionAuthenticated !== false;
+}
+
 // Revoke every token matching a predicate, and say how many. Used by the console's
 // "revoke every access token" and "revoke everything for this subject" buttons,
 // which exist because revoking one jti at a time is not how anybody tests a
@@ -2497,6 +2959,8 @@ module.exports = {
   ISSUED_FAMILIES: ISSUED_FAMILIES,
   recordCall: recordCall,
   recordAuthentication: recordAuthentication,
+  noteWebauthnEnrolled: noteWebauthnEnrolled,
+  knownUser: knownUser,
   setUserObserver: setUserObserver,
   noteKnownIdentity: noteKnownIdentity,
   identityOf: identityOf,
@@ -2504,6 +2968,7 @@ module.exports = {
   userRows: userRows,
   userDetail: userDetail,
   sessionIdOfJti: sessionIdOfJti,
+  sessionAuthenticatedOfJti: sessionAuthenticatedOfJti,
   recordAssertion: recordAssertion,
   recordTicket: recordTicket,
   recordCredential: recordCredential,
@@ -2516,6 +2981,10 @@ module.exports = {
   revoke: revoke,
   restore: restore,
   revokeWhere: revokeWhere,
+  revokeArtifact: revokeArtifact,
+  restoreArtifact: restoreArtifact,
+  artifactByKey: artifactByKey,
+  revokeArtifactsWhere: revokeArtifactsWhere,
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,
@@ -2535,6 +3004,8 @@ module.exports = {
   tokenList: tokenList,
   artifactList: artifactList,
   issuedList: issuedList,
+  issuedSets: issuedSets,
+  issuedSetByKey: issuedSetByKey,
   issuedById: issuedById,
   snapshot: snapshot
 };

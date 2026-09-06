@@ -96,6 +96,23 @@ const config = require('../common/config');
 // that never loaded the XACML family the gate answers "allowed" and this
 // screen behaves exactly as it did.
 const gate = require('../common/issuance_gate');
+// The credential verifier. A LEAF (rule 3) that registers no route and
+// requires nothing here, so it can neither move a route nor close a cycle.
+// Development mode answers yes to everything but the reserved refusal, so
+// requiring it changes nothing about how this screen behaves today.
+const credentials = require('../common/credentials');
+// CSRF and rate limiting. A LEAF (rule 3): registers nothing, requires only
+// config, crypto and helpers.
+const websecurity = require('../common/websecurity');
+const mode = require('../common/mode');
+// The input validator. A LEAF (rule 3) — it registers no route and requires
+// only `config`, `bunyan` and zod, so it closes no cycle and moves nothing.
+// `common/validation.js` argues the shape/existence line every schema below
+// rests on: what a value may BE is refused here in both modes, and whether the
+// person NAMED exists stays with `mode.js`.
+const validation = require('../common/validation');
+const vt = validation.types;
+const vz = validation.z;
 // For one decision: whether ending a session should revoke the refresh tokens
 // issued on it (RFC 9700 section 2.2.2). The policy is that module's, with the
 // rest of the mode; the session and the token registry are here, which is why
@@ -148,6 +165,26 @@ const SPNEGO_PATH = '/authn/spnego';
 const SESSION_COOKIE = 'sts_mock_session';
 
 const SESSION_TTL_MS = 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// THE ONE NAME AN UNAUTHENTICATED SESSION EVER CARRIES (2026-09-05).
+//
+// A STABLE principal rather than one per session, and that is the decision
+// somebody is most likely to want to undo. A fresh identity each time would
+// keep the sessions apart on /admin/sessions — but it would also seed a
+// directory entry per session, put a new row on /admin/users every time
+// somebody pressed the button, and leave `anonymous` a name that could never
+// be granted a configured role, because the name would be different by the
+// time anybody typed it. One entry, many sessions, is the same choice
+// `identityKeyOf()` makes for everybody else: the entry is the PERSON and the
+// session is one visit.
+//
+// It is exported because two other modules have to mean the same string by it
+// — the console draws the section of unauthenticated sessions and the tests
+// ask for this principal by name — and a second spelling of it somewhere else
+// would be a second anonymous person that held none of the first one's roles.
+// ---------------------------------------------------------------------------
+const ANONYMOUS_USERNAME = 'anonymous';
 
 // How long an interrupted request waits at the screen before it has to be
 // started again.
@@ -669,9 +706,186 @@ function notePresented(session, via, req) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// WRITING THE COOKIE ON A RESPONSE THAT MAY NOT BE EXPRESS'S (2026-09-05).
+//
+// Every caller of `startSession()` handed it an express response until the TLS
+// listeners started signing people in on a verified client certificate. Those
+// two sockets are `https.createServer()` with a handler of their own — they are
+// not this express app and cannot be, because a client certificate is a
+// property of the CONNECTION and the app is behind one listener that does not
+// ask for one — so their `res` is a bare node `ServerResponse`, which has
+// `setHeader` and no `set`.
+//
+// **THE SYMPTOM WITHOUT THIS WAS THE WORST HALF-STATE AVAILABLE**: the session
+// was created, entered the map, and appeared on `/admin/sessions` — and then
+// `res.set is not a function` threw on the next line, so the cookie never went
+// out and the person who had just signed in had no way to prove it. A session
+// nobody holds is worse than no session, because a global sign-out then reports
+// ending something that was never usable.
+//
+// One function rather than a branch at each of the two call sites, so that the
+// SET and the CLEAR cannot come to disagree about which mechanism they use —
+// clearing a cookie that was set by a different path is the bug
+// `clearSessionCookie()`'s own comment already warns about from the other
+// direction.
+function setCookieHeader(res, value) {
+  if (typeof res.set === 'function') {
+    res.set('Set-Cookie', value);
+    return;
+  }
+  if (typeof res.setHeader === 'function') {
+    res.setHeader('Set-Cookie', value);
+    return;
+  }
+  // Neither: not a response at all. Logged rather than thrown, because every
+  // caller of this is finishing a sign-in that has already succeeded and a
+  // throw here would turn "the cookie could not be written" into "the request
+  // failed".
+  log.error('authn: a session cookie could not be written — the response ' +
+            'object has neither set() nor setHeader(). The session exists and ' +
+            'the caller has not been told about it.');
+}
+
 function startSession(res, username, amr, acr, via, detail) {
   log.debug("Entering startSession(). username=" + username + ", acr=" + acr);
   const extra = detail || {};
+  // -------------------------------------------------------------------------
+  // END WHATEVER SESSION THE BROWSER WAS ALREADY ON (2026-09-06). OWASP A07.
+  //
+  // **SESSION FIXATION WAS ALREADY PREVENTED AND THIS IS THE OTHER HALF.** The
+  // id below is freshly random on every call, so an attacker who plants a
+  // cookie value does not end up holding the session that authentication
+  // creates — that has been true since this function was written and is worth
+  // saying, because it is the half people check for.
+  //
+  // What was NOT true is that the OLD session ended. A browser that signed in
+  // as one person and then as another left the first session alive in the map:
+  // unreachable by that browser, still valid to anything holding its id, and
+  // still listed as live on /admin/sessions. Every sign-in is a privilege
+  // change, and a privilege change that leaves the previous session usable is
+  // the vulnerability whether or not the new id is random.
+  //
+  // `detail.request` is how a caller says which browser this is. A caller that
+  // omits it — a Kerberos ticket, a federated assertion arriving without the
+  // cookie — ends nothing, which is correct: there is no previous session of
+  // THIS browser to end, and guessing one from the username would sign people
+  // out of other devices.
+  if (extra.request) {
+    const previous = cookiesOf(extra.request)[SESSION_COOKIE];
+    if (previous && sessions.get(previous)) {
+      log.info('authn: ending the session this browser was already on (' +
+               previous + ') because a new sign-in is replacing it. Every ' +
+               'sign-in is a privilege change and the old session must not ' +
+               'outlive it.');
+      dropSession(previous, 'replaced by a new sign-in', true, extra.request);
+    }
+  }
+  // -------------------------------------------------------------------------
+  // THE ISSUANCE GATE, AT THE FUNNEL RATHER THAN AT THE DOORS (2026-09-06).
+  //
+  // A session IS an issuance — `ISSUANCE.SESSION` has been in the gate's list
+  // since it was written — and it was asked at exactly ONE door: this module's
+  // own sign-in screen. **Five other paths mint a session and never asked**: a
+  // federated assertion, a SPNEGO ticket, a client certificate, a WS-Trust
+  // UsernameToken, and this file's own WebAuthn funnel. An application narrowed
+  // to a role refused a password sign-in and admitted the same person through
+  // any of the five.
+  //
+  // So it moves to the one place every session is created. That is the same
+  // argument `signJwt()` makes about being the single counter and `tokenSet()`
+  // makes about the RFC 9700 binding note: five call sites is four that
+  // remember and a sixth added later that does not.
+  //
+  // **IT REFUSES BY RETURNING NULL AND NEVER BY THROWING.** Two of the callers
+  // wrap this in a `try` and treat a failure as bookkeeping that must not break
+  // an exchange already completed — correct for a bug in this function, and
+  // exactly wrong for a refusal, which would be swallowed and the credential
+  // issued anyway. A null is a value they have to look at.
+  //
+  // **`gated: true` IS HOW A CALLER SAYS IT ALREADY ASKED**, and only this
+  // module's sign-in screen passes it. That door asks BEFORE drawing anything
+  // so that a refusal is a screen with a reason on it rather than a failure
+  // half-way through a sign-in, and asking twice there would be one refusal
+  // reported in two shapes. The default is therefore SAFE: a sign-in path
+  // added tomorrow is gated without its author knowing this exists.
+  if (extra.gated !== true) {
+    const sessionAnswer = gate.check({
+      application: String(extra.application || ''),
+      kind: gate.ISSUANCE.SESSION,
+      subject: { kind: 'user', name: username,
+                 authenticated: extra.authenticated !== false },
+      claims: null
+    });
+    if (!sessionAnswer.allowed) {
+      log.info('authn: a session for "' + username + '" was REFUSED by the ' +
+               'issuance policy at the ' + (via || 'sign-in') + ' door. ' +
+               sessionAnswer.why);
+      audit.audit({
+        action: 'session.refuse', actor: username,
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused by the issuance ' +
+                 'policy at the ' + (via || 'sign-in') + ' door',
+        detail: { why: sessionAnswer.why,
+                  application: String(extra.application || ''),
+                  policy: sessionAnswer.policy || '' }
+      });
+      log.debug("Leaving startSession(). The issuance policy refused it.");
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // A CREDENTIAL PRESENTED AGAIN IS THE SAME SESSION (2026-09-06).
+  //
+  // The management API, SCIM and the SPIRE Server API authenticate PER REQUEST
+  // — a bearer token, a Basic header, an X509-SVID over mutual TLS — and they
+  // sign in through this function like everything else. Without this branch
+  // each of their calls would mint a session: a provisioning client doing a
+  // thousand PATCHes would leave a thousand rows nothing will ever present
+  // again, and `/admin/sessions` would be useless exactly when somebody needed
+  // it.
+  //
+  // **A SECOND SESSION REGISTER WAS THE OBVIOUS ANSWER AND IS THE WRONG ONE.**
+  // This map is where a session lives; `logout/logout.js` reads it, the console
+  // draws it, CAEP observes it, and a second store beside it would be a second
+  // answer to "is somebody signed in" — the thing rule 3m exists to prevent,
+  // with the wrong half being whichever surface a reader happened to look at.
+  // So the fix is one field on the record and this branch, not a new file.
+  //
+  // `detail.key` is a FINGERPRINT OF WHAT WAS PRESENTED and never the value —
+  // its caller hashes it, for the reason `logout.js` gives about not putting an
+  // authorization code in a row id. Sessions are already bounded by the sweep,
+  // so this scans rather than keeping an index: an index would be a second map
+  // to hold in step with this one, which is the same mistake one size down.
+  //
+  // Touching EXTENDS the session, which is deliberate and is the one place a
+  // session here is extended by use — a browser session is absolute and
+  // `logout.js`'s SESSION_EXPIRY_RULES says so. The difference is real: a
+  // browser holds a cookie that outlives its own use, and these rows exist only
+  // while a client is actually calling.
+  if (extra.key) {
+    const wanted = String(extra.key);
+    let found = null;
+    sessions.forEach(function (held) {
+      if (!found && held.credentialKey === wanted &&
+          (!held.expires || held.expires > Date.now())) {
+        found = held;
+      }
+    });
+    if (found) {
+      found.expires = Date.now() + SESSION_TTL_MS;
+      found.lastSeenAt = Date.now();
+      found.calls = (found.calls || 1) + 1;
+      // The name may sharpen between calls — a scheme that authenticated
+      // anonymously first and by name later — and the creation instant
+      // deliberately does not move.
+      notifySession('presented', found, { via: via || found.via, req: null });
+      log.debug("Leaving startSession(). The credential was presented again; " +
+                "session " + found.id + " was touched rather than replaced.");
+      return found;
+    }
+  }
   const sessionId = randomId(24);
   const session = {
     // The id is on the session as well as being the map key, because everything that
@@ -680,6 +894,24 @@ function startSession(res, username, amr, acr, via, detail) {
     // session could not name the session they were issued on.
     id: sessionId,
     user: userFor(username), authTime: nowSec(), expires: Date.now() + SESSION_TTL_MS,
+    // WHETHER ANYBODY ACTUALLY AUTHENTICATED (2026-09-05).
+    //
+    // `true` for every caller that does not say otherwise, which is every
+    // caller that existed before this field did — a password screen, a
+    // WebAuthn ceremony, a Kerberos ticket, a federated assertion. The one
+    // that passes `false` is the sign-in screen's "Continue without signing
+    // in" button, and it is what makes ALL_UNAUTHENTICATED_USERS a role
+    // something can actually hold at an issuance site.
+    //
+    // **IT IS ON THE SESSION AND NOT WORKED OUT AGAIN DOWNSTREAM**, which is
+    // the whole point: six issuance sites used to hard-code `authenticated:
+    // true` into the subject they handed the role gate, so the flag was a
+    // constant dressed as a fact. They read this instead. A session object
+    // from an older process that lacks the field reads as `undefined`, and
+    // every reader treats that as `true` for the same reason the default here
+    // is `true` — the absence of this field means the service that made the
+    // session had no way to be anything but authenticated.
+    authenticated: extra.authenticated !== false,
     // Stated rather than omitted: a relying party that asked for a second factor
     // needs to be able to see that it did not get one.
     amr: amr, acr: acr,
@@ -695,7 +927,20 @@ function startSession(res, username, amr, acr, via, detail) {
     // session serves: every browser family here reads this same session, so a
     // row saying `SAML 2.0` may well be carrying OIDC relying parties too, and
     // the page says so rather than letting the column be read as exclusive.
-    via: via || 'OAuth 2.0 / OIDC'
+    via: via || 'OAuth 2.0 / OIDC',
+    // THE CREDENTIAL FINGERPRINT, where the caller gave one — a hash, never
+    // the value. It is what makes a second call with the same token the same
+    // session rather than a new one, and it is the only field on this record
+    // that is about HOW the session is presented rather than about who is in
+    // it. A browser session has none: the cookie is the key and the map
+    // already keys on it.
+    credentialKey: extra.key ? String(extra.key) : null,
+    // Only a keyed session is extended by use, so only a keyed session needs
+    // these. They are set unconditionally so that every row has the same
+    // shape — `/admin/sessions` reads them and an absent field would draw as
+    // "unknown" on the rows where the answer is "once, at sign-in".
+    lastSeenAt: Date.now(),
+    calls: 1
   };
   sessions.set(sessionId, session);
   // The first session this process holds arms the sweep that will end it if
@@ -711,16 +956,45 @@ function startSession(res, username, amr, acr, via, detail) {
   // the cookie. `SameSite=Lax` stays as it is: WS-Federation section 13.2.1
   // sends its sign-in request as a cross-site form POST, and None would be the
   // change that needs its own argument.
-  res.set('Set-Cookie', SESSION_COOKIE + '=' + sessionId + '; Path=/; HttpOnly; SameSite=Lax' +
-                        (config.value('global.https') ? '; Secure' : ''));
+  //
+  // **AND NO COOKIE AT ALL FOR A CALLER THAT IS NOT A BROWSER (2026-09-06).**
+  // The management API, SCIM and the SPIRE Server API sign in through this
+  // function and present a credential on every request; handing one of them a
+  // session cookie would invite a client to start using it as a credential —
+  // a second way to reach those surfaces that none of their own authentication
+  // rules would ever see. `detail.cookie === false` is how a caller says so,
+  // and it is deliberately opt-OUT: every caller that existed before this
+  // field is a browser and must keep getting the cookie.
+  if (extra.cookie !== false) {
+    setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; HttpOnly; SameSite=Lax' +
+                         (config.value('global.https') ? '; Secure' : ''));
+  }
   // One of the two places a person is authenticated by typing a name at a screen —
   // this one covers both, since WS-Federation signs in through here.
+  //
+  // AN UNAUTHENTICATED SESSION IS RECORDED HERE TOO, and that needed deciding
+  // rather than falling out. What this funnel counts is "an identity was
+  // established at a door", which is what happened — the anonymous principal
+  // gets its directory entry from this call like anybody else, which is what
+  // makes it visible on /admin/users and able to hold a configured role. What
+  // it must not do is CLAIM a credential was checked, so `method` says
+  // `declined` and the note says so outright; the count on that entry is a
+  // count of anonymous sessions, and the method column is what tells a reader
+  // which kind of row they are looking at. `authenticated` is stripped from
+  // `extra` because it is a fact about the SESSION and this payload is about
+  // the act — leaving it in would put a field on the audit detail that nothing
+  // reads and that a reader would take for a claim about the credential.
+  const statsExtra = Object.assign({}, extra);
+  delete statsExtra.authenticated;
   stats.recordAuthentication(Object.assign({
     presented: username, protocol: via || 'OAuth 2.0 / OIDC',
-    method: methodPhraseFor(amr),
+    method: session.authenticated ? methodPhraseFor(amr) : 'declined',
     sub: session.user.sub, amr: amr, acr: acr, sessionId: sessionId,
-    note: 'No password was checked; the name typed is the identity.'
-  }, extra, { sessionId: sessionId }));
+    note: session.authenticated
+      ? 'No password was checked; the name typed is the identity.'
+      : 'Nobody authenticated: this is the anonymous principal, from ' +
+        '"Continue without signing in" at the sign-in screen.'
+  }, statsExtra, { sessionId: sessionId }));
   // The session itself, as its own audit event. It is deliberately separate
   // from the authentication recorded on the line above: the two are one act at
   // this screen and are NOT one act everywhere — a Kerberos AS-REQ and a
@@ -942,8 +1216,8 @@ function endSessionById(id, via) {
 // disagrees about Secure can leave the original in place — a sign-out that
 // reports success and ends nothing.
 function clearSessionCookie(res) {
-  res.set('Set-Cookie', SESSION_COOKIE + '=; Path=/; Max-Age=0' +
-                        (config.value('global.https') ? '; Secure' : ''));
+  setCookieHeader(res, SESSION_COOKIE + '=; Path=/; Max-Age=0' +
+                       (config.value('global.https') ? '; Secure' : ''));
 }
 
 // Ends the session the request carries, and returns it — the caller needs what it
@@ -1998,6 +2272,31 @@ function loginPage(base, record, error) {
     (record.forcePasswordless
        ? '<input type="hidden" name="webauthn_only" value="1">' : '') +
     '<div class="row"><button type="submit" id="kc-login" name="action" value="login">Sign In</button>' +
+    // THE THIRD BUTTON, AND IT IS NOT CANCEL (2026-09-05).
+    //
+    // Cancel is beside it and answers `access_denied` to the calling protocol,
+    // creating nothing — that is what a person who wants OUT presses, and it is
+    // the OAuth contract. This one is for a person who wants IN WITHOUT SAYING
+    // WHO THEY ARE, which is a different act with a different answer: the flow
+    // continues, tokens may well be issued, and what the session carries is the
+    // fact that nobody authenticated.
+    //
+    // It is drawn only when `authn.unauthenticatedSessions` is on, so an
+    // unedited service's sign-in screen is byte-for-byte what it was. There is
+    // no username field to fill in for it and it deliberately does not read
+    // one: whatever is typed above is ignored, because a session that took a
+    // name from the form and called itself unauthenticated would be claiming
+    // both things at once.
+    (config.value('authn.unauthenticatedSessions')
+       ? '<button type="submit" id="kc-anonymous" name="action" value="anonymous" ' +
+         'class="secondary" title="' +
+         xmlEscape('Continue as the anonymous principal. The flow goes on and ' +
+                   'tokens may be issued, but the session records that nobody ' +
+                   'authenticated — so an application requiring ' +
+                   'ALL_AUTHENTICATED_USERS will refuse it. Anything typed ' +
+                   'above is ignored.') +
+         '">Continue without signing in</button>'
+       : '') +
     '<button type="submit" id="kc-cancel" name="action" value="cancel" class="secondary">Cancel</button></div>' +
     '</form>' +
     // ---------------------------------------------------------------------
@@ -2129,9 +2428,93 @@ function selectIdpPage(base, record) {
 // answered 400 and told to start again at the application, exactly as at the
 // screen — there is no partner list to compose without knowing what was
 // interrupted.
+// ---------------------------------------------------------------------------
+// WHAT THE THREE SIGN-IN DOORS TAKE.
+//
+// **`authn` AND `authn_id` ARE THE SAME PENDING RECORD'S ID UNDER TWO NAMES** —
+// the screen carries it in the query string and the form posts it in a hidden
+// field — and both are minted by `beginAuthentication()` as `randomId()`, which
+// is base64url. Typing them is what makes a lookup key that arrived as an
+// ARRAY impossible: `pendingFor(['a','b'])` would previously have been a Map
+// miss answering "this sign-in has expired", which is a confusing sentence
+// about a request that was malformed rather than stale.
+//
+// **THE USERNAME IS `vt.name` AND DELIBERATELY NOT `vt.identifier`.** This
+// service has always accepted any name at all — that is most of what makes it
+// a mock — so the rule here is a BOUND and the absence of control characters,
+// which `scalar()` has already applied. Narrowing it to printable ASCII would
+// refuse people whose names are none of this service's business.
+//
+// **THE PASSWORD IS BOUNDED AND NOTHING ELSE**, and the bound is generous. Its
+// content is `credentials.js`'s business in product mode and nobody's in
+// development; what a schema can say about it is that a megabyte of it is not
+// a password, and that a scrypt at N=2^15 should not be asked to hash one.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A REFUSAL FROM `common/validation.js`, IN THIS MODULE'S OWN WORDS.
+//
+// That module deliberately renders nothing — it returns a code, a field and a
+// sentence, and each protocol says what a bad request looks like for itself.
+// Here that is `oauthError()`, the same shape every other refusal on these
+// three doors already uses, so a client that can read one can read this.
+//
+// `invalid_request` rather than a bare 400: the caller of these endpoints is a
+// browser that arrived from an OAuth or SAML flow, and RFC 6749 section 4.1.2.1
+// is the vocabulary it was already going to be answered in.
+// ---------------------------------------------------------------------------
+function refuseInvalid(res, why) {
+  log.debug("Entering refuseInvalid(). code=" + why.code + " field=" + why.field);
+  log.debug("Leaving refuseInvalid().");
+  return oauthError(res, 400, 'invalid_request', why.detail);
+}
+
+const PENDING_ID_QUERY = vz.object({
+  authn: vt.opt(vt.base64url)
+});
+
+const LOGIN_FORM = vz.object({
+  authn_id: vt.opt(vt.base64url),
+  // **THE THREE VALUES THE FORM ITSELF DRAWS, AND THE FIRST VERSION OF THIS
+  // LINE GOT THEM FROM THE HANDLER INSTEAD.** The handler only ever COMPARES
+  // against `cancel` and `anonymous` — everything else falls through to the
+  // ordinary sign-in — so reading it bottom-up gives a set that is missing the
+  // commonest value there is, and `login` was refused for every sign-in in the
+  // service. Eight protocol jobs went red on it and `npm test` could not have
+  // seen it, because nothing in process submits this form.
+  //
+  // The lesson is the general one: a closed set for a control this service
+  // draws itself must be read off the MARKUP, which is what a browser will
+  // actually send, and not inferred from the branches that happen to test it.
+  //
+  // It stays a closed set rather than becoming a free string, because this is
+  // this service's own form answering to no specification, and `action` decides
+  // whether a credential is issued, refused or issued to nobody in particular.
+  action: vt.opt(vt.oneOf(['login', 'cancel', 'anonymous'])),
+  username: vt.opt(vt.name),
+  password: vz.string().max(1024).optional(),
+  use_webauthn: vt.opt(vt.flag),
+  webauthn_only: vt.opt(vt.flag),
+  csrf_token: vt.opt(vt.token)
+});
+
+// The WebAuthn ceremony's result. `credential` is a JSON document the browser's
+// authenticator produced, so it is bounded and parsed downstream rather than
+// described here — a schema for it would be a second, worse copy of the
+// specification `webauthn.js` already implements.
+const WEBAUTHN_FORM = vz.object({
+  mode: vt.opt(vt.oneOf(['create', 'get'])),
+  mfa_id: vt.opt(vt.base64url),
+  credential: vz.string().max(validation.CAP.TEXT).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
 app.get(SELECT_IDP_PATH, function (req, res) {
   log.debug("Entering the federation chooser.");
-  const record = pendingFor((req.query || {}).authn);
+  const asked = validation.check(req, 'query', PENDING_ID_QUERY);
+  if (!asked.ok) {
+    return refuseInvalid(res, asked);
+  }
+  const record = pendingFor(asked.value.authn);
   if (!record) {
     log.debug("Leaving the federation chooser. Nothing is pending under that id.");
     return oauthError(res, 400, 'invalid_request',
@@ -2192,7 +2575,11 @@ app.get(SELECT_IDP_PATH, function (req, res) {
 // linked, reloaded and bookmarked while the request it interrupted waits.
 app.get(LOGIN_PATH, function (req, res) {
   log.debug("Entering the authentication screen.");
-  const record = pendingFor((req.query || {}).authn);
+  const asked = validation.check(req, 'query', PENDING_ID_QUERY);
+  if (!asked.ok) {
+    return refuseInvalid(res, asked);
+  }
+  const record = pendingFor(asked.value.authn);
   if (!record) {
     log.debug("Leaving the authentication screen. Nothing is pending under that id.");
     return oauthError(res, 400, 'invalid_request',
@@ -2235,7 +2622,15 @@ app.get(LOGIN_PATH, function (req, res) {
 app.post(LOGIN_PATH, function (req, res) {
   log.debug("Entering the authentication endpoint.");
   const base = baseUrlOf(req);
-  const body = parseBody(req);
+  // `parseBody()` and not `req.body`: this service's body parser is
+  // `bodyParser.text({ type: () => true })`, so `req.body` is the raw string
+  // and the parsed object is what a handler holds. `checkParsed()` is the entry
+  // point for exactly that, and its header argues why.
+  const posted = validation.checkParsed(parseBody(req), 'body', LOGIN_FORM);
+  if (!posted.ok) {
+    return refuseInvalid(res, posted);
+  }
+  const body = posted.value;
   const record = pendingFor(body.authn_id);
   if (!record) {
     log.debug("Leaving the authentication endpoint. The form had expired.");
@@ -2249,6 +2644,72 @@ app.post(LOGIN_PATH, function (req, res) {
     log.debug("Leaving the authentication endpoint. The user cancelled.");
     return returnToCaller(res, record, 'access_denied',
       'The user cancelled at the sign-in screen.');
+  }
+
+  // ---------------------------------------------------------------------
+  // "CONTINUE WITHOUT SIGNING IN" (2026-09-05).
+  //
+  // The opposite of the branch above it in the one way that matters: Cancel
+  // ENDS the flow with `access_denied` and creates nothing, and this one lets
+  // the flow go on with a session that says nobody authenticated. Both are a
+  // person declining to type a password; only one of them is declining the
+  // application.
+  //
+  // **THE SETTING IS CHECKED HERE AND NOT ONLY ON THE PAGE**, because the page
+  // is markup and this is the door. A form posted by hand with
+  // `action=anonymous` while the setting is off must not mint a session that
+  // the console then lists and that an application's required role is then
+  // decided against — the button being absent is a fact about one rendering,
+  // and the refusal has to be a fact about the endpoint. It falls through to
+  // the ordinary path rather than erroring, so the form simply asks for a name
+  // again.
+  //
+  // **THE USERNAME IN THE FORM IS IGNORED**, deliberately and not as a
+  // shortcut. A session that took the typed name and called itself
+  // unauthenticated would claim two things at once — that this is somebody in
+  // particular, and that nobody proved it — and every downstream reader would
+  // have to decide which half to believe. The anonymous principal is a stable
+  // name so that it has one directory entry, one row on /admin/users and one
+  // place to be granted a configured role, rather than a fresh identity per
+  // session that nothing could ever be said about.
+  //
+  // **THE ROLE GATE IS ASKED HERE TOO**, with `authenticated: false`, exactly
+  // as the password path asks it below with the same flag. An application that
+  // requires ALL_AUTHENTICATED_USERS therefore refuses this at the SESSION
+  // door, before a session exists — which is a better place to refuse it than
+  // the authorization endpoint, because there is still a screen to say so on.
+  if (String(body.action || '') === 'anonymous' &&
+      config.value('authn.unauthenticatedSessions')) {
+    const anonRoleAnswer = gate.check({
+      application: String(record.application || ''),
+      kind: gate.ISSUANCE.SESSION,
+      subject: { kind: 'user', name: ANONYMOUS_USERNAME, authenticated: false },
+      claims: null
+    });
+    if (!anonRoleAnswer.allowed) {
+      log.info('authn: the issuance policy refused an unauthenticated session ' +
+               'at "' + String(record.application) + '". ' + anonRoleAnswer.why);
+      log.debug("Leaving the authentication endpoint. The issuance policy refused the anonymous session.");
+      return sendLoginPage(res, loginPage(base, record, anonRoleAnswer.why));
+    }
+    pending.delete(record.id);
+    // `amr` is EMPTY and `acr` is '0', which is RFC 8176 read literally: there
+    // are no authentication methods to name because none was used, and an acr
+    // of 0 is the conventional "no assurance" value. Stating them is what lets
+    // a relying party that asked for a factor see that it got none.
+    // `gated: true` for the reason the password door gives: the anonymous
+    // branch asked the gate a few lines above, at the door, where there is
+    // still a screen to say no on.
+    startSession(res, ANONYMOUS_USERNAME, [], '0', record.protocol,
+      // `request` so this replaces whatever session the browser was on — an
+      // anonymous sign-in is still a privilege CHANGE, and leaving the
+      // previous one alive would mean somebody who was signed in as a person
+      // and then chose to continue anonymously still had the first session.
+      Object.assign({ request: req }, { authenticated: false, gated: true }));
+    returnToCaller(res, record, null, null);
+    log.debug("Leaving the authentication endpoint. An unauthenticated session was started; back to " +
+              record.returnTo + ".");
+    return undefined;
   }
 
   const username = String(body.username || '').trim();
@@ -2288,13 +2749,67 @@ app.post(LOGIN_PATH, function (req, res) {
       'one factor is one factor. Sign in with a password and the key together.'));
   }
 
-  // The reserved password the rest of this mock also refuses. It is not read at
-  // all on the passwordless path: no password was presented there, so there is
-  // nothing to refuse, and failing a field the screen says it will ignore would
-  // make the screen wrong about what it does.
-  if (!passwordless && String(body.password || '') === 'invalid') {
-    log.debug("Leaving the authentication endpoint. The reserved password was used, so the form is shown again.");
-    return sendLoginPage(res, loginPage(base, record, 'Authentication failed for ' + username + '.'));
+  // ---------------------------------------------------------------------
+  // THE CREDENTIAL (2026-09-06). One call, both modes.
+  //
+  // **THIS USED TO BE THE RESERVED-PASSWORD CHECK AND NOTHING ELSE**, and the
+  // difference is the architecture of the two modes rather than a new feature
+  // at this door: development mode still refuses only `invalid` and accepts
+  // everything else, product mode verifies against the hashed `userPassword`
+  // on the person's entry — and `common/credentials.js` is the single place
+  // either answer is given, so the sign-in screen, an LDAP bind, a
+  // UsernameToken and SCIM Basic cannot come to disagree about what a password
+  // is worth.
+  //
+  // It is NOT read at all on the passwordless path: no password was presented
+  // there, so there is nothing to verify, and failing a field the screen says
+  // it will ignore would make the screen wrong about what it does. The
+  // security key is the credential on that path and `webauthn.js` owns it.
+  //
+  // **THE MESSAGE SHOWN IS THE SAME WHATEVER FAILED**, deliberately. The
+  // reason from `verify()` goes to the LOG, where an operator can see whether
+  // a sign-in failed for a wrong password or for a person who holds no
+  // credential at all; the SCREEN says only that authentication failed,
+  // because telling a browser which of the two happened is the account
+  // enumeration answer.
+  if (!passwordless) {
+    // ---------------------------------------------------------------------
+    // RATE LIMITED (2026-09-06). OWASP A04/A07.
+    //
+    // **THIS IS THE ENDPOINT THAT MATTERS MOST**, because it is the one an
+    // attacker reaches first and the one with the smallest search space behind
+    // it. Nothing throttled it before: a password was guessable at network
+    // speed, and in product mode that is the whole security of the service.
+    //
+    // Two buckets — by identity and by address — because either alone is the
+    // half an attacker does not use. See websecurity.js.
+    //
+    // **IT COUNTS IN BOTH MODES.** Development checks no password, so a
+    // refusal there protects nothing... except that the suite drives this
+    // endpoint hundreds of times, which is exactly how a limit that is too
+    // tight gets found. The default of 5 per identity per minute is generous
+    // enough for a person and stops a script.
+    const allowed = websecurity.attempt('sign-in', req, username);
+    if (!allowed.ok) {
+      log.warn('authn: too many sign-in attempts for "' + username + '" (' +
+               allowed.kind + ' bucket). Refusing for ' + allowed.retryAfterS +
+               's.');
+      log.debug("Leaving the authentication endpoint. Rate limited.");
+      return sendLoginPage(res, loginPage(base, record, allowed.detail));
+    }
+    const credential = credentials.verify(username, String(body.password || ''),
+                                          { via: 'the sign-in screen' });
+    if (!credential.ok) {
+      log.info('authn: the sign-in for "' + username + '" was refused (' +
+               credential.reason + '): ' + credential.detail);
+      log.debug("Leaving the authentication endpoint. The credential was refused, so the form is shown again.");
+      return sendLoginPage(res, loginPage(base, record,
+        'Authentication failed for ' + username + '.'));
+    }
+    // A SUCCESSFUL SIGN-IN FORGETS THE COUNTERS, so somebody who mistyped
+    // their password four times is not one attempt from a lockout the moment
+    // they get it right.
+    websecurity.succeeded('sign-in', req, username);
   }
 
   // THE ROLE GATE, AND IT IS ASKED BEFORE THE SECOND FACTOR RATHER THAN AFTER
@@ -2303,13 +2818,33 @@ app.post(LOGIN_PATH, function (req, res) {
   // perform a ceremony first would be a screen that takes a credential it has
   // already decided to ignore.
   //
-  // THE SUBJECT IS NOT AUTHENTICATED YET, and `authenticated: false` says so
-  // rather than flattering the request. That is what makes
-  // ALL_UNAUTHENTICATED_USERS a role somebody can be refused BY at this door —
-  // it is the one point in this service where the distinction is real, since
-  // every other issuance happens after a session exists. A policy that wants
-  // the other reading matches on the roles the register answers, which are the
-  // same either way.
+  // THE SUBJECT **IS** AUTHENTICATED HERE, AND THIS SAID THE OPPOSITE UNTIL
+  // 2026-09-05. The old comment read "the subject is not authenticated yet,
+  // and `authenticated: false` says so rather than flattering the request",
+  // which sounds careful and was wrong — not about the wording, about the
+  // fact.
+  //
+  // **LOOK AT WHERE THIS RUNS.** The reserved password has already been
+  // refused twelve lines up. Everything this mock does by way of checking a
+  // credential has therefore already happened, and this request is the act of
+  // authenticating somebody. What has not happened yet is the SESSION, and
+  // "the session does not exist yet" is a different sentence from "nobody has
+  // authenticated" — the old code collapsed them.
+  //
+  // **WHAT IT COST WAS THE ROLE ITSELF.** An application whose
+  // `appRequiredRole` is `ALL_AUTHENTICATED_USERS` refused EVERY sign-in at
+  // this screen, because at this screen nobody had authenticated by that
+  // reading — so the one role most likely to be configured could never be
+  // satisfied by anybody, and the refusal named the person and the role and
+  // looked entirely deliberate. It survived because the test that narrows an
+  // application narrows it to a CONFIGURED role, which the register answers
+  // the same either way; only a built-in role can see the difference.
+  //
+  // **AND THE DISTINCTION THE OLD COMMENT WANTED IS REAL NOW, ELSEWHERE.**
+  // ALL_UNAUTHENTICATED_USERS is held by the anonymous session minted a few
+  // hundred lines up, where nobody authenticated and the flag says so. That is
+  // the honest version of what this line was reaching for: a party that did
+  // not authenticate, rather than a party in the middle of doing so.
   //
   // A REFUSAL IS THIS PAGE AGAIN WITH THE REASON ON IT, because there is
   // nowhere else to send them: `record.returnTo` is a path on THIS service
@@ -2320,7 +2855,7 @@ app.post(LOGIN_PATH, function (req, res) {
   const roleAnswer = gate.check({
     application: String(record.application || ''),
     kind: gate.ISSUANCE.SESSION,
-    subject: { kind: 'user', name: username, authenticated: false },
+    subject: { kind: 'user', name: username, authenticated: true },
     claims: null
   });
   if (!roleAnswer.allowed) {
@@ -2363,7 +2898,11 @@ app.post(LOGIN_PATH, function (req, res) {
 
   pending.delete(record.id);
   // One factor, and the tokens will say so.
-  startSession(res, username, ['pwd'], '1', record.protocol);
+  // `gated: true` — the role gate ran above, before this screen was redrawn,
+  // so that a refusal is a screen with a reason on it. Asking again inside
+  // startSession() would be one refusal reported in two shapes.
+  startSession(res, username, ['pwd'], '1', record.protocol,
+               { request: req, gated: true });
 
   // Back to whatever sent them here, with its own original request — which now
   // runs a second time, sees the session cookie, and completes.
@@ -2584,7 +3123,11 @@ function rpIdOf(base) {
 app.post('/authn/webauthn', function (req, res) {
   log.debug("Entering the WebAuthn second-factor endpoint.");
   const base = baseUrlOf(req);
-  const body = parseBody(req);
+  const posted = validation.checkParsed(parseBody(req), 'body', WEBAUTHN_FORM);
+  if (!posted.ok) {
+    return refuseInvalid(res, posted);
+  }
+  const body = posted.value;
   const step = pendingMfa.get(String(body.mfa_id || ''));
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(String(body.mfa_id || ''));
@@ -2628,11 +3171,51 @@ app.post('/authn/webauthn', function (req, res) {
         requireUserVerification: false
       });
       if (verdict.ok) {
-        webauthnCredentials.set(step.username, {
-          credentialId: verdict.credentialId,
-          publicKeyJwk: verdict.publicKeyJwk,
-          signCount: verdict.signCount
-        });
+        // ---------------------------------------------------------------
+        // THE PERSON EXISTS FROM THE MOMENT THE KEY DOES (2026-09-06).
+        //
+        // **A REGISTERED KEY IS A CREDENTIAL, AND A CREDENTIAL WITH NOBODY
+        // BEHIND IT IS A DANGLING ONE.** Until this, enrolment wrote only the
+        // in-memory `webauthnCredentials` map: the directory entry appeared at
+        // the first successful SIGN-IN, through the observer `startSession()`
+        // reaches. So between enrolling a key and using it, this service held
+        // a working credential for a person it could not list, could not show
+        // on /admin/users, and could not have shown you the keys of.
+        //
+        // For a PRIMARY (passwordless) key that gap is the whole account: the
+        // key is the only credential there is, so "the key exists and the
+        // person does not" is the only state that account is ever in until
+        // somebody uses it.
+        //
+        // **PRODUCT MODE REFUSES TO ENROL FOR SOMEBODY WHO DOES NOT EXIST**,
+        // which is requirement two applied where it belongs — a key enrolled
+        // for an unknown name would create that name, and creating objects
+        // because something referenced them is exactly what product mode
+        // removes. Development creates the entry, which is what it does
+        // everywhere else.
+        if (!mode.autoCreates() && !stats.knownUser(step.username)) {
+          log.info('authn: product mode, so a WebAuthn key was NOT enrolled ' +
+                   'for "' + step.username + '" — there is no directory entry ' +
+                   'for them and enrolling would create one.');
+          verdict = { ok: false,
+                      why: 'This service is in product mode, where a security ' +
+                           'key can only be enrolled for somebody who already ' +
+                           'exists. Create the person first.' };
+        } else {
+          webauthnCredentials.set(step.username, {
+            credentialId: verdict.credentialId,
+            publicKeyJwk: verdict.publicKeyJwk,
+            signCount: verdict.signCount
+          });
+          // THE ENTRY, NOW RATHER THAN AT FIRST USE. Through the same observer
+          // every other identity here reaches — `admin_stats.js`'s
+          // `setUserObserver()`, filled by `ldap_server.js` — and with the
+          // event named, so the directory can tell enrolment from an
+          // authentication. It is NOT `recordAuthentication()`: nobody
+          // authenticated by enrolling a key, and counting it would inflate
+          // the one number /admin/users is about.
+          stats.noteWebauthnEnrolled(step.username);
+        }
       }
     } else {
       const known = webauthnCredentials.get(step.username);
@@ -2694,7 +3277,7 @@ app.post('/authn/webauthn', function (req, res) {
   // identity, because the person it authenticates is the one the password step
   // already named. What the second factor adds to the entry is a flag; see
   // ldap_server.js's applyAuthenticationFactors(), which reads the amr below.
-  startSession(res, step.username, amr, acr, step.authn.protocol);
+  startSession(res, step.username, amr, acr, step.authn.protocol, { request: req });
   // Back to the caller, exactly as the password-only path returns: the
   // session now records what happened, and the request that was interrupted
   // runs again and sees it.
@@ -2753,6 +3336,7 @@ audit.setActorResolver(auditActorOf);
 module.exports = {
   LOGIN_PATH: LOGIN_PATH,
   SESSION_COOKIE: SESSION_COOKIE,
+  ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,
   cookiesOf: cookiesOf,
   sessionOf: sessionOf,

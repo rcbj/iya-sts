@@ -82,6 +82,17 @@ const ISSUANCE_ATTRIBUTE = {
   // service's own record; a claim is whatever was in a token, and this service
   // does not verify access tokens it did not issue.
   TOKEN_ROLE: 'urn:sts-mock:xacml:role-from-token',
+  // ON THE SUBJECT: whether anybody actually authenticated for the session the
+  // decision is being made in. It is on the SESSION rather than worked out
+  // again here — see authn.js — and it is what separates a person who signed
+  // in from one who pressed "continue without signing in".
+  AUTHENTICATED: 'urn:sts-mock:xacml:authenticated',
+  // ON THE RESOURCE: WHOSE it is, where that is a person. The User Portal sets
+  // it; nothing else does yet. It is what lets a policy say "the subject is the
+  // owner" — and, later, "or the subject holds a helpdesk role", which is the
+  // whole reason the portal's own-data rule goes through a policy at all rather
+  // than being an `if` in a handler.
+  OWNER: 'urn:sts-mock:xacml:resource-owner',
   // On the RESOURCE: the roles the application demands. `appRequiredRole` on
   // its entry, or EVERYBODY where it names none.
   REQUIRED_ROLE: 'urn:sts-mock:xacml:required-role'
@@ -303,6 +314,263 @@ const TEMPLATES = [
           effect: model.EFFECT.PERMIT,
           description: 'Permit when the roles the subject holds and the ' +
                        'roles the resource requires share a member.',
+          target: null,
+          condition: condition,
+          obligations: [], advice: []
+        }],
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // THE ACCESS-CONTROL POLICY (2026-09-06). The second of this service's own
+    // two, and the sibling of `role-issuance` above.
+    //
+    // That one answers "may this be ISSUED"; this one answers "may this
+    // SUBJECT do this to this RESOURCE" — the admin console, the management
+    // API, the User Portal, SCIM and the SPIRE Server API.
+    //
+    // **THE SUBJECT IS ALWAYS THE SECURITY CONTEXT'S PERSON**, taken from the
+    // session by `common/access_gate.js` and never from the request. That is
+    // not this policy's business — a PDP decides about the subject it is
+    // handed — but it is the reason the decision means anything: a policy
+    // engine deciding faithfully about a subject the caller nominated is
+    // broken access control with extra steps.
+    //
+    // TWO QUESTIONS, BOTH OF WHICH MUST BE ANSWERED YES, and the second is the
+    // one that could not have been written as an `if` in a handler:
+    //
+    //   1. does the subject satisfy the resource's ROLE requirement — holding
+    //      one the resource names, or the resource naming none? The console's
+    //      two roles are the first half; the second is what lets a surface
+    //      nobody has narrowed behave as it did before there was a policy.
+    //   2. does the subject satisfy the resource's OWNERSHIP requirement — the
+    //      resource naming no owner, or **the subject BEING the owner**? That
+    //      is the User Portal's whole rule, expressed as a comparison between
+    //      two attributes rather than as an equality buried in a route.
+    //
+    // **THEY ARE CONJOINED AND NOT ALTERNATIVES, AND THE FIRST DRAFT GOT THAT
+    // WRONG.** Written as three OR'd arms, "the resource requires nothing" was
+    // true for the portal — which narrows nobody — so it swallowed the owner
+    // comparison and any signed-in person could reach ANY OTHER PERSON'S
+    // account. The build function carries the full account of it.
+    //
+    // Question 2 is why this exists. "You may manage your own account" and "a
+    // helpdesk role may manage anybody's" are the same policy with one more
+    // rule, and only one of those two sentences can be added to a document.
+    // -----------------------------------------------------------------------
+    id: 'access-control',
+    label: 'Access control (this service\'s own)',
+    blurb: 'The policy the embedded PEP asks before a subject reaches the ' +
+           'admin console, the management API, the User Portal, SCIM or the ' +
+           'SPIRE Server API.',
+    what: 'Produces ONE Permit rule whose condition conjoins two questions: ' +
+          'does the subject satisfy the resource\'s ROLE requirement (holding ' +
+          'one it names, or it naming none), AND does it satisfy the ' +
+          'resource\'s OWNERSHIP requirement (the resource naming no owner, ' +
+          'or the subject being that owner). Both must hold, so ownership is ' +
+          'a constraint rather than a way round the roles. The combining ' +
+          'algorithm is deny-unless-permit, so anything not permitted is ' +
+          'refused rather than left to the PEP\'s bias. Because the ' +
+          'requirement and the owner both travel in the REQUEST, one document ' +
+          'decides for every surface — and adding a helpdesk role that may ' +
+          'manage somebody else\'s account is a SECOND RULE in this policy ' +
+          'rather than a change to this one or to any handler.',
+    parameters: [
+      { name: 'permitOwner',
+        label: 'Permit a subject to act on a resource they own',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. This is the User Portal\'s rule: a person may ' +
+              'manage their own account and nobody else\'s. It is a ' +
+              'CONSTRAINT rather than an alternative — a resource that names ' +
+              'an owner is reachable only by that owner, whatever roles are ' +
+              'held. Saying no leaves only the ownerless surfaces reachable, ' +
+              'so the portal refuses everybody including its owner, which is ' +
+              'a useful thing to be able to demonstrate and a terrible thing ' +
+              'to leave on.' },
+      { name: 'permitWhenNothingRequired',
+        label: 'Permit when the resource requires no role at all',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. A surface nobody has narrowed then behaves as it ' +
+              'did before there was a policy. Saying no denies every request ' +
+              'that carries no requirement, which is how to see what a fully ' +
+              'closed deployment looks like.' },
+      { name: 'requireAuthenticated',
+        label: 'Refuse a subject that did not authenticate',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. An unauthenticated session — the sign-in screen\'s ' +
+              '"continue without signing in" — is a real subject here, and ' +
+              'this conjunct keeps it out of every gated surface without ' +
+              'anybody having to name it in a role.' }
+    ],
+    build: function (answers, options) {
+      log.debug('Entering buildAccessControl().');
+      const given = answers || {};
+      const permitOwner = yes(given.permitOwner, true);
+      const permitEmpty = yes(given.permitWhenNothingRequired, true);
+      const requireAuth = yes(given.requireAuthenticated, true);
+
+      // The same intersection test `role-issuance` uses, and for the same
+      // reason: `any-of-any` is the only way XACML asks whether two bags share
+      // a member.
+      const holdsRequiredRole = apply(F3 + 'any-of-any', [
+        { kind: 'function', functionId: F1 + 'string-equal' },
+        designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                   TYPE.STRING),
+        designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.REQUIRED_ROLE,
+                   TYPE.STRING)
+      ]);
+
+      // ---------------------------------------------------------------------
+      // **OWNERSHIP IS A CONSTRAINT AND NOT AN ALTERNATIVE**, and this was the
+      // defect the first draft shipped with. It was written as a third ARM —
+      // permit when the subject holds a required role, OR when nothing is
+      // required, OR when the subject owns the resource — and the middle arm
+      // then swallowed the third: the User Portal requires no role, so
+      // `requiredRole` is an empty bag, so the second arm is TRUE for
+      // everybody, and the policy permitted any signed-in person to reach
+      // ANOTHER PERSON'S account. The owner comparison was evaluated, was
+      // false, and made no difference, because an `or` does not care.
+      //
+      // So the shape is a CONJUNCTION of two independent questions:
+      //
+      //   1. does the subject satisfy the resource's ROLE requirement —
+      //      holding one it names, or it naming none;
+      //   2. does the subject satisfy the resource's OWNERSHIP requirement —
+      //      the resource naming no owner, or the subject BEING the owner.
+      //
+      // Both must hold. A surface with no owner (the console, the management
+      // API, SCIM, the SPIRE Server API) answers question 2 vacuously and
+      // behaves exactly as an RBAC policy; a surface with one (the portal)
+      // adds ownership on top of whatever role it also requires, rather than
+      // offering it as a way round.
+      //
+      // **A HELPDESK ROLE IS STILL A RULE AND NOT AN EDIT TO THIS ONE.** Under
+      // deny-unless-permit, adding a second Permit rule targeted at
+      // `manage-own` whose condition is "holds the helpdesk role" reaches
+      // somebody else's account without touching this rule at all — which is
+      // the property the whole document exists for, and which the OR spelling
+      // was pretending to have while giving it to everybody.
+      // ---------------------------------------------------------------------
+      const roleArms = [holdsRequiredRole];
+
+      if (permitEmpty) {
+        // A bag-size test, because XACML cannot ask whether a designator
+        // matched: an absent attribute and one with no values are the same
+        // empty bag, and here both mean "nobody narrowed this".
+        roleArms.push(apply(F1 + 'integer-equal', [
+          apply(F1 + 'string-bag-size', [
+            designator(model.CATEGORY.RESOURCE,
+                       ISSUANCE_ATTRIBUTE.REQUIRED_ROLE, TYPE.STRING)
+          ]),
+          value(TYPE.INTEGER, '0')
+        ]));
+      }
+
+      const satisfiesRole = roleArms.length === 1
+        ? roleArms[0]
+        : apply(F1 + 'or', roleArms);
+
+      // The resource names nobody. The same bag-size reading as above, and it
+      // is what makes this one policy serve five surfaces: four of them never
+      // set an owner, so this is true and the whole ownership question is
+      // vacuous for them.
+      const ownerless = apply(F1 + 'integer-equal', [
+        apply(F1 + 'string-bag-size', [
+          designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.OWNER,
+                     TYPE.STRING)
+        ]),
+        value(TYPE.INTEGER, '0')
+      ]);
+
+      // **THE COMPARISON THAT COULD NOT HAVE BEEN AN `if`.** Two designators
+      // compared to each other — the subject's id and the resource's owner —
+      // which is a statement about the RELATIONSHIP between them rather than
+      // about either one. `any-of-any` because both are bags.
+      const isTheOwner = apply(F3 + 'any-of-any', [
+        { kind: 'function', functionId: F1 + 'string-equal' },
+        designator(model.CATEGORY.ACCESS_SUBJECT, model.ATTRIBUTE.SUBJECT_ID,
+                   TYPE.STRING),
+        designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.OWNER,
+                   TYPE.STRING)
+      ]);
+
+      // `permitOwner: no` leaves `ownerless` alone, so a resource that names
+      // an owner is refused to EVERYBODY — including the owner. That is what
+      // the parameter's help says it does, and it is the only reading that
+      // makes the setting demonstrable: the four ownerless surfaces are
+      // untouched by it, which is how somebody can see that the portal is the
+      // surface the setting is about.
+      const satisfiesOwnership = permitOwner
+        ? apply(F1 + 'or', [ownerless, isTheOwner])
+        : ownerless;
+
+      const conjuncts = [];
+      if (requireAuth) {
+        // AUTHENTICATION IS A CONJUNCT rather than an arm, because it is a
+        // precondition and not an alternative: holding a role must not admit
+        // somebody who never signed in.
+        //
+        // `any-of` IS A 3.0 FUNCTION (F3) and not a 1.0 one. Written with F1
+        // it is a function id nothing implements, and the engine answers
+        // Indeterminate — which under deny-unless-permit is a Deny, so every
+        // surface refused everybody and the reason said only "the policy
+        // denied it". `any-of-all` is the 1.0 one, which is a different
+        // function; the neighbouring namespace is the trap.
+        conjuncts.push(apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          value(TYPE.BOOLEAN, 'true'),
+          designator(model.CATEGORY.ACCESS_SUBJECT,
+                     ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)
+        ]));
+      }
+      conjuncts.push(satisfiesRole);
+      conjuncts.push(satisfiesOwnership);
+
+      const condition = conjuncts.length === 1
+        ? conjuncts[0]
+        : apply(F1 + 'and', conjuncts);
+
+      log.debug('Leaving buildAccessControl(). ' + conjuncts.length +
+                ' conjunct(s), ' + roleArms.length + ' role arm(s).');
+      return {
+        kind: 'Policy',
+        id: options.idBase,
+        version: '1.0',
+        description: 'THE ACCESS-CONTROL POLICY. The embedded PEP asks this ' +
+                     'before a subject reaches the admin console, the ' +
+                     'management API, the User Portal, SCIM or the SPIRE ' +
+                     'Server API. It permits when the subject satisfies the ' +
+                     'resource\'s ROLE requirement — holding a role it ' +
+                     'requires' +
+                     (permitEmpty ? ', or the resource requiring none' : '') +
+                     ' — AND satisfies its OWNERSHIP requirement: the ' +
+                     'resource names no owner' +
+                     (permitOwner ? ', or the subject IS that owner, which is ' +
+                                    'how a person reaches their own account ' +
+                                    'and nobody else\'s' : '') +
+                     (requireAuth ? '. A subject that did not authenticate is ' +
+                                    'refused whatever else is true' : '') +
+                     '. Everything else is denied: the combining algorithm is ' +
+                     'deny-unless-permit, so an access decision does not ' +
+                     'depend on a PEP\'s bias.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        // NO TARGET, for `role-issuance`'s reason: one caller asks this
+        // document and only ever about an access decision, so a target
+        // restating that could only refuse a request the PEP would not have
+        // made — as NotApplicable, which under deny-unless-permit reads as a
+        // Deny nobody can explain.
+        target: null,
+        variables: {},
+        rules: [{
+          id: options.idBase + ':rule:may-reach-it',
+          effect: model.EFFECT.PERMIT,
+          description: 'Permit when the subject satisfies the resource\'s ' +
+                       'role requirement AND its ownership requirement. ' +
+                       'Ownership is a constraint rather than a way round ' +
+                       'the roles: a resource that names an owner is ' +
+                       'reachable only by that owner.',
           target: null,
           condition: condition,
           obligations: [], advice: []

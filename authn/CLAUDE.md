@@ -625,3 +625,145 @@ It is the protocol the sign-in came THROUGH and not the only one the session
 serves: every browser family here reads this same session, so a row saying
 `SAML 2.0` may well be carrying OIDC relying parties too. That is what the
 *Carries* column on that page is for, and why the two are drawn separately.
+
+## AN UNAUTHENTICATED SESSION, AND THE THIRD BUTTON THAT STARTS ONE (2026-09-05)
+
+Every session this module held used to be one somebody had signed into. That
+was not a policy, it was the only thing the code could produce — and it made
+two of the six built-in roles in `common/roles.js` names a policy could match
+and nothing could ever hold. `ALL_UNAUTHENTICATED_USERS` in particular was
+unreachable at every one of the nine issuance sites.
+
+`authn.unauthenticatedSessions` — **OFF by default** — puts a third button on
+the sign-in screen, `Continue without signing in`, and pressing it starts a
+real session that records `authenticated: false`.
+
+### It is NOT Cancel, and that is the distinction to keep
+
+Cancel was already there and is untouched: it answers `access_denied` to the
+calling protocol and creates nothing. Both buttons are somebody declining to
+type a password; only one of them is declining the APPLICATION.
+
+| Button | The flow | The session |
+|---|---|---|
+| Sign In | continues | authenticated |
+| Continue without signing in | **continues** | **unauthenticated** |
+| Cancel | ends, `access_denied` | none |
+
+A person who wants out presses Cancel. A person who wants in without saying who
+they are presses the middle one, and the flow goes on — tokens may well be
+issued, and what the session carries is the fact that nobody authenticated.
+
+### The setting is checked at the DOOR and not only on the page
+
+The page is markup; the endpoint is the door. A form posted by hand with
+`action=anonymous` while the setting is off must not mint a session that the
+console then lists and that an application's required role is then decided
+against. `tests/vendored/sts_roles_builtin.js` posts exactly that form as its
+sixth mutant.
+
+### The username in the form is IGNORED, and the principal is stable
+
+Whatever is typed above the button is not read. A session that took the typed
+name and called itself unauthenticated would claim two things at once — that
+this is somebody in particular, and that nobody proved it — and every
+downstream reader would have to decide which half to believe.
+
+`ANONYMOUS_USERNAME` is `anonymous`, exported because the console and the tests
+must mean the same string by it. **It is STABLE rather than one per session**,
+which is the decision most likely to be undone. A fresh identity each time
+would keep the sessions apart on `/admin/sessions` — and it would also seed a
+directory entry per session, put a new row on `/admin/users` every time
+somebody pressed the button, and leave `anonymous` a name that could never be
+granted a configured role, because it would be different by the time anybody
+typed it. One entry, many sessions, is the choice `identityKeyOf()` already
+makes for everybody else.
+
+It goes through `recordAuthentication()` like any other sign-in, which is what
+gives it that entry — but with `method: 'declined'` and a note saying so, so
+the funnel counts "an identity was established at a door" without claiming a
+credential was checked. `amr` is empty and `acr` is `'0'`: RFC 8176 read
+literally, since there are no methods to name.
+
+## THE SIGN-IN GATE ASKED THE WRONG QUESTION, AND IT MADE ONE ROLE UNUSABLE
+
+Found on 2026-09-05 by the first test ever written against the built-in roles.
+
+The role gate at this module's own SESSION door was asked with
+`authenticated: false`, and the comment above it argued the case: the session
+does not exist yet, so saying `true` would be "flattering the request".
+
+**It was wrong, and the cost was the role.** Look at where that gate runs — the
+reserved password has already been refused twelve lines above it, so everything
+this mock does by way of checking a credential has happened, and the request IS
+the act of authenticating somebody. What has not happened is the SESSION, and
+*the session does not exist yet* is a different sentence from *nobody has
+authenticated*. The old code collapsed them.
+
+So an application whose `appRequiredRole` was `ALL_AUTHENTICATED_USERS`
+**refused every sign-in at this screen** — the one role most likely to be
+configured could never be satisfied by anybody, and the refusal named the
+person and the role and looked entirely deliberate.
+
+**Why it survived:** `tests/vendored/sts_roles.js` narrows an application to a
+CONFIGURED role, and the register answers those the same either way. Only a
+built-in role can see the difference. That is the general lesson rather than a
+detail about this bug — a computed role and a configured one exercise different
+halves of the gate, and a suite holding only the second cannot see the first.
+
+**A refusal here is still the page again with the reason on it**, which is
+unchanged and deliberate: `record.returnTo` is a path on this service belonging
+to the protocol module that started the sign-in, and bouncing somebody back
+into an authorization endpoint that would refuse them a second time is a loop.
+That makes this door refuse differently from every other one, which is why
+`sts_roles_builtin.js` has a `refusedAtTheScreen()` of its own and asserts both
+doors — the screen, and the authorization endpoint for a session carried here
+from elsewhere.
+
+## `ISSUANCE.SESSION` IS ASKED AT THE FUNNEL NOW, NOT AT ONE DOOR (2026-09-06)
+
+A session IS an issuance — `ISSUANCE.SESSION` has been in
+`common/issuance_gate.js`'s list since it was written — and it was asked at
+exactly ONE door: this module's own sign-in screen. **Five other paths minted a
+session and never asked**: a federated assertion (`federation_sp.js`), a SPNEGO
+ticket (`spnego_authn.js`), a client certificate (`tls_server.js`), a WS-Trust
+UsernameToken (`wstrust.js`), and this file's OWN WebAuthn funnel.
+
+So an application narrowed to a role refused a password sign-in and admitted the
+same person through any of the five. Federation is where that cost most, for the
+reason `federation/CLAUDE.md` gives about its bugs being security bugs: the
+person authenticated somewhere else entirely and everything this service knows
+about them came out of somebody else's document.
+
+**IT MOVED INTO `startSession()`**, which is the one place a session is created
+— the same argument `signJwt()` makes about being the single counter. Five call
+sites is four that remember and a sixth added later that does not.
+
+Four things about it are load-bearing.
+
+* **IT REFUSES BY RETURNING NULL AND NEVER BY THROWING.** Two callers —
+  `tls_server.js` and `wstrust.js` — wrap this in a `try` that treats a failure
+  as bookkeeping which must not break an exchange already completed. That is
+  correct for a defect in this function and exactly wrong for a refusal, which
+  would be swallowed and the session started anyway. A null is a value they have
+  to look at. `tests/api_sessions.js` mutation-tests both halves.
+* **`gated: true` IS THE OPT-OUT AND ONLY THIS FILE'S SCREEN PASSES IT.** That
+  door asks BEFORE drawing anything, so a refusal is a screen with a reason on
+  it rather than a failure half-way through a sign-in; asking twice would be one
+  refusal reported in two shapes. The default is therefore SAFE — a sign-in path
+  added tomorrow is gated without its author knowing this exists.
+* **A SIGN-IN THAT NAMES NO APPLICATION IS STILL ALLOWED**, which is not a
+  weakness added here: `issuance_gate.check()` has always allowed when nothing
+  named an application, because there is then no requirement to check. It is
+  what keeps every existing caller unaffected, and it is why each door passes
+  the application it knows about — `record.application` here, `fedApplication`
+  in federation, the SPNEGO record's.
+* **THE REFUSAL IS AUDITED AS `session.refuse`**, beside `session.start`. A
+  sign-in that was refused by policy and one that never happened look identical
+  in every other record this service keeps.
+
+**WS-TRUST IS THE ONE CALLER THAT DOES NOT FAIL THE EXCHANGE ON A REFUSAL**, and
+that is argued where it is: the RSTR was already permitted in its own right
+through `ISSUANCE.WSTRUST_TOKEN`, and the browser session a UsernameToken
+exchange also starts is a side effect rather than the product. Refusing the
+token there would refuse a credential the policy had just allowed.

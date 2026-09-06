@@ -754,3 +754,34 @@ caller diagnosing "why is nothing being refused" needs to know which one it is.
 no decider and every issuance is allowed whatever the register says.
 `enforced: false` means `roles.enforceIssuance` is off — the same outcome by a
 different route, and the way back if a policy edit locks something out.
+
+## THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS GATED AT ALL (2026-09-06)
+
+The product-mode middleware asks the two console roles and then, for a caller
+that holds one, asks `common/access_gate.js`. Three things about that.
+
+**IT IS THE LAYER ABOVE AND NOT A REPLACEMENT.** `admin.gateStateFor()` is still
+the one answer to *who may administer this service* — asking it rather than
+re-deriving it is what stops this file becoming a second one — and the subject
+handed to the policy is the SESSION that got the caller through it, never
+anything on the request. A PDP deciding faithfully about a subject the caller
+nominated is broken access control with extra steps.
+
+**IT RUNS ONLY INSIDE THE `mode.gatesManagementApi()` BRANCH, and that is the
+argument this file has always made read one layer up.** In development this API
+is open by design: it is what the tests drive and the way back in when nobody
+holds a role, which a service that checks no password needs because there is no
+other way to bootstrap an administrator. Open means no credential, so no
+session, so no subject — and asking a policy whose built-in document refuses an
+unauthenticated subject would close exactly that door. **A POLICY LAYER MUST NOT
+BE THE THING THAT REMOVES THE RECOVERY PATH.**
+
+**ON AN UNEDITED PRODUCT DEPLOYMENT IT PERMITS**, because the built-in document
+asks for a role only where somebody has required one and the caller has already
+been shown to hold Admin Read or Admin Write. So turning product mode on does
+not acquire a second refusal nobody asked for; what it acquires is somewhere to
+put one.
+
+The refusal says the caller PASSED the role check and names the roles they hold,
+because "you hold the role and the policy still says no" is the one state a
+reader would otherwise spend an afternoon on.

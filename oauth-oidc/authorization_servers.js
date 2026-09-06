@@ -111,6 +111,8 @@ const { log } = require('../common/helpers');
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
 const realms = require('../common/realms');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 // The profile a request selects when its URL carries no path component. Named
 // rather than empty-stringed because it is a value people type into a form and
 // read on a page, and "" is not a thing anybody can type.

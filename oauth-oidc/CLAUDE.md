@@ -1060,3 +1060,128 @@ re-judged, the same rule delegated permissions follow and federation follows
 about not re-checking a person once the session exists — so a refresh of a code
 obtained before the setting was turned on still works, and revoking a consent
 does not touch a token already minted.
+
+## The UserInfo endpoint's two halves have no test in either repository
+
+**By the root `CLAUDE.md`'s rule they belong in the PARENT suite** — every one of the
+assertions below can be made by driving the running service over HTTP, so
+nothing about them justifies a directory here. What a test would have to cover
+is almost entirely the CLAIMS REQUEST, because the configured `userinfo` set is
+the four claim sets' behaviour on a fifth set and the one thing about it that is
+its own is worth one assertion: a claim added to it reaches a client that
+already holds its token, with no new sign-in. The rest is OIDC Core section 5.5,
+and it is mostly negatives: a `claims` parameter that is not JSON, is not an
+object, whose `userinfo` member is a string or a number, whose individual claim
+request is a number, whose `essential` is not a boolean, whose `values` is not a
+non-empty array, or that names more claims than the cap — each refused at the
+AUTHORIZATION endpoint with `invalid_request` and the reason, which is where the
+client can still be told; an unknown TOP-LEVEL member ignored rather than
+refused, and named in the reply; a name nothing can resolve simply absent and
+never an error; an `essential` one absent too; a `value` that does not match
+answered with the value HELD. Beside those, the properties that only a test can
+pin down: that the parsed request rides in the access token and survives a
+REFRESH, that the ID Token honours the `id_token` member and the UserInfo
+response the `userinfo` one, that `address` returns the whole Address Claim
+where `address.locality` returns one member, that `family_name#ja-Kana-JP` comes
+back under exactly that name, that a requested claim beats the scope-driven one
+and `sub` beats everything, that the federation release policy filters a
+requested claim exactly as it filters a configured one, and that the non-spec
+request-level parameter is a UNION with the token's own request and can never
+take a claim away from it.
+
+
+## `observeClientAuthentication()` — A FACT, WHERE `checkClientAuthentication()` IS A POLICY (2026-09-05)
+
+`oauth2_bcp.js` has two functions about client authentication now and they
+answer different questions:
+
+| | Question | Refuses? | Mode-gated? |
+|---|---|---|---|
+| `checkClientAuthentication()` | was this client REQUIRED to authenticate, and did it | yes, `invalid_client` | yes — a no-op while `oauth2.rfc9700` is off |
+| `observeClientAuthentication()` | did this client, on this request, present a credential that VERIFIED | **never** | **no** |
+
+**The second exists because the role gate asks a question RFC 9700 mode does
+not.** `ALL_AUTHENTICATED_APPLICATIONS` and
+`ALL_UNAUTHENTICATED_APPLICATIONS` are about what the client IS, and that is
+true whether or not this service has been asked to enforce the BCP. A mock with
+`oauth2.rfc9700` off still knows perfectly well that a client sent a matching
+secret; refusing to notice would make both roles unusable in the default
+configuration — which is the configuration almost everything here runs in.
+`tests/vendored/sts_roles_builtin.js` asserts the mode is OFF before it asserts
+anything else in that section, so the claim is about observation and not about
+enforcement.
+
+**It keeps four "no" answers apart** — no entry here, a PUBLIC client, a
+confidential client with nothing on file to check against, and a credential
+that did not verify. Only the last is a failure; the second is what
+`ALL_UNAUTHENTICATED_APPLICATIONS` is actually about. That is why the function
+has no `ok` field at all: an `ok` would invite a caller to treat a public client
+as a problem.
+
+**It is not free.** For a confidential client it performs the same verification
+the policy function performs, so a token request from one now does that work
+whether or not the mode is on. That is affordable — one signature check on a
+request about to mint several — and the alternative was a third state, "we did
+not look", that every caller would have had to decide what to do about.
+
+## `issuanceSubjectOf()` HELD TWO CONSTANTS DRESSED AS FACTS
+
+Until 2026-09-05 it returned `authenticated: true` for both kinds of party.
+Three of the six built-in roles are about that difference, so while it said
+`true` twice, a policy could name them and nothing arriving at the token
+endpoint could hold or fail to hold them.
+
+The two kinds take their answer from different places and that is the shape of
+the fix:
+
+* **A user's** belongs to the session the authorization happened on, and the
+  session is not here — so the authorization code carries
+  `session_authenticated`, and a refresh reads it back off the token registry
+  by jti. A grant with no session behind it (the password grant, a token
+  exchange) HAS authenticated somebody by presenting a credential at this
+  endpoint, so `true` is honest there and stays.
+* **An application's** belongs to this request, and is the observation above.
+  **A missing observation is `false`**, which is the one place in that function
+  that fails closed: the permissive reading would hand
+  `ALL_AUTHENTICATED_APPLICATIONS` to every public client in the service.
+  Nothing is refused by that alone — an application requiring `EVERYBODY` is
+  unaffected, which is every application that has not been told otherwise.
+
+The observation is injected by the `issue()` closure at the token endpoint
+rather than passed by each grant, for the reason that closure already gives
+about the client certificate: every grant mints through it, so a seventh added
+later inherits the decision without its author having to know it exists.
+
+## THERE ARE EXACTLY TWO PLACES THIS MODULE HANDS BACK SEVERAL CREDENTIALS AT ONCE, AND BOTH NOW SAY SO (2026-09-05)
+
+`/admin/tokens` lists one row per REPLY rather than one per credential, and what
+makes that possible is a `set_id` minted here and carried into the token registry
+through `issuanceContext()`. **`common/CLAUDE.md` argues why it is stated rather
+than derived**; this is about the two call sites, because getting the list of
+them wrong is the way this feature breaks quietly.
+
+| Where | What it hands back | Why it is not the other one |
+|---|---|---|
+| `tokenSet()` | access token, refresh token, ID Token | every grant that issues a token set goes through it — the same property that already makes it the one place the RFC 9700 binding note is written |
+| `issueAuthorizationResponse()` | access token and ID Token, in one fragment | **implicit and hybrid never go through `tokenSet()` at all.** They mint on the spot |
+
+That second row is the same trap the audience derivation fell into and is fixed
+beside it: `audienceScopes()` is read in both places for exactly this reason, and
+a set id in only one of them would have drawn the identical pair as one row from
+the token endpoint and two from the authorization endpoint.
+
+**`tokenSet()` REPLACES its parameter object rather than mutating it.** `issue()`
+hands the same object to `checkIssuance()` and to the audit, and a set id
+appearing in a record nobody minted is worse than none at all. A copy, so the
+twenty-odd reads of `opts` below it are untouched.
+
+**A REFRESH GETS A NEW SET.** This function is entered once per response, so the
+second generation of a grant is a set of its own with its own issued instant and
+its own expiries. What joins the generations is `parent_refresh_jti`, which is a
+different relation and is already drawn as one at `/admin/tokens/credential`.
+
+**The id is minted even when the response carries one credential or none.** A
+`response_type=code` response records nothing, so the id costs a random string; a
+conditional would be a second rule about when a set exists, and the one rule — a
+set is a response — is what makes "a set of one" mean the same thing on every row
+of that table.

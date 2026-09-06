@@ -89,6 +89,20 @@ const { log, xmlEscape, baseUrlOf, parseBody, b64uDecode, userFor,
         // than typed, because a typed one was short by an action.
         numberWord } = require('../common/helpers');
 const config = require('../common/config');
+// The credential lifecycle, for the activation link the users page issues. A
+// LEAF (rule 3): it registers no route and requires nothing here.
+const credentials = require('../common/credentials');
+// CSRF and rate limiting for this console. A LEAF (rule 3): it registers no
+// route and requires only config, crypto and helpers, so it can neither move a
+// route nor close a cycle.
+const websecurity = require('../common/websecurity');
+// The access-control gate. A LEAF (rule 3): registers nothing, requires only
+// config and helpers. Its decider is filled by xacml/xacml_access_pep.js at
+// 23c, so before that line every check here is allowed — which is what a
+// process without the XACML family does.
+const accessGate = require('../common/access_gate');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 // What this service writes down, and whether it is working. A PLAIN REQUIRE in
 // the ordinary direction: that module is a library — it registers no route, so
 // this line moves nothing in the router — and it requires only `config.js` and
@@ -368,6 +382,13 @@ const credentialGraph = require('../common/credential_graph');
 // moved. It is the same argument the two SPIFFE libraries above are required
 // under.
 const krb5Principals = require('../kerberos/krb5_principals');
+
+// The input validator. A LEAF (rule 3): it registers no route of its own and
+// requires only `config`, `bunyan` and zod, so it closes no cycle here and
+// moves nothing in the route order.
+const validation = require('../common/validation');
+const vt = validation.types;
+const vz = validation.z;
 // THE PROTOCOL-INDEPENDENT LOGOUT IS NOT REQUIRED HERE, AND THAT IS RULE 3e's
 // TEST ANSWERING YES FOR THE SIXTH TIME. It is reached through a SLOT below —
 // setLogoutReader(), which `../logout/logout.js` fills at its own require time,
@@ -1561,6 +1582,16 @@ const SETTING_HOMES = [
   // PROCESS; there is no family whose page they would be less surprising on.
   { group: 'Global', pages: ['/admin/config'] },
 
+  // KEY MATERIAL lives on /admin/config for the same reason Global does: where
+  // this service's signing keys come from and what encrypts them at rest are
+  // facts about the PROCESS, not about any one protocol — every family here
+  // signs with the same key.
+  { group: 'Key material', pages: ['/admin/config'] },
+  // WEB SECURITY, on /admin/config for the same reason: a rate limit and a
+  // CSRF scheme are facts about the PROCESS and every browser-facing surface
+  // shares them.
+  { group: 'Web security', pages: ['/admin/config'] },
+
   { group: 'Trust realms', pages: ['/admin/realms'] },
   { group: 'OAuth 2.0 / OIDC', pages: ['/admin/oauth2'] },
   { group: 'Admin console', pages: ['/admin/rbac'] },
@@ -2009,16 +2040,51 @@ function navItem(item, active, up) {
 // One page's link. Split out of navBar() when groups arrived so that a page
 // draws the same way at either depth — the active-tab-is-a-link rule above is
 // the kind that gets applied to one of two copies.
+// WHAT SCROLLS THE SIDEBAR TO THE PAGE YOU ARE ON (2026-09-05).
+//
+// `nav` is its own scroll container — `.side` is sticky and the card inside it
+// has `overflow-y:auto`, which is what stops a long list pushing the page down
+// — and a scroll container starts at the TOP on every load. So navigating to a
+// page low in the list left that page's own entry below the fold: the reader
+// arrived somewhere and the list did not show where.
+//
+// **`autofocus` is the whole mechanism and it needs no script**, which is why
+// this console can have it at all: a browser scrolls a focused element into
+// view, including scrolling the ancestor container it lives in. There is no
+// seventh scripted page here and `script-src 'none'` is untouched.
+//
+// **`tabindex="-1"` is what makes it safe.** The active item is a `<span>`
+// when it is the page being drawn, and a span is not focusable without it — so
+// autofocus alone would do nothing. `-1` rather than `0` because the element
+// must be focusABLE without joining the TAB ORDER: it is the page you are
+// already on, so a keyboard user tabbing through the nav should reach the
+// links they can go to and not stop on the one they are standing on.
+//
+// **It is the only `autofocus` in this console**, which was checked rather
+// than assumed: two of them and the first in document order wins, so one added
+// to a form field on some page would silently stop working the day somebody
+// added another. If a page ever needs to focus a field on load, that page has
+// to opt this one OUT rather than compete with it.
+//
+// `scroll-margin` in the stylesheet keeps it off the container's own edge, so
+// what is revealed is the item with its neighbours around it rather than the
+// item flush against the top where it reads as the start of the list.
+const ACTIVE_NAV_FOCUS = ' tabindex="-1" autofocus';
+
 function navLink(item, active, up) {
   log.debug("Entering navLink(). path=" + item.path);
   if (item.path === active) {
     if (up) {
       log.debug("Leaving navLink(). Active, and a drill-down.");
-      return '<li><a class="here" href="' + esc(up.href) + '" title="Back to ' +
-             esc(up.label) + '">' + esc(item.label) + '</a></li>';
+      return '<li><a class="here" href="' + esc(up.href) + '"' +
+             ' title="Back to ' + esc(up.label) + '"' +
+             // A drill-down's active item IS a link, so it is already in the
+             // tab order and must stay there — only the autofocus is added.
+             ' autofocus>' + esc(item.label) + '</a></li>';
     }
     log.debug("Leaving navLink(). Active.");
-    return '<li><span class="here">' + esc(item.label) + '</span></li>';
+    return '<li><span class="here"' + ACTIVE_NAV_FOCUS +
+           ' aria-current="page">' + esc(item.label) + '</span></li>';
   }
   log.debug("Leaving navLink().");
   return '<li><a href="' + esc(item.path) + '">' + esc(item.label) +
@@ -2349,6 +2415,109 @@ function realmChooser(req) {
     '</div></form>';
 }
 
+// ---------------------------------------------------------------------------
+// EVERY SECTION HEADING AND EVERY FIELD GETS A TOOLTIP, DERIVED (2026-09-05).
+//
+// **IT IS A PASS OVER THE RENDERED BODY AND NOT 391 EDITED CALL SITES**, and
+// that is the same decision the folds made: the test is on the RENDERED text,
+// not on the caller's judgement. A page written tomorrow gets its tooltips
+// with nothing added to it, and none of them can drift from the prose they are
+// taken from, because they ARE that prose read at render time. A hand-written
+// hint beside each control would have been 391 new strings and a second copy
+// of every explanation on this console — the exact drift the derived-summary
+// rule exists to prevent.
+//
+// TWO RULES, and they differ because the two things differ:
+//
+//   * **A HEADING** takes the opening sentence of the FIRST note that follows
+//     it, before the next heading. That note is what the section is about, so
+//     its first sentence is what the heading means. The note stays where it is
+//     — sections keep their folds — so this adds a hover and removes nothing.
+//   * **A FIELD** takes the nearest note ABOVE it, because a hand-built form
+//     is explained by the paragraph introducing it rather than per control.
+//     Every field in one form therefore shares a tooltip, which is honest:
+//     that paragraph is genuinely what all of them are for, and a per-field
+//     sentence does not exist to be derived. Where a real per-field
+//     description DOES exist the caller has already set `title` itself —
+//     `configRow()` and the two other settings rows do — and this pass never
+//     touches an element that has one.
+//
+// **IT ONLY EVER ADDS.** An element that already carries a `title` is left
+// exactly as it was, so every hand-placed tooltip in this file still wins and
+// this can never overwrite a better one.
+//
+// The regexes are deliberately narrow — `<h2>`/`<h3>` with no attributes at
+// all, and `<label>` with none — because this console generates its own markup
+// and those are the two shapes it generates. Anything with an attribute
+// already is either hand-tooltipped or doing something this pass should not
+// guess about.
+function withDerivedTips(inner) {
+  log.debug("Entering withDerivedTips().");
+  const body = String(inner || '');
+  let added = 0;
+
+  // The plain text of the first note or fold summary in a fragment.
+  const firstProseIn = function (fragment) {
+    const summary = /<summary[^>]*>([\s\S]*?)<\/summary>/.exec(fragment);
+    if (summary) {
+      return plainTextOf(summary[1]);
+    }
+    const note = /<p class="note"[^>]*>([\s\S]*?)<\/p>/.exec(fragment);
+    return note ? plainTextOf(note[1]) : '';
+  };
+
+  // HEADINGS. The window is from the heading to the next heading, so a section
+  // with no prose of its own borrows nothing from the one below it.
+  //
+  // The tag may already carry attributes — `<h3 id="member">` is how every
+  // anchored subsection on this console is written — so the match keeps them
+  // and inserts the title beside them. A tag that already has a `title` is
+  // skipped whole, which is the "it only ever adds" rule.
+  const out = body.replace(/<(h2|h3)([^>]*)>/g, function (whole, tag, attrs, at) {
+    if (/\stitle=/.test(attrs)) {
+      return whole;
+    }
+    const rest = body.slice(at);
+    const next = /<h[123][\s>]/.exec(rest.slice(whole.length));
+    const window = next ? rest.slice(0, whole.length + next.index) : rest;
+    const prose = firstProseIn(window);
+    if (!prose) {
+      return whole;
+    }
+    added += 1;
+    return '<' + tag + attrs + tip(prose, Infinity) + '>';
+  });
+
+  // FIELDS. `lastIndexOf` rather than a forward scan: the note that explains a
+  // form is above it, and the nearest one above is the one that explains this
+  // form rather than the previous section's.
+  //
+  // `<label for="...">` is the settings rows' shape and they set their own
+  // title, so those are skipped by the same rule as the headings — but a
+  // hand-built `<label for="x">` with no title is not, which is why the match
+  // cannot simply be the bare tag.
+  const withFields = out.replace(/<label([^>]*)>/g, function (whole, attrs, at) {
+    if (/\stitle=/.test(attrs)) {
+      return whole;
+    }
+    const before = out.slice(0, at);
+    const start = Math.max(before.lastIndexOf('<p class="note"'),
+                           before.lastIndexOf('<summary'));
+    if (start < 0) {
+      return whole;
+    }
+    const prose = firstProseIn(before.slice(start));
+    if (!prose) {
+      return whole;
+    }
+    added += 1;
+    return '<label' + attrs + tip(prose, Infinity) + '>';
+  });
+
+  log.debug("Leaving withDerivedTips(). " + added + " tooltip(s) derived.");
+  return withFields;
+}
+
 function page(title, active, inner, up, gate, req) {
   log.debug("Entering page(). title=" + title + ", up=" + (up ? up.href : "none"));
   const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
@@ -2479,12 +2648,31 @@ function page(title, active, inner, up, gate, req) {
     'nav a,nav .here{display:block;padding:3px 6px;border-radius:5px;text-decoration:none;' +
     'line-height:1.3}' +
     'nav a{color:#12107c}nav a:hover{background:#f0f0f7}' +
-    'nav .here{font-weight:700;color:#222;background:#eceaf6}' +
+    // THE PAGE YOU ARE ON, AND IT USED TO BE A WHISPER (2026-09-05).
+    //
+    // It was `background:#eceaf6` — a lavender four shades off the card's own
+    // white — which on a list of thirty-odd links read as "very slightly
+    // different" rather than as "here". It now takes the same solid brand fill
+    // the pager's current page has had all along (`.pagenav .here`), so the two
+    // "you are here" markers in this console finally look alike.
+    //
+    // `scroll-margin` is the other half of the autofocus above: without it the
+    // browser reveals the item flush against the top edge of the scrolling
+    // card, where it reads as the first item in the list rather than as one
+    // somewhere in the middle. Three lines of room above it keeps its
+    // neighbours visible, which is what tells a reader where they are.
+    'nav .here{font-weight:700;color:#fff;background:#12107c;' +
+    'scroll-margin:4.5rem 0}' +
+    // The focus ring is suppressed ONLY for the active item, and only because
+    // the autofocus above puts focus there on every single page load — a ring
+    // drawn around it would be a permanent artefact rather than a signal that
+    // the keyboard is there. Every other link in this nav keeps its ring.
+    'nav .here:focus{outline:none}' +
     // The active item on a DRILL-DOWN. It keeps the weight and the fill `.here`
     // gives it, because the reader is still inside that section, and takes back
     // the link colour and an underline, because it is a link again and a bold
     // black label reads as text nobody can click — which is exactly what it was.
-    'nav a.here{color:#12107c;text-decoration:underline;background:#eceaf6}' +
+    'nav a.here{color:#fff;text-decoration:underline;background:#12107c}' +
     '.crumb{font-size:.82em;margin:0 0 14px;color:#666}' +
     '.crumb a{text-decoration:none;font-weight:600}' +
     '.crumb a:hover{text-decoration:underline}' +
@@ -2928,7 +3116,7 @@ function page(title, active, inner, up, gate, req) {
     // THE HEAD ROW: the page's title, and the one control that is on every
     // page of this console. See refreshLink() for why it is a link.
     '<div class="pagehead"><h1>' + esc(title) + '</h1>' + refreshLink(req) + '</div>' +
-    trailBar(active, up, title) + gateBanner(gate) + inner +
+    trailBar(active, up, title) + gateBanner(gate) + withDerivedTips(inner) +
     '<div class="meta">' +
     // The one sentence drawn at the foot of EVERY page in this console, which
     // is why it is the sentence most worth keeping true. It said "everything
@@ -2967,6 +3155,57 @@ function page(title, active, inner, up, gate, req) {
 // under. Only a drill-down passes it; a section's own list page does not, and the
 // JSON answer ignores it either way — a way back up is a property of a page a
 // person is reading, and a caller of ?format=json has the URL it asked for.
+// ---------------------------------------------------------------------------
+// THE CSRF TOKEN GOES INTO EVERY POST FORM THIS SHELL DRAWS (2026-09-06).
+// OWASP A01/A08.
+//
+// **AT THE SHELL AND NOT AT EACH FORM, DELIBERATELY.** This console builds
+// something like a hundred and forty forms as inline strings across sixty
+// pages, and a scheme that required each author to remember a hidden field is a
+// scheme that is one page away from being incomplete for ever — silently, since
+// a missing token looks exactly like a page that works. Adding it HERE means a
+// page written tomorrow is protected by having been drawn at all.
+//
+// It is a string rewrite, which is the part worth being uncomfortable about,
+// and it is narrow on purpose: it matches the opening tag of a form whose
+// method is post and inserts one input directly after it. It cannot match
+// anything else, because `<form` with `method="post"` is not a sequence that
+// occurs in prose here — and if it ever did, the worst outcome is a stray
+// hidden input in a paragraph rather than a missing control.
+//
+// **A PAGE DRAWN FOR SOMEBODY WITH NO SESSION GETS NO TOKEN AND NEEDS NONE**:
+// `checkCsrf()` passes a request with no session, because there is nothing to
+// forge on behalf of an anonymous caller. See websecurity.js.
+// ---------------------------------------------------------------------------
+// THE FIELDS EVERY FORM ON THIS CONSOLE CARRIES THAT ARE NOT SETTINGS.
+//
+// Several action handlers refuse a field they do not recognise BY NAME rather
+// than ignoring it, which is the right behaviour and is why this table has to
+// exist: `action` has always been furniture, and since 2026-09-06 so is
+// `csrf_token`, which `withCsrf()` puts into every POST form this shell draws.
+// Without this the token — added to protect those forms — was refused BY them,
+// and the failure read as though the caller had misspelt a setting.
+//
+// `back` and `from` are here for the same reason: they are how a form says
+// where the reader was, and a handler that treated them as settings would
+// refuse every button that keeps somebody's place.
+const FORM_FURNITURE = {
+  action: true,
+  csrf_token: true,
+  back: true,
+  from: true
+};
+
+function withCsrf(req, html) {
+  const session = consoleSession(req);
+  const field = session ? websecurity.field(session.session.id) : '';
+  if (!field) {
+    return html;
+  }
+  return String(html).replace(/(<form\b[^>]*\bmethod\s*=\s*["']post["'][^>]*>)/gi,
+                              function (whole) { return whole + field; });
+}
+
 function respond(req, res, json, title, active, html, up) {
   log.debug("Entering respond(). title=" + title);
   res.set('Cache-Control', 'no-store');
@@ -2975,7 +3214,8 @@ function respond(req, res, json, title, active, html, up) {
     log.debug("Leaving respond(). Answered JSON.");
     return;
   }
-  res.status(200).type('text/html').send(page(title, active, html, up, gateStateFor(req), req));
+  res.status(200).type('text/html').send(
+    withCsrf(req, page(title, active, html, up, gateStateFor(req), req)));
   log.debug("Leaving respond(). Answered HTML.");
 }
 
@@ -3091,7 +3331,10 @@ function respondToAction(req, res, target, result) {
 // one answer.
 function gateStateFor(req) {
   log.debug("Entering gateStateFor().");
-  const enforced = !!config.value('admin.authRequired');
+  // THE MODE, since 2026-09-06, where this read `admin.authRequired`. That
+  // setting is gone: "is authentication required here" had four answers across
+  // this service and now has one. See common/mode.js.
+  const enforced = mode.gatesConsole();
   // THE DEFAULT REALM'S SESSION, whichever realm is being read, and only here —
   // see the require at the top of this file for why the console asks the
   // question that way and why no other module may.
@@ -3247,7 +3490,7 @@ function sendToConsoleSignIn(req, res) {
 
 app.use('/admin', function (req, res, next) {
   log.debug("Entering the admin console gate. " + req.method + " " + req.originalUrl);
-  if (!config.value('admin.authRequired')) {
+  if (!mode.gatesConsole()) {
     log.debug("Leaving the admin console gate. admin.authRequired is off; everything is allowed.");
     next();
     return;
@@ -3309,6 +3552,91 @@ app.use('/admin', function (req, res, next) {
   // method added later is refused by default rather than allowed by omission.
   const needsWrite = req.method !== 'GET' && req.method !== 'HEAD';
   if (needsWrite ? state.write : state.read) {
+    // ---------------------------------------------------------------------
+    // AND THE CSRF TOKEN, ON THE WAY THROUGH (2026-09-06). OWASP A01/A08.
+    //
+    // **HERE, BECAUSE THIS IS ALREADY THE ONE PLACE EVERY NON-GET ON THIS
+    // CONSOLE PASSES THROUGH.** The same argument the role check makes for
+    // itself two lines up: sixty pages and a hundred and forty forms, and a
+    // check per handler is a hundred and forty chances to add the
+    // hundred-and-forty-first without one. `withCsrf()` puts the token INTO
+    // every form this console draws, so the two halves cannot drift — a page
+    // author does neither.
+    //
+    // A JSON caller is refused the same way. `/admin` answers JSON to
+    // `?format=json` and a POST from a script is exactly what CSRF is not
+    // about — but the token is cheap to send and letting `Content-Type:
+    // application/json` past would make the header the bypass.
+    if (needsWrite) {
+      const token = websecurity.checkCsrf(state.session ? state.session.id : '',
+                                          parseBody(req));
+      if (!token.ok) {
+        log.warn('admin console: a ' + req.method + ' to ' +
+                 (req.originalUrl || req.url) + ' was refused on CSRF (' +
+                 token.reason + '), signed in as ' + state.username + '.');
+        refuse(req, res, 403, 'csrf',
+               'That form did not come from this console.',
+               token.detail,
+               { html: note('Every form this console draws carries a ' +
+                 'one-time-per-session token, and this request did not have ' +
+                 'the right one. The ordinary cause is a page left open ' +
+                 'across a sign-out and then submitted — sign in again and ' +
+                 'retry. The other cause is the one this check exists for: a ' +
+                 'request assembled somewhere else and sent using your ' +
+                 'browser\'s session.') });
+        log.debug("Leaving the admin console gate. Refused on CSRF.");
+        return;
+      }
+    }
+    // ---------------------------------------------------------------------
+    // AND THE POLICY (2026-09-06). OWASP A01, decided by the PDP rather than
+    // by this file.
+    //
+    // **THE ROLE CHECK ABOVE STAYS AND IS NOT REPLACED.** `admin_rbac.js`
+    // decides WHAT roles this person holds — out of two groups in the DEFAULT
+    // realm, deliberately, because a per-realm roster would let anybody who
+    // can create a realm administer the service. This asks whether the policy
+    // permits them, given those roles, to do this to this resource. The two
+    // are different questions and the second is the one an operator can
+    // change without a deployment.
+    //
+    // The SUBJECT is the session's person — `state.username` comes from
+    // `consoleSession(req)` and from nothing in the request — and their
+    // directory entry is available to the policy through the PIP, so a rule
+    // can be written against anything the entry holds.
+    //
+    // On an unedited service this permits exactly what the roles already
+    // permitted: the console requires no role in the application registry, so
+    // the policy's "requires nothing" arm answers. What it buys is that
+    // narrowing the console is now editing an entry and writing a rule.
+    const policy = accessGate.check({
+      resource: accessGate.RESOURCE.CONSOLE,
+      action: needsWrite ? accessGate.ACTION.WRITE : accessGate.ACTION.READ,
+      subject: { name: state.username,
+                 authenticated: state.session
+                   ? state.session.authenticated !== false : false,
+                 roles: state.roles.slice(0),
+                 sessionId: state.session ? state.session.id : '' },
+      context: { method: req.method, path: req.originalUrl || req.url }
+    });
+    if (!policy.allowed) {
+      log.info('admin console: the access policy refused ' + req.method + ' ' +
+               (req.originalUrl || req.url) + ' for ' + state.username + '. ' +
+               policy.why);
+      refuse(req, res, 403, 'policy_denied',
+             'The access policy does not permit this.',
+             policy.why,
+             { decision: policy.decision, policy: policy.policy,
+               html: note('This is a XACML decision rather than a role check ' +
+                 '— the roles you hold were put INTO the request and the ' +
+                 'policy decided. <a href="/admin/xacml/policies">The ' +
+                 'policies</a> are where it is written, and ' +
+                 '<a href="/admin/xacml/decide">the decision page</a> will ' +
+                 'reproduce this exact question against the same attribute ' +
+                 'source.') });
+      log.debug("Leaving the admin console gate. Refused by policy.");
+      return;
+    }
     log.debug("Leaving the admin console gate. Allowed: " + state.username + " holds " +
               (state.roles.join(', ') || '(the empty roster)') + ".");
     next();
@@ -3534,7 +3862,22 @@ function unescapeText(text) {
 // one is a shorter saying of something the page still carries — which is why
 // shortened() above, this console's first tooltip, puts the FULL value in the
 // title and the truncation on the page rather than the other way round.
-function tip(text) {
+// `max` OVERRIDES THE 190-CHARACTER TEASER, AND A CALLER THAT PASSES ONE IS
+// SAYING THIS TOOLTIP IS THE ONLY COPY (2026-09-05).
+//
+// The default truncates, which was right while everything a tooltip carried
+// was also in a fold under the control — a teaser is a preview of something
+// the reader can go and read. **A field whose fold has been removed has no
+// such thing**, so truncating there would not be hiding the rest of the
+// sentence, it would be DELETING it: the median setting description is 384
+// characters and the default teaser is 190, so more than half of every one
+// would have left the product rather than the screen.
+//
+// So a field that is tooltip-only passes `Infinity` and the title carries the
+// whole text. Browsers wrap a long title perfectly well; the reason the
+// default is short is that a teaser competes with the fold under it, and
+// where there is no fold there is nothing to compete with.
+function tip(text, max) {
   const plain = plainTextOf(text);
   if (!plain) {
     return '';
@@ -3544,7 +3887,7 @@ function tip(text) {
   // helper here that is handed raw strings out of config.js as often as it is
   // handed markup. esc() on an already-escaped fragment would double it, so
   // the entities are resolved for this one path.
-  return ' title="' + esc(unescapeText(teaserOf(plain, TIP_CHARS))) + '"';
+  return ' title="' + esc(unescapeText(teaserOf(plain, max || TIP_CHARS))) + '"';
 }
 
 // The summary and the body of one collapsed block. Where the opening sentence
@@ -3941,25 +4284,58 @@ function identifierCell(record, listView) {
 // interchangeable: a signed UserInfo response has no jti to act on, and a SAML
 // assertion has an identifier and still cannot be revoked because nothing out there
 // would ask this service about it.
+//
+// **IT DRAWS A BUTTON FOR AN ASSERTION AND A TICKET SINCE 2026-09-05, AND THE
+// PARAGRAPH ABOVE USED TO SAY THAT WAS IMPOSSIBLE.** What it said was true and
+// is still true — nothing consults this service when one of those is presented,
+// so no mark here stops one working — and it was an answer to a question this
+// column was not asking. **What this service KNOWS and what a relying party
+// will HONOUR are two different claims**, and the old cell let the second erase
+// the first: an identity provider that has signed somebody out has a position
+// on every credential it issued them, and being unable to enforce it is not a
+// reason to be unable to state it.
+//
+// So `revocable` says whether there is a button and `revocationReach` says what
+// pressing it changes, and **the second is what the tooltip is built from** —
+// a `record-only` button that read like a `protocol` one would be exactly the
+// lie the old cell was avoiding.
 function actionCell(record, backRow) {
-  if (record.family !== 'token') {
-    return '<span class="state-none" title="' +
-      esc('Nothing consults this service about a SAML assertion or a Kerberos ticket. An ' +
-          'assertion is valid because its signature verifies and its Conditions hold; a ticket is ' +
-          'valid because the service it names can decrypt it with a key it already has. A button ' +
-          'here would change a number on this page and nothing at all out there.') + '">—</span>';
-  }
   if (!record.revocable) {
     return '<span class="state-none" title="' +
-      esc('Only access tokens, ID Tokens and refresh tokens can be revoked — the others are ' +
-          'replies rather than credentials, or carry no jti to act on.') + '">—</span>';
+      esc('This one carries no jti to act on — a signed UserInfo response has none, and the ' +
+          'WS-Trust JWT is signed directly rather than through signJwt(). There is nothing to ' +
+          'name in a revocation.') + '">—</span>';
   }
+  const recordOnly = record.revocationReach === 'record-only';
+  const target = recordOnly
+    ? '<input type="hidden" name="artifact" value="' + esc(record.key || '') + '">'
+    : '<input type="hidden" name="target" value="' + esc(record.jti) + '">';
+  const verb = record.revoked ? 'restore' : 'revoke';
+  const action = recordOnly ? verb + '-artifact' : verb;
+  const title = recordOnly
+    ? (record.revoked
+        ? 'Take this service\'s disavowal back. NON-SPEC, like every restore here.'
+        : 'Mark it revoked IN THIS SERVICE\'S OWN RECORD, which is the whole of what ' +
+          'this can do and is worth doing. THE HOLDER WILL NOT BE TOLD BY THIS BUTTON: ' +
+          'a relying party validates a SAML assertion\'s signature and its Conditions and ' +
+          'asks nobody, a Kerberos service decrypts a ticket with a key it already has, ' +
+          'and an X509-SVID chains to a bundle — so this credential goes on working out ' +
+          'there until it expires. What the mark buys is that a global logout can say ' +
+          'what it disowned, that CAEP can transmit it to a receiver that subscribed, and ' +
+          'that SAML Single Logout can carry it for an assertion that came from a browser ' +
+          'profile. A WS-Trust assertion has neither channel, and the mark is all there is.')
+    : (record.revoked
+        ? 'Un-revoke it. NON-SPEC — no real authorization server can undo a revocation.'
+        : 'Revoke it. Introspection immediately reports it inactive, UserInfo refuses it ' +
+          'with invalid_token, and the refresh grant fails with invalid_grant.');
   return '<form method="post" action="/admin/tokens" class="inline">' +
-    '<input type="hidden" name="action" value="' + (record.revoked ? 'restore' : 'revoke') + '">' +
-    '<input type="hidden" name="target" value="' + esc(record.jti) + '">' +
+    '<input type="hidden" name="action" value="' + esc(action) + '">' +
+    target +
     '<input type="hidden" name="back" value="' + esc(backRow) + '">' +
-    '<button class="' + (record.revoked ? 'secondary' : 'danger') + '">' +
-    (record.revoked ? 'Restore' : 'Revoke') + '</button></form>';
+    '<button class="' + (record.revoked ? 'secondary' : 'danger') +
+    '" title="' + esc(title) + '">' +
+    (record.revoked ? 'Restore' : 'Revoke') +
+    (recordOnly ? ' (record only)' : '') + '</button></form>';
 }
 
 function issuedRow(record, backRow, listView) {
@@ -3976,11 +4352,185 @@ function issuedRow(record, backRow, listView) {
     '<td>' + actionCell(record, backRow) + '</td></tr>';
 }
 
+// ---------------------------------------------------------------------------
+// A SET — WHAT CAME BACK IN ONE REPLY — WHICH IS WHAT THE TOKENS TABLE LISTS
+// SINCE 2026-09-05.
+//
+// **The row used to be one credential and is now one issuance.** OAuth 2.0 and
+// OIDC are the only families this service speaks that hand back several
+// credentials at once: a code redemption returns an access token, an ID Token
+// and a refresh token, and `response_type=id_token token` returns two in one
+// fragment. Three rows for one reply left the reader to reassemble by comparing
+// timestamps the one thing the protocol had handed over whole — and worse, to
+// GUESS, because two people redeeming two codes at the same client in the same
+// millisecond produce six rows a timestamp cannot separate.
+//
+// Every other family issues one credential per act, so a SAML assertion, a
+// Kerberos ticket and an SVID are each a set of one and are drawn exactly as
+// they were. `stats.issuedSets()` decides which is which — from a set id the
+// ISSUER stated, never from a heuristic over these rows — and this file renders
+// what it is handed, which is the same division tokensView() has always been on.
+//
+// THE SET'S OWN CELLS COME FROM ITS FIRST MEMBER and that is right for every
+// column but two, both of which say so on the page: the scope of a set is the
+// ACCESS TOKEN's, which the refresh token beside it deliberately does not share
+// (see tokenSet() — the refresh token keeps the whole authorized scope), and the
+// audience of a set is not one value at all, which is why the party column reads
+// `client_id`. Both disagreements are visible one click away on the set page,
+// where each member is its own row again.
+// ---------------------------------------------------------------------------
+
+// WHAT THE SET CONTAINS, which is the column that used to be Kind. A set of one
+// prints exactly what that column printed, so three families out of four are
+// untouched; a group prints its kinds in the order they were issued, which for a
+// code redemption is access token, refresh token, ID Token.
+function contentsCell(set) {
+  if (!set.grouped) {
+    return esc(set.kinds[0] || '—');
+  }
+  return '<strong title="' +
+    esc(set.size + ' credentials came back in one reply' +
+        (set.grant ? ', from the ' + set.grant + ' grant' : '') +
+        '. Every one of them is on the set page, with its own identifier, its ' +
+        'own expiry and its own button.') + '">' +
+    esc(set.kinds.join(' + ')) + '</strong>' +
+    ' <span class="state-none">(' + set.size + ')</span>';
+}
+
+// THE STATE OF A SET, WHICH IS OFTEN NOT ONE STATE. An access token expires in
+// fifteen minutes and the refresh token beside it in a day, so within an hour
+// most sets on this page are neither valid nor expired — and reporting either
+// would be this column choosing which member matters. `mixed` says so and the
+// tooltip counts them, which is the same refusal-to-average the sessions page's
+// expiry column makes.
+function setStateCell(set) {
+  if (set.state !== 'mixed') {
+    return '<td class="' + stateClass(set.state) + '">' + esc(set.state) + '</td>';
+  }
+  const parts = Object.keys(set.states).map(function (state) {
+    return set.states[state] + ' ' + state;
+  });
+  return '<td class="state-none" title="' +
+    esc('The members of this set are not all in the same state: ' +
+        parts.join(', ') + '. That is the ordinary case rather than a fault — an ' +
+        'access token and the refresh token issued with it have very different ' +
+        'lifetimes — so this column reports the disagreement instead of picking ' +
+        'one. The set page has each member and its own state. Filtering by a ' +
+        'state finds a set when ANY member holds it.') +
+    '">mixed</td>';
+}
+
+// WHEN THE SET COMES APART, and when it is finished. Two instants because the
+// members have two, and the earlier one first because it is the one somebody
+// debugging a refused call has arrived to find: the access token died at 12:19
+// and the refresh token that could mint another is good until tomorrow.
+function setExpiryCell(set) {
+  if (!set.expiresAtMs) {
+    return '—';
+  }
+  if (!set.lastExpiresAtMs || set.lastExpiresAtMs === set.expiresAtMs) {
+    return esc(whenText(set.expiresAtMs));
+  }
+  return '<span title="' +
+    esc('The members of this set expire at different times. The first goes at ' +
+        whenText(set.expiresAtMs) + ' and the last at ' +
+        whenText(set.lastExpiresAtMs) + '; the set page says which is which.') +
+    '">' + esc(whenText(set.expiresAtMs)) + ' &rarr; ' +
+    esc(whenText(set.lastExpiresAtMs)) + '</span>';
+}
+
+// THE HANDLE, AND THE WAY IN. A group is named by the set id and opens the set
+// page; a set of one keeps the identifier cell it has always had and opens the
+// credential's lineage, because for one credential the set page would add a
+// click and nothing else. Both are links to somewhere, which is why the two
+// cases are here rather than in identifierCell(): that function answers "what is
+// this credential called", and this one answers "where does this row go".
+function setIdentifierCell(set, listView) {
+  if (!set.grouped) {
+    return identifierCell(set.members[0], listView);
+  }
+  return '<a href="' +
+    esc('/admin/tokens/set' + queryWith(listView || {}, { id: set.setKey })) +
+    '" title="' +
+    esc('The ' + set.size + ' credentials this one reply carried, each with its own ' +
+        'identifier, expiry and button — and a link on to where each of them came ' +
+        'from. The set id is this service\'s own handle on the reply: it is in no ' +
+        'token, no client ever sees it, and it is not a claim.') + '">set ' +
+    // NOT esc()'d: shortened() returns MARKUP — a <code> carrying the whole
+    // value in its title, so a truncated identifier can still be read — which
+    // is exactly what identifierCell() beside it does with the same call.
+    // Escaping it prints the tag instead of the value.
+    shortened(set.setId, 10) + '</a>';
+}
+
+// THE BUTTON FOR A WHOLE SET. One act rather than three clicks, and it acts on
+// the members that CAN be acted on — which for a set of one outside OAuth is
+// none of them, so those rows keep the dash and the sentence actionCell()
+// already gives them.
+//
+// Restore rather than Revoke once every revocable member is revoked, which is
+// the same two-state rule the per-token button follows. A PARTLY revoked set
+// offers Revoke, because the useful act there is finishing the job — the way
+// back for the one member somebody wants un-revoked is its own button on the set
+// page.
+function setActionCell(set, backRow) {
+  if (!set.grouped) {
+    return actionCell(set.members[0], backRow);
+  }
+  if (!set.revocableCount) {
+    return '<span class="state-none" title="' +
+      esc('Nothing in this set can be revoked: only access tokens, ID Tokens and ' +
+          'refresh tokens can be, and the others are replies rather than ' +
+          'credentials or carry no jti to act on.') + '">—</span>';
+  }
+  const allRevoked = set.revokedCount >= set.revocableCount;
+  return '<form method="post" action="/admin/tokens" class="inline">' +
+    '<input type="hidden" name="action" value="' +
+    (allRevoked ? 'restore-set' : 'revoke-set') + '">' +
+    '<input type="hidden" name="set" value="' + esc(set.setKey) + '">' +
+    '<input type="hidden" name="back" value="' + esc(backRow) + '">' +
+    '<button class="' + (allRevoked ? 'secondary' : 'danger') + '" title="' +
+    esc(allRevoked
+      ? 'Un-revoke every revocable credential in this set. NON-SPEC — no real ' +
+        'authorization server can undo a revocation.'
+      : 'Revoke the ' + set.revocableCount + ' revocable credential(s) in this ' +
+        'set in one act. Each one is revoked exactly as its own button would ' +
+        'revoke it, into the same set of revoked jtis RFC 7009\'s ' +
+        '/oauth2/revoke writes to.') + '">' +
+    (allRevoked ? 'Restore set' : 'Revoke set') + '</button></form>';
+}
+
+function issuedSetRow(set, backRow, listView) {
+  const first = set.members[0];
+  return '<tr><td>' + contentsCell(set) + '</td>' +
+    setStateCell(set) +
+    '<td>' + userCell(first) + '</td>' +
+    '<td>' + subjectCell(first) + '</td>' +
+    '<td>' + partyCell(first) + '</td>' +
+    '<td>' + detailCell(first) + '</td>' +
+    '<td>' + presentedCell(first) + '</td>' +
+    '<td>' + esc(whenText(set.issuedAt)) + '</td>' +
+    '<td>' + setExpiryCell(set) + '</td>' +
+    '<td>' + setIdentifierCell(set, listView) + '</td>' +
+    '<td>' + setActionCell(set, backRow) + '</td></tr>';
+}
+
 // The legend for the above, on the page, because a reader cannot see the comment
 // this file opens the section with and a table whose columns shift meaning between
 // rows has to say so where the rows are.
 const COLUMN_LEGEND =
   '<table><tr><th>Column</th><th>A JWT</th><th>A SAML assertion</th><th>A Kerberos ticket</th></tr>' +
+  '<tr><td>Contents</td><td>every credential the reply carried, in the order they were minted — ' +
+    'one row, however many that is</td>' +
+    '<td colspan="2">one credential: these protocols issue one thing per act, so the cell is ' +
+    'the kind and nothing else</td></tr>' +
+  '<tr><td>State</td><td>the state every member shares, or <em>mixed</em> when they differ — ' +
+    'which they usually do, since an access token and the refresh token beside it have very ' +
+    'different lifetimes. Hover for the breakdown</td>' +
+    '<td colspan="2">the one credential\'s own state</td></tr>' +
+  '<tr><td>Expires</td><td>the first member to go, then the last — a set comes apart before it ' +
+    'is finished, and the earlier instant is the one a refused call is about</td>' +
+    '<td colspan="2">its <code>NotOnOrAfter</code> / its <code>endtime</code></td></tr>' +
   '<tr><td>User</td><td><code>username</code>, as typed at the sign-in screen</td>' +
     '<td colspan="2">nothing: each of these has one name, and it is in Subject</td></tr>' +
   '<tr><td>Subject</td><td><code>sub</code></td><td>the <code>NameID</code></td>' +
@@ -3989,15 +4539,25 @@ const COLUMN_LEGEND =
     '<code>aud</code>)</td><td>the <code>AudienceRestriction</code>, or <em>unrestricted</em> when ' +
     'WS-Trust was given no <code>AppliesTo</code></td><td>the service the ticket is for; hover for ' +
     'the realm that issued it</td></tr>' +
-  '<tr><td>Detail</td><td><code>scope</code></td><td>whether the signature was written — an ' +
+  '<tr><td>Detail</td><td>the ACCESS TOKEN\'s <code>scope</code>. The refresh token beside it ' +
+    'deliberately carries a different one — what was <em>authorized</em>, rather than what this ' +
+    'token can do — so the two disagree by design, and the set page shows each. A scope that ' +
+    'became the audience is not on either</td><td>whether the signature was written — an ' +
     'assertion that failed to sign still went out</td><td>the enc-type it was sealed with</td></tr>' +
   '<tr><td>Presented as</td><td>Bearer, or DPoP when <code>cnf.jkt</code> binds it to a key</td>' +
     '<td>bearer <code>SubjectConfirmation</code>; there is no holder-of-key form here</td>' +
     '<td>in a TGS-REQ (a TGT) or an AP-REQ (a service ticket)</td></tr>' +
-  '<tr><td>jti or ID</td><td>the <code>jti</code>, which is what every button acts on</td>' +
+  '<tr><td>jti, ID or set</td><td>a set of one shows the <code>jti</code> and opens that ' +
+    'credential\'s lineage; a group shows the <em>set id</em> and opens the set. The set id is ' +
+    'this service\'s own handle on a reply — it is in no token, no client ever sees it, and it ' +
+    'is not a claim</td>' +
     '<td>the <code>ID</code> / <code>AssertionID</code></td>' +
     '<td>none exists — a ticket has no identifier to quote, and the KDC keeps no handle on ' +
-    'one</td></tr></table>';
+    'one</td></tr>' +
+  '<tr><td>the button</td><td>Revoke, or <strong>Revoke set</strong> on a group, which sends ' +
+    'every revocable member through the same act one at a time. Nothing new is written: it is ' +
+    'the same set of revoked <code>jti</code>s <code>/oauth2/revoke</code> writes to</td>' +
+    '<td colspan="2">there is none, and there is nothing it could do — see above</td></tr></table>';
 
 // ---------------------------------------------------------------------------
 // Paging.
@@ -4495,6 +5055,129 @@ function consoleGuide(activePath) {
   log.debug("Leaving consoleGuide(). " + out.length + " section(s) drawn.");
   return '<div class="guide">' + out.join('') + '</div>';
 }
+// ---------------------------------------------------------------------------
+// EVERY QUERY STRING THIS CONSOLE READS, CHECKED IN ONE PLACE.
+//
+// **A PATH-SCOPED MIDDLEWARE RATHER THAN EIGHTY-SIX EDITS**, and it is the same
+// argument the management API's registration wrapper makes one file along:
+// there is no generic dispatcher here — every page reads its own `req.query` —
+// so a check written inside them would be eighty-six checks and the
+// eighty-seventh would be forgotten. Registered ABOVE the first route in this
+// file, so it applies to all of them by construction.
+//
+// **WHAT IT ADDS IS BOUNDS AND SCALAR-NESS.** Control characters are already
+// refused service-wide by `common/validation.js`'s guard, and `pagingOf()` has
+// always defended `page` and `per` itself — `parseInt`, `isFinite`, clamped to
+// MAX_ROWS with a floor of one — so those are not the gap. The gap is that
+// `q` was `String(req.query.q || '').trim()` with no cap at all, and it is fed
+// to a substring walk over every entry in the directory on four pages. A
+// megabyte of `q` is not a search, and nothing before this said so.
+//
+// **IT VALIDATES AND DOES NOT SUBSTITUTE.** `req.query` is left exactly as
+// express built it: this answers 400 or calls `next()`, and never rewrites what
+// the handlers read. Rewriting would be a second source of truth for the same
+// request, and the failure would be a page reading a value the URL does not
+// carry.
+//
+// **`looseObject`, SO AN UNDECLARED PARAMETER PASSES.** This console builds its
+// own links and the realm layer rewrites them; a parameter this table has not
+// heard of is far more likely to be a link somebody added than an attack, and
+// stripping or refusing it would break a page for no gain. What it is NOT is
+// unchecked — the service-wide guard has already been over every value.
+// ---------------------------------------------------------------------------
+const CONSOLE_QUERY = vz.looseObject((function () {
+  // **EVERY FIELD IS DECLARED REPEATABLE, AND THAT IS A FACT ABOUT BROWSERS
+  // RATHER THAN A WEAKENING.**
+  //
+  // `common/validation.js` refuses a repeated parameter everywhere else,
+  // because a caller that sent `redirect_uri` twice has a bug or is probing.
+  // **This console generates repeats ITSELF and cannot stop.** Several pages
+  // carry a GET form — the row-count selector, the search box — and a browser
+  // submitting one from a URL that already carries that parameter appends
+  // rather than replaces. `sts_admin_console.js` walks every GET form on every
+  // page and found it immediately: `/admin/realms?per=300&per=300`, produced
+  // by pressing the console's own control twice.
+  //
+  // Refusing that would mean this console's own forms answering 400 on the
+  // second press. So repeats are tolerated HERE and nowhere else, and what
+  // this middleware is for is the other two things: **a BOUND on every value**,
+  // and a **refusal of a nested object**, neither of which a browser produces
+  // by accident.
+  //
+  // Nothing downstream changes: this middleware VALIDATES and never
+  // substitutes, so `pagingOf()` and every page still read exactly what express
+  // built — including the array, which `String(query.per)` has always turned
+  // into "300,300" and `parseInt` into 300.
+  const bounded = function (max) { return vt.repeatable(vz.string().max(max)).optional(); };
+  return {
+    // The search box, on four pages, and the reason this middleware exists: it
+    // was `String(req.query.q || '').trim()` with no cap, fed to a substring
+    // walk over every entry in the directory.
+    q: bounded(256),
+
+    // Paging. `pagingOf()` already parses and clamps these — parseInt, isFinite,
+    // MAX_ROWS, a floor of one — so the cap here only stops a value long enough
+    // to be worth parsing at all.
+    page: bounded(16),
+    per: bounded(16),
+
+    // Which rendering is being asked for; compared against 'json' and 'svg' at
+    // the call sites, so anything else already falls through to HTML.
+    format: bounded(16),
+
+    // The identifiers a drill-down page is reached by: a name in the directory,
+    // a realm id, a credential handle. None of them is free text.
+    user: bounded(validation.CAP.NAME),
+    account: bounded(validation.CAP.NAME),
+    group: bounded(validation.CAP.NAME),
+    role: bounded(validation.CAP.NAME),
+    member: bounded(validation.CAP.NAME),
+    id: bounded(validation.CAP.IDENTIFIER),
+    entry: bounded(validation.CAP.IDENTIFIER),
+    agent: bounded(validation.CAP.IDENTIFIER),
+    application: bounded(validation.CAP.IDENTIFIER),
+    realm: bounded(validation.CAP.IDENTIFIER),
+    relationship: bounded(validation.CAP.IDENTIFIER),
+    profile: bounded(validation.CAP.IDENTIFIER),
+    session: bounded(validation.CAP.IDENTIFIER),
+    chain: bounded(validation.CAP.TOKEN),
+    sp: bounded(validation.CAP.URI),
+    rp: bounded(validation.CAP.URI),
+    to: bounded(validation.CAP.URI),
+    origin: bounded(validation.CAP.URI),
+    kind: bounded(64),
+    family: bounded(64),
+    protocol: bounded(64),
+    reset: bounded(64),
+
+    // Put in the URL by this console's OWN redirects and read straight back
+    // onto the page. Every call site already slices them to 500; this says so
+    // where a reader will see it and refuses the megabyte version before any
+    // page is built. They are escaped through `esc()` and this console is
+    // `script-src 'none'`, so the bound is depth rather than the fix.
+    notice: bounded(500),
+    error: bounded(500)
+  };
+})());
+
+app.use('/admin', function (req, res, next) {
+  log.debug("Entering the console query check.");
+  const asked = validation.check(req, 'query', CONSOLE_QUERY);
+  if (!asked.ok) {
+    log.debug("Leaving the console query check. Refused: " + asked.code +
+              ' on "' + asked.field + '".');
+    // The console answers a person in a browser, so the refusal is a page in
+    // this console's own shell rather than a JSON body nobody here would see.
+    // 400 and never 403: nothing was refused about WHO is asking.
+    res.status(400).type('text/html').send(page('Bad request', null,
+      '<div class="card"><h2>Bad request</h2><p>' + esc(asked.detail) +
+      '</p></div>', null, null, req));
+    return undefined;
+  }
+  log.debug("Leaving the console query check. Accepted.");
+  return next();
+});
+
 app.get('/admin', function (req, res) {
   log.debug("Entering the admin console index.");
   const snap = stats.snapshot();
@@ -4959,6 +5642,167 @@ function tokenAction(body) {
                       'not refresh.' };
   }
 
+  // ONE ASSERTION, TICKET OR SVID — this service's own position on a credential
+  // it cannot recall.
+  //
+  // **IT CHANGES NOTHING OUT THERE AND THE MESSAGE SAYS SO, EVERY TIME.** That
+  // sentence is the whole reason this action can exist without being a lie: a
+  // relying party validates a SAML assertion's signature and its Conditions and
+  // asks nobody; a Kerberos service decrypts a ticket with a key it already
+  // has; an X509-SVID chains to a bundle. None of them will ever ask this
+  // service, so the credential goes on working until it expires.
+  //
+  // What the mark buys is the three things that CAN carry it: a global logout
+  // that reports what it disowned, a CAEP Security Event Token to a receiver
+  // that subscribed, and SAML Single Logout for an assertion that came from a
+  // browser profile. A WS-Trust assertion has neither channel and the mark is
+  // all there is — which is exactly why it is worth having.
+  //
+  // Addressed by `artifact` (the row handle) rather than by the protocol's own
+  // identifier, because a Kerberos ticket has none at all.
+  if (action === 'revoke-artifact' || action === 'restore-artifact') {
+    const handle = String(body.artifact || body.key || '').trim();
+    if (!handle) {
+      log.debug("Leaving tokenAction(). No artifact was named.");
+      return { ok: false, errors: ['Name the credential in `artifact`, as the `key` on every ' +
+                                   'row of GET /admin-api/tokens gives it. It is this ' +
+                                   'service\'s own handle rather than the protocol\'s, ' +
+                                   'because a Kerberos ticket carries no identifier anybody ' +
+                                   'can quote.'] };
+    }
+    const record = stats.artifactByKey(handle);
+    if (!record) {
+      log.debug("Leaving tokenAction(). No such artifact.");
+      return { ok: false, errors: ['Nothing here is called "' + handle + '" any more. Either ' +
+                                   'it was never a credential in this register, or it has ' +
+                                   'been forgotten to the cap since the page naming it was ' +
+                                   'drawn — at which point this service has no position on ' +
+                                   'it left to state.'] };
+    }
+    const notReached = ' THE HOLDER HAS NOT BEEN TOLD and cannot be by this action: nothing ' +
+      'consults this service when a ' + record.kind + ' is presented, so it goes on working ' +
+      'until it expires. What this buys is that a global logout can report it, that CAEP can ' +
+      'transmit it to a receiver that subscribed, and that SAML Single Logout can carry it ' +
+      'for an assertion issued through a browser profile.';
+    if (action === 'restore-artifact') {
+      const was = stats.restoreArtifact(record);
+      log.debug("Leaving tokenAction(). Restored an artifact.");
+      return { ok: true, artifact: handle, kind: record.kind,
+               message: was
+                 ? 'This service no longer disowns the ' + record.kind + ' ' +
+                   (record.id || '(no identifier)') + '. NON-SPEC, like every restore here.'
+                 : 'The ' + record.kind + ' was not revoked, so nothing changed.' };
+    }
+    const first = stats.revokeArtifact(record, 'the admin console');
+    log.debug("Leaving tokenAction(). Revoked an artifact.");
+    return { ok: true, artifact: handle, kind: record.kind,
+             revocationReach: 'record-only',
+             message: (first ? 'Marked revoked: ' : 'Already revoked: ') + record.kind + ' ' +
+                      (record.id || '(no identifier)') + '.' + notReached };
+  }
+
+  // ONE SET, IN ONE ACT — the button the tokens table draws on a grouped row.
+  //
+  // It is NOT a new kind of revocation and does not write anywhere new: each
+  // revocable member goes through stats.revoke() exactly as its own button would
+  // send it, into the same set of revoked jtis RFC 7009's /oauth2/revoke writes
+  // to. What it saves is three clicks and, more to the point, the mistake of
+  // revoking two of the three and believing the grant is dead — a refresh token
+  // left behind mints a new access token, which is the whole reason a set is
+  // worth being a row.
+  //
+  // THE MEMBERS ARE RE-READ HERE and never taken from the form, which is the
+  // same rule terminate() follows and for the same reason: a page can be posted
+  // an hour after it was drawn, and acting on the list it drew would revoke a
+  // jti that has since been forgotten to the cap while missing one issued since.
+  // The form carries the set KEY and nothing else.
+  if (action === 'revoke-set' || action === 'restore-set') {
+    const setKey = String(body.set || body.setKey || '').trim();
+    if (!setKey) {
+      log.debug("Leaving tokenAction(). No set was given.");
+      return { ok: false, errors: ['Give a set, as the `setKey` on every row of ' +
+                                   'GET /admin-api/tokens names it.'] };
+    }
+    const set = stats.issuedSetByKey(setKey);
+    if (!set) {
+      log.debug("Leaving tokenAction(). No such set.");
+      return { ok: false, errors: ['Nothing here is called "' + setKey + '" any more. ' +
+                                   'Either it was never a set, or it has been forgotten ' +
+                                   'to the cap since the page this button is on was ' +
+                                   'drawn — the registry holds at most ' +
+                                   stats.MAX_TOKENS + ' tokens.'] };
+    }
+    const revocable = set.members.filter(function (member) { return member.revocable; });
+    if (!revocable.length) {
+      // A REFUSAL RATHER THAN A SUCCESS THAT DID NOTHING. It is a narrower case
+      // than it was before 2026-09-05, when it covered every assertion, ticket
+      // and SVID: those are revocable now — in this service's own record, which
+      // is a different claim from being honoured and is why `revocationReach`
+      // exists. What is left here is a set holding only credentials with NO
+      // HANDLE TO ACT ON, which is the signed UserInfo response and the OID4VP
+      // Request Object: no jti, nothing to name.
+      log.debug("Leaving tokenAction(). Nothing in the set can be revoked.");
+      return { ok: false, setKey: setKey, errors: [
+        'Nothing in this set can be revoked. It holds ' + set.kinds.join(', ') +
+        ', and none of those carries an identifier to act on — a signed ' +
+        'UserInfo response has no jti, and the WS-Trust JWT is signed directly ' +
+        'rather than through signJwt(). There is nothing to name in a ' +
+        'revocation.'] };
+    }
+    // EACH MEMBER THROUGH ITS OWN MECHANISM, decided by `revocationReach` and
+    // never by the family: a JWT goes into the revoked-jti set that
+    // /oauth2/revoke writes to, and an assertion, ticket or SVID is marked in
+    // this service's own record and reaches nobody. A set can hold both — a
+    // WS-Federation sign-in produces an ID Token AND a SAML assertion — so
+    // this cannot be one branch taken once for the whole set.
+    let changed = 0;
+    let reached = 0;
+    let recordOnly = 0;
+    revocable.forEach(function (member) {
+      let moved;
+      if (member.revocationReach === 'record-only') {
+        recordOnly += 1;
+        const record = stats.artifactByKey(member.key);
+        moved = action === 'restore-set'
+          ? stats.restoreArtifact(record)
+          : stats.revokeArtifact(record, 'the admin console (the whole set ' + setKey + ')');
+      } else {
+        reached += 1;
+        moved = action === 'restore-set'
+          ? stats.restore(member.jti)
+          : stats.revoke(member.jti, 'the admin console (the whole set ' + setKey + ')');
+      }
+      if (moved) changed += 1;
+    });
+    const verb = action === 'restore-set' ? 'restored' : 'revoked';
+    log.debug("Leaving tokenAction(). " + verb + " " + changed + " of " +
+              revocable.length + " in a set.");
+    return { ok: true, setKey: setKey, set: setKey,
+             revocable: revocable.length,
+             revoked: action === 'restore-set' ? 0 : changed,
+             restored: action === 'restore-set' ? changed : 0,
+             // HOW MUCH OF THIS ACT ANYBODY OUTSIDE WILL NOTICE, reported as
+             // two numbers rather than folded into one: the caller is entitled
+             // to know that three of the four credentials it just revoked go on
+             // working, and a single count would have hidden it.
+             reachedProtocol: reached, recordOnly: recordOnly,
+             kinds: revocable.map(function (member) { return member.kind; }),
+             message: (changed
+               ? (action === 'restore-set' ? 'Restored ' : 'Revoked ') + changed
+               : 'Nothing changed: all ' + revocable.length + ' were already ' + verb) +
+               ' of the ' + revocable.length + ' revocable credential(s) in this set (' +
+               revocable.map(function (member) { return member.kind; }).join(', ') + ')' +
+               (set.size > revocable.length
+                 ? '. The other ' + (set.size - revocable.length) +
+                   ' carry no identifier to act on and were left alone.'
+                 : '.') +
+               (recordOnly
+                 ? ' ' + recordOnly + ' of them was marked IN THIS SERVICE\'S RECORD ONLY ' +
+                   '— nothing consults this service when an assertion, a ticket or an SVID ' +
+                   'is presented, so those go on working out there until they expire.'
+                 : '') };
+  }
+
   if (action === 'revoke-kind') {
     const kind = String(body.kind || '');
     if (stats.REVOCABLE_KINDS.indexOf(kind) < 0) {
@@ -5017,7 +5861,8 @@ function tokenAction(body) {
   }
 
   log.debug("Leaving tokenAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The six are: revoke, restore, ' +
+  return { ok: false, errors: ['Unknown action "' + action + '". The ten are: revoke, restore, ' +
+                               'revoke-artifact, restore-artifact, revoke-set, restore-set, ' +
                                'revoke-kind, revoke-subject, revoke-user, revoke-all.'] };
 }
 
@@ -5095,10 +5940,36 @@ function backTo(body) {
     log.debug("Leaving backTo(). " + usersTarget);
     return usersTarget;
   }
+  // The set page's own buttons, which is the third of the three surfaces that
+  // post here. `from` is read as an ENUM and never as a path — the three targets
+  // are written out in this function — which is what lets a page share the
+  // handler without a `back` field carrying `//evil.example` becoming a redirect
+  // off this service.
+  if (String(body.from || '') === 'set') {
+    const setTarget = '/admin/tokens/set' + queryWith({
+      id: params.get('id') || '',
+      family: params.get('family') || '',
+      kind: params.get('kind') || '',
+      state: params.get('state') || '',
+      session: params.get('session') || '',
+      per: params.get('per') || '',
+      page: params.get('page') || ''
+    }, {});
+    log.debug("Leaving backTo(). " + setTarget);
+    return setTarget;
+  }
   const target = '/admin/tokens' + queryWith({
     family: params.get('family') || '',
     kind: params.get('kind') || '',
     state: params.get('state') || '',
+    // CARRIED SINCE 2026-09-05, and its absence was a bug rather than a
+    // decision: this whitelist has to be kept in step with the filter form
+    // above — the comment on this function says so — and `session` was added to
+    // that form on 2026-09-04 without being added here. So arriving from
+    // /admin/sessions, narrowing to one session and revoking anything sent the
+    // reader back to the unfiltered list, which reads as the console losing
+    // their place rather than as a missing line here.
+    session: params.get('session') || '',
     per: params.get('per') || '',
     page: params.get('page') || ''
   }, {});
@@ -5136,38 +6007,97 @@ function tokensView(query) {
   // issued on that session, and the empty answer is the honest one for a
   // session nothing was issued on.
   const wantedSession = String(query.session || '');
-  // Not tokenList(): this page lists every JWT, every SAML assertion (whether
-  // WS-Trust or WS-Federation issued it) and every Kerberos ticket, in one table in
-  // the order they were issued.
-  const all = stats.issuedList();
-  const filtered = all.filter(function (record) {
-    if (wantedFamily && record.family !== wantedFamily) return false;
-    if (wantedKind && record.kind !== wantedKind) return false;
-    if (wantedState && record.state !== wantedState) return false;
-    if (wantedSession && String(record.sessionId || '') !== wantedSession) return false;
+  // Not tokenList(), and since 2026-09-05 not issuedList() either: this page
+  // lists what came back in ONE REPLY. Every JWT, every SAML assertion (whether
+  // WS-Trust or WS-Federation issued it), every Kerberos ticket and every SVID is
+  // still here — grouped where the protocol grouped them, which is OAuth 2.0 and
+  // OIDC and nowhere else. See issuedSetRow() above for the argument, and
+  // stats.issuedSets() for the grouping, which is decided by a set id the ISSUER
+  // stated rather than by anything this file could infer from these rows.
+  const all = stats.issuedSets();
+  // EVERY FILTER MATCHES A SET WHEN ANY MEMBER MATCHES, and that is the one thing
+  // about this page a reader has to be told rather than left to work out. Asking
+  // for `kind=id_token` answers with the SETS that contain an ID Token — showing
+  // the access token and the refresh token beside it, which is the reply that ID
+  // Token arrived in and the thing somebody filtering for it is looking at. A
+  // filter that hid the neighbours would be the old per-credential table wearing
+  // this one's clothes, and the note under the form says so on the page.
+  //
+  // `family` and `session` are per-set facts in practice — every member of a set
+  // shares them — but they are asked of the members for the same reason, so that
+  // one rule covers all four and a family that starts grouping later needs no
+  // second one.
+  const matches = function (set, test) {
+    return set.members.some(test);
+  };
+  const filtered = all.filter(function (set) {
+    if (wantedFamily && !matches(set, function (r) { return r.family === wantedFamily; })) return false;
+    if (wantedKind && !matches(set, function (r) { return r.kind === wantedKind; })) return false;
+    if (wantedState && !matches(set, function (r) { return r.state === wantedState; })) return false;
+    if (wantedSession &&
+        !matches(set, function (r) { return String(r.sessionId || '') === wantedSession; })) return false;
     return true;
   });
   // Filter first, then page: paging a list and then filtering it would give a page 2
   // whose length depends on what page 1 happened to contain.
+  //
+  // PAGED BY SET AND NOT BY CREDENTIAL, which is what makes a page of this table a
+  // whole number of replies. Twenty rows is now twenty issuances and somewhere
+  // between twenty and sixty credentials, and the line under the table says both —
+  // paging by credential would put the access token of one reply at the bottom of
+  // page 1 and its refresh token at the top of page 2, which is precisely the
+  // reassembly-by-eye this change exists to remove.
   const paging = pagingOf(query, filtered.length);
   const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  // How much of each family is held, for the line under the table. Counted from this
-  // list rather than taken from the snapshot, because the snapshot's artifact count
-  // includes the OID4VCI credentials this page does not list — two totals on one
-  // page differing by a number of credentials is a page nobody can check.
+  // How much of each family is held, for the line under the table. Counted in
+  // CREDENTIALS rather than sets, because "612 JWTs" is the figure the metrics
+  // page prints and two pages of one console disagreeing about how much has been
+  // issued is worse than this line being in different units from the one above
+  // it — which it says. Counted from this list rather than taken from the
+  // snapshot, because the snapshot's artifact count includes the OID4VCI
+  // credentials this page does not list.
   const heldByFamily = {};
-  all.forEach(function (record) {
-    heldByFamily[record.family] = (heldByFamily[record.family] || 0) + 1;
+  let heldCredentials = 0;
+  all.forEach(function (set) {
+    set.members.forEach(function (record) {
+      heldByFamily[record.family] = (heldByFamily[record.family] || 0) + 1;
+      heldCredentials += 1;
+    });
   });
-  log.debug("Leaving tokensView(). " + shown.length + " row(s) of " +
-            filtered.length + ".");
+  const countMembers = function (sets) {
+    return sets.reduce(function (n, set) { return n + set.size; }, 0);
+  };
+  const matchedCredentials = countMembers(filtered);
+  const shownCredentials = countMembers(shown);
+  // The flatten of what this page holds, in the order the table draws it: each
+  // set's members in issuance order, sets newest first. It is DERIVED from
+  // `shown` rather than filtered again out of issuedList(), which is the whole
+  // reason the two can be published side by side — a second walk of the register
+  // is how a table and the JSON beside it come to disagree about a revocation
+  // that happened in between.
+  const shownRecords = shown.reduce(function (out, set) {
+    return out.concat(set.members);
+  }, []);
+  log.debug("Leaving tokensView(). " + shown.length + " set(s) of " +
+            filtered.length + ", holding " + shownCredentials + " credential(s).");
   return {
     wantedFamily: wantedFamily, wantedKind: wantedKind,
     wantedState: wantedState, wantedSession: wantedSession,
     all: all, filtered: filtered, paging: paging, shown: shown,
-    heldByFamily: heldByFamily,
+    heldByFamily: heldByFamily, heldCredentials: heldCredentials,
+    matchedCredentials: matchedCredentials, shownCredentials: shownCredentials,
     json: {
-      held: all.length, matched: filtered.length, shown: shown.length,
+      // IN CREDENTIALS. `held` has meant this since the day the page had a
+      // total on it, and a resource that quietly changed its unit under a name
+      // nobody had to re-read would be the worst kind of breaking change — so
+      // the SET counts are new members beside it rather than a new meaning for
+      // an old one.
+      held: heldCredentials,
+      heldSets: all.length,
+      // IN SETS, both of them, because sets are what this resource now lists
+      // and what its paging counts. The credential figures are beside them.
+      matched: filtered.length, matchedCredentials: matchedCredentials,
+      shown: shown.length, shownCredentials: shownCredentials,
       heldByFamily: stats.ISSUED_FAMILIES.reduce(function (out, entry) {
         out[entry.family] = heldByFamily[entry.family] || 0;
         return out;
@@ -5181,11 +6111,22 @@ function tokensView(query) {
       families: stats.ISSUED_FAMILIES,
       revocableKinds: stats.REVOCABLE_KINDS,
       revokedCount: stats.revokedCount(),
+      // WHAT THIS RESOURCE LISTS SINCE 2026-09-05: one entry per issuance,
+      // each carrying its members. A caller that wants the credentials
+      // ungrouped has `issued` below and need not walk two levels.
+      sets: shown,
       // `issued` rather than `tokens`, because the array is no longer only
       // tokens and a key that says otherwise is the kind of thing a test
       // asserts against once and then trusts. Nothing outside this repository
       // read the old name.
-      issued: shown
+      //
+      // IT IS THE FLATTEN OF `sets` AND NOT A SECOND LIST. Same rows, same
+      // order, ungrouped — so every caller written against the per-credential
+      // shape still reads what it read, and the two cannot come to disagree
+      // because one is built out of the other. What DID change under it is the
+      // paging: a page is now a whole number of sets, so this array is between
+      // `perPage` and three times it rather than exactly `perPage`.
+      issued: shownRecords
     }
   };
 }
@@ -5362,17 +6303,45 @@ function sessionsView(req) {
   all.forEach(function (row) {
     byKind[row.family] = (byKind[row.family] || 0) + 1;
   });
+  // THE UNAUTHENTICATED ONES, AS A LIST OF THEIR OWN (2026-09-05).
+  //
+  // NOT FILTERED AND NOT PAGED, deliberately, where the table above it is
+  // both. The two lists answer different questions: the main one is *what is
+  // live*, which is long and needs narrowing, and this one is *is anybody in
+  // here without having signed in*, which is a question about the whole
+  // service and would be answered wrongly by a filter somebody had left set.
+  // A search box that could hide one of these rows would make the section
+  // worse than not having it.
+  //
+  // It is a SECTION rather than a column on the table above because the answer
+  // is almost always "none", and a column that is the same on every row for
+  // weeks at a time stops being read. A section that is empty says so in one
+  // line and a section with rows in it is the thing somebody notices.
+  const unauthenticated = all.filter(function (row) {
+    return row.authenticated === false;
+  });
   log.debug("Leaving sessionsView(). " + shown.length + " row(s) of " +
             filtered.length + " (" + all.length + " live).");
   return {
     installed: true, all: all, filtered: filtered, shown: shown,
-    paging: paging, byKind: byKind,
+    paging: paging, byKind: byKind, unauthenticated: unauthenticated,
     protocols: sessionProtocolsIn(all),
     wantedText: wantedText, wantedProtocol: wantedProtocol,
     json: {
       installed: true,
       held: all.length, matched: filtered.length, shown: shown.length,
       heldByKind: byKind,
+      // Rule 7: the page grew a section, so the API grew the same answer. The
+      // COUNT and the ROWS both, because "are there any" and "which ones" are
+      // the two things a caller asks and deriving the first from the second
+      // would make an empty list and an absent field look alike.
+      unauthenticatedHeld: unauthenticated.length,
+      unauthenticatedSessions: unauthenticated.map(function (row) {
+        return { id: row.id, family: row.family, username: row.username,
+                 sub: row.sub, protocol: row.protocol, sessionId: row.sessionId,
+                 startedAt: row.startedAt, expiresAt: row.expiresAt,
+                 carries: row.carries, key: row.key };
+      }),
       filter: { q: wantedText || null, protocol: wantedProtocol || null },
       // The clamped values, not what was asked for: `?page=999` on a two-page
       // list reports page 2, which is the page whose rows are in the reply.
@@ -5452,6 +6421,11 @@ app.get('/admin/sessions', function (req, res) {
     tile(view.byKind.session || 0, 'browser sign-on') +
     tile(view.byKind.krb5 || 0, 'Kerberos TGTs') +
     tile(view.byKind.ldap || 0, 'LDAP connections') +
+    // The fifth tile is a SLICE of the first four rather than a fifth kind, so
+    // the four above it still add up to `live sessions` and this one does not
+    // join that sum. It earns a tile anyway: it is the number somebody scans
+    // this page for, and a zero here is as informative as a non-zero.
+    tile(view.unauthenticated.length, 'unauthenticated') +
     '</div>' +
 
     note('<strong>The three are not variants of one thing and their ' +
@@ -5534,6 +6508,67 @@ app.get('/admin/sessions', function (req, res) {
     'drawn &mdash; there is no cache, deliberately, because a cached answer ' +
     'to <em>is this still live</em> would be the half a reader is about to ' +
     'press a button on.') +
+
+    // ---------------------------------------------------------------------
+    // THE UNAUTHENTICATED SESSIONS (2026-09-05).
+    //
+    // A section rather than a column, for the reason `sessionsView()` gives:
+    // the answer is almost always "none", and a column that says the same
+    // thing on every row for weeks stops being read.
+    //
+    // It draws whether or not the setting that CREATES these is on, and that
+    // is deliberate — a service that had the setting on this morning and off
+    // now may still be holding sessions it minted then, and a section that
+    // disappeared with the setting would hide exactly those. What changes with
+    // the setting is the sentence, not the presence.
+    // ---------------------------------------------------------------------
+    '<h2>Unauthenticated sessions</h2>' +
+
+    note('<strong>A session where nobody authenticated.</strong> Somebody ' +
+    'pressed <em>Continue without signing in</em> at ' +
+    '<code>/authn/login</code>, so this service holds a real session for ' +
+    'them &mdash; it has a cookie, it satisfies a flow already in progress, ' +
+    'and tokens can be issued on it &mdash; and it records that no credential ' +
+    'was ever checked. They are the <code>anonymous</code> principal, which ' +
+    'is one directory entry however many of these there are.') +
+
+    note('<strong>This is the only place the difference between two of the ' +
+    'built-in roles is visible.</strong> Every session in the table above ' +
+    'holds <code>EVERYBODY</code> <em>and</em> ' +
+    '<code>ALL_AUTHENTICATED_USERS</code>; every session in this one holds ' +
+    '<code>EVERYBODY</code> and <code>ALL_UNAUTHENTICATED_USERS</code> ' +
+    'instead. So an application whose <code>appRequiredRole</code> is ' +
+    '<code>ALL_AUTHENTICATED_USERS</code> refuses these with ' +
+    '<code>access_denied</code>, and one that names no role at all &mdash; ' +
+    'which requires <code>EVERYBODY</code> &mdash; does not. ' +
+    '<a href="/admin/roles">The role register</a> is where that is ' +
+    'configured.') +
+
+    (config.value('authn.unauthenticatedSessions')
+      ? note('<strong><code>authn.unauthenticatedSessions</code> is ON</strong> ' +
+        'in this realm, so the sign-in screen is offering the third button. ' +
+        '<a href="/admin/roles">Turn it off</a> and no new ones can be ' +
+        'started; any already here stay until they expire or are ended.')
+      : warn('<strong><code>authn.unauthenticatedSessions</code> is OFF</strong> ' +
+        'in this realm, so no new ones can be started and this section will ' +
+        'stay empty. It is off by default because it puts a third button on ' +
+        'every sign-in screen in the service. ' +
+        '<a href="/admin/roles">Turn it on</a> to make ' +
+        '<code>ALL_UNAUTHENTICATED_USERS</code> reachable.')) +
+
+    (view.unauthenticated.length
+      ? '<table><tr><th>Kind</th><th>Protocol</th><th>Who</th><th>Since</th>' +
+        '<th>Expires</th><th>Carries</th><th>Credentials</th><th></th></tr>' +
+        view.unauthenticated.map(function (row) {
+          return sessionRow(row, nowMs, gate.write, back);
+        }).join('') + '</table>' +
+        note(view.unauthenticated.length + ' unauthenticated session(s), of ' +
+        view.all.length + ' live. <strong>Not filtered and not paged</strong>, ' +
+        'unlike the table above &mdash; the question this section answers is ' +
+        'about the whole service, and a search box somebody had left set ' +
+        'could hide the one row that matters.')
+      : note('<strong>None.</strong> Every session this service is holding ' +
+        'right now had a credential accepted for it.')) +
 
     note('<a href="/admin/logout">What ONE person is still signed into</a>, ' +
     'which is this question asked the other way round and reaches seven more ' +
@@ -5663,8 +6698,8 @@ app.get('/admin/tokens', function (req, res) {
   // filter AND the page, so the way back from a credential is the row it was
   // clicked on rather than the top of everything.
   const listView = Object.assign({}, filterParams, { page: paging.page });
-  const rows = shown.map(function (record) {
-    return issuedRow(record, backRow, listView);
+  const rows = shown.map(function (set) {
+    return issuedSetRow(set, backRow, listView);
   }).join('');
 
   const familyOptions = ['<option value=""' + (wantedFamily ? '' : ' selected') + '>any family</option>']
@@ -5698,6 +6733,23 @@ app.get('/admin/tokens', function (req, res) {
     'ticket the KDC minted, in one table, newest first. One table rather than three because a ' +
     'WS-Federation sign-in that produced an ID Token and a SAML 1.1 assertion is <em>one event</em>, ' +
     'and three tables would leave it to be reassembled by comparing timestamps.') +
+    note('<strong>One row is one issuance, not one credential.</strong> OAuth 2.0 and ' +
+    'OIDC are the only protocols here that hand back several credentials at once — redeeming an ' +
+    'authorization code returns an access token, a refresh token and an ID Token in a single ' +
+    'reply, and <code>response_type=id_token token</code> returns two in one fragment — so those ' +
+    'are drawn as one row saying what it contains, with a link to the set. Every other family ' +
+    'issues one credential per act, so a SAML assertion, a Kerberos ticket and a SPIFFE SVID are ' +
+    'each a <em>set of one</em> and look exactly as they always did. ' +
+    'The grouping comes from an identifier the <em>issuer</em> stated at the moment it built the ' +
+    'reply, never from guessing that two rows near each other in time belong together: two people ' +
+    'redeeming two codes at the same client in the same millisecond produce six credentials that ' +
+    'agree on every column below, and a table that merged them would report a reply nobody ever ' +
+    'received.') +
+    note('<strong>Refreshing makes a new set beside the old one, not a bigger one.</strong> ' +
+    'A set is one <em>response</em>: it has one issued instant and one grant, which a row that ' +
+    'grew all afternoon could not have. What joins the generations of a grant is the refresh ' +
+    'lineage, and that is drawn — as a picture, back to the issuance the whole line rests on — on ' +
+    'each credential\'s own page.') +
     note('Only the JWTs can be invalidated. Revoking one here is the SAME operation ' +
     'RFC 7009\'s <code>/oauth2/revoke</code> performs — there is one set of revoked ' +
     '<code>jti</code>s in this service, not one per page. So a token revoked here immediately ' +
@@ -5705,12 +6757,21 @@ app.get('/admin/tokens', function (req, res) {
     '<code>/oauth2/userinfo</code> with <code>invalid_token</code>, and fails the refresh grant ' +
     'with <code>invalid_grant</code>. Two sets would each look correct on their own and never see ' +
     'each other, which is a debugging session with no error message anywhere in it.') +
-    note('An assertion and a ticket have no button and are listed anyway, which is the ' +
-    'point of listing them: <strong>nothing consults this service about either</strong>. An ' +
-    'assertion is valid because its signature verifies and its <code>Conditions</code> hold, and a ' +
-    'ticket because the service it names can decrypt it with a key it already has. So the only ' +
-    'thing that ends one is its own expiry, and the only way to see when that is — or to see that ' +
-    'a sign-in produced one at all — is a page that shows it.') +
+    note('<strong>An assertion, a ticket and an SVID have a button since 2026-09-05, and ' +
+    'pressing it changes nothing out there.</strong> That is not a contradiction and the ' +
+    'distinction is the whole of what this row means: <em>what this service knows</em> and ' +
+    '<em>what a relying party will honour</em> are two different claims. Nothing consults this ' +
+    'service when one of these is presented — an assertion is valid because its signature ' +
+    'verifies and its <code>Conditions</code> hold, a ticket because the service it names can ' +
+    'decrypt it with a key it already has, an SVID because it chains to a bundle — so a ' +
+    'revocation here reaches none of them and never will. What it does is record that <em>this ' +
+    'identity provider has disowned the credential</em>, which is what a sign-out has to be able ' +
+    'to say, what CAEP can carry to a receiver that subscribed, and what SAML Single Logout can ' +
+    'carry for an assertion issued through a browser profile. A WS-Trust assertion has neither ' +
+    'channel and the mark is the whole of what exists for it — which is exactly why it is worth ' +
+    'having, because otherwise the answer to "did you sign them out" would depend on which ' +
+    'endpoint issued the credential. The button says <em>(record only)</em> and its tooltip says ' +
+    'this again, so it cannot be pressed by somebody who thinks it did more.') +
 
     '<h2>Invalidate</h2>' +
     '<form method="post" action="/admin/tokens">' +
@@ -5786,20 +6847,36 @@ app.get('/admin/tokens', function (req, res) {
     // selects the reader can see it obeying.
     note('Family and Kind narrow together: choosing a family and a kind from a ' +
     'different one matches nothing, which is what an empty table below then means.') +
+    // WHAT A FILTER MEANS NOW THAT A ROW IS A SET, said on the page because it
+    // is the one behaviour a reader would otherwise call a bug: asking for
+    // id_token and being shown an access token too looks like the filter being
+    // ignored until somebody explains that the row IS the reply.
+    note('<strong>A filter matches a set when any credential in it matches.</strong> ' +
+    'Asking for <code>id_token</code> answers with the replies that <em>contain</em> an ID Token — ' +
+    'the access token and the refresh token that came back with it are still on the row, because ' +
+    'they are part of the same reply. The same goes for State: a set holding an expired access ' +
+    'token and a valid refresh token is found by both, and its State column reads <em>mixed</em> ' +
+    'rather than picking one.') +
     nav.head +
-    '<table><tr><th>Kind</th><th>State</th><th>User</th><th>Subject</th>' +
+    '<table><tr><th>Contents</th><th>State</th><th>User</th><th>Subject</th>' +
     '<th>Client, audience or service</th><th>Detail</th>' +
-    '<th>Presented as</th><th>Issued</th><th>Expires</th><th>jti or ID</th><th></th></tr>' +
+    '<th>Presented as</th><th>Issued</th><th>Expires</th><th>jti, ID or set</th><th></th></tr>' +
     (rows || '<tr><td colspan="11">Nothing matches.</td></tr>') + '</table>' +
     nav.foot +
-    note(filtered.length + ' row(s) match' +
-    (paging.pages > 1 ? ', of which rows ' + paging.firstRow + '&ndash;' + paging.lastRow +
+    note(filtered.length + ' set(s) match, holding ' + view.matchedCredentials +
+    ' credential(s)' +
+    (paging.pages > 1 ? ', of which sets ' + paging.firstRow + '&ndash;' + paging.lastRow +
                         ' are on this page (' + paging.page + ' of ' + paging.pages + ')' : '') +
-    '; ' + all.length + ' held in total — ' +
+    '; ' + all.length + ' set(s) over ' + view.heldCredentials + ' credential(s) held in total — ' +
     stats.ISSUED_FAMILIES.map(function (entry) {
       return (heldByFamily[entry.family] || 0) + ' ' + esc(entry.label);
     }).join(', ') +
-    '. Newest first, so page 1 is what somebody is most likely to be debugging. Only the claims ' +
+    '. <strong>The per-family figures are credentials, not sets</strong>, so that they agree with ' +
+    'the count on <a href="/admin/metrics">the metrics page</a> — two pages of one console ' +
+    'disagreeing about how much has been issued is worse than one line carrying both units and ' +
+    'saying which is which. Paging is by SET, so a page is a whole number of replies rather than ' +
+    'a boundary drawn through the middle of one. ' +
+    'Newest first, so page 1 is what somebody is most likely to be debugging. Only the claims ' +
     'and the facts below are kept, never the signed token, the assertion XML or the ticket: a page ' +
     'rendering a thousand live credentials in a form a browser will display is a page that leaks ' +
     'them, and the <code>jti</code> is all any button here needs.') +
@@ -5815,16 +6892,213 @@ app.get('/admin/tokens', function (req, res) {
     'families it says and not as four.') +
 
     note('Paging is <code>?page=</code> and <code>?per=</code> (at most ' + MAX_ROWS +
-    ' rows a page), and both work with <code>?format=json</code> — where the reply carries ' +
+    ' sets a page), and both work with <code>?format=json</code> — where the reply carries ' +
     '<code>page</code>, <code>pages</code> and <code>matched</code>, so a test can walk the whole ' +
-    'list without guessing when it has reached the end. The rows are in <code>issued</code> there, ' +
-    'each carrying its <code>family</code>; it was <code>tokens</code> when this page listed only ' +
-    'JWTs. Every button on this page acts on a <code>jti</code> and never on a row number, so a ' +
-    'revocation between two clicks cannot make the wrong token the target — the most it can do is ' +
-    'shift a row onto another page.');
+    'list without guessing when it has reached the end. <strong>Those three count SETS</strong>, ' +
+    'which is what this list is; <code>matchedCredentials</code> and <code>held</code> are the ' +
+    'same figures in credentials. The sets are in <code>sets</code>, each carrying its ' +
+    '<code>members</code> — and <code>issued</code> is the same members flattened, so a caller ' +
+    'written against the older per-credential shape reads exactly what it read and the two cannot ' +
+    'disagree, because one is built out of the other. Every button on this page acts on a ' +
+    '<code>jti</code> or a <code>setKey</code> and never on a row number, so a revocation between ' +
+    'two clicks cannot make the wrong token the target — the most it can do is shift a row onto ' +
+    'another page.');
 
   respond(req, res, view.json, 'Tokens', '/admin/tokens', inner);
   log.debug("Leaving the admin tokens page.");
+});
+
+// ---------------------------------------------------------------------------
+// GET /admin/tokens/set?id=… — THE CREDENTIALS THAT CAME BACK IN ONE REPLY.
+//
+// **THE TOKENS PAGE'S SECOND DRILL-DOWN, AND IT IS THE OLD TABLE SCOPED TO ONE
+// ISSUANCE.** Since 2026-09-05 that list draws a row per reply rather than a row
+// per credential, which is what the reader wants nineteen times out of twenty
+// and exactly wrong the twentieth: when somebody is chasing ONE token they need
+// its own jti, its own expiry and its own button back. So the members are drawn
+// here by `issuedRow()` — the very function the list used to call — and the
+// column legend on the list describes this table without a word changing.
+//
+// It hangs under /admin/tokens the way /admin/tokens/credential does and for the
+// same reasons: no `NAV` row, `active` is '/admin/tokens', and `up` carries the
+// filter and the page the reader left, so the trail reads `Tokens › One issuance`
+// and the way back is the row they clicked on.
+//
+// **IT IS ADDRESSED BY `setKey` AND NOT BY THE SET ID**, and the difference
+// matters for exactly one case. A grouped set's key is `set:<id>`; a set of one
+// has no id at all and its key is `one:<this service's own row handle>`. The
+// list only ever links here from a group — for one credential this page would be
+// a click that added nothing, so those rows still open the lineage directly —
+// but the KEY space covers both, so `GET /admin-api/tokens/set` can open any row
+// of that table and a test need not know which kind it has in its hand.
+// ---------------------------------------------------------------------------
+function tokenSetView(query) {
+  log.debug("Entering tokenSetView().");
+  const asked = String((query && query.id) || '').trim();
+  const set = asked ? stats.issuedSetByKey(asked) : null;
+  log.debug("Leaving tokenSetView(). " + (set ? set.size + " member(s)." : "No such set."));
+  return {
+    asked: asked,
+    set: set,
+    json: {
+      // The key that was ASKED FOR, echoed even when nothing holds it, because
+      // a caller walking a list it drew a minute ago needs to know which of its
+      // keys came back empty and not merely that one did.
+      setKey: asked || null,
+      // Null rather than an empty object for a set nothing holds — which is the
+      // ORDINARY answer for one forgotten to the cap, not an error — and the
+      // sentence beside it says which of the two happened.
+      set: set,
+      found: !!set,
+      why: set ? null : (asked
+        ? 'Nothing here is called "' + asked + '". Either it was never a set, or ' +
+          'it has been forgotten to the cap since the list naming it was drawn.'
+        : 'Name a set. Every grouped row of GET /admin-api/tokens carries its ' +
+          '`setKey`, and so does every row of `sets`.')
+    }
+  };
+}
+
+app.get('/admin/tokens/set', function (req, res) {
+  log.debug("Entering the admin token set page.");
+  const view = tokenSetView(req.query);
+  const set = view.set;
+  const listView = listViewOf('/admin/tokens', req.query);
+  const up = upTo('/admin/tokens', 'One issuance', listView);
+  const back = note('<a class="btn" href="' + esc(up.href) +
+    '">&larr; Back to the tokens table</a>');
+
+  if (!set) {
+    const inner = messagesOf(req) + back +
+      note('<strong>' + esc(view.json.why) + '</strong> This page draws the ' +
+      'credentials that came back in ONE reply, and the way to it is the link in ' +
+      'the last column of <a href="' + esc(up.href) + '">the tokens table</a> on ' +
+      'any row that shows more than one. A row showing a single credential links ' +
+      'to that credential\'s own lineage instead, because for one credential this ' +
+      'page would be a click that added nothing.');
+    respond(req, res, view.json, 'Tokens — one issuance', '/admin/tokens', inner, up);
+    log.debug("Leaving the admin token set page. Nothing was asked for.");
+    return;
+  }
+
+  // Where a member's own button sends the browser: back HERE, with the list view
+  // the reader arrived through, so revoking one credential of three does not
+  // land them on page 1 of everything. `from=set` is read as an ENUM by
+  // backTo() and never as a path — the same rule the users page's buttons
+  // follow, and what keeps a `back` field from becoming an open redirect.
+  const backRow = queryWith(Object.assign({}, listView, { id: set.setKey }),
+                            { from: 'set' });
+  const memberRows = set.members.map(function (record) {
+    return issuedRow(record, backRow, listView);
+  }).join('');
+
+  // The grant, spelled as the console spells it everywhere else. Empty for
+  // anything minted where nothing states how — which cannot happen for a GROUP,
+  // since only the two OAuth issuance sites group, but can for a set of one.
+  const grantText = set.grant || 'not stated';
+
+  const inner = messagesOf(req) + back +
+    note('<strong>' + (set.grouped
+      ? esc(set.size + ' credentials came back in one reply') +
+        ', from the <code>' + esc(grantText) + '</code> grant.'
+      : 'One credential, issued on its own.') +
+    '</strong> This is that reply, member by member — each with its own ' +
+    'identifier, its own expiry and its own button, which is what the tokens ' +
+    'table drew before it started grouping. The columns mean what ' +
+    '<a href="' + esc(up.href) + '">its legend</a> says they mean.') +
+
+    '<h2>The issuance</h2>' +
+    '<table>' +
+    '<tr><th>Set</th><td><code>' + esc(set.setId || set.setKey) + '</code>' +
+      (set.setId
+        ? ' <span class="state-none">— this service\'s own handle on the reply. It ' +
+          'is in no token, no client ever sees it, and it is not a claim: it exists ' +
+          'so that a console page can say which credentials arrived together, which ' +
+          'nothing in the protocol records.</span>'
+        : ' <span class="state-none">— a set of one has no issuance id, so this is ' +
+          'the row\'s own handle in the issued register.</span>') + '</td></tr>' +
+    '<tr><th>Contents</th><td>' + esc(set.kinds.join(' + ')) + '</td></tr>' +
+    '<tr><th>State</th><td>' + esc(set.state) +
+      (set.state === 'mixed'
+        ? ' <span class="state-none">— ' +
+          esc(Object.keys(set.states).map(function (state) {
+            return set.states[state] + ' ' + state;
+          }).join(', ')) +
+          '. The ordinary case rather than a fault: an access token and the refresh ' +
+          'token issued with it have very different lifetimes.</span>'
+        : '') + '</td></tr>' +
+    '<tr><th>Grant</th><td>' + esc(grantText) + '</td></tr>' +
+    '<tr><th>User</th><td>' + userCell(set.members[0]) + '</td></tr>' +
+    '<tr><th>Subject</th><td>' + subjectCell(set.members[0]) + '</td></tr>' +
+    '<tr><th>Client</th><td>' + partyCell(set.members[0]) + '</td></tr>' +
+    '<tr><th>Session</th><td>' + (set.sessionId
+      ? '<a href="' + esc('/admin/tokens' +
+          queryWith({ session: set.sessionId }, {})) + '"><code>' +
+        esc(set.sessionId) + '</code></a>' +
+        (set.sessionAuthenticated ? ''
+          : ' <span class="state-revoked">— nobody had authenticated on that session ' +
+            'when this was issued.</span>')
+      : '<span class="state-none">none — this was issued with no browser sign-on ' +
+        'session behind it, which is true of both direct grants, a pre-authorized ' +
+        'code, every token exchange, and every assertion and ticket. A fact about ' +
+        'the credential rather than a gap in the recording.</span>') + '</td></tr>' +
+    '<tr><th>Issued</th><td>' + esc(whenText(set.issuedAt)) + '</td></tr>' +
+    '<tr><th>Expires</th><td>' + setExpiryCell(set) + '</td></tr>' +
+    '</table>' +
+
+    (set.grouped && set.revocableCount
+      ? '<h2>Invalidate the whole set</h2>' +
+        note('One act rather than one click per credential, and it writes nowhere ' +
+        'new: each member goes through the same revocation ' +
+        '<code>/oauth2/revoke</code> performs, one at a time. What it saves is the ' +
+        'mistake of revoking two of three and believing the grant is dead — a ' +
+        'refresh token left behind mints a new access token, which is the whole ' +
+        'reason a reply is worth being one row. ' +
+        (set.size > set.revocableCount
+          ? 'Only ' + set.revocableCount + ' of the ' + set.size + ' can be ' +
+            'revoked; the rest are left alone.'
+          : 'All ' + set.size + ' can be revoked.')) +
+        '<div class="formrow">' +
+        '<form method="post" action="/admin/tokens" class="inline">' +
+          '<input type="hidden" name="action" value="revoke-set">' +
+          '<input type="hidden" name="set" value="' + esc(set.setKey) + '">' +
+          '<input type="hidden" name="back" value="' + esc(backRow) + '">' +
+          '<button class="danger">Revoke this set</button></form> ' +
+        '<form method="post" action="/admin/tokens" class="inline">' +
+          '<input type="hidden" name="action" value="restore-set">' +
+          '<input type="hidden" name="set" value="' + esc(set.setKey) + '">' +
+          '<input type="hidden" name="back" value="' + esc(backRow) + '">' +
+          '<button class="secondary">Restore this set</button></form>' +
+        '</div>' +
+        note('Restore is <strong>NON-SPEC</strong> and no real authorization ' +
+        'server can offer it — a resource server may already have cached the ' +
+        'refusal. It is here because getting back to a working token otherwise ' +
+        'means restarting this service.')
+      : '') +
+
+    '<h2>' + (set.grouped ? 'The ' + set.size + ' credentials' : 'The credential') + '</h2>' +
+    '<table><tr><th>Kind</th><th>State</th><th>User</th><th>Subject</th>' +
+    '<th>Client, audience or service</th><th>Detail</th>' +
+    '<th>Presented as</th><th>Issued</th><th>Expires</th><th>jti or ID</th><th></th></tr>' +
+    memberRows + '</table>' +
+    note('In the order they were minted. Every identifier is a link to where that ' +
+    'credential came from — who it was issued to, in whose name, to reach what, and ' +
+    'every generation behind it if a token exchange or a refresh produced it. ' +
+    '<strong>That lineage is a different relation from this page</strong>: this is ' +
+    'what arrived <em>together</em>, and that is what one credential descends ' +
+    '<em>from</em>. Refreshing this set produces a new set beside it, not a fourth ' +
+    'member of it, and the lineage is what joins the two.') +
+    (set.grouped
+      ? note('<strong>The Detail column will disagree with itself here, and that is ' +
+        'by design.</strong> An access token\'s <code>scope</code> is what that token ' +
+        'can do; the refresh token beside it carries what was <em>authorized</em>, ' +
+        'which is wider whenever a scope became the audience — see the tokens page. ' +
+        'A set that reported one scope would be hiding the one place the two halves ' +
+        'of a grant deliberately differ.')
+      : '');
+
+  respond(req, res, view.json, 'Tokens — one issuance', '/admin/tokens', inner, up);
+  log.debug("Leaving the admin token set page. " + set.size + " member(s).");
 });
 
 // ---------------------------------------------------------------------------
@@ -6667,8 +7941,20 @@ app.post('/admin/logout', function (req, res) {
   const result = logoutAction(body);
   // Back to the same person's page carrying whatever filter and page the form
   // came from — the rule every form on this console follows.
-  const back = '/admin/logout' +
-    queryWith(listViewFromBack('/admin/logout', body.back), { user: String(body.user || '') });
+  //
+  // SINCE 2026-09-05 THIS HANDLER SERVES TWO PAGES. `/admin/users` has a global
+  // sign-out button of its own, which posts here rather than reimplementing the
+  // act, so `from` says which page to return to. It is read as an ENUM and never
+  // as a path — both targets are written out here — which is the rule
+  // `backTo()` follows on the tokens page and what keeps a `back` field carrying
+  // `//evil.example` from becoming a redirect off this service.
+  const back = String(body.from || '') === 'users'
+    ? '/admin/users' +
+      queryWith(listViewFromBack('/admin/users', body.back),
+                { user: String(body.user || '') })
+    : '/admin/logout' +
+      queryWith(listViewFromBack('/admin/logout', body.back),
+                { user: String(body.user || '') });
   respondToAction(req, res, back, result);
   log.debug("Leaving the admin sign-out action endpoint.");
 });
@@ -13278,17 +14564,76 @@ function userDetailPage(req, key) {
 
     directory.html +
 
-    '<h2>Invalidate everything for this user</h2>' +
-    note('Every access token, ID Token and refresh token held for this identity under ' +
-    'any of its spellings, revoked through the same set <code>/oauth2/revoke</code> writes to. ' +
-    'Assertions and tickets are untouched, for the reason above.') +
+    // ---------------------------------------------------------------------
+    // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
+    //
+    // There was ONE here and it was labelled "Revoke everything for <name>",
+    // which is what somebody reaching for a global sign-out would press. It
+    // revoked JWTs and nothing else — so the person stayed SIGNED IN, and the
+    // next `/oauth2/authorize`, `/wsfed`, `/saml2/sso` or `/saml11/sso`
+    // request minted a fresh set of tokens on the spot. From the outside that
+    // is close to a no-op, and the label said the opposite.
+    //
+    // The narrow act is worth keeping — "take these credentials out of
+    // circulation and leave the session alone" is a real thing to want, and
+    // it is what `/oauth2/revoke` does — so it stayed, renamed to say what it
+    // does. What was ADDED is the act the old label promised, and it is the
+    // SAME one `/admin/logout` performs: `logoutReader.terminate()` with an
+    // empty selection, which walks all ten families in `endOrder` so the
+    // front-channel notifications are built before the session they hang off
+    // is destroyed. A second implementation here would be a second answer to
+    // "what is a live session", which is the thing rule 3m exists to prevent.
+    //
+    // The global one is FIRST because it is the one the old label described.
+    // ---------------------------------------------------------------------
+    '<h2>Sign this person out</h2>' +
+    note('<strong>Everything, in every protocol.</strong> This is the same act ' +
+    '<a href="' + esc('/admin/logout' + queryWith({}, { user: key })) + '">the ' +
+    'sign-out page</a> performs, through the same function: it ends every browser ' +
+    'sign-on session, notifies every OpenID Connect relying party, WS-Federation ' +
+    'realm and SAML 2.0 service provider they signed into, invalidates their ' +
+    'authorization codes and OID4VCI pre-authorized codes, closes their bound LDAP ' +
+    'connections, stamps the Kerberos sign-out instant on their principal, and ' +
+    'revokes their tokens. In that order — the notifications are built off the ' +
+    'session, so ending it first would leave every federated partner believing ' +
+    'they were still signed in.') +
+    note('<strong>Two things it cannot do, and neither is a gap in this ' +
+    'button.</strong> A front-channel notification is an iframe loaded in the ' +
+    'signed-out person\'s OWN browser, and this console is not that browser — ' +
+    'so what happens here is that the relying party is forgotten and the ' +
+    'notification is reported rather than sent; <code>/logout</code> is where ' +
+    'those actually load. And <strong>nothing recalls a SAML assertion, a ' +
+    'Kerberos service ticket or an SVID</strong>: each is valid because ' +
+    'somebody else can verify it without asking this service, so the only thing ' +
+    'that ends one is its own expiry. The Kerberos sign-out instant is the ' +
+    'nearest thing that exists, and it refuses a TGS-REQ presenting an older ' +
+    'ticket rather than recalling the tickets already issued.') +
+    '<form method="post" action="/admin/logout">' +
+      '<input type="hidden" name="action" value="global">' +
+      '<input type="hidden" name="user" value="' + esc(key) + '">' +
+      '<input type="hidden" name="from" value="users">' +
+      '<input type="hidden" name="back" value="' + esc(back) + '">' +
+      '<div class="formrow"><button class="danger">Sign ' + esc(row.name) +
+      ' out of everything</button></div></form>' +
+
+    '<h2>Revoke this person\'s tokens, and nothing else</h2>' +
+    note('The narrower act, and the one this section used to be the whole of. ' +
+    'Every access token, ID Token and refresh token held for this identity under ' +
+    'any of its spellings, revoked through the same set ' +
+    '<code>/oauth2/revoke</code> writes to. <strong>It does not sign them ' +
+    'out</strong> — their browser session survives, so the next authorization ' +
+    'request mints a fresh set and this will look as though it did nothing. ' +
+    'That is the honest behaviour of a revocation and the reason the button ' +
+    'above exists; use this one when you want the credentials out of ' +
+    'circulation and the session left alone. Assertions and tickets are ' +
+    'untouched either way, for the reason above.') +
     '<form method="post" action="/admin/tokens">' +
       '<input type="hidden" name="action" value="revoke-user">' +
       '<input type="hidden" name="user" value="' + esc(key) + '">' +
       '<input type="hidden" name="from" value="users">' +
       '<input type="hidden" name="back" value="' + esc(back) + '">' +
-      '<div class="formrow"><button class="danger">Revoke everything for ' + esc(row.name) +
-      '</button></div></form>';
+      '<div class="formrow"><button class="danger">Revoke every token for ' +
+      esc(row.name) + '</button></div></form>';
 
   log.debug("Leaving userDetailPage(). " + sessionPage.shown.length + " session(s), " +
             artifactPage.shown.length + " artifact(s) shown of " + detail.tokens.length +
@@ -13553,6 +14898,53 @@ function usersAction(body) {
   log.debug("Entering usersAction(). action=" + (body.action || '(none)'));
   const action = String(body.action || '');
 
+  // ISSUE AN ACTIVATION LINK (2026-09-06). How somebody provisioned through
+  // /admin-api, SCIM or an LDAP add comes to have a way in.
+  //
+  // **THE LINK IS RETURNED ONCE AND NEVER AGAIN**, like the bootstrap password
+  // and a client secret, because what is stored is a hash — this service cannot
+  // produce it a second time, only replace it. Issuing again invalidates the
+  // previous one, which is also how a link that expired or was never delivered
+  // is replaced.
+  //
+  // It is an ADMIN act rather than a self-service one, deliberately. There is
+  // no mail channel here, so a self-service "send me a link" form would have to
+  // show the link on screen — handing any visitor an activation link for any
+  // unactivated account, which is an account takeover with a username as the
+  // only input.
+  if (action === 'issue-activation') {
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving tokenAction(). No user was named.");
+      return { ok: false, errors: ['Name the person to issue an activation ' +
+                                   'link for.'] };
+    }
+    const issued = credentials.issueActivation(who);
+    if (!issued.ok) {
+      log.debug("Leaving tokenAction(). The activation link was refused.");
+      return issued;
+    }
+    auditLog.record({
+      category: 'authentication', action: 'activation.issued',
+      actor: (body.actor || ''), target: who, outcome: 'success',
+      summary: 'an activation link was issued for ' + who,
+      detail: { expiresAt: issued.expiresAt }
+    });
+    return { ok: true, username: who, expiresAt: issued.expiresAt,
+             // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
+             activationUrl: '/portal/activate?user=' +
+                            encodeURIComponent(who) + '&token=' +
+                            encodeURIComponent(issued.token),
+             message: 'An activation link for ' + who + ' is valid until ' +
+                      issued.expiresAt + '. IT IS SHOWN ONCE — this service ' +
+                      'stores only a hash and cannot produce it again. Send it ' +
+                      'to them by whatever channel you already use; anybody ' +
+                      'who has it can complete the account setup, so treat it ' +
+                      'as the credential it is. Issuing another invalidates ' +
+                      'this one.' };
+  }
+
+
   if (action === 'create') {
     if (!directoryWriter) {
       log.debug("Leaving usersAction(). No directory is loaded.");
@@ -13584,7 +14976,8 @@ function usersAction(body) {
   }
 
   log.debug("Leaving usersAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". There is one: create.'] };
+  return { ok: false, errors: ['Unknown action "' + action + '". The two ' +
+                               'are: create, issue-activation.'] };
 }
 
 // One route, three answers, and the choice between them is here rather than in
@@ -18842,21 +20235,66 @@ app.get('/admin/roles', function (req, res) {
     '<button type="submit">Create</button>' +
     '</div></form>' +
 
-    '<h3 id="member">Give somebody a role</h3>' +
-    note(ROLE_MEMBER_KINDS.map(function (one) {
+    // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.
+    //
+    // This read `Give somebody a role`, and the note under it was the three
+    // ROLE_MEMBER_KINDS joined — so `note()` derived its summary from the
+    // first of them and the fold read `a person — A username.` The one
+    // sentence saying an application may hold a role AS ITSELF was inside a
+    // collapsed block whose opening words were about people, on a page whose
+    // heading was also about people. Somebody looking for how to put an
+    // application in a role could read this whole section and not find it,
+    // which is exactly what happened.
+    //
+    // The heading names all three now, and the note LEADS with a sentence
+    // naming all three so that the derived summary does too. The per-kind
+    // detail is unchanged and still folded — the fix is which sentence is
+    // visible with the fold shut, not how much prose there is.
+    '<h3 id="member">Give a person, a group or an application a role</h3>' +
+    note('<strong>All three are first-class members of a role here</strong> ' +
+    '&mdash; a person, a group, and an APPLICATION holding it as itself.<br>' +
+    ROLE_MEMBER_KINDS.map(function (one) {
       return '<strong>' + esc(one.label) + '</strong> &mdash; ' + esc(one.what);
     }).join('<br>')) +
+    (register.roles.length ? '' : warn('<strong>There is no role to add ' +
+      'anybody to yet, so this form is disabled.</strong> ' +
+      '<a href="#create">Create a role</a> first &mdash; the six built-in ' +
+      'roles have no membership, because they are COMPUTED from what the ' +
+      'party is rather than from anything anybody wrote down. That is why ' +
+      'the Role list below is empty on a service where nobody has made one.')) +
     '<form method="post" action="/admin/roles">' + rolesBack(listView) +
     '<input type="hidden" name="action" value="add-member">' +
     '<div class="formrow">' +
     '<label>Role <select name="role" required>' + roleOptions + '</select></label>' +
     '<label>Kind <select name="kind">' + kindOptions + '</select></label>' +
-    '<label>Name <input type="text" name="member" required></label>' +
-    '<button type="submit">Add</button>' +
+    // THE SUGGESTIONS ARE THE APPLICATIONS, AND ONLY THE APPLICATIONS.
+    //
+    // A datalist SUGGESTS and never constrains, which is what makes one field
+    // serving three kinds tolerable: a person or a group is still typed by
+    // hand and still need not exist yet, which is this service's rule
+    // everywhere and is stated in the fold above.
+    //
+    // Applications are the kind with a knowable set — this realm's registry
+    // has them all — and they are the kind somebody cannot guess, because an
+    // application's identifier is whatever it registered itself as. The other
+    // two are open by design: a person need not exist, and a group lives in
+    // the directory behind a hook this page has no reader for.
+    //
+    // ITS OWN datalist rather than the preview form's `role-preview-apps`
+    // below. Both render the same `applicationOptions` — one computation, two
+    // renderings, so they cannot disagree — but referencing an id defined by
+    // another section would make this field's suggestions vanish silently if
+    // that section were ever made conditional or moved.
+    '<label title="' +
+      esc('The suggestions are the applications registered in this realm. A ' +
+          'person or a group is typed by hand and need not exist yet — this ' +
+          'service creates an entry for any name on first sight.') +
+      '">Name <input type="text" name="member" list="role-member-apps" ' +
+      'required></label>' +
+    '<datalist id="role-member-apps">' + applicationOptions + '</datalist>' +
+    '<button type="submit"' +
+      (register.roles.length ? '' : ' disabled') + '>Add</button>' +
     '</div></form>' +
-    (register.roles.length ? '' : note('There is no role to add anybody to ' +
-      'yet. The select above is empty because the six built-in roles have no ' +
-      'membership &mdash; they are computed.')) +
 
     '<h3 id="requiring">What requires a role</h3>' +
     note('<strong>The other relation, and it is edited somewhere else.</strong> ' +
@@ -22038,7 +23476,7 @@ function configRow(setting, from) {
   const id = 'cfg-' + setting.key.replace(/\./g, '-');
   // The control carries the description as a tooltip, at the length a tooltip
   // holds. See the comment above the return.
-  const hint = tip(setting.description);
+  const hint = tip(setting.description, Infinity);
   const input = setting.type === 'enum'
     ? '<select name="' + esc(setting.key) + '" id="' + esc(id) + '"' + hint +
       (setting.editable ? '' : ' disabled') + '>' +
@@ -22101,13 +23539,24 @@ function configRow(setting, from) {
     : note('<strong>Restart to apply:</strong> ' +
       esc(setting.restartReason) + '.');
 
-  // THE DESCRIPTION IS THE FOLD AND THE LABEL IS ITS SUMMARY. This table is
-  // 152 rows deep and every description is a paragraph — a median of 384
-  // characters — so the page was about forty screens of prose with 112 inputs
-  // buried in it. The setting's own short label is what a summary would have
-  // had to say anyway, which is why it is passed rather than derived: it is
-  // already written, already beside the key it describes, and cannot drift
-  // from the description the way a second label here would.
+  // THE DESCRIPTION IS THE TOOLTIP AND THERE IS NO LONGER A FOLD (2026-09-05).
+  //
+  // It was a fold with the setting's short label as its summary, and the input
+  // carried a 190-character teaser of the same text. That was the right shape
+  // while a tooltip was a PREVIEW of something the reader could go and read —
+  // but it meant 152 summary lines on /admin/config and a summary line per
+  // setting on every protocol page's Settings block, which is the bulk of what
+  // was left visible after the 2026-08-26 folds.
+  //
+  // Both the key's label and the control now carry the WHOLE description as a
+  // title, and nothing is drawn under them. **This is the one place in this
+  // console where something is said only in a tooltip**, and it is deliberate
+  // rather than an oversight — see the paragraph in `admin-ui/CLAUDE.md` that
+  // used to say the opposite. What pays for it is that a setting's
+  // description is also on `/admin/config`'s own JSON view, in
+  // `GET /admin-api/config`, and in README.md's table, so the text has three
+  // other doors that a keyboard or a screen reader can reach. A field whose
+  // prose has NO other door does not get this treatment.
   //
   // The tooltips are the same text at two lengths rather than a third thing to
   // keep in step: the key carries the label, and the input carries as much of
@@ -22115,9 +23564,8 @@ function configRow(setting, from) {
   // is said — everything they carry is in the fold under them — because a
   // tooltip is unreachable from a keyboard and invisible on a touch screen.
   return '<tr>' +
-    '<td><label for="' + esc(id) + '"' + tip(setting.label) + '><code>' +
-    esc(setting.key) + '</code></label>' +
-    note(esc(setting.description), setting.label) +
+    '<td><label for="' + esc(id) + '"' + tip(setting.description, Infinity) +
+    '><code>' + esc(setting.key) + '</code></label>' +
     restart + '</td>' +
     '<td>' + input + '</td>' +
     '<td>' + provenance + '</td>' +
@@ -22406,7 +23854,7 @@ function tokenLifetimeRow(setting, snapshot) {
   // this one is a short list of rows somebody sets a number in, so a paragraph
   // under each would be most of the page, and there is a link to the full row
   // next door.
-  const hint = tip(setting.description);
+  const hint = tip(setting.description, Infinity);
   // TWO CONTROLS, BY TYPE. It was one — a `number` input — until
   // `oauth2.revokeRefreshOnLogout` joined this page on 2026-08-27, and a bool
   // gets the `select` of true/false that /admin/config's configRow() draws
@@ -22504,7 +23952,9 @@ function tokenLifetimesAction(body) {
     // rather than ignored, because this action's whole surface is four keys and
     // a caller that misspelt one deserves to be told rather than to watch
     // nothing happen.
-    const posted = Object.keys(body || {}).filter(function (name) { return name !== 'action'; });
+    const posted = Object.keys(body || {}).filter(function (name) {
+      return !FORM_FURNITURE[name];
+    });
     const unknown = posted.filter(function (name) {
       return TOKEN_LIFETIME_KEYS.indexOf(name) < 0;
     });
@@ -22885,7 +24335,7 @@ function samlAssertionSettingRow(setting, snapshot) {
     ? '<span class="state-valid">' + counts.valid + ' valid</span>, ' +
       '<span class="state-expired">' + counts.expired + ' expired</span>'
     : '<span class="state-none">&mdash;</span>';
-  const hint = tip(setting.description);
+  const hint = tip(setting.description, Infinity);
   // THREE CONTROLS, BY TYPE, and they are the ones `/admin/config`'s configRow()
   // draws — a `select` of true/false for a bool rather than a checkbox, because
   // an unticked checkbox sends NOTHING and this form would then read "sign no
@@ -22985,7 +24435,9 @@ function samlAssertionsAction(body) {
     // named here that is not one of them is refused BY NAME rather than
     // ignored: this action's whole surface is three keys, and a caller that
     // misspelt one deserves to be told rather than to watch nothing happen.
-    const posted = Object.keys(body || {}).filter(function (name) { return name !== 'action'; });
+    const posted = Object.keys(body || {}).filter(function (name) {
+      return !FORM_FURNITURE[name];
+    });
     const unknown = posted.filter(function (name) {
       return SAML_ASSERTION_KEYS.indexOf(name) < 0;
     });
@@ -26745,11 +28197,18 @@ const PROTOCOL_SETTINGS_PAGES = [
           'that a client author can find out what actually arrived: the ' +
           'protocol version, the cipher, the SNI name, and every field of the ' +
           'certificate that was presented.',
-    also: ['<strong>A verified client certificate is not a login.</strong> ' +
-           '9443 asks for one, reports it in full, and starts no session and ' +
-           'issues no token on the strength of it. The one place a ' +
-           'certificate authenticates anybody here is the SPIRE Server API, ' +
-           'which is <a href="/admin/spiffe">SPIFFE</a>.',
+    also: ['<strong>A verified client certificate IS a login since ' +
+           '2026-09-05, and no revocation is checked.</strong> 9443 requires ' +
+           'one and 8443 asks for one; a request on a connection whose ' +
+           'certificate verified starts a sign-on session for its common ' +
+           'name, and the response carries the cookie — so a browser that ' +
+           'presents a certificate here is signed in on the main port too. ' +
+           'What has NOT changed is what verification proved: a chain to an ' +
+           'anchor somebody POSTed to <code>/tls/trust</code>, with no ' +
+           'revocation checked, so a revoked certificate verifies here and ' +
+           'would not verify anywhere that matters. No token is issued. ' +
+           'The session is on <a href="/admin/sessions">Sessions</a> and ends ' +
+           'like any other.',
            '<strong>One self-signed certificate, regenerated on every ' +
            'start, is shared by four sockets</strong> — 8443, 9443, LDAPS 636 ' +
            'and the main port when <code>global.https</code> is on — so a ' +
@@ -26993,7 +28452,7 @@ function spiffeJson(req) {
                'spiffe.jwtKeyType', 'spiffe.caTtl', 'spiffe.svidTtl',
                'spiffe.jwtSvidTtl', 'spiffe.refreshHint', 'spiffe.svidSubject',
                'spiffe.autoCreateEntries', 'spiffe.requireSecurityHeader',
-               'spiffe.authRequired', 'spiffe.trustLocalSocket',
+               'spiffe.trustLocalSocket',
                'spiffe.adminIds', 'spiffe.clockSkew',
                'spiffe.attestWorkloads', 'spiffe.acceptAssertedSelectors',
                'spiffe.maxEntries', 'spiffe.maxAgents',
@@ -29390,6 +30849,7 @@ module.exports = {
   consoleJson: consoleJson,
   metricsJson: metricsJson,
   tokensView: tokensView,
+  tokenSetView: tokenSetView,
   // The audit log's view is the whole function rather than a JSON builder, for
   // the reason the block above consoleJson() gives: the filtering and the paging
   // are work both the page and the API need, and two copies of it would be two

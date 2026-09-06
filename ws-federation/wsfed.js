@@ -861,8 +861,15 @@ function issueSignInResponse(req, res, params, session, realm, wreply, tokenType
   const roleAnswer = gate.check({
     application: realm,
     kind: gate.ISSUANCE.WSFED_TOKEN,
+    // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
+    //
+    // This was the constant `true` until unauthenticated sessions existed, and
+    // a constant is what it looked like: every session this service held had
+    // somebody behind it. `authenticated !== false` rather than a plain read,
+    // because a session object made before this field existed has no such
+    // property and must go on meaning what it always meant.
     subject: { kind: 'user', name: String((session.user || {}).username || ''),
-               authenticated: true },
+               authenticated: session.authenticated !== false },
     claims: null
   });
   if (!roleAnswer.allowed) {

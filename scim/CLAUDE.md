@@ -294,3 +294,48 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   still right — an anonymous caller, and POST. A member naming nothing is
   ACCEPTED, because refusing it would make the
   dangling-member state `/admin/groups` exists to report impossible to produce.
+
+## There is no test for this in either repository, and it is the cheapest one left to write
+
+**By the root `CLAUDE.md`'s rule it belongs in the PARENT project's suite** —
+every assertion below is made by driving the running service over HTTP.
+It is plain JSON over HTTP with no browser, no signature and
+no XML, its whole surface is seventeen routes, and the interesting half is
+negatives that are hard to provoke from a permissive server and are deliberately
+reachable here: `invalid` as a userName, a duplicate userName, an unevaluable
+filter, a `.search` body with no schema URN, `/Me`. What a test would also pin
+down is the property the feature exists for and no single request demonstrates —
+that a `POST /scim/v2/Users` and an `ldapsearch` see ONE entry, that a PUT leaves
+`schacDateOfBirth` alone, and that `entryDN` is never written.
+
+## A SCIM CREDENTIAL NOW STARTS A SESSION, AND THE POLICY IS ASKED ABOUT IT (2026-09-06)
+
+Both happen in `authenticate()` and nowhere else, which is that function's whole
+reason to exist: it is the ONE place a SCIM credential is accepted, so an
+endpoint added tomorrow gets both without its author knowing they exist. Eleven
+route handlers would be ten that do and one that does not.
+
+**THE SESSION IS `authn.startSession()` AND NOT A REGISTER OF THIS DIRECTORY'S.**
+`common/CLAUDE.md` carries the argument and it is not repeated here; the short
+form is that a second store would be a second answer to *is somebody signed in*.
+Two things about it are SCIM's own:
+
+* **The key is the SCHEME AND THE PRINCIPAL, not the credential.** This module
+  never keeps what was presented — a bearer token reaching a register would be
+  a second place to steal one from — so there is nothing here to hash. And the
+  right unit is the CLIENT: one that refreshes its token mid-run is the same
+  client on the same surface, and keying on the token would give it a second
+  row and leave the first until it expired.
+* **An anonymous decision gets no session**, which is not a special case:
+  `scim.authRequired` off, or the open ServiceProviderConfig, means nobody
+  authenticated and a session recording that they had would be untrue.
+
+**THE POLICY RUNS AFTER THE SCOPE CHECK AND NOT INSTEAD OF IT.** RFC 7644
+section 2's mapping from an authenticated client to an access policy is this
+file's own and is unchanged — the OAuth schemes still need `scim:read` or
+`scim:write`, and one still does not imply the other. The gate is the layer
+ABOVE that, so a deployment can narrow this surface by policy and an unedited
+one behaves exactly as it did: the built-in document asks for a role only where
+somebody has required one. A refusal from it says outright that the credential
+WAS accepted, because "you may not" and "authenticate" are different
+instructions to a client and this endpoint already distinguishes them.

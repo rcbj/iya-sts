@@ -87,6 +87,9 @@
 const crypto = require('crypto');
 const app = require('../common/app');
 const { log, xmlEscape, baseUrlOf, parseBody, nowSec } = require('../common/helpers');
+
+// The input validator. A LEAF (rule 3): it registers no route and closes no cycle.
+const validation = require('../common/validation');
 const config = require('../common/config');
 // The token registry, its ONE revocation set, and identityKeyOf() — which is
 // what makes `alice`, `alice@STS.MOCK` and `urn:sts-mock:user:alice` one person
@@ -708,17 +711,61 @@ const FAMILIES = [
   // PAGE. See the header: what cannot be ended is listed with the reason,
   // because a global logout that quietly omitted these would look complete.
   { id: 'issued', endOrder: 99,
-    label: 'Issued and beyond recall',
+    label: 'Issued, disowned, and beyond recall',
     protocol: 'SAML 2.0, SAML 1.1, WS-Trust, WS-Federation, OpenID4VCI, SPIFFE',
-    spec: 'Nothing to cite: no specification here defines a way to recall one.',
+    spec: 'Nothing to cite for the recall: no specification here defines a way ' +
+          'to take one back. CAEP and SAML Single Logout are what carry the ' +
+          'news where a channel exists.',
+    // -------------------------------------------------------------------
+    // THIS FAMILY WAS `terminable: false` UNTIL 2026-09-05 AND ITS LABEL WAS
+    // "Issued and beyond recall". Both halves of that were arguing one true
+    // thing and one false one at once.
+    //
+    // THE TRUE HALF, UNCHANGED: nothing contacts this service when one of
+    // these is presented. A relying party validates a SAML assertion's
+    // signature and its Conditions and asks nobody; a Kerberos service
+    // decrypts a ticket with a key it already holds; an X509-SVID chains to a
+    // bundle. **A revocation here reaches none of them and never will.**
+    //
+    // THE FALSE HALF: that this made the credential nothing a sign-out could
+    // ACT on. **What this service knows and what a relying party will honour
+    // are two different claims.** An identity provider that has signed
+    // somebody out has a position on every credential it issued them, and
+    // being unable to enforce it is not a reason to be unable to state it —
+    // which is what a global logout is FOR. Three things rest on the mark:
+    //
+    //   * the sign-out can report what it disowned rather than only what it
+    //     reached, which is what makes "everything for this person is dead"
+    //     checkable rather than hopeful;
+    //   * CAEP transmits it to any receiver that subscribed — the channel
+    //     SAML and Kerberos do not have, and the one an application can
+    //     actually act on;
+    //   * SAML Single Logout carries it for an assertion that came from a
+    //     browser profile, which is the `saml2-sp` family two rows up.
+    //
+    // A WS-TRUST ASSERTION HAS NEITHER CHANNEL and the mark is the whole of
+    // what exists for it. That is not a reason to skip it; it is the case that
+    // makes the mark worth having, because otherwise this service's answer to
+    // "did you sign them out" would depend on which endpoint issued the
+    // credential.
+    //
+    // IT IS LAST (`endOrder: 99`) AND STAYS LAST. Nothing depends on these
+    // rows, and marking them before the `saml2-sp` family had sent its Single
+    // Logout would be disowning an assertion before telling the service
+    // provider — the same ordering mistake, one family along, that put
+    // `session` at 90.
+    // -------------------------------------------------------------------
     what: 'Assertions, service tickets, verifiable credentials and X509-SVIDs ' +
-          'already issued for this person. NONE of them can be ended, by this ' +
-          'service or by a real one, and the reason is the same in every case: ' +
-          'nothing contacts the issuer when they are presented. A relying ' +
-          'party validates a SAML assertion\'s signature and its conditions ' +
-          'and asks nobody; a Kerberos service decrypts a ticket with its own ' +
-          'key; an X509-SVID verifies against a bundle. They are here so that ' +
-          'a global logout says what it did NOT reach.',
+          'already issued for this person. Ending one marks it revoked IN THIS ' +
+          'SERVICE\'S OWN RECORD and reaches nobody: a relying party validates ' +
+          'a SAML assertion\'s signature and its conditions and asks nobody, a ' +
+          'Kerberos service decrypts a ticket with its own key, an X509-SVID ' +
+          'verifies against a bundle — so the credential goes on working out ' +
+          'there until it expires. What the mark buys is that this sign-out can ' +
+          'SAY what it disowned, that CAEP carries it to any receiver that ' +
+          'subscribed, and that Single Logout carries it for the assertions that ' +
+          'came from a browser profile. They are here so that a global logout ' +
+          'says both what it reached and what it did not.',
     collect: function (ctx) {
       log.debug("Entering issued.collect().");
       const detail = stats.userDetail(ctx.key);
@@ -728,20 +775,49 @@ const FAMILIES = [
       }
       log.debug("Leaving issued.collect().");
       return detail.artifacts.filter(function (record) {
-        return record.state !== 'expired';
+        // An expired credential is past disowning, and a revoked one has
+        // already been disowned — listing either as terminable would offer an
+        // act that changes nothing.
+        return record.state !== 'expired' && record.state !== 'revoked';
       }).map(function (record) {
-        return row('issued', record.kind, handleFor(record.kind + '|' + (record.id || '') + '|' +
-                                                    (record.issuedAt || 0)), {
+        // ADDRESSED BY THE REGISTER'S OWN HANDLE since 2026-09-05, where it
+        // used to be a hash of kind|id|issuedAt. That was sound while the row
+        // could not be acted on — it only had to be stable enough to name in
+        // a list — and it is not sound now: a Kerberos ticket has no `id`, so
+        // two tickets minted for one principal in the same millisecond hashed
+        // to ONE handle, and a termination would have marked whichever came
+        // back first. `record.key` is unique per artifact by construction.
+        return row('issued', record.kind, record.key || handleFor(
+                     record.kind + '|' + (record.id || '') + '|' + (record.issuedAt || 0)), {
           label: record.kind + (record.id ? ' ' + record.id : ''),
           detail: (record.audience ? 'for ' + record.audience : 'no audience recorded') +
                   (record.state ? ', ' + record.state : ''),
           startedAt: record.issuedAt || 0,
           expiresAt: record.expiresAt || 0,
-          terminable: false,
-          why: 'nothing consults this service when it is presented, so there is no revocation ' +
-               'this service could perform. It stops working when it expires.'
+          terminable: true,
+          why: 'ending this marks it revoked in this service\'s own record. THE HOLDER IS ' +
+               'NOT TOLD and cannot be: nothing consults this service when it is presented, ' +
+               'so it goes on working until it expires. CAEP is the one channel that can ' +
+               'carry the news to a receiver that subscribed.'
         });
       });
+    },
+    terminate: function (r, ctx) {
+      log.debug("Entering issued.terminate().");
+      const record = stats.artifactByKey(r.handle);
+      if (!record) {
+        log.debug("Leaving issued.terminate(). No such credential.");
+        return { ok: false, message: 'that credential is no longer in the issued register — it ' +
+                                     'has been forgotten to the cap since this list was ' +
+                                     'drawn, at which point this service has no position on ' +
+                                     'it left to state' };
+      }
+      const first = stats.revokeArtifact(record, ctx.by || 'a global sign-out');
+      log.debug("Leaving issued.terminate().");
+      return { ok: true,
+               message: (first ? 'marked ' : 'was already marked ') + record.kind +
+                        (record.id ? ' ' + record.id : '') + ' revoked in this service\'s ' +
+                        'record. The holder has NOT been told and cannot be by this act' };
     } }
 ];
 
@@ -852,7 +928,19 @@ const SESSION_EXPIRY_RULES = {
         'revocation model.',
   ldap: 'None. A Bind sets the authorization state of a CONNECTION (RFC 4511 ' +
         'section 4.2), so it lasts until the next Bind, an Unbind, or the ' +
-        'socket closing. There is no expiry to count down to.'
+        'socket closing. There is no expiry to count down to.',
+  // THE FOURTH RULE (2026-09-06), and it is the only one here that IS extended
+  // by use — which is why it needed a rule of its own rather than borrowing
+  // the browser's. The surfaces it covers present a credential on EVERY
+  // request, so the session exists only while a client is actually calling and
+  // an idle one genuinely is finished; a browser holds a cookie that outlives
+  // its own use, which is why that one is absolute.
+  api: 'Extended by use. These surfaces authenticate on every request, so the ' +
+       'session is touched each time and expires an hour after the last call ' +
+       'rather than an hour after the first. Ending it revokes NOTHING: the ' +
+       'token, password or certificate behind it is accepted without ' +
+       'consulting any register, so the next call authenticates again and the ' +
+       'row comes back.'
 };
 
 function liveSessions() {
@@ -880,7 +968,20 @@ function liveSessions() {
     out.push({
       id: 'session:' + session.id,
       family: 'session',
-      kind: 'Browser sign-on session',
+      // ONE STORE, TWO KINDS OF ROW (2026-09-06). The management API, SCIM and
+      // the SPIRE Server API sign in through `authn.startSession()` like
+      // everything else — a second register for them would be a second answer
+      // to "is somebody signed in", which is what rule 3m forbids — and
+      // `credentialKey` is the field that tells them apart. It is set only by
+      // a caller that presents a credential per request, so a row without one
+      // is a browser and this is the ONE predicate that decides.
+      //
+      // The KIND has to differ even though the store does not: a SCIM client
+      // drawn as a "Browser sign-on session" would be this page saying
+      // something untrue about the one thing it exists to report.
+      kind: session.credentialKey
+        ? (session.via || 'API') + ' session'
+        : 'Browser sign-on session',
       key: stats.identityKeyOf(username),
       username: username,
       sub: (session.user && session.user.sub) || '',
@@ -894,12 +995,33 @@ function liveSessions() {
       sessionId: session.id,
       startedAt: (session.authTime || 0) * 1000,
       expiresAt: session.expires || 0,
-      expiryRule: SESSION_EXPIRY_RULES.session,
+      expiryRule: session.credentialKey ? SESSION_EXPIRY_RULES.api
+                                        : SESSION_EXPIRY_RULES.session,
       amr: (session.amr || []).slice(),
       acr: session.acr || '',
       carries: rides,
-      detail: rides.length ? 'carries ' + rides.join(', ')
-                           : 'nothing is signed into on it yet',
+      // An API session carries no relying parties — nothing signs into it, it
+      // is a record that a credential keeps being accepted — so it reports the
+      // thing that IS true of it and that a reader wants: how much it is being
+      // used and when it last was.
+      detail: session.credentialKey
+        ? (session.calls || 1) + ' call(s), last at ' +
+          new Date(session.lastSeenAt || session.expires || 0).toISOString()
+        : (rides.length ? 'carries ' + rides.join(', ')
+                        : 'nothing is signed into on it yet'),
+      // WHETHER ANYBODY AUTHENTICATED FOR IT (2026-09-05).
+      //
+      // Only a browser session can answer anything but `true`. A Kerberos TGT
+      // and an LDAP bound connection are BOTH the product of a credential
+      // having been accepted — a TGT that decrypts and a Bind that returned
+      // success — so there is no unauthenticated version of either, and the
+      // rows below state `true` rather than leaving the field off, because a
+      // missing field on two of three kinds would read as "unknown" on a page
+      // that is about exactly this distinction.
+      //
+      // `!== false` for the usual reason: a session made before the field
+      // existed is one somebody signed into.
+      authenticated: session.authenticated !== false,
       terminable: true,
       why: ''
     });
@@ -915,9 +1037,26 @@ function liveSessions() {
     if (record.kind !== 'Kerberos TGT') {
       return;
     }
-    // `live` is issuedList()'s own word for it, so an expired ticket is left
-    // off by the same rule that leaves an expired session off.
-    if (record.state !== 'live') {
+    // **`valid` IS issuedList()'s WORD AND `live` WAS NEVER ONE OF ITS STATES**
+    // (fixed 2026-09-05). `artifactStateOf()` answers `valid`, `expired`, `no
+    // expiry stated` or — since this same day — `revoked`, and this compared
+    // against a fifth string that nothing has ever returned. So the test was
+    // ALWAYS true, this loop always returned on its first line, and **no
+    // Kerberos ticket-granting ticket has ever appeared on `/admin/sessions`**
+    // since that page was written on 2026-09-04.
+    //
+    // It hid rather than broke, which is why it lasted: the page drew the
+    // browser sessions and the LDAP connections correctly, so it looked
+    // complete, and the honest reading of an empty Kerberos section is "nobody
+    // has a TGT" — which on a service where nothing had driven the KDC that
+    // day was also true. `inventoryFor()`'s own `krb5` family reads the
+    // register separately and was never affected, which is why a global
+    // sign-out DID stamp the sign-out instant while the page showed nothing to
+    // sign out.
+    //
+    // A REVOKED TGT IS LEFT OFF TOO, and that is the new half: this page is
+    // what is LIVE, and a ticket this service has disowned is not.
+    if (record.state !== 'valid') {
       return;
     }
     const client = String(record.subject || '');
@@ -946,6 +1085,10 @@ function liveSessions() {
               (already ? '; the principal was signed out at ' +
                 already.toISOString() + ', so this ticket is already refused ' +
                 'at the KDC' : ''),
+      // A TGT IS A CREDENTIAL HAVING BEEN ACCEPTED — it exists because an
+      // AS-REQ decrypted under a real long-term key. There is no
+      // unauthenticated Kerberos session; see the note on the browser rows.
+      authenticated: true,
       terminable: !!signOutOn,
       why: signOutOn
         ? 'Ending this stamps a sign-out instant on ' + key + '@' + realm +
@@ -987,6 +1130,12 @@ function liveSessions() {
       carries: [],
       detail: 'bound as ' + (c.dn || '(no DN)') + ' on ' +
               (c.secure ? 'LDAPS ' : 'plain ') + c.port,
+      // A BOUND CONNECTION IS A BIND THAT SUCCEEDED. This service refuses no
+      // bind, so that is a low bar — but it is still a credential having been
+      // presented and accepted, which is the distinction this column draws.
+      // An ANONYMOUS bind never reaches here: it has no key and is left off
+      // the list entirely, a few lines above.
+      authenticated: true,
       terminable: !!ldapOn,
       why: ldapOn
         ? 'Ending this closes the socket, which is the only sign-out LDAP ' +
@@ -1541,6 +1690,13 @@ function issuerFor(req) {
 // creates is listed like any other and a global logout ends it too — which is
 // why the cookie is cleared on the way out of the POST.
 // ---------------------------------------------------------------------------
+const LOGOUT_FORM = validation.z.looseObject({
+  scope: validation.types.opt(validation.types.oneOf(['global', 'selected'])),
+  select: validation.types.repeatable(
+    validation.z.string().max(validation.CAP.TOKEN)).optional(),
+  csrf_token: validation.types.opt(validation.types.token)
+});
+
 app.get(LOGOUT_PATH, function (req, res) {
   log.debug("Entering the logout endpoint.");
   const subject = subjectOf(req, null);
@@ -1631,6 +1787,34 @@ app.post(LOGOUT_PATH, function (req, res) {
   // `scope=global` is explicit and an empty selection means the same thing.
   // Both are spelt out because the button says "global" and a caller with no
   // form should get the same behaviour from an empty body.
+  // ---------------------------------------------------------------------
+  // WHAT THIS FORM MAY SAY.
+  //
+  // **`scope` IS A CLOSED SET OF TWO**, and it is the parameter that decides
+  // whether this ends ONE session or EVERY session this identity has. The
+  // comparison below is `=== 'global'`, so anything else has always meant
+  // "selected" — a typo, a stale link and a hand-made post all silently chose
+  // the narrower of the two. Naming the set makes an unrecognised value an
+  // error rather than a quiet reinterpretation of what somebody asked for.
+  //
+  // **`select` IS REPEATABLE AND MUST BE**, because it is a CHECKBOX COLUMN —
+  // one `<input name="select" value="<id>">` per live session — so a person
+  // ticking three boxes sends the parameter three times. That is the one shape
+  // `common/validation.js` refuses by default, and declaring it here is what
+  // keeps a multi-session sign-out working. The values are this service's own
+  // session and credential identifiers, so they are bounded rather than typed.
+  //
+  // Case-sensitive, matching the comparison below exactly: nothing here
+  // lower-cases, so a validator that accepted `Global` would accept a value the
+  // handler then reads as "selected".
+  // ---------------------------------------------------------------------
+  const asked = validation.checkParsed(body, 'body', LOGOUT_FORM);
+  if (!asked.ok) {
+    log.debug('Leaving the sign-out endpoint. ' + asked.detail);
+    return send(res, page('Sign out',
+      '<h1>Sign out</h1><div class="err">' + xmlEscape(asked.detail) +
+      '</div>'), 400);
+  }
   const explicitGlobal = String(body.scope || '') === 'global';
   const raw = body.select === undefined ? [] : body.select;
   const selection = explicitGlobal ? [] : (Array.isArray(raw) ? raw : [raw]).filter(Boolean);

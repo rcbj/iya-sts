@@ -426,9 +426,10 @@ async function theSchemasMatchTheReplies(doc) {
   // property names this check has already caught both lived. A schema is not
   // checked by checking the list that carries it: IssuedList named `issued`
   // correctly for as long as IssuedRecord called `expiresAtMs` `expiresAt`.
-  const issued = cases.filter(function (item) {
+  const issuedList = cases.filter(function (item) {
     return item.name === "IssuedList";
-  })[0].body.issued;
+  })[0].body;
+  const issued = issuedList.issued;
   assert.ok(issued.length,
     "this check needs at least one issued artifact, and the revocation " +
     "check above has just minted three — an empty list here means " +
@@ -436,6 +437,21 @@ async function theSchemasMatchTheReplies(doc) {
     "suite's classic way of passing while testing nothing.");
   cases.push({ name: "IssuedRecord", schema: schemas.IssuedRecord,
                body: issued[0] });
+
+  // The SET shape, which is what that resource actually lists since
+  // 2026-09-05. Reached only through an `items` like IssuedRecord above, and
+  // for the same reason: IssuedList named `sets` correctly for as long as the
+  // entries in it were whatever they were.
+  assert.ok((issuedList.sets || []).length,
+    "IssuedList should carry `sets` — that resource lists one entry per " +
+    "ISSUANCE now, and `issued` is the flatten of it. An empty array here " +
+    "means IssuedSet is checked against nothing.");
+  cases.push({ name: "IssuedSet", schema: schemas.IssuedSet,
+               body: issuedList.sets[0] });
+  // And the drill-down, which is the only place IssuedSetDetail appears.
+  cases.push({ name: "IssuedSetDetail",
+               body: await get("/tokens/set?id=" +
+                               encodeURIComponent(issuedList.sets[0].setKey)) });
 
   const sets = cases.filter(function (item) {
     return item.name === "ClaimSets";

@@ -204,7 +204,200 @@ function policiesJson() {
   });
   log.debug('Leaving policiesJson(). ' + rows.length + ' policy(ies).');
   return { root: root ? root.name : null, policies: rows,
-           templates: templates.catalogue() };
+           templates: templates.catalogue(),
+           serviceOwn: serviceOwnPolicies() };
+}
+
+// ---------------------------------------------------------------------------
+// THE TWO POLICIES THIS SERVICE DECIDES ITS OWN BOUNDARIES WITH, WHICH ARE NOT
+// IN THE REPOSITORY AND THEREFORE APPEARED NOWHERE IN THIS CONSOLE (2026-09-06).
+//
+// Everything else on these pages is a row in `ou=policies`, and until this date
+// so was everything these pages SAID. That left the most misleading page in the
+// service: a reader opened the editor, saw `seeded-rbac` alone and marked
+// *root*, and reasonably concluded it was what the PDP decides with. It is the
+// one document on that page that decides nothing this service enforces.
+//
+// The two that do are BUILT IN and CALLED rather than seeded —
+// `xacml_role_pep.js`'s header argues why at length, and the short version is
+// that `ou=policies` is per realm, so a policy seeded once in the default realm
+// leaves every realm created later unable to decide anything. **THE FIX IS TO
+// SAY SO, NOT TO SEED THEM**: seeding is the thing that argument rules out, and
+// a reader who is told where the document comes from can create an override
+// from the same template in one click.
+//
+// ---------------------------------------------------------------------------
+// LAZY REQUIRES, AND BOTH HALVES OF THAT ARE DELIBERATE.
+//
+// It is the pattern this file already uses for `./xacml` (see the editor's POST
+// handler), and here it matters more. Requiring `xacml_role_pep.js` FILLS
+// `common/issuance_gate.js`'s decider and requiring `xacml_access_pep.js` ARMS
+// `common/access_gate.js` — so a top-level require in this file would arm both
+// gates from a CONSOLE module, which is precisely the hazard `admin.js`'s
+// eleventh slot exists to avoid: a process holding the console and not
+// `xacml/xacml.js` would gate the whole service with half this family present.
+//
+// It is also free. `xacml/xacml.js` requires this file at 23c and both PEPs
+// immediately after it, so by the time any route here can be reached both are
+// in `require.cache` and this is a lookup. And it keeps that module's stated
+// arrangement — the pages before the PEPs, "for no technical reason at all,
+// because the pages are what an administrator fixes a refusal with" — which a
+// top-level require here would silently reverse.
+// ---------------------------------------------------------------------------
+function serviceOwnPolicies() {
+  log.debug('Entering serviceOwnPolicies().');
+  const rolePep = require('./xacml_role_pep');
+  const accessPep = require('./xacml_access_pep');
+  const out = [
+    Object.assign({
+      key: 'issuance',
+      label: 'Issuance',
+      decides: 'whether this service issues anything at all — the nine ' +
+               'issuance sites: a session, an access token, an ID Token, a ' +
+               'refresh token, an authorization code, a SAML assertion, a ' +
+               'WS-Federation token, a WS-Trust token and a Kerberos ticket.',
+      asked: '`common/issuance_gate.js`, from all nine',
+      remote: false
+    }, rolePep.issuancePolicyState()),
+    Object.assign({
+      key: 'access',
+      label: 'Access control',
+      decides: 'whether a subject reaches a gated surface — the admin ' +
+               'console, the management API, the User Portal, SCIM and the ' +
+               'SPIRE Server API.',
+      // ALL FIVE, and each asks AFTER its own check rather than instead of
+      // it. This sentence said "two of five" for a day and said "all five"
+      // wrongly before that, so it names the exception rather than a count.
+      asked: '`common/access_gate.js` — from the admin console, the User ' +
+             'Portal, SCIM, the SPIRE Server API, and the management API in ' +
+             'PRODUCT MODE (that surface is open in development, so there is ' +
+             'no subject to decide about).',
+      remote: false
+    }, accessPep.accessPolicyState())
+  ];
+  log.debug('Leaving serviceOwnPolicies(). ' + out.length + ' policy(ies).');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SECTION THAT SAYS THE TABLE ABOVE IS NOT THE WHOLE ANSWER.
+//
+// Drawn under the repository table because the ORDER is the argument: a reader
+// arrives to look at policies, sees the ones that are stored, and is then told
+// which two are deciding and are not among them. Above the table it would read
+// as a preamble to be scrolled past; in a fold it would be exactly the fact
+// that was already invisible, hidden once more.
+//
+// **THE STATE COMES FROM THE SAME FUNCTIONS THE PEPs CALL**, through
+// `issuancePolicyState()` and `accessPolicyState()`, which are thin wrappers
+// over the very `issuancePolicy()` / `accessPolicy()` the decision goes
+// through. A page that worked out for itself which document was in force would
+// be a second answer to that question, and it would be the one that is wrong
+// after somebody disables an override.
+// ---------------------------------------------------------------------------
+// The one line the EDITOR needs about the same two policies. It is not the
+// section above said again: what a reader standing in the editor needs is why
+// the chooser does not offer them and where to go, and the section on the
+// Policies page is where the argument lives. Two full copies of that argument
+// would be two things to keep in step, which is the failure this whole change
+// is about.
+function serviceOwnEditorNote(rows) {
+  log.debug('Entering serviceOwnEditorNote().');
+  const overridden = (rows || []).filter(function (one) {
+    return one.entry;
+  }).length;
+  log.debug('Leaving serviceOwnEditorNote(). ' + overridden + ' overridden.');
+  return admin.note(
+    '<p><strong>This chooser lists <code>ou=policies</code>, and two policies ' +
+    'that are deciding right now are not in it.</strong> The issuance policy ' +
+    '(what this service will issue) and the access policy (who reaches the ' +
+    'console, the User Portal, SCIM, the SPIRE Server ' +
+    'API) are BUILT IN — called at decision time rather than seeded — so ' +
+    'there is no stored document for this editor to open.</p>' +
+    '<p>' + (overridden
+      ? 'One or more of them HAS an override in the repository, so it is in ' +
+        'the list above and opens here like any other policy. '
+      : 'Neither has an override yet. ') +
+    'Create one from its template on the ' +
+    '<a href="/admin/xacml/policies#service-own">Policies</a> page and it ' +
+    'appears here.</p>',
+    'Two policies are deciding and are not in this list');
+}
+
+function renderServiceOwnPolicies(rows, writable) {
+  log.debug('Entering renderServiceOwnPolicies().');
+  const body = rows.map(function (row) {
+    // WHERE THE DOCUMENT COMES FROM, in three states rather than two. "No
+    // override has been written" and "an override was written and disabled"
+    // are opposite situations that `builtIn` alone cannot tell apart, and the
+    // second is the one somebody needs to see.
+    let source;
+    if (!row.ok) {
+      source = '<strong style="color:#b00">nothing is evaluated</strong>';
+    } else if (!row.builtIn) {
+      source = 'the repository entry <a href="/admin/xacml/editor?policy=' +
+        encodeURIComponent(row.name) + '"><code>' + esc(row.name) +
+        '</code></a>';
+    } else if (row.entry) {
+      source = 'the <strong>built-in</strong> document — the entry <code>' +
+        esc(row.name) + '</code> exists and is <em>disabled</em>';
+    } else {
+      source = 'the <strong>built-in</strong> document, from the <code>' +
+        esc(row.template) + '</code> template';
+    }
+    // The override is created through the SAME action the template forms below
+    // use, prefilled with the name the setting already names — so a reader who
+    // presses it gets an entry the PEP will actually pick up, rather than one
+    // named after the template and silently ignored. Moving a form is not
+    // moving an action: `create-from-template` keeps its one operation on
+    // /admin-api and gains no second door.
+    const make = writable && !row.entry
+      ? '<form method="post" action="/admin/xacml/policies" class="inline">' +
+        hidden('action', 'create-from-template') +
+        hidden('template', row.template) + hidden('name', row.name) +
+        '<button type="submit">Create an override</button></form>'
+      : (row.entry
+          ? '<a href="/admin/xacml/editor?policy=' +
+            encodeURIComponent(row.name) + '">Edit it</a>'
+          : '<span class="sub">read-only</span>');
+    return '<tr><td><strong>' + esc(row.label) + '</strong>' +
+      '<div class="sub">named by <code>' + esc(row.setting) + '</code>: ' +
+      '<code>' + esc(row.name) + '</code></div></td>' +
+      '<td>' + esc(row.decides) + '<div class="sub">asked at ' +
+      esc(row.asked).replace(/`([^`]+)`/g, '<code>$1</code>') + '</div></td>' +
+      '<td>' + source + '</td>' +
+      '<td>' + esc(row.effect) + '</td>' +
+      '<td>' + make + '</td></tr>';
+  }).join('');
+  log.debug('Leaving renderServiceOwnPolicies(). ' + rows.length + ' row(s).');
+  return '<h2 id="service-own">What this service decides its own boundaries ' +
+    'with</h2>' +
+    admin.warn(
+      '<p><strong>These two policies are IN FORCE and are not in the table ' +
+      'above.</strong> That table is <code>ou=policies</code>; these are ' +
+      'BUILT IN — the template is called at decision time rather than seeded ' +
+      'into the repository — so the editor has never listed them and a ' +
+      'reader looking only at the repository would conclude that whatever is ' +
+      'root there is what this service enforces. Usually it is not: a seeded ' +
+      'example policy decides nothing this service does.</p>' +
+      '<p><strong>They are built in rather than seeded on purpose.</strong> ' +
+      '<code>ou=policies</code> is per trust realm, so a policy written once ' +
+      'into the default realm leaves every realm created afterwards unable ' +
+      'to decide anything at all — and falling back to the default realm\'s ' +
+      'copy would couple two realms, which is the one thing the realm design ' +
+      'does not do. Called rather than seeded, every realm has both of them ' +
+      'out of the box with nothing to delete.</p>' +
+      '<p><strong>An override is an ordinary policy.</strong> Create one from ' +
+      'the same template, named whatever the setting says, and it wins from ' +
+      'the next request — it then appears in the table above and in the ' +
+      'editor like everything else. Neither is sent to a remote PEP: ' +
+      '<code>GET /xacml/pep/policies</code> carries the policies about ' +
+      'somebody ELSE\'s boundary, and these two are about this service\'s ' +
+      'own.</p>',
+      'Two policies decide here and are not in the repository') +
+    '<table><tr><th>Policy</th><th>What it decides</th>' +
+    '<th>Document in force</th><th>Right now</th><th></th></tr>' +
+    body + '</table>';
 }
 
 app.get('/admin/xacml/policies', function (req, res) {
@@ -282,6 +475,7 @@ app.get('/admin/xacml/policies', function (req, res) {
     '<table><tr><th>Name</th><th>PolicyId</th><th>Kind</th>' +
     '<th>Combining</th><th>State</th><th>Actions</th></tr>' + rows +
     '</table>' +
+    renderServiceOwnPolicies(json.serviceOwn, writable) +
     (writable
       ? '<h2>Import ALFA</h2>' + admin.note(
           '<p>ALFA is the readable syntax for XACML. Paste one here and it ' +
@@ -776,6 +970,7 @@ function editorJson(name) {
   if (!chosen) {
     log.debug('Leaving editorJson(). Nothing to edit.');
     return { policies: rows.map(function (one) { return one.name; }),
+             serviceOwn: serviceOwnPolicies(),
              policy: null };
   }
   let parsed = null;
@@ -787,6 +982,10 @@ function editorJson(name) {
   }
   const json = {
     policies: rows.map(function (one) { return one.name; }),
+    // THE TWO POLICIES THIS CHOOSER CANNOT OFFER, carried so that a caller of
+    // this resource is not left believing `policies` is the whole answer —
+    // which is exactly what the PAGE used to leave a reader believing.
+    serviceOwn: serviceOwnPolicies(),
     policy: { name: chosen.name, enabled: chosen.enabled,
               isRoot: chosen.isRoot, policyId: parsed ? parsed.id : null,
               // WHICH IT IS, because a PolicySet and a Policy take different
@@ -1146,11 +1345,18 @@ app.get('/admin/xacml/editor', function (req, res) {
   const writable = admin.mayWrite(req);
 
   if (!json.policy) {
+    // **AN EMPTY REPOSITORY IS NOT AN UNGATED SERVICE**, and this branch used
+    // to imply that it was: "there is nothing to edit" on a service whose
+    // issuance and access decisions are both being made, every request, by
+    // documents this page has never mentioned. The note goes here as well as
+    // under the table for exactly that reason — it is the branch where the
+    // wrong conclusion is easiest to draw.
     admin.respond(req, res, json, 'Policy editor', '/admin/xacml/editor',
                   admin.warn('The repository is empty, so there is nothing ' +
                              'to edit. Create a policy from a template on ' +
                              'the <a href="/admin/xacml/policies">Policies' +
-                             '</a> page.', 'Nothing to edit'),
+                             '</a> page.', 'Nothing to edit') +
+                  serviceOwnEditorNote(json.serviceOwn),
                   '/admin/xacml');
     log.debug('Leaving the admin XACML editor page. Nothing to edit.');
     return;
@@ -1168,7 +1374,8 @@ app.get('/admin/xacml/editor', function (req, res) {
     'Policy ' + select('policy', json.policies.map(function (one) {
       return { value: one, label: one };
     }), json.policy.name) +
-    ' <button type="submit">Open</button></form>';
+    ' <button type="submit">Open</button></form>' +
+    serviceOwnEditorNote(json.serviceOwn);
 
   const liveWarning = json.policy.enabled && json.policy.isRoot
     ? admin.warn(

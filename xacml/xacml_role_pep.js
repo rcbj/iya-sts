@@ -386,8 +386,28 @@ function issuancePolicyState() {
   log.debug('Entering issuancePolicyState().');
   const name = issuancePolicyName();
   const loaded = issuancePolicy();
+  // WHETHER THERE IS AN ENTRY IS A SEPARATE FACT FROM WHETHER ONE IS
+  // DECIDING, and the console needs both. `builtIn` alone cannot tell "nobody
+  // has written an override" from "somebody wrote one and disabled it" — and
+  // those are opposite situations: the first is the ordinary state of every
+  // realm, and the second is a deliberate act that takes this policy OUT of
+  // the decision without falling back.
+  const row = store.read(name);
   const out = { name: name, ok: !!loaded.policy,
-                builtIn: !!loaded.builtIn, why: loaded.why || '' };
+                builtIn: !!loaded.builtIn, why: loaded.why || '',
+                setting: 'xacml.issuancePolicy',
+                template: 'role-issuance',
+                entry: !!row,
+                enabled: row ? !!row.enabled : null,
+                effect: '' };
+  out.effect = out.ok
+    ? (out.builtIn
+        ? 'The BUILT-IN document decides. It is what the `role-issuance` ' +
+          'template builds, called rather than seeded, so every realm has it ' +
+          'with nothing written down and nothing to delete.'
+        : 'The repository entry "' + name + '" decides. It overrides the ' +
+          'built-in document.')
+    : 'NOTHING IS BEING EVALUATED: ' + loaded.why;
   log.debug('Leaving issuancePolicyState(). ' +
             (out.ok ? (out.builtIn ? 'Built in.' : 'Overridden.')
                     : 'Not evaluated.'));

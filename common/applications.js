@@ -140,6 +140,9 @@
 
 const crypto = require('crypto');
 const config = require('./config');
+// The mode. A LEAF (rule 3) requiring only `config`, which is already required
+// here — so it can neither move a route nor close a cycle.
+const mode = require('./mode');
 const { log, nowSec, randomId, numberWord } = require('./helpers');
 const audit = require('./audit');
 // THE ROLE REGISTER, for one string and one reason: `DEFAULT_REQUIRED_ROLE`.
@@ -2431,6 +2434,25 @@ function seen(detail) {
   const loaded = load(identifier);
   const record = loaded.record;
   const known = loaded.known;
+  // **PRODUCT MODE RECORDS A SIGHTING AND CREATES NOTHING** (2026-09-06). An
+  // application entry appearing because a protocol ACCEPTED an identifier is
+  // the behaviour that lets a client point at this service with any client_id
+  // and get a working exchange — which is most of what makes it a mock, and
+  // exactly what product mode removes.
+  //
+  // **IT RETURNS NULL RATHER THAN THROWING, AND THE CALLER DECIDES.** This
+  // function is reached from eleven protocol sites, all of them in the middle
+  // of an exchange, and none of them wants the registry to be able to fail a
+  // request: the REFUSAL belongs at the protocol's own door, where it can be
+  // said in that protocol's own vocabulary. What this guarantees is only that
+  // nothing was written.
+  if (!known && !mode.autoCreates()) {
+    log.info('applications: product mode, so "' + identifier + '"' + kindPhrase +
+             ' was NOT created on sight. An application must be provisioned ' +
+             'ahead of time, through the console, /admin-api or an LDAP add.');
+    log.debug("Leaving seen(). Product mode creates nothing.");
+    return null;
+  }
   const now = Date.now();
   let changed = !known;
 

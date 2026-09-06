@@ -104,5 +104,6 @@ The parent project has `tests/wstrust.js` and
 against this endpoint. Nothing tests this module on its own, and the negatives
 are where the value is: `Validate` and `Cancel` answering above the
 `authenticate()` call, a document carrying both a UsernameToken and an
-`OnBehalfOf`, a `Renew` with no security header. See the root `CLAUDE.md`'s Tests
-section.
+`OnBehalfOf`, a `Renew` with no security header. Every one of those is drivable
+over HTTP, so by the root `CLAUDE.md`'s rule they belong in the PARENT project's
+suite.

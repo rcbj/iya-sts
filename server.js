@@ -169,13 +169,29 @@ require('./common/group_claims');
 // to the one URL somebody types first was Express's `Cannot GET /`.
 require('./home/home');
 
-require('./ws-trust/wstrust');
 // The authentication service: the sign-in screen every protocol here sends a
 // person to, and the session store it fills. FIRST of the modules that use it,
 // because require order is route order on the /admin/sts-metadata page and the
 // thing that authenticates should be listed before the protocols that lean on
 // it.
 require('./authn/authn');
+// WS-Trust 1.0-1.4. **IT MOVED BELOW authn.js ON 2026-09-05 AND THE ORDER IS
+// NOW A DEPENDENCY** where it had been no constraint at all. Issuing a token or
+// an assertion here starts a tracked sign-on session — see ws-trust/CLAUDE.md
+// for why an issued credential implies one — and it does that by calling
+// `authn.startSession()` directly, without a screen, exactly as
+// federation/federation_sp.js does and for the same reason: the caller
+// presented a credential of its own (a UsernameToken) rather than being sent
+// somewhere to type one. Requiring it from ABOVE authn.js would have dragged
+// every /authn route to the front of the router (rule 1), which is why this
+// line moved rather than a require being added where it stood.
+require('./ws-trust/wstrust');
+// THE USER PORTAL. **After `authn`**, whose session every authenticated route
+// on it reads and whose sign-in screen it sends people to — a dependency of
+// the same kind `saml2_sso.js` and `consent_screen.js` have, and one-way in the
+// same way: `authn.js` knows nothing about the portal. It registers its own
+// routes under /portal, which nothing else here could shadow.
+require('./portal/portal');
 // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
 // both halves are dependencies rather than preferences. AFTER, because it reads
 // that module's session to check that the person answering is the person the
@@ -797,7 +813,32 @@ process.on('SIGINT', function () { shutdown('SIGINT'); });
 // sees, and an unhandled rejection would print a stack trace over the sentence
 // that says what to do about it.
 // ---------------------------------------------------------------------------
+// The credential verifier, for the product-mode bootstrap below. A LEAF
+// (rule 3) that registers no route, so this require adds nothing to the router.
+const credentials = require('./common/credentials');
+// The keystore, for the product-mode key material. A LEAF (rule 3).
+const keystore = require('./common/keystore');
+
 persistence.start().then(function (started) {
+  // THE SIGNING KEYS, AFTER THE STORE AND BEFORE ANYTHING SIGNS.
+  //
+  // It is a second asynchronous step in the same chain for the same reason the
+  // first one is: reading a key-encryption key from AWS, GCP, Azure or Vault is
+  // a network call, and `helpers.js` builds a key set inside a PROPERTY READ
+  // that cannot await. So everything asynchronous happens here, and what is
+  // left is a synchronous map lookup.
+  //
+  // **A FAILURE HERE IS FATAL AND FALLS INTO THE SAME catch.** A product-mode
+  // service that cannot read its signing keys and starts anyway generates new
+  // ones, and every token, assertion and signed document it ever issued stops
+  // verifying — silently, at somebody else's relying party. Refusing to start
+  // is the only honest answer, and it is the same argument persistence makes
+  // about its own store one line up.
+  return keystore.start().then(function (keys) {
+    return { started: started, keys: keys };
+  });
+}).then(function (both) {
+  const started = both.started;
   if (started.mode !== 'memory') {
     log.info('sts: persistence is ' + started.mode + '. The embedded ' +
              'directory, the trust realm registry and any runtime setting ' +
@@ -806,6 +847,19 @@ persistence.start().then(function (started) {
              'signing key is regenerated on every start, so a token that ' +
              'outlived it would verify against nothing.');
   }
+  // THE PRODUCT-MODE BOOTSTRAP, AFTER THE STORE AND BEFORE THE LISTENER.
+  //
+  // After, because a persisted directory is restored by `persistence.start()`
+  // and a deployment whose administrator is in that store must not get a second
+  // account created beside them — the check is "does anybody hold a
+  // credential", and before the restore the answer would always be no.
+  //
+  // Before the listener binds, so that the service is reachable the moment it
+  // answers rather than for however long it takes somebody to read the log.
+  //
+  // It does nothing in development mode and nothing in a realm where somebody
+  // already holds a credential; see credentials.bootstrap().
+  credentials.bootstrap({ username: config.value('admin.bootstrapUsername') });
   bind();
 }).catch(function (err) {
   // Both kinds of failure arrive here and both are fatal: a store that was
@@ -813,6 +867,24 @@ persistence.start().then(function (started) {
   // restore path. They are not told apart on purpose — either way this process
   // was told to persist and cannot, and the difference is in the message
   // start() built rather than in what is done about it.
+  // THE KEYSTORE'S FAILURES ARRIVE HERE TOO SINCE 2026-09-06, and they need a
+  // different sentence: a store that cannot be opened and a signing key that
+  // cannot be DECRYPTED are both fatal, and only one of them is about the
+  // database. Told apart on the message rather than on a flag, because
+  // keystore.js writes a complete explanation and this only has to choose which
+  // paragraph follows it.
+  if (/key material|key-encryption key|signing key/i.test(err.message || '')) {
+    log.fatal('sts: NOT STARTING. ' + err.message +
+              '\n\nThis service will not generate a replacement signing key ' +
+              'and carry on. Doing that would silently stop every token, ' +
+              'assertion and signed document it has ever issued from ' +
+              'verifying — at somebody else\'s relying party, with nothing ' +
+              'in any log here to point at. Fix the key-encryption key ' +
+              '(keys.kekProvider=' + require('./common/config').value('keys.kekProvider') +
+              '), or set keys.source=generated to accept a new key on every ' +
+              'start, which is what development mode does.');
+    process.exit(1);
+  }
   log.fatal('sts: NOT STARTING. ' + err.message +
             '\n\nThis service is configured to persist (persistence.mode=' +
             persistence.mode() + '), so it will not run without its store: a ' +

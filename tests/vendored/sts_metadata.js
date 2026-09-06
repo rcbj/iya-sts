@@ -222,9 +222,37 @@ function theConsoleChromeIsThere(page) {
       "the sidebar should link " + path + ", or the navigation this page was " +
       "moved for is not there.");
   });
-  assert.ok(/<li><span class="here">Service metadata<\/span><\/li>/.test(page),
+  // THE ATTRIBUTES ARE NOT PINNED, AND THAT IS THE POINT OF THE CHANGE.
+  //
+  // This was an exact-string match on `<li><span class="here">Service
+  // metadata</span></li>`, and it broke on 2026-09-05 when the active item
+  // grew `tabindex="-1" autofocus aria-current="page"` — the autofocus is what
+  // scrolls the sidebar so the page you are on is visible in it, and the
+  // console has no script to do that with. The assertion's INTENT survived
+  // that change untouched: the active item is TEXT and not a link. So what is
+  // asserted is the intent, and the attributes are free to grow.
+  assert.ok(/<li><span class="here"[^>]*>Service metadata<\/span><\/li>/.test(page),
     "and it should mark THIS page as the one being read — the sidebar item " +
     "for the active page is drawn as text rather than as a link.");
+  // AND THE TWO THINGS THAT MAKE THAT MARK REACHABLE, which are now part of
+  // the contract rather than decoration: `aria-current` is what tells a screen
+  // reader which item is the current page, and `autofocus` is the whole
+  // mechanism that scrolls a 1200px-overflowing sidebar to reveal it. Pinned
+  // because both are invisible — nothing about the rendered page looks wrong
+  // if either is dropped, and the sidebar would quietly go back to starting at
+  // the top on every navigation.
+  const activeItem = /<li><span class="here"([^>]*)>Service metadata<\/span><\/li>/
+    .exec(page);
+  assert.ok(activeItem && /aria-current="page"/.test(activeItem[1]),
+    "the active sidebar item should carry aria-current=\"page\"; it had " +
+    JSON.stringify(activeItem && activeItem[1]));
+  assert.ok(activeItem && /\bautofocus\b/.test(activeItem[1]) &&
+            /tabindex="-1"/.test(activeItem[1]),
+    "and autofocus with tabindex=\"-1\" — the browser scrolls a focused " +
+    "element into view, which is how this console reveals the current page " +
+    "in a sidebar that overflows, with no script anywhere. tabindex=\"-1\" " +
+    "keeps it focusable without putting the page you are already on into the " +
+    "tab order. It had " + JSON.stringify(activeItem && activeItem[1]));
   assert.ok(/<p class="crumb"><a href="\/admin">Admin console<\/a>/.test(page),
     "the breadcrumb should start at the console, since that is the trail " +
     "every other console page draws.");
@@ -268,7 +296,13 @@ function theConsoleChromeIsThere(page) {
 function theProtocolListIsHonest(doc, page) {
   log.debug("Entering theProtocolListIsHonest().");
   log.info("=== The protocol list ===");
-  const expected = ["OAuth2 / OIDC", "XACML", "Federation", "Shared Signals",
+  const expected = ["OAuth2 / OIDC",
+                    // NOT A PROTOCOL, and it has a card because this page
+                    // refuses to report an endpoint group no card claims —
+                    // paying that here is cheaper than making the rule
+                    // conditional on whether a group is a protocol.
+                    "User portal",
+                    "XACML", "Federation", "Shared Signals",
                     "SAML 2.0", "SAML 1.1",
                     "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",
                     "SCIM", "LDAP", "PKI / X.509", "WebAuthn / CTAP",
@@ -299,8 +333,19 @@ function theProtocolListIsHonest(doc, page) {
   doc.protocols.forEach(function (p) {
     assert.ok(p.what && p.what.length > 40, p.name +
       " should say what this service does with it, in more than a phrase.");
-    assert.ok(Array.isArray(p.specs) && p.specs.length, p.name +
-      " should name the specifications it implements.");
+    // **A CARD MAY NAME NO SPECIFICATION ONLY BY SAYING SO.** Every protocol
+    // family here implements something written down, and a card with an empty
+    // list is either undocumented or invented — which is what this assertion
+    // is for. The exemption is a FIELD on the card (`notAProtocol`) rather
+    // than a name in a list here, so the reason travels with the thing it
+    // excuses and a second one has to be declared deliberately.
+    //
+    // There is exactly one today: the User Portal, which is an application
+    // rather than a protocol and has a card only because this page refuses to
+    // report an endpoint group no card claims.
+    assert.ok(Array.isArray(p.specs) && (p.specs.length || p.notAProtocol),
+      p.name + " should name the specifications it implements, or declare " +
+      "`notAProtocol` to say why it names none.");
     p.specs.forEach(function (id) {
       assert.ok(ids.has(id), p.name + " cites specification id " + id +
                 ", which the page does not define.");

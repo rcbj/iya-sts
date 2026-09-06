@@ -66,6 +66,11 @@ const bbs2023 = require('./vendored/bbs2023.js');
 // is below and stays here.
 // ---------------------------------------------------------------------------
 const stsCrypto = require('./crypto');
+// THE KEYSTORE. A LEAF (rule 3) requiring `config`, `crypto`, `mode` and
+// `secrets` — and NOT this module, which is what keeps it requirable from
+// here. It answers null for every realm in development mode, so requiring it
+// changes nothing about how a development service starts.
+const keystore = require('./keystore');
 const pqJose = require('./pq_jose');
 // TRUST REALMS. Two things in this file are per realm and both are here rather
 // than in twenty modules for the same reason: this is where every one of them
@@ -315,8 +320,138 @@ function makeStsKeys() {
 // writes to STS after this file has finished, and the one thing that used to
 // (`STS.privateKey = …` below) is now part of what the factory returns.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A KEY SET WHOSE PUBLIC HALF IS RESIDENT AND WHOSE PRIVATE HALF IS A GETTER
+// (2026-09-06).
+//
+// Where key material persists, `keystore.js` holds the CIPHERTEXT and decrypts
+// on demand — and that buys nothing at all if this file then caches the
+// decrypted PEM and the parsed `KeyObject` on an object it keeps for the life
+// of the process, which is exactly what it used to do. So the set built here
+// holds:
+//
+//   * everything PUBLIC as an ordinary property — the kid, the certificate,
+//     each curve key's public JWK. None of it is a secret, all of it is
+//     already published at `/oauth2/jwks`, and the JWKS endpoint walking
+//     `extraKeys` must not cause a decrypt;
+//   * everything PRIVATE as a GETTER that asks the keystore afresh. That is
+//     what re-arms the idle timer on use, and it is why the getter takes the
+//     realm ID rather than closing over the material it was built from.
+//
+// **NOTHING IN THIS FUNCTION MAY CLOSE OVER `stored`.** It is the plaintext
+// blob, and a closure holding it would keep the private key reachable for as
+// long as the key set exists — which is the life of the process, which is the
+// thing being removed. Each getter therefore captures the realm ID and, for a
+// curve key, its `kid`, and nothing else. Read `one.publicJwk.kid` out into a
+// local before defining the getter; capturing `one` captures the PEM beside it.
+//
+// The GETTERS ARE ENUMERABLE, because the `STS` proxy forwards `ownKeys` and
+// `getOwnPropertyDescriptor` and something that spread this set would otherwise
+// come out with no private key at all — a failure that would look like a
+// signing bug rather than a visibility one.
+//
+// The eight modules that do `STS.privateKey` are untouched: a property read of
+// a getter is a property read. That is the whole reason the proxy was worth
+// having, and this change is the second thing it has paid for.
+// ---------------------------------------------------------------------------
+function lazyKeySet(realmId, stored) {
+  log.debug("Entering lazyKeySet(). realm=" + realmId);
+  const set = {
+    realm: realmId,
+    createdAt: stored.createdAt || 0,
+    certPem: stored.certPem,
+    certB64: stored.certB64,
+    // The `kid` is DERIVED rather than stored — see makeStsKeys() — so it is
+    // recomputed here from the certificate exactly as it was computed the first
+    // time. Storing it would be storing a derived value, which is how a store
+    // comes to disagree with itself after a change to the derivation.
+    kid: 'sts-mock-' +
+      forge.md.sha256.create().update(stored.certB64).digest().toHex().slice(0, 12),
+    extraKeys: (stored.extraKeys || []).map(function (one) {
+      const kid = one.publicJwk && one.publicJwk.kid;
+      const entry = { alg: one.alg, publicJwk: one.publicJwk };
+      Object.defineProperty(entry, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          const held = keystore.privateMaterialFor(realmId);
+          // A null here means the keystore could not open its own record, and
+          // it has already said so loudly. Throwing names the key rather than
+          // letting `undefined` reach node's signer, which reports something
+          // about a "key" argument and names nothing.
+          if (!held) {
+            throw new Error('the "' + realmId + '" realm\'s ' + one.alg +
+              ' signing key is held encrypted and could not be decrypted; ' +
+              'see the keystore errors above.');
+          }
+          return held.extra.get(kid);
+        }
+      });
+      return entry;
+    })
+  };
+  Object.defineProperty(set, 'privateKeyPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      const held = keystore.privateMaterialFor(realmId);
+      if (!held) {
+        throw new Error('the "' + realmId + '" realm\'s signing key is held ' +
+          'encrypted and could not be decrypted; see the keystore errors above.');
+      }
+      return held.privateKeyPem;
+    }
+  });
+  Object.defineProperty(set, 'privateKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      const held = keystore.privateMaterialFor(realmId);
+      if (!held) {
+        throw new Error('the "' + realmId + '" realm\'s signing key is held ' +
+          'encrypted and could not be decrypted; see the keystore errors above.');
+      }
+      return held.privateKey;
+    }
+  });
+  log.debug("Leaving lazyKeySet(). " + set.extraKeys.length + " curve key(s).");
+  return set;
+}
+
 const stsKeysFor = realms.keyed(function (realm) {
+  // ---------------------------------------------------------------------
+  // THE STORED KEYS FIRST, WHERE THERE ARE ANY (2026-09-06).
+  //
+  // **DEVELOPMENT MODE NEVER GETS HERE WITH ANYTHING**: `keystore.persists()`
+  // is false, `storedFor()` answers null, and this factory generates exactly as
+  // it always did. That is not a fallback — it is the mode, and a key
+  // regenerated per start is what makes two instances of this mock impossible
+  // to confuse.
+  //
+  // In product mode the material was READ in `keystore.start()`, before the
+  // listener bound, so this is a synchronous lookup — which it has to be,
+  // because this factory is reached through a PROXY on a property read and
+  // cannot await anything. See keystore.js's header for how the asynchronous
+  // half is kept out of here.
+  //
+  // **READ, NOT HELD DECRYPTED.** Since 2026-09-06 what that call returns is
+  // decrypted on demand and dropped again, so this line costs one decrypt and
+  // the set built from it below keeps only the public half. `lazyKeySet()`
+  // above is the whole of it.
+  //
+  // A realm with nothing stored — a realm created at runtime, or the first
+  // start of a product deployment — falls through, generates, and is written
+  // back by `remember()` below.
+  // ---------------------------------------------------------------------
+  const stored = keystore.storedFor(realm.id);
+  if (stored) {
+    const restored = lazyKeySet(realm.id, stored);
+    log.info('A signing key was RESTORED for the "' + realm.id + '" realm: ' +
+             'kid=' + restored.kid + '. It was generated on ' +
+             new Date(restored.createdAt || 0).toISOString() + ' and read back ' +
+             'from the persistence store, so every token issued under it still ' +
+             'verifies. ' + keystore.retentionSentence() + '.');
+    return restored;
+  }
   const keys = makeStsKeys();
+  keys.createdAt = Date.now();
   // ---------------------------------------------------------------------
   // THE SAME PRIVATE KEY AS AN ALREADY-PARSED `KeyObject`, and it is here for
   // speed rather than for tidiness.
@@ -343,8 +478,45 @@ const stsKeysFor = realms.keyed(function (realm) {
   keys.realm = realm.id;
   log.info('A signing key was generated for the "' + realm.id + '" realm: kid=' +
            keys.kid + '.');
-  return keys;
+  // WRITE IT DOWN, where the keystore is in use. A no-op in development mode.
+  // The write is asynchronous and deliberately not awaited — this is a property
+  // read — so a failure is logged loudly by keystore.js rather than thrown out
+  // of whichever request happened to be first.
+  keystore.remember(realm.id, keys);
+  // ---------------------------------------------------------------------
+  // AND WHERE IT WAS WRITTEN DOWN, HAND BACK THE LAZY VIEW OF IT RATHER THAN
+  // THE RESIDENT ONE (2026-09-06).
+  //
+  // Without this line the FIRST realm to generate its keys — a runtime realm,
+  // or the first start of a product deployment — would keep them decrypted for
+  // the life of the process while every realm restored on a later start held
+  // ciphertext. One realm out of N behaving differently is the shape of bug
+  // that survives a test suite, because the suite mostly exercises the restored
+  // path and the difference is invisible from every endpoint.
+  //
+  // In DEVELOPMENT `remember()` is a no-op, `storedFor()` answers null, and the
+  // generated set is returned exactly as it always was.
+  // ---------------------------------------------------------------------
+  const written = keystore.storedFor(realm.id);
+  return written ? lazyKeySet(realm.id, written) : keys;
 });
+
+// FORGET THE BUILT KEY SETS so the factory runs again, which is as close to a
+// restart as one process can get. `realms.keyed()` exposes its map as
+// `existing()`, which is the seam that makes this a clear rather than a
+// reimplementation.
+//
+// Exported for `tests/keystore.js` and for nothing else — see the same note on
+// `keystore.reset()`. Nothing in the service calls it, and nothing should: a
+// running service that forgot its signing key would publish a new JWKS and
+// invalidate every token it had issued, which is precisely what the keystore
+// exists to prevent.
+function resetStsKeys() {
+  const held = stsKeysFor.existing();
+  if (held && typeof held.clear === 'function') {
+    held.clear();
+  }
+}
 
 const STS = new Proxy({}, {
   get: function (target, prop) { return stsKeysFor()[prop]; },
@@ -1322,6 +1494,7 @@ module.exports = {
   PORT: PORT,
   HOST: HOST,
   STS: STS,
+  resetStsKeys: resetStsKeys,
   xmlEscape: xmlEscape,
   genId: genId,
   firstByLocal: firstByLocal,

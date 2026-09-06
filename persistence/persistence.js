@@ -182,6 +182,10 @@
 const path = require('path');
 const bunyan = require('bunyan');
 const config = require('../common/config');
+// The keystore, so this module can hand it the driver the moment one is open.
+// A LEAF (rule 3) that registers no route; it requires `config`, `crypto`,
+// `mode` and `secrets` and none of them requires this module back.
+const keystore = require('../common/keystore');
 // The ordinary direction, and the header above argues why it is a require
 // rather than a third slot: realms.js requires config.js and async_hooks and
 // nothing else, registers no route, and does not require this module.
@@ -696,6 +700,26 @@ function start() {
   activeMode = chosen;
   restoring = true;
   return driver.open().then(function () {
+    // ---------------------------------------------------------------------
+    // HAND THE KEYSTORE ITS STORE, THE MOMENT THERE IS ONE (2026-09-06).
+    //
+    // It is installed HERE rather than at require time because `driver` does
+    // not exist until this function chooses one — and it is installed BEFORE
+    // anything else is loaded so that `keystore.start()`, which `server.js`
+    // calls next, has somewhere to read from.
+    //
+    // A driver from an older build without the three key functions is
+    // reported rather than fatal: `keystore.setStore()` refuses the whole
+    // object and says what is lost, and a development-mode service does not
+    // care because it persists no keys.
+    // ---------------------------------------------------------------------
+    keystore.setStore({
+      loadKeys: function () { return driver.loadKeys(); },
+      saveKeys: function (realmId, ciphertext) {
+        return driver.saveKeys(realmId, ciphertext);
+      },
+      deleteKeys: function (realmId) { return driver.deleteKeys(realmId); }
+    });
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
     if (saved && Object.keys(saved).length) {

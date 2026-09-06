@@ -100,6 +100,8 @@ const realms = require('../common/realms');
 // that does not is exactly the kind of small lie that costs somebody ten
 // minutes.
 const config = require('../common/config');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 // For the version line only. `admin_api.js` reads it the same way, which is the
 // precedent for requiring the manifest rather than threading a constant.
 const VERSION = require('../package.json').version;
@@ -210,7 +212,7 @@ function homePage() {
     linkRow(CONSOLE_PATH, 'The admin console on this instance', false,
             'Everything this process has done, and the settings that change ' +
             'what its protocol endpoints do. ' +
-            (config.value('admin.authRequired')
+            (mode.gatesConsole()
               ? 'It asks you to sign in, and nothing else here does — any ' +
                 'username, no password checked.'
               : 'It is open: admin.authRequired is off on this instance.') +

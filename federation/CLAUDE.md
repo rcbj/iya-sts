@@ -536,8 +536,9 @@ means exactly that two rows up.
 
 **IT ADDS NO SCRIPT**, and the argument is made again from scratch in
 `../admin-ui/federation_diagram.js` rather than cited from the delegation
-picture — the root `CLAUDE.md`'s rule about the seventh candidate is exactly
-that "the same as the page next door" is not an argument.
+picture — the root `CLAUDE.md`'s rule about a refused candidate is exactly that
+"the same as the page next door" is not an argument, and that the second refusal
+is not cheaper than the first.
 
 ### Tests
 

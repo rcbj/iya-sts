@@ -50,6 +50,15 @@
 
 const app = require('../common/app');
 const { log, xmlEscape, baseUrlOf, parseBody } = require('../common/helpers');
+
+// The input validator. A LEAF (rule 3): registers no route, closes no cycle.
+// **What it adds here is narrow, and deliberately so.** The XACML request
+// documents this family reads are validated by `xacml_xml.js`'s own parser and
+// the JSON Profile reader, both held to 454 of 455 mandatory OASIS conformance
+// cases — a schema over those would be a second, worse reading of a
+// specification this directory already implements. What is left is the two
+// scalar parameters those readers never see.
+const validation = require('../common/validation');
 const config = require('../common/config');
 const audit = require('../common/audit');
 const model = require('./xacml_model');
@@ -84,6 +93,15 @@ require('./xacml_admin');
 // after `xacml_admin.js` for no technical reason at all, and does, because the
 // pages are what an administrator fixes a refusal with.
 require('./xacml_role_pep');
+// THE ACCESS PEP. Requiring it ARMS `common/access_gate.js` — the admin
+// console, the User Portal, SCIM and the SPIRE Server API all ask it, and the
+// management API does in PRODUCT MODE — it is open in development by design,
+// so there is no subject to decide about. Each asks AFTER its own check rather
+// than instead of it. Every surface that asks
+// all ask that gate, and before this line every one of them is allowed, which
+// is what a process without the XACML family does. Same arrangement as the
+// role PEP one line up, for the same reason.
+require('./xacml_access_pep');
 
 function enabled() {
   return config.value('xacml.enabled') !== false;
@@ -166,6 +184,24 @@ function decide(request) {
 // ---------------------------------------------------------------------------
 // POST /xacml/pdp — the decision endpoint.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// The scalar parameters the XACML readers never see.
+//
+// `format` is CASE-INSENSITIVE because the call site compares after
+// `.toLowerCase()`; `bias` is CASE-SENSITIVE because nothing lower-cases it.
+// Getting either backwards would make this refuse a value the handler accepts,
+// which is a validator changing what an endpoint does rather than checking it.
+//
+// **The two biases are the PEP's, and they are the one pair that must disagree
+// somewhere** — a NotApplicable decision is enforced differently by each, which
+// is the property `tests/xacml_pep.js` asserts over seven probes.
+// ---------------------------------------------------------------------------
+const XACML_QUERY = validation.z.looseObject({
+  format: validation.types.opt(validation.z.string().regex(/^(json|xml|html)$/i,
+    'must be "json", "xml" or "html"')),
+  bias: validation.types.opt(validation.types.oneOf(['deny-biased', 'permit-biased']))
+});
+
 app.post('/xacml/pdp', function (req, res) {
   log.debug('Entering POST /xacml/pdp.');
   if (offCheck(res)) {
@@ -903,6 +939,11 @@ function description(req) {
 app.get('/xacml', function (req, res) {
   log.debug('Entering GET /xacml.');
   const info = description(req);
+  const askedFormat = validation.check(req, 'query', XACML_QUERY);
+  if (!askedFormat.ok) {
+    log.debug('Leaving the XACML page. ' + askedFormat.detail);
+    return res.status(400).type('text/plain').send(askedFormat.detail + '\n');
+  }
   if (String(req.query.format || '').toLowerCase() === 'json') {
     res.status(200).set('Cache-Control', 'no-store').json(info);
     log.debug('Leaving GET /xacml. JSON.');

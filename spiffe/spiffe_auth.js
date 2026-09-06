@@ -105,6 +105,8 @@
 const crypto = require('crypto');
 const { log, nowSec } = require('../common/helpers');
 const config = require('../common/config');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 const audit = require('../common/audit');
 const stats = require('../common/admin_stats');
 const spiffeId = require('./spiffe_id');
@@ -241,7 +243,12 @@ const ENTITY_ORDER = ['local', 'admin', 'agent', 'downstream'];
 // config.js's header for why a captured `const` is the one thing
 // /admin/config cannot reach.
 // ---------------------------------------------------------------------------
-function authRequired() { return !!config.value('spiffe.authRequired'); }
+// THE MODE, since 2026-09-06, where this read `spiffe.authRequired`. The
+// Workload API is deliberately NOT covered by it and never may be — its
+// specification says it MUST NOT authenticate a caller, because a workload has
+// no root of trust until that call gives it one. What this gates is the SPIRE
+// Server API, whose output is a credential another service will believe.
+function authRequired() { return mode.gatesSpireServerApi(); }
 function trustLocalSocket() { return !!config.value('spiffe.trustLocalSocket'); }
 function attestWorkloads() { return !!config.value('spiffe.attestWorkloads'); }
 function acceptAssertedSelectors() {

@@ -62,6 +62,12 @@ const stats = require('../common/admin_stats');
 // rather than that one building a gRPC error. The require is the ordinary
 // direction and closes no cycle: nothing it requires reaches back here.
 const auth = require('./spiffe_auth');
+const authn = require('../authn/authn');
+// THE ACCESS GATE, armed by `xacml/xacml_access_pep.js` at 23c. A LEAF
+// (rule 3): with no decider installed `check()` answers "allowed", so a
+// process without the XACML family behaves exactly as this file did before.
+const accessGate = require('../common/access_gate');
+const nodeCrypto = require('crypto');
 // For the server's own SVID and the roots it verifies clients against. Both
 // register nothing, so neither can move a route or close a cycle.
 const spiffeId = require('./spiffe_id');
@@ -310,6 +316,90 @@ function fromDescriptor(descriptor) {
 // A caller is built for the Workload API too, even though nothing authorizes on
 // it there, because that surface derives its SELECTORS from the same object.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE SESSION FOR A SPIRE SERVER API CALLER, and then the policy about it.
+//
+// **THE SESSION IS `authn.startSession()` AND NOT A REGISTER OF THIS FILE'S**,
+// for the reason `scim_auth.js` gives at its own funnel: that function owns
+// every session this service holds, and a second store for API callers would
+// be a second answer to "is somebody signed in". `detail.key` is what makes it
+// work for a credential presented on every call — the same SVID touches the
+// session it already has rather than minting one per RPC, which on a busy
+// agent would be a row a second.
+//
+// The key is the SPIFFE ID and not the certificate: an agent that rotates its
+// SVID mid-run is the same agent on the same surface, and keying on the
+// certificate would give it a second row and leave the first until it expired.
+// It is hashed because a session id is printed on `/admin/sessions`.
+//
+// **A CALLER THAT AUTHENTICATED NOBODY GETS NO SESSION.** The local Unix
+// socket is trusted by path and presents no credential; `spiffe.authRequired`
+// off means nothing is checked at all. Both reach here with `authenticated`
+// false, and a session recording that somebody signed in would be untrue.
+// ---------------------------------------------------------------------------
+function sessionForCaller(caller) {
+  log.debug('Entering sessionForCaller().');
+  if (!caller || !caller.authenticated || !caller.spiffeId) {
+    log.debug('Leaving sessionForCaller(). Nobody authenticated.');
+    return null;
+  }
+  try {
+    const key = nodeCrypto.createHash('sha256')
+      .update('spire-server-api ' + String(caller.spiffeId))
+      .digest('hex').slice(0, 24);
+    const session = authn.startSession(
+      { set: function () {}, req: null }, caller.spiffeId,
+      ['swk'], '1', 'SPIRE Server API',
+      { key: key, cookie: false,
+        summary: caller.spiffeId + ' authenticated at the SPIRE Server API ' +
+                 'with an X509-SVID over mutual TLS; session created',
+        note: 'An X509-SVID was presented over mutual TLS and accepted. This ' +
+              'session is a RECORD that it was, not a thing that can be ' +
+              'presented in its place: every call authenticates again.' });
+    log.debug('Leaving sessionForCaller(). ' + (session ? session.id : 'none'));
+    return session;
+  } catch (error) {
+    // Nothing about recording a session may be able to fail a call.
+    log.error('spiffe: a session could not be recorded and the call is ' +
+              'unaffected: ' + error.message);
+    log.debug('Leaving sessionForCaller(). It threw.');
+    return null;
+  }
+}
+
+// The gate, in a refusal shape `authorize()`'s caller already understands.
+// Null means permitted, which is what that function returns too — so the `||`
+// at the call site reads as "SPIRE's rule, then ours".
+function policyRefusal(caller, method) {
+  log.debug('Entering policyRefusal(). method=' + method);
+  const session = sessionForCaller(caller);
+  const answer = accessGate.check({
+    resource: accessGate.RESOURCE.SPIRE_SERVER_API,
+    // EVERY METHOD IS `write` AND THAT IS NOT LAZINESS. What comes out of this
+    // surface is a credential another service will believe — SPIRE's own table
+    // is where read and write are told apart, per method, and it has already
+    // run. A second, coarser split here would invite a policy author to think
+    // `read` on this resource meant something SPIRE agrees with.
+    action: accessGate.ACTION.WRITE,
+    subject: { name: caller.spiffeId || '',
+               authenticated: !!caller.authenticated,
+               sessionId: session ? session.id : null },
+    context: { method: method, transport: caller.transport || '' }
+  });
+  if (answer.allowed) {
+    log.debug('Leaving policyRefusal(). Permitted.');
+    return null;
+  }
+  log.info('spiffe: the access policy refused ' + method + ' for ' +
+           auth.describeCaller(caller) + '. ' + answer.why);
+  log.debug('Leaving policyRefusal(). Refused.');
+  return { status: 'PERMISSION_DENIED',
+           message: 'The access policy refused this call. ' + answer.why +
+                    ' This is a POLICY decision rather than SPIRE\'s own ' +
+                    'per-method rule, which allowed it. The document is on ' +
+                    '/admin/xacml and xacml.enforceAccess turns the layer off.' };
+}
+
 function prepareCall(call, surface, method) {
   log.debug('Entering prepareCall(). surface=' + surface + ', method=' + method);
   if (!enabled()) {
@@ -355,7 +445,24 @@ function prepareCall(call, surface, method) {
               e.message + '), so handlers will see none.');
   }
   if (surface === 'server') {
-    const refusal = auth.authorize(caller, method);
+    const refusal = auth.authorize(caller, method) ||
+      // -------------------------------------------------------------------
+      // THE POLICY, AFTER SPIRE'S OWN TABLE AND NOT INSTEAD OF IT (2026-09-06).
+      //
+      // `authorize()` above is SPIRE's per-method rule, copied from its
+      // `policy_data.json`, and it is unchanged: what an agent may call is
+      // that project's answer and not this service's to reinvent. The gate is
+      // the layer ABOVE it, so a deployment can narrow this surface by
+      // POLICY — and on an unedited service the built-in document permits,
+      // because it asks for a role only where somebody has required one.
+      //
+      // **AFTER, so the refusal a caller sees is the most specific one.**
+      // "your SVID is not an admin and this method is admins only" is a
+      // sentence somebody can act on; "the policy denied it" is not, and
+      // reaching the second first would hide the first for every ordinary
+      // misconfiguration.
+      // -------------------------------------------------------------------
+      policyRefusal(caller, method);
     if (refusal) {
       // The refusal is audited with the identity that was refused, which is
       // the row somebody debugging "why can my agent not list entries" needs.

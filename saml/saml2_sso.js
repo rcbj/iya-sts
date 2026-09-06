@@ -128,6 +128,8 @@ const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const { log, logArtifact, STS, xmlEscape, genId, iso, baseUrlOf, randomId,
         parseBody, firstByLocal, textByLocal } = require('../common/helpers');
+// The input validator. A LEAF (rule 3): it registers no route and closes no cycle.
+const validation = require('../common/validation');
 // Read per request rather than captured at require time, so that /admin/config
 // and /admin-api can change what the next response says and how it is signed.
 const config = require('../common/config');
@@ -414,6 +416,37 @@ function fieldsOf(spEntityId) {
 // profile and is also common, and refusing it would produce "invalid request"
 // where the useful answer is the assertion it was asking for. What is NOT
 // guessed at is which binding it was — that comes from the HTTP method.
+// ---------------------------------------------------------------------------
+// **THE INFLATE IS BOUNDED, AND WITHOUT THE BOUND THIS WAS A DECOMPRESSION
+// BOMB (2026-09-06).**
+//
+// The HTTP-Redirect binding carries a DEFLATEd, base64'd message in a query
+// parameter, so this function inflates bytes a caller chose. `inflateRawSync`
+// with no `maxOutputLength` inflates as far as the data says — node's default
+// ceiling is `buffer.kMaxLength`, about two gigabytes.
+//
+// Measured on 2026-09-06: **a 163 KB query string inflates to 120 MB in 100 ms
+// at a ratio of 1029:1**, and the ratio is a property of the attacker's input
+// rather than of anything here. A few hundred kilobytes reaches gigabytes.
+//
+// **AND IT IS SYNCHRONOUS ON THE THREAD THAT OWNS EVERY SOCKET.** That is the
+// argument the root CLAUDE.md makes about post-quantum signing and the whole
+// reason `common/worker_pool.js` exists: this process runs six listener
+// families on one thread, so a computation like this does not slow the service
+// down, it STOPS it — the KDC stops answering, the directory stops answering,
+// and from the outside that is indistinguishable from a service that is not
+// running.
+//
+// `maxOutputLength` refuses in about a millisecond instead. The ceiling is
+// `CAP.LARGE`, which is the same one `validation.parseXml()` applies to the XML
+// that comes out of here — a SAML message that inflates past a megabyte is not
+// a message this service was going to be able to read anyway.
+//
+// **THE REFUSAL FALLS THROUGH TO THE EXISTING catch**, which reads the bytes as
+// plain XML and hands them on; `parseXml()` then refuses them properly. So a
+// bomb is answered by the same 400 a malformed message gets, and no caller of
+// this function had to change.
+// ---------------------------------------------------------------------------
 function decodeMessage(encoded) {
   log.debug("Entering decodeMessage().");
   const buf = Buffer.from(String(encoded || ''), 'base64');
@@ -422,9 +455,17 @@ function decodeMessage(encoded) {
     return buf.toString('utf8');
   }
   try {
-    const inflated = zlib.inflateRawSync(buf).toString('utf8');
+    const inflated = validation.inflate(buf, 'SAML message');
+    if (!inflated.ok) {
+      // Not DEFLATEd, or a bomb. Either way the bytes are handed on as plain
+      // XML below and `parseXml()` refuses them properly — so a bomb is
+      // answered by the same 400 a malformed message gets, and no caller of
+      // this function had to change.
+      log.debug("Leaving decodeMessage(). " + inflated.code + ".");
+      return buf.toString('utf8');
+    }
     log.debug("Leaving decodeMessage(). DEFLATEd.");
-    return inflated;
+    return inflated.value.toString('utf8');
   } catch (e) {
     // Not DEFLATEd after all — a POST-binding message with leading whitespace,
     // most often. Read as plain XML, which is what it then is.
@@ -593,7 +634,18 @@ function authnContextFor(session) {
 // whole point.
 function readAuthnRequest(xml) {
   log.debug("Entering readAuthnRequest().");
-  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  // **THIS PARSE ANSWERED 500 TO A MALFORMED `SAMLRequest` UNTIL 2026-09-06.**
+  // `@xmldom/xmldom` 0.9.10 THROWS a ParseError from its default handler where
+  // older versions carried on with a partial tree, and this call sat outside
+  // any try/catch — so a malformed message was an uncaught exception rather
+  // than the refusal three lines below, which this function already knew how to
+  // give. `validation.parseXml()` never throws.
+  const read = validation.parseXml(xml, 'AuthnRequest');
+  if (!read.ok) {
+    log.debug("Leaving readAuthnRequest(). " + read.detail);
+    return { ok: false, why: read.detail };
+  }
+  const doc = read.value;
   const root = doc.documentElement;
   if (!root || root.localName !== 'AuthnRequest') {
     log.debug("Leaving readAuthnRequest(). It is not an AuthnRequest.");
@@ -1420,8 +1472,15 @@ function singleSignOn(req, res) {
   const roleAnswer = gate.check({
     application: spEntityId,
     kind: gate.ISSUANCE.SAML_ASSERTION,
+    // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
+    //
+    // This was the constant `true` until unauthenticated sessions existed, and
+    // a constant is what it looked like: every session this service held had
+    // somebody behind it. `authenticated !== false` rather than a plain read,
+    // because a session object made before this field existed has no such
+    // property and must go on meaning what it always meant.
     subject: { kind: 'user', name: String((session.user || {}).username || ''),
-               authenticated: true },
+               authenticated: session.authenticated !== false },
     claims: null
   });
   if (!roleAnswer.allowed) {
@@ -1800,7 +1859,15 @@ function singleLogout(req, res) {
 
   const xml = decodeMessage(params.SAMLRequest);
   logArtifact('SAML 2.0 LogoutRequest', 'as received from a service provider', xml);
-  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  // Unguarded until 2026-09-06, for readAuthnRequest()'s reason exactly: a
+  // malformed LogoutRequest was an uncaught ParseError rather than the refusal
+  // below it.
+  const readLogout = validation.parseXml(xml, 'LogoutRequest');
+  if (!readLogout.ok) {
+    log.debug("Leaving singleLogout(). " + readLogout.detail);
+    return samlError(res, 400, 'That is not a LogoutRequest', readLogout.detail);
+  }
+  const doc = readLogout.value;
   const root = doc.documentElement;
   if (!root || root.localName !== 'LogoutRequest') {
     log.debug("Leaving singleLogout(). It is not a LogoutRequest.");

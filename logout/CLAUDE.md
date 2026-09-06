@@ -256,3 +256,62 @@ rather than decorative**: a door that names itself vaguely now produces a vague
 event. `/admin-api/sessions` passes *the management API at /admin-api/sessions*
 for exactly that reason — *the management API* alone contains neither word and
 reported `user`.
+
+## A ROW SAYS WHETHER ANYBODY AUTHENTICATED FOR IT (2026-09-05)
+
+`liveSessions()` rows carry `authenticated`, and only a BROWSER row can answer
+anything but `true`.
+
+That is not a simplification of the other two, it is what they are. A Kerberos
+TGT exists because an AS-REQ decrypted under a real long-term key; an LDAP row
+exists because a Bind returned success. Both are a credential having been
+accepted — this service refuses no bind, which is a low bar, but it is still a
+credential presented and accepted, and an ANONYMOUS bind never reaches this
+list at all because it has no key and is left off a few lines earlier. So both
+state `true` rather than leaving the field off: a missing field on two kinds of
+three would read as "unknown" on a page that is about exactly this distinction.
+
+The browser row reads `session.authenticated !== false`, which is
+`authn.js`'s field. `!== false` because a session made before that field
+existed is one somebody signed into.
+
+**What consumes it is a SECTION on `/admin/sessions` rather than a column**,
+and `admin-ui/CLAUDE.md` argues why. The reason it is computed here rather than
+there is this directory's whole reason to exist: this module is the one model
+of what a live session IS, and a console that worked the answer out for itself
+would be a second one.
+
+## `liveSessions()` HAS A SECOND KIND OF ROW OUT OF ONE STORE (2026-09-06)
+
+The management API, SCIM and the SPIRE Server API sign in through
+`authn.startSession()` like everything else — `common/CLAUDE.md` argues why a
+register of their own would have been a second answer to *is this live*, which
+is rule 3m read exactly. So this module gained no family and no reader: they
+arrive in the browser-session branch because they are in the browser session's
+map.
+
+**WHAT DID CHANGE IS THAT ONE STORE NO LONGER MEANS ONE KIND OF ROW.**
+`session.credentialKey` is the single predicate — set only by a caller that
+presents a credential on every request — and it decides three things:
+
+* **`kind`** is the surface's own (`SCIM session`, `SPIRE Server API session`),
+  because a SCIM client drawn as a *Browser sign-on session* would be this
+  module saying something untrue about the one thing it exists to report.
+* **`expiryRule` is `SESSION_EXPIRY_RULES.api`, THE FOURTH RULE AND THE ONLY ONE
+  EXTENDED BY USE.** It could not borrow the browser's, which says in as many
+  words that a session is absolute and not extended: these exist only while a
+  client is actually calling, so an idle one genuinely is finished, where a
+  browser holds a cookie that outlives its own use. That is the same reason
+  those three sentences were written apart in the first place.
+* **`detail` reports CALLS rather than relying parties.** Nothing signs into an
+  API session; it is a record that a credential keeps being accepted, so the
+  count and the last call are what a reader wants and the `carries` list would
+  always be empty.
+
+**THE ROW'S RULE SAYS ENDING IT REVOKES NOTHING**, and that sentence is
+load-bearing rather than a caveat. The token, password or certificate behind it
+is accepted without consulting any register, so `terminate()` ends the RECORD
+and the next call authenticates again and brings the row back. It is the same
+distinction this file already draws about a Kerberos service ticket, one surface
+along — and it is why the Revoke button needed the sentence before it is
+pressed rather than after.

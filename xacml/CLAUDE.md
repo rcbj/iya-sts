@@ -855,3 +855,106 @@ are not the only readers of these entries.
 The booleans are `TRUE` and `FALSE` — RFC 4517's Boolean syntax, which is upper
 case, and what both of these modules write. A page comparing against `'false'`
 is a page that overstates what is switched on.
+
+## THE FIFTEENTH AND SIXTEENTH DEFECTS: THE TWO POLICIES THAT DECIDE HERE WERE INVISIBLE, AND ONE OF THEM COULD NOT BE OVERRIDDEN AT ALL (2026-09-06)
+
+rcbj asked a question rather than reporting a bug: *are the XACML policies
+created for the various resources this service advertises visible in the editor
+page as existing policies?* The answer was **no**, and finding out why turned up
+a second defect underneath the first.
+
+### The fifteenth: the console described the repository and called it the policies
+
+`/admin/xacml/editor`'s chooser is `editorJson()` → `store.all()` →
+`directory.allPolicies()`, so it lists `ou=policies` and nothing else. On an
+ordinary service that is exactly one row — `seeded-rbac`, drawn **(root)** — and
+it is *the one document on that page that decides nothing this service
+enforces*. The two that do are `role-issuance` (all nine issuance sites) and
+`access-control` (the console, the management API, the User Portal, SCIM and the
+SPIRE Server API), and both are BUILT IN: the template is called at decision
+time rather than seeded, for the reason `xacml_role_pep.js` argues at length —
+`ou=policies` is per realm, so a policy seeded once into the default realm
+leaves every realm created afterwards unable to decide anything, and falling
+back to the default realm's copy would couple two realms.
+
+**THE FIX IS TO SAY SO AND NOT TO SEED THEM**, because seeding is the thing that
+argument rules out. `serviceOwnPolicies()` in `xacml_admin.js` reports both:
+
+* a section under the repository table on `/admin/xacml/policies` — under it
+  because the order is the argument, a reader sees the stored policies and is
+  then told which two are deciding and are not among them. Above it, it reads as
+  a preamble to scroll past; folded, it is the fact that was already invisible,
+  hidden once more;
+* a line under the editor's chooser, and in the **empty-repository branch**
+  especially — that branch used to say "there is nothing to edit" on a service
+  whose issuance and access decisions were both being made every request;
+* `serviceOwn` on `GET /admin-api/xacml/policies` and `/admin-api/xacml/editor`,
+  so a caller is not left believing `policies` is the whole answer either;
+* a **Create an override** button, prefilled with the name the setting already
+  names — so what it makes is an entry the PEP will pick up rather than one
+  named after the template and silently ignored. It posts `create-from-template`
+  like the template forms below it: **moving a form is not moving an action**, so
+  no second operation on `/admin-api`.
+
+**THE STATE COMES FROM THE FUNCTIONS THE PEPs THEMSELVES CALL.**
+`issuancePolicyState()` and `accessPolicyState()` are thin wrappers over
+`issuancePolicy()` / `accessPolicy()`. A page that worked out for itself which
+document was in force would be a second answer to that question, and it would be
+the one that is wrong the moment somebody disables an override.
+
+**`entry` AND `builtIn` ARE TWO FACTS AND MUST COME FROM TWO PLACES.** *Nobody
+has written an override* and *somebody wrote one and disabled it* are opposite
+situations that `builtIn` alone cannot tell apart. `entry`/`enabled` are facts
+about the DIRECTORY and come from `store.read()`; `builtIn` is a fact about the
+DECISION. The first draft of `accessPolicyState()` read the entry through
+`store.repository()` — the resolver facade, which holds only ENABLED policies —
+and so reported `entry: false` for a disabled override, which is the very
+confusion the function was added to remove, restated one level down.
+
+### The sixteenth: `xacml.accessPolicy` had never once been honoured
+
+Found by the test written for the fifteenth. `accessPolicy()` read:
+
+```js
+const repository = store.repository();
+const found = repository && typeof repository.get === 'function'
+  ? repository.get(name) : null;
+```
+
+`store.repository()` returns a **plain object keyed by PolicyId**. It has no
+`get` method, so `typeof repository.get === 'function'` was false on every call:
+what looked like a defensive guard *was the whole condition*, `found` was always
+null, and the built-in document always answered. **A documented setting, offered
+on the console, that did nothing.** Two more mistakes were hiding under it and
+would each have been enough on their own — the name is an ENTRY name and that
+map is keyed by PolicyId, and a value in it is a parsed policy rather than a row
+with an `enabled` flag.
+
+It reads the entry the way `issuancePolicy()` does now, which is the function
+this one's own header had always claimed to follow.
+
+**AND THE DISABLED CASE CHANGED WITH IT, which is a change rather than a fix.**
+It used to fall back to the built-in document — so the console's Disable button
+meant *evaluate something else instead*, which is exactly what
+`issuancePolicy()` refuses to do and calls a lie. The divergence was invisible
+because the branch was unreachable. Disabling the access policy now means what
+the button says: this layer stops deciding.
+
+**WHAT STILL DIFFERS IS THE CONSEQUENCE, AND THAT IS DELIBERATE.** A disabled
+issuance policy REFUSES a narrowed application; a disabled access policy ALLOWS
+every gated surface, because `decide()` here allows when no policy is loaded —
+refusing would close the console that is the only place to fix it. Two different
+answers to *what does not deciding mean here*, from one answer to *is it
+deciding*.
+
+### What the lookup bug generalises to
+
+**A GUARD THAT IS ALWAYS FALSE IS INDISTINGUISHABLE FROM A FEATURE THAT IS
+SWITCHED OFF**, and neither shows up in a log. `typeof x.get === 'function'` on
+a plain object reads as caution and behaves as `return null`. The thing that
+found it was not a review: it was a test that created the override and asserted
+the state FLIPPED — an assertion about a transition rather than about a value,
+which is the only shape that catches a condition nothing ever satisfies.
+
+`tests/xacml_service_own.js` pins all four states and was mutation-tested
+against both spellings of the bug.

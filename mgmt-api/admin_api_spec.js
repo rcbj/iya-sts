@@ -126,6 +126,25 @@ const ISSUED_RECORD = {
                    'there was one. Empty for anything issued with no human ' +
                    'behind it, a client-credentials token included.'
     },
+    setId: {
+      type: 'string',
+      description: 'WHICH REPLY THIS CAME BACK IN. OAuth 2.0 and OIDC are ' +
+                   'the only families here that hand back several ' +
+                   'credentials at once — an access token, a refresh token ' +
+                   'and an ID Token out of one code redemption — so this ' +
+                   'joins them, and every other family leaves it empty ' +
+                   'because each of them issues one credential per act.\n\n' +
+                   'It is stated by the ISSUER at the moment it builds the ' +
+                   'reply and is never derived: two clients redeeming two ' +
+                   'codes at the same client in the same millisecond produce ' +
+                   'six records agreeing on every other field here, so a ' +
+                   'heuristic would merge replies nobody ever received. It ' +
+                   'is in no token, no client ever sees it, and it is NOT a ' +
+                   'claim.\n\nA REFRESH GETS A NEW ONE. A set is one ' +
+                   'response, so the second generation of a grant is its own ' +
+                   'set; what joins the generations is the refresh lineage, ' +
+                   'which is a different relation.'
+    },
     jkt: { type: 'string',
            description: 'The DPoP key thumbprint, where the token is bound.' },
     grant: { type: 'string', description: 'The grant that issued it.' },
@@ -1993,17 +2012,163 @@ const SCHEMAS = {
       ldapsListening: { type: 'boolean' }
     }),
 
+  IssuedSet: openObject(
+    'ONE ISSUANCE — everything that came back in a single reply, which is ' +
+    'what `GET /admin-api/tokens` lists since 2026-09-05.\n\nOAuth 2.0 and ' +
+    'OIDC are the only families this service speaks that hand back several ' +
+    'credentials at once: redeeming an authorization code returns an access ' +
+    'token, a refresh token and an ID Token in one response, and ' +
+    '`response_type=id_token token` returns two in one fragment. Every other ' +
+    'family issues one credential per act, so a SAML assertion, a Kerberos ' +
+    'ticket and a SPIFFE SVID are each a set of one — `grouped` is false and ' +
+    '`members` has one entry.\n\nA SET IS ONE RESPONSE AND NOT ONE GRANT: ' +
+    'refreshing produces a new set beside the old one rather than a fourth ' +
+    'member of it, because a set has one issued instant and one grant and a ' +
+    'row that grew over an afternoon could have neither. What joins the ' +
+    'generations of a grant is the refresh lineage, which is a different ' +
+    'relation.',
+    {
+      setKey: {
+        type: 'string',
+        description: 'WHAT ADDRESSES THIS SET — the value `revoke-set`, ' +
+                     '`restore-set` and `GET /admin-api/tokens/set` take. ' +
+                     '`set:<id>` for a reply that carried several ' +
+                     'credentials, `one:<row handle>` for a set of one, so ' +
+                     'that every row of this list is addressable without a ' +
+                     'caller having to know which kind it holds.'
+      },
+      setId: {
+        type: 'string',
+        description: 'The issuer\'s own id for the reply, empty on a set of ' +
+                     'one. See `setId` on IssuedRecord for why it is stated ' +
+                     'rather than derived.'
+      },
+      grouped: {
+        type: 'boolean',
+        description: 'Whether more than one credential came back together. ' +
+                     'True only for OAuth 2.0 and OIDC.'
+      },
+      size: { type: 'integer', description: 'How many credentials are in it.' },
+      kinds: {
+        type: 'array', items: { type: 'string' },
+        description: 'The kinds it holds, in the order they were minted.'
+      },
+      families: { type: 'array', items: { type: 'string' } },
+      family: { type: 'string' },
+      state: {
+        type: 'string',
+        description: 'The state every member shares, or `mixed` when they ' +
+                     'differ — which is the ORDINARY case rather than a ' +
+                     'fault, since an access token and the refresh token ' +
+                     'issued with it have very different lifetimes. ' +
+                     'Reporting one of them would be this list deciding ' +
+                     'which member matters. `states` has the breakdown, and ' +
+                     'the `state` filter matches a set when ANY member holds ' +
+                     'the state asked for.'
+      },
+      states: openObject('How many members are in each state.', {}),
+      issuedAt: {
+        type: 'integer',
+        description: 'Milliseconds since the epoch — the earliest member\'s, ' +
+                     'which is when the reply was produced.'
+      },
+      expiresAtMs: {
+        type: 'integer',
+        description: 'The EARLIEST member\'s expiry: when the set starts to ' +
+                     'come apart, which is what somebody debugging a refused ' +
+                     'call has arrived to find. Zero when no member states ' +
+                     'an expiry.'
+      },
+      lastExpiresAtMs: {
+        type: 'integer',
+        description: 'The latest member\'s: when the set is finished. Equal ' +
+                     'to `expiresAtMs` when they agree.'
+      },
+      username: { type: 'string' },
+      sub: { type: 'string' },
+      client_id: { type: 'string' },
+      audience: {
+        type: 'string',
+        description: 'THE FIRST MEMBER\'S. The members of one reply do not ' +
+                     'share an audience and are not meant to — an ID Token ' +
+                     'is addressed to the client and the access token beside ' +
+                     'it to the resource server — so this is the access ' +
+                     'token\'s and `members` is where the rest are.'
+      },
+      scope: {
+        type: 'string',
+        description: 'THE ACCESS TOKEN\'S. The refresh token beside it ' +
+                     'deliberately carries a different one — what was ' +
+                     'AUTHORIZED rather than what this token can do — so a ' +
+                     'single value here would hide the one place the two ' +
+                     'halves of a grant differ on purpose.'
+      },
+      sessionId: { type: 'string' },
+      sessionAuthenticated: { type: 'boolean' },
+      grant: { type: 'string' },
+      revocableCount: {
+        type: 'integer',
+        description: 'How many members `revoke-set` would act on. Zero for ' +
+                     'every SAML assertion, Kerberos ticket and SVID, and ' +
+                     'that is what makes `revoke-set` REFUSE such a set ' +
+                     'rather than report revoking nothing.'
+      },
+      revokedCount: { type: 'integer' },
+      members: {
+        type: 'array',
+        description: 'The credentials themselves, in the order they were ' +
+                     'minted.',
+        items: ISSUED_RECORD
+      }
+    }),
+
+  IssuedSetDetail: openObject(
+    'One set, by its `setKey`. `found` is false and `set` is null for a key ' +
+    'nothing holds, which is the ORDINARY answer for a set old enough to ' +
+    'have been forgotten to the cap rather than an error — `why` says which ' +
+    'of the two happened.',
+    {
+      setKey: { type: ['string', 'null'],
+                description: 'The key that was asked for, echoed back.' },
+      found: { type: 'boolean' },
+      set: { anyOf: [{ $ref: '#/components/schemas/IssuedSet' },
+                     { type: 'null' }] },
+      why: { type: ['string', 'null'] }
+    }),
+
   IssuedList: openObject(
     'Everything issued and still remembered — every JWT, every SAML ' +
-    'assertion and every Kerberos ticket — in one list, newest first. ' +
-    'OID4VCI credentials are NOT in it; they are counted on ' +
-    '/admin-api/metrics. Walk the whole list with `page` and `pages` rather ' +
-    'than guessing where it ends.',
+    'assertion, every Kerberos ticket and every SPIFFE SVID — GROUPED INTO ' +
+    'WHAT CAME BACK IN ONE REPLY, newest first. OID4VCI credentials are NOT ' +
+    'in it; they are counted on /admin-api/metrics. Walk the whole list ' +
+    'with `page` and `pages` rather than guessing where it ends.\n\n' +
+    '**IT LISTS SETS SINCE 2026-09-05 AND LISTED CREDENTIALS BEFORE THAT.** ' +
+    'The grouped list is `sets`; `issued` is the same credentials flattened ' +
+    'out of it, so a caller written against the older shape reads exactly ' +
+    'what it read and the two can never disagree, because one is built from ' +
+    'the other. What did change under `issued` is the paging: a page is now ' +
+    'a whole number of REPLIES, so that array holds between `perPage` and ' +
+    'three times it rather than exactly `perPage`.\n\n' +
+    '`page`, `pages`, `matched` and `shown` COUNT SETS. `held`, ' +
+    '`matchedCredentials`, `shownCredentials` and `heldByFamily` count ' +
+    'credentials — `held` because it has meant that since this resource ' +
+    'existed and quietly changing an old name\'s unit is the worst kind of ' +
+    'breaking change, and `heldByFamily` so that it agrees with ' +
+    '/admin-api/metrics.',
     Object.assign({
-      held: { type: 'integer' },
-      matched: { type: 'integer' },
-      shown: { type: 'integer' },
-      heldByFamily: openObject('How much of each family is held.', {}),
+      held: { type: 'integer', description: 'Credentials held, in total.' },
+      heldSets: { type: 'integer', description: 'Sets held, in total.' },
+      matched: { type: 'integer', description: 'Sets matching the filter.' },
+      matchedCredentials: {
+        type: 'integer',
+        description: 'The credentials in those sets. Larger than `matched` ' +
+                     'wherever an OAuth reply carried more than one.'
+      },
+      shown: { type: 'integer', description: 'Sets on this page.' },
+      shownCredentials: { type: 'integer',
+                          description: 'The credentials in them.' },
+      heldByFamily: openObject('How much of each family is held, IN ' +
+                               'CREDENTIALS.', {}),
       filter: openObject('What was asked for; null where nothing was.', {}),
       families: {
         type: 'array',
@@ -2017,7 +2182,16 @@ const SCHEMAS = {
                      'ones any revocation here affects.'
       },
       revokedCount: { type: 'integer' },
-      issued: { type: 'array', items: ISSUED_RECORD }
+      sets: { type: 'array', items: { $ref: '#/components/schemas/IssuedSet' } },
+      issued: {
+        type: 'array',
+        description: 'The members of `sets`, flattened, in the same order. ' +
+                     'Derived from that array rather than gathered again, ' +
+                     'which is why the two cannot come to disagree about a ' +
+                     'revocation that happened between two walks of the ' +
+                     'register.',
+        items: ISSUED_RECORD
+      }
     }, PAGING_PROPERTIES)),
 
   Config: openObject(
@@ -2551,6 +2725,69 @@ const SCHEMAS = {
         description: 'The settings drawn on /admin/xacml.' }
     }),
 
+  // ---------------------------------------------------------------------
+  // THE TWO POLICIES THAT DECIDE THIS SERVICE'S OWN BOUNDARIES AND ARE NOT IN
+  // THE REPOSITORY (2026-09-06).
+  //
+  // `role-issuance` gates the nine issuance sites and `access-control` gates
+  // surfaces `common/access_gate.js` guards. Both are BUILT IN — the
+  // template is called at decision time rather than seeded into `ou=policies`,
+  // because that container is per trust realm — so neither appears in
+  // `policies` above and neither is offered by the editor's chooser.
+  //
+  // It is DESCRIBED here rather than left to `additionalProperties: true`
+  // because the omission is the whole defect this member was added for: a
+  // caller reading `policies` and stopping would conclude that whatever is
+  // root there is what this service enforces, and on an ordinary service that
+  // is a seeded example which enforces nothing.
+  // ---------------------------------------------------------------------
+  XacmlServiceOwnPolicy: openObject(
+    'One policy this service decides its OWN boundaries with. Built in and ' +
+    'called at decision time rather than stored, so it is not in the ' +
+    'repository — a repository entry of the same name overrides it.',
+    {
+      key: { type: 'string', enum: ['issuance', 'access'] },
+      label: { type: 'string' },
+      name: { type: 'string',
+        description: 'The entry name an override must be given for the PEP ' +
+                     'to pick it up. It is what `setting` says, NOT the ' +
+                     'template id — those are the same word today and need ' +
+                     'not be.' },
+      setting: { type: 'string',
+        description: 'The config.js key that names it: `xacml.issuancePolicy` ' +
+                     'or `xacml.accessPolicy`.' },
+      template: { type: 'string',
+        description: 'The template the built-in document is built from, and ' +
+                     'the one an override should be created from so that the ' +
+                     'two start identical.' },
+      decides: { type: 'string' },
+      asked: { type: 'string',
+        description: 'Which gate asks it, and from how many sites.' },
+      entry: { type: 'boolean',
+        description: 'Whether a repository entry of that name EXISTS. A ' +
+                     'separate fact from `builtIn`: "nobody wrote an ' +
+                     'override" and "somebody wrote one and disabled it" are ' +
+                     'opposite situations that `builtIn` alone cannot tell ' +
+                     'apart.' },
+      enabled: { type: ['boolean', 'null'],
+        description: 'The entry\'s flag, or null when there is no entry.' },
+      builtIn: { type: 'boolean',
+        description: 'Whether the BUILT-IN document is what is deciding. A ' +
+                     'fact about the decision, where `entry` is a fact about ' +
+                     'the directory.' },
+      ok: { type: 'boolean',
+        description: 'Whether anything is being evaluated at all. False when ' +
+                     'an override exists and is disabled or will not load — ' +
+                     'neither policy falls back to the built-in one in that ' +
+                     'case, because a Disable button that quietly evaluated ' +
+                     'something else would be a lie.' },
+      why: { type: 'string',
+        description: 'Why not, when `ok` is false. Empty otherwise.' },
+      effect: { type: 'string',
+        description: 'One sentence naming what is deciding right now, which ' +
+                     'is what the console prints.' }
+    }),
+
   XacmlPolicies: openObject(
     'The policy repository, which IS ou=policies in the embedded directory ' +
     'rather than a copy of one.',
@@ -2576,6 +2813,10 @@ const SCHEMAS = {
                        'than for some — a policy listed with problems will ' +
                        'not load and the PDP reports Indeterminate.' }
       }) },
+      serviceOwn: { type: 'array',
+        items: { $ref: '#/components/schemas/XacmlServiceOwnPolicy' },
+        description: 'The two policies deciding this service\'s own ' +
+                     'boundaries, which are NOT in `policies` above.' },
       templates: { type: 'array', items: openObject(
         'A starting point POST /admin-api/xacml/create-from-template will ' +
         'build.', {
@@ -2602,6 +2843,13 @@ const SCHEMAS = {
     'grammar.',
     {
       policies: { type: 'array', items: { type: 'string' } },
+      serviceOwn: { type: 'array',
+        items: { $ref: '#/components/schemas/XacmlServiceOwnPolicy' },
+        description: 'The two policies deciding right now that this chooser ' +
+                     'cannot offer, because they are built in rather than ' +
+                     'stored. Carried so that a caller is not left believing ' +
+                     '`policies` is the whole answer — which is exactly what ' +
+                     'the PAGE used to leave a reader believing.' },
       policy: { type: ['object', 'null'], additionalProperties: true },
       problem: { type: ['string', 'null'] },
       problems: { type: 'array', items: { type: 'string' } },

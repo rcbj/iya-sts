@@ -211,6 +211,35 @@ const ACTIONS = [
   { action: 'authentication', category: 'authentication',
     label: 'A credential was accepted' },
 
+  // ---------------------------------------------------------------------
+  // THE USER PORTAL (2026-09-06). The first surface here where a PERSON acts
+  // on their own account rather than an operator acting on somebody else's —
+  // which is why these are `authentication` rows and not `console` ones: the
+  // actor and the target are the same person.
+  //
+  // The two REFUSALS are registered beside the successes deliberately. A
+  // password change that was refused, and an activation link that did not
+  // verify, are the rows somebody investigating an account takeover actually
+  // needs — and an audit log that recorded only what worked would be a log of
+  // everything except the attack.
+  // ---------------------------------------------------------------------
+  { action: 'portal.activate', category: 'authentication',
+    label: 'Somebody completed account setup from an activation link' },
+  { action: 'portal.activate.refused', category: 'authentication',
+    label: 'An activation link was refused' },
+  { action: 'portal.password.changed', category: 'authentication',
+    label: 'Somebody changed their own password' },
+  { action: 'portal.password.refused', category: 'authentication',
+    label: 'A password change was refused' },
+  { action: 'portal.password.csrf', category: 'authentication',
+    label: 'A portal form was refused for a bad CSRF token' },
+  { action: 'portal.key.enrolled', category: 'authentication',
+    label: 'Somebody enrolled a security key on their own account' },
+  { action: 'portal.key.removed', category: 'authentication',
+    label: 'Somebody removed a security key from their own account' },
+  { action: 'activation.issued', category: 'authentication',
+    label: 'An administrator issued an activation link' },
+
   { action: 'session.start', category: 'session',
     label: 'A sign-on session was created' },
   { action: 'session.end', category: 'session',

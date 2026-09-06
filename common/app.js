@@ -57,6 +57,12 @@ const stats = require('./admin_stats');
 // only helpers.js and config.js, which is what keeps it out of the cycles rule 2
 // exists to avoid.
 const audit = require('./audit');
+
+// The input guard. A LEAF (rule 3) — it registers no route of its own and
+// requires only `config`, `bunyan` and zod, so requiring it here closes no
+// cycle and moves nothing in the route order. `common/validation.js` is where
+// every decision about what a value from outside may be is argued.
+const validation = require('./validation');
 // --- express app -----------------------------------------------------------
 const app = express();
 
@@ -403,8 +409,38 @@ app.use(cors(corsOptions));
 
 app.options('*', cors(corsOptions));
 
+// ---------------------------------------------------------------------------
+// BINARY BODIES FIRST, AND THE TEXT PARSER BELOW TAKES EVERYTHING ELSE.
+//
+// **THIS ORDER IS A FIX RATHER THAN A TIDY-UP (2026-09-05).** The text parser
+// below claims EVERY content type — `type: () => true` — which is right for a
+// service whose bodies are SOAP, form encodings, JSON and XML, and silently
+// wrong for the one endpoint here whose body is neither text nor meant to be:
+// `POST /KdcProxy`, MS-KKDCP's KDC-PROXY-MESSAGE, which is DER.
+//
+// What that cost was total and invisible: a DER body decoded as UTF-8 is
+// CORRUPTED — every byte outside ASCII becomes U+FFFD and no length prefix
+// survives — and it arrives at the handler as a `string`, so
+// `prim.toBytes()` throws `expected bytes, got string` and the endpoint
+// answers `400 the KDC-PROXY-MESSAGE does not decode`. **MS-KKDCP has
+// therefore never worked**, while `/admin/sts-metadata` advertised it and
+// `krb5_kdc.js` carried a complete and correct implementation behind it. No
+// test drove it, which is how it survived: the Kerberos jobs in this suite talk
+// to the KDC on raw TCP 88, where there is no body parser.
+//
+// `application/kerberos` is what MS-KKDCP section 2.1 specifies and what the
+// endpoint answers with; `application/octet-stream` is beside it because a
+// caller that sends the bytes without knowing the specific type should not be
+// handed a corrupted body either. Anything else still reaches the text parser
+// exactly as before, so no other endpoint in this service changes.
+app.use(bodyParser.raw({
+  type: ['application/kerberos', 'application/octet-stream'],
+  limit: '5mb'
+}));
+
 // Accept any content-type as raw text (SOAP arrives as text/xml or
-// application/soap+xml).
+// application/soap+xml). It runs AFTER the raw parser above, and body-parser
+// leaves a body alone once one of them has taken it.
 app.use(bodyParser.text({ type: function () { return true; }, limit: '5mb' }));
 
 // ---------------------------------------------------------------------------
@@ -510,6 +546,28 @@ app.use(function (req, res, next) {
             "its finish event.");
   next();
 });
+
+// ---------------------------------------------------------------------------
+// THE VALIDATION GUARD, AND WHY IT IS HERE RATHER THAN THREE MIDDLEWARES UP.
+//
+// It refuses the two things no caller of any protocol this service speaks ever
+// sends: a parameter NAMED `__proto__`/`constructor`/`prototype`, and a control
+// character in a query-string value. Everything else about input validation is
+// per endpoint and lives in the schema that endpoint declares —
+// `common/validation.js` argues the split, and in particular argues why a
+// REPEATED parameter is deliberately NOT refused here.
+//
+// **AFTER THE CALL LOG ON PURPOSE.** A refusal is exactly the request an
+// operator wants to find afterwards, and the middleware above is what puts a
+// request in `/admin/audit`. Registered ahead of it, every refusal this makes
+// would be invisible — which is the same argument `common/websecurity.js` makes
+// about a rate-limit lockout nobody can see being a support call with no
+// evidence in it.
+//
+// It is BELOW the security-headers middleware too, so a refusal still carries
+// the CSP and `X-Content-Type-Options` every other response does.
+// ---------------------------------------------------------------------------
+app.use(validation.guard());
 
 app.get('/healthcheck', function (req, res) {
   log.debug("Entering the healthcheck endpoint.");

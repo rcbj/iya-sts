@@ -89,7 +89,11 @@
 
 // A CHANNEL NAME AND A SCHEMA VERSION, both spelt once here.
 const CHANNEL = 'sts_ldap_change';
-const SCHEMA_VERSION = 1;
+// 2 SINCE 2026-09-06, when `sts_keys` joined the three tables this driver has
+// always had. Nothing reads this yet — it is here so that a future change has
+// something to look at other than the shape of the tables — but leaving it at 1
+// over a different schema would make the one thing it is for useless.
+const SCHEMA_VERSION = 2;
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
 // than a migration table, and that is a decision rather than laziness: this is
@@ -119,6 +123,21 @@ const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS sts_appconfig (' +
   '  key   text PRIMARY KEY,' +
   '  value jsonb NOT NULL)',
+  // THE SIGNING KEYS, ONE ROW PER TRUST REALM, AND THE COLUMN HOLDS
+  // CIPHERTEXT (2026-09-06). `keystore.js` encrypts with AES-256-GCM before
+  // anything reaches this driver, so nothing in this database is ever a
+  // private key — which is what makes it acceptable for them to live beside
+  // the directory in the same store. The key that opens them is read from
+  // outside the service entirely; see common/secrets.js.
+  //
+  // `text` and not `bytea`, because the stored form is the self-describing
+  // ASCII `$aesgcm$1$salt$iv$tag$body` that crypto.js writes — the same
+  // decision `userPassword` follows, and it means a row can be read and
+  // reasoned about with psql without a decode step.
+  'CREATE TABLE IF NOT EXISTS sts_keys (' +
+  '  realm      text PRIMARY KEY,' +
+  '  material   text NOT NULL,' +
+  '  written_at timestamptz NOT NULL DEFAULT now())',
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -547,6 +566,43 @@ function create(options) {
         log.debug('Leaving the postgres driver saveOverrides(). ' +
                   Object.keys(map).length + ' override(s).');
       });
+    },
+
+    // -----------------------------------------------------------------------
+    // THE KEY MATERIAL. See the CREATE TABLE above for why a column of text is
+    // the right shape and why this driver never holds a private key.
+    // -----------------------------------------------------------------------
+    loadKeys: function () {
+      log.debug('Entering the postgres driver loadKeys().');
+      return pool.query('SELECT realm, material FROM sts_keys').then(function (r) {
+        const rows = (r.rows || []).map(function (row) {
+          return { realm: row.realm, material: row.material };
+        });
+        log.debug('Leaving the postgres driver loadKeys(). ' + rows.length +
+                  ' realm(s).');
+        return rows;
+      });
+    },
+
+    saveKeys: function (realmId, ciphertext) {
+      log.debug('Entering the postgres driver saveKeys(). realm=' + realmId);
+      return pool.query(
+        'INSERT INTO sts_keys (realm, material, written_at) ' +
+        'VALUES ($1, $2, now()) ' +
+        'ON CONFLICT (realm) DO UPDATE SET material = EXCLUDED.material, ' +
+        'written_at = now()',
+        [realmId, ciphertext]
+      ).then(function () {
+        log.debug('Leaving the postgres driver saveKeys().');
+      });
+    },
+
+    deleteKeys: function (realmId) {
+      log.debug('Entering the postgres driver deleteKeys(). realm=' + realmId);
+      return pool.query('DELETE FROM sts_keys WHERE realm = $1', [realmId])
+        .then(function () {
+          log.debug('Leaving the postgres driver deleteKeys().');
+        });
     }
   };
 }

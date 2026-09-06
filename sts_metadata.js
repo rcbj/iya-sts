@@ -1889,8 +1889,10 @@ const ENDPOINTS = [
   { path: '/admin', group: 'Admin', name: 'Admin console',
     specs: [],
     what: 'NON-SPEC. What the console is, what it can change about this service, and what it ' +
-          'deliberately cannot (it does not revoke assertions, tickets or credentials, because ' +
-          'nothing consults this service about those). It DOES end a sign-on session since ' +
+          'deliberately cannot (it cannot RECALL an assertion, a ticket or a credential, ' +
+          'because nothing consults this service about those — since 2026-09-05 it does ' +
+          'DISOWN them, which is this service\'s own record and not an enforcement). It DOES ' +
+          'end a sign-on session since ' +
           '2026-08-24, at /admin/logout, and this row used to say the opposite: the old ' +
           'argument was that wsignout1.0 has a cleanup to fan out and a third way to end a ' +
           'session would be a third way to get that wrong, which stopped being true when the ' +
@@ -1933,7 +1935,16 @@ const ENDPOINTS = [
           'POST creates a person in the embedded LDAP directory, refusing a username that is ' +
           'already there. The new entry does not appear in this page\'s own table until they ' +
           'authenticate — that list is who this service has SEEN, and the entry is what the ' +
-          'directory HOLDS.' },
+          'directory HOLDS. THE DRILL-DOWN HAS TWO MORE CONTROLS AND THEY ARE ' +
+          'NOT THE SAME ACT: one signs the person out of everything, through ' +
+          'the same terminate() /admin/logout uses, so every session ends, ' +
+          'every relying party is notified, codes and pre-authorized codes ' +
+          'are invalidated, LDAP connections close and the Kerberos sign-out ' +
+          'instant is stamped; the other revokes their JWTs and LEAVES THE ' +
+          'SESSION ALONE, which is what a revocation is and which means the ' +
+          'next authorization request mints a fresh set. The second was the ' +
+          'only one here until 2026-09-05, under a label that promised the ' +
+          'first.' },
   { path: '/admin/applications', group: 'Admin', name: 'Applications',
     // rfc7591 because the client registrations this page shows ARE the entries under
     // ou=applications, and rfc4519 because applicationProcess — the one registered
@@ -2247,12 +2258,109 @@ const ENDPOINTS = [
           'naming its family. POST revokes by jti or by pasted token, by kind, by subject, or ' +
           'everything. It is the SAME revocation set /oauth2/revoke writes to, so introspection, ' +
           'UserInfo and the refresh grant all honour it immediately. ONLY THE JWTs CAN BE REVOKED: ' +
-          'nothing consults this service about an assertion or a ticket, so those rows are listed ' +
-          'with the reason there is no button rather than with a button that would change a number ' +
-          'here and nothing out there. Restore is offered and is NON-SPEC: no authorization server ' +
+          'nothing consults this service about an assertion or a ticket. SINCE 2026-09-05 THOSE ' +
+          'ROWS HAVE A BUTTON ANYWAY and it is labelled (record only): it marks the credential ' +
+          'revoked in this service\'s own record, which is what a sign-out must be able to say, ' +
+          'what CAEP carries to a receiver that subscribed and what SAML Single Logout carries ' +
+          'for an assertion from a browser profile — and it reaches the HOLDER of the credential ' +
+          'not at all, which every surface says where the button is. `revocationReach` on every ' +
+          'row is the field that tells the two apart. Restore is offered and is NON-SPEC: no ' +
+          'authorization server ' +
           'can undo a revocation, and it is here so that getting back to a working token does not ' +
           'mean restarting the service. OID4VCI credentials are counted on /admin/metrics and are ' +
           'not in this table.' },
+  { path: '/portal', group: 'User portal',
+    name: 'A person\'s own account',
+    specs: [],
+    what: 'NON-SPEC. THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE ' +
+          'PERSON LOOKING AT IT. Every other browser surface here is for ' +
+          'somebody else — the sign-in screen is a step in another protocol\'s ' +
+          'flow, the consent screen asks one question and leaves, /admin is ' +
+          'for an operator and is gated on two roles. This shows a person what ' +
+          'this identity provider knows about them and lets them change how ' +
+          'they authenticate: their password, and their security keys and ' +
+          'whether each is a primary credential or a second factor. IT IS A ' +
+          'SEPARATE APPLICATION FROM THE ADMIN CONSOLE and shares nothing with ' +
+          'it but the session, because there is one answer here to "who is ' +
+          'this browser" and a second would eventually disagree. THE IDENTITY ' +
+          'COMES FROM THE SESSION AND NEVER FROM THE REQUEST — no route here ' +
+          'takes a username, an id or a DN from a query string or a body, so ' +
+          'there is no parameter for anybody to change (OWASP A01). Every form ' +
+          'carries a CSRF token, changing a password requires the current one ' +
+          'even though the person is signed in, and both are rate limited.' },
+  { path: '/portal/activate', group: 'User portal',
+    name: 'Spend an activation link and set up a credential',
+    specs: [],
+    effect: 'sets a password and/or enrols a security key, and spends the link',
+    what: 'NON-SPEC. THE UNAUTHENTICATED HALF OF THE PORTAL, and the only ' +
+          'route on it that takes an identity from the request — because ' +
+          'nobody is signed in yet and what authorises it is the TOKEN, which ' +
+          'is a credential. Somebody provisioned through /admin-api, SCIM or ' +
+          'an LDAP add arrives with no way to authenticate; an administrator ' +
+          'issues them a single-use, time-limited URL and they choose a ' +
+          'password, a security key, or both — and for a key, whether it is a ' +
+          'primary credential or a second factor. The link is HASHED at rest ' +
+          'like a password, rate limited at both the GET and the POST, and ' +
+          'SPENT WHEN THE SETUP FINISHES rather than when it is opened, ' +
+          'because a link burned by a mail scanner or a browser prefetch would ' +
+          'strand the person it was for. IT DOES NOT SIGN ANYBODY IN: spending ' +
+          'it proves possession of a link, not of the credential just ' +
+          'configured, so the last step is to go and use it. Every way it can ' +
+          'fail answers the same sentence, so the page cannot be used to ' +
+          'discover which usernames have an activation outstanding.' },
+  { path: '/portal/password', group: 'User portal',
+    name: 'Change your own password',
+    specs: [],
+    effect: 'replaces the password on the signed-in person\'s own entry',
+    what: 'NON-SPEC. Four controls in one handler and each is a different item ' +
+          'on the OWASP list: the CSRF token this session\'s forms carry, a ' +
+          'rate limit so the current-password check is not an oracle, ' +
+          'RE-AUTHENTICATION (the current password is required even though the ' +
+          'person is signed in, because a browser left open on a shared ' +
+          'machine must not be an account takeover), and the identity taken ' +
+          'from the session rather than the body.' },
+  { path: '/portal/remove-key', group: 'User portal',
+    name: 'Remove one of your own security keys',
+    specs: [],
+    effect: 'removes an enrolled WebAuthn credential from the person\'s entry',
+    what: 'NON-SPEC. The credential id comes from the body and the USERNAME ' +
+          'does not, which is what keeps it safe: the id is looked up among ' +
+          'this person\'s own keys, so one belonging to somebody else matches ' +
+          'nothing. IT REFUSES TO REMOVE THE LAST WAY IN — a person with no ' +
+          'password whose only primary key this is would be locked out by ' +
+          'their own click, and an identity provider that allows that has a ' +
+          'support queue rather than a security control.' },
+  { path: '/admin/tokens/set', group: 'Admin',
+    name: 'One issuance, and every credential it carried',
+    // rfc6749 and oidc because a SET only ever exists in those two: they are
+    // the only families here that hand back several credentials in one reply.
+    // rfc7009 because the button on this page is that revocation, one member
+    // at a time, into the one set of revoked jtis this service keeps.
+    specs: ['rfc6749', 'oidc', 'rfc7009'],
+    what: 'NON-SPEC PAGE, and the SECOND drill-down /admin/tokens has: every ' +
+          'row of that table showing more than one credential links here. ' +
+          'OAuth 2.0 and OIDC are THE ONLY PROTOCOLS THIS SERVICE SPEAKS ' +
+          'THAT ISSUE SEVERAL CREDENTIALS AT ONCE — an access token, a ' +
+          'refresh token and an ID Token out of one code redemption; two out ' +
+          'of one implicit response — so since 2026-09-05 that table draws a ' +
+          'row per REPLY rather than per credential, and this page opens one ' +
+          'up. Every other family issues one credential per act, so a SAML ' +
+          'assertion, a Kerberos ticket and an SVID are each a set of one ' +
+          'and link to their own lineage instead, because for one credential ' +
+          'this page would be a click that added nothing. THE GROUPING IS A ' +
+          'FACT THE ISSUER STATED and never a guess: the two OAuth issuance ' +
+          'sites mint one id per reply and hand it to every token they ' +
+          'produce, because two people redeeming two codes at the same ' +
+          'client in the same millisecond produce six credentials that agree ' +
+          'on every recorded field, and a heuristic would report a reply ' +
+          'nobody received. The set id is in NO TOKEN, no client ever sees ' +
+          'it, and it is not a claim. A REFRESH MAKES A NEW SET rather than ' +
+          'a bigger one — a set is one response, with one issued instant and ' +
+          'one grant — and what joins the generations of a grant is the ' +
+          'lineage on the page next door. Revoke set sends every revocable ' +
+          'member through the same act /oauth2/revoke performs; a set ' +
+          'holding nothing revocable is refused rather than answered ' +
+          '"revoked 0". Add ?format=json.' },
   { path: '/admin/tokens/credential', group: 'Admin',
     name: 'One credential, and every generation behind it',
     // rfc8693 is what a generation IS — every row above the last one is an
@@ -3213,27 +3321,58 @@ const ENDPOINTS = [
           'instant on the PRINCIPAL and still reaches no service ticket already in a cache. ' +
           'Mirrors POST /admin/sessions.' },
   { path: '/admin-api/tokens', group: 'Management API',
-    name: 'Issued tokens, assertions and tickets',
+    name: 'Issued tokens, assertions and tickets, grouped by issuance',
     specs: ['rfc7009', 'rfc7662', 'oidc', 'saml2', 'saml11', 'rfc4120'],
     what: 'NON-SPEC. Everything issued and still remembered — every JWT, every ' +
           'SAML assertion and every Kerberos ticket — in one list, newest first, ' +
           'filtered by family, kind and state and paged with ?page= and ?per=. ' +
-          'Claims and facts only, never the signed artifact. OID4VCI credentials ' +
-          'are counted on /admin-api/metrics and are not in this list. Mirrors ' +
-          'GET /admin/tokens.' },
+          'AN ENTRY IS ONE ISSUANCE rather than one credential since ' +
+          '2026-09-05: OAuth 2.0 and OIDC are the only families that hand back ' +
+          'several at once, so those arrive as one entry in `sets` carrying its ' +
+          '`members`, and every other family is a set of one. `issued` is the ' +
+          'same credentials flattened out of `sets`, so a caller written ' +
+          'against the older shape reads what it read; what changed under it ' +
+          'is that a page is a whole number of replies. `page`, `pages`, ' +
+          '`matched` and `shown` count SETS; `held` and `matchedCredentials` ' +
+          'count credentials. Claims and facts only, never the signed ' +
+          'artifact. OID4VCI credentials are counted on /admin-api/metrics and ' +
+          'are not in this list. Mirrors GET /admin/tokens.' },
+  { path: '/admin-api/tokens/set', group: 'Management API',
+    name: 'One issuance, and every credential it carried',
+    specs: ['rfc6749', 'oidc', 'rfc7009'],
+    what: 'NON-SPEC. What GET /admin-api/tokens groups, opened up: the one ' +
+          'reply a `setKey` names, and its members in the order they were ' +
+          'minted. Addressed by `setKey` and never by the issuer\'s set id, ' +
+          'because a set of one has no issuance id at all — its key is ' +
+          '`one:<row handle>`, so the key space covers every row of that list ' +
+          'and a caller need not know which kind it holds. A key nothing holds ' +
+          'answers 200 with `found: false` rather than 404: a set dropped to ' +
+          'the registry\'s cap is the ordinary end of its life and not a ' +
+          'caller\'s mistake. Mirrors GET /admin/tokens/set.' },
   { path: '/admin-api/tokens/:action', group: 'Management API',
     name: 'Token actions',
     specs: ['rfc7009', 'rfc7662', 'oidc'],
-    effect: 'revokes one token, a whole kind, everything for a subject or an ' +
-            'identity, or everything',
-    what: 'NON-SPEC path over an RFC 7009 operation. Six URLs behind one ' +
-          'pattern: revoke, restore, revoke-kind, revoke-subject, revoke-user, ' +
-          'revoke-all. It is the SAME revocation set /oauth2/revoke writes to, ' +
-          'so introspection, UserInfo and the refresh grant honour it ' +
-          'immediately. ONLY THE THREE JWT KINDS CAN BE REVOKED — nothing ' +
-          'consults this service about an assertion or a ticket. restore is ' +
-          'NON-SPEC even here: no real authorization server can undo a ' +
-          'revocation. Mirrors POST /admin/tokens.' },
+    effect: 'revokes one token, a whole issuance, a whole kind, everything for ' +
+            'a subject or an identity, or everything',
+    what: 'NON-SPEC path over an RFC 7009 operation. EIGHT URLs behind one ' +
+          'pattern: revoke, restore, revoke-set, restore-set, revoke-kind, ' +
+          'revoke-subject, revoke-user, revoke-all. It is the SAME revocation ' +
+          'set /oauth2/revoke writes to, so introspection, UserInfo and the ' +
+          'refresh grant honour it immediately. revoke-set acts on ONE REPLY ' +
+          'and writes nowhere new — each member goes through the same act, one ' +
+          'at a time — which is what stops somebody revoking two credentials ' +
+          'of three and believing the grant is dead while the refresh token ' +
+          'left behind mints another. TWO KINDS OF REVOCATION AND THE REPLY ' +
+          'SAYS WHICH: a JWT is refused at introspection, UserInfo and the ' +
+          'refresh grant, while revoke-artifact marks an assertion, a ticket ' +
+          'or an SVID in THIS SERVICE\'S OWN RECORD and reaches its holder ' +
+          'not at all, because nothing consults this service when one is ' +
+          'presented. `reachedProtocol` and `recordOnly` on a set revocation ' +
+          'report the split rather than folding it into one count. A set ' +
+          'holding only credentials with no identifier to act on is REFUSED ' +
+          'rather than answered "revoked 0". Every restore here is NON-SPEC: ' +
+          'no real authorization server can undo a revocation. Mirrors ' +
+          'POST /admin/tokens.' },
   { path: '/admin-api/applications/:action', group: 'Management API',
     name: 'Application actions',
     specs: ['rfc4511', 'rfc7591', 'rfc7592', 'rfc9700'],
@@ -4491,8 +4630,9 @@ const ENDPOINTS = [
           'checkbox against each. POST ends what was ticked, and a POST that ticks NOTHING is a ' +
           'GLOBAL logout, which is the default and the point. It also sends what only a browser ' +
           'can send: the Front-Channel Logout iframes, the wsignoutcleanup1.0 images, and the ' +
-          'SAML LogoutRequests as links. WHAT IT CANNOT END IS LISTED WITH THE REASON — an ' +
-          'assertion, a service ticket or an SVID already issued is beyond recall because ' +
+          'SAML LogoutRequests as links. WHAT IT CANNOT COMMUNICATE IS LISTED WITH THE ' +
+          'REASON — an assertion, a service ticket or an SVID already issued is DISOWNED here ' +
+          'since 2026-09-05 and beyond recall out there, because ' +
           'nothing consults this service when one is presented, and hiding those would make a ' +
           'global logout look complete when it is not. No console role is needed; with no ' +
           'session it sends the browser to /authn/login and back. logout.anyUser decides ' +
@@ -4930,6 +5070,34 @@ const PROTOCOLS = [
           'UserInfo and RP-initiated logout, with as many named ' +
           'authorization servers as have been asked for. RFC 9700 mode ' +
           'turns the BCP\'s refusals on.' },
+  { name: 'User portal', groups: ['User portal'],
+    specs: [],
+    // **THE ONE CARD ON THIS PAGE THAT IMPLEMENTS NO SPECIFICATION, AND IT
+    // SAYS SO IN A FIELD RATHER THAN BY HAVING AN EMPTY LIST.** Every other
+    // card names what it implements, and a test asserts that — correctly,
+    // because a protocol family with no specification behind it is either
+    // undocumented or invented. This is neither: it is an application, not a
+    // protocol, and the marker is what lets the rule stay strict for
+    // everything it was written for.
+    notAProtocol: true,
+    what: 'NOT A PROTOCOL, and it has a card because this page reports an ' +
+          'endpoint group no card claims — which is the rule that keeps a new ' +
+          'family from arriving unannounced, and it is worth paying here ' +
+          'rather than making the rule conditional. THE FIRST SURFACE IN THIS ' +
+          'SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT: every other ' +
+          'browser page here is for somebody else — the sign-in screen is a ' +
+          'step in another protocol\'s flow, the consent screen asks one ' +
+          'question and leaves, /admin is for an operator and is gated on two ' +
+          'roles. This is where a person sees what this identity provider ' +
+          'knows about them and changes how they authenticate: their ' +
+          'password, and their security keys and whether each is a primary ' +
+          'credential or a second factor. It is a SEPARATE APPLICATION from ' +
+          'the admin console and shares nothing with it but the session. ' +
+          '/portal/activate is its unauthenticated half, where somebody ' +
+          'provisioned through /admin-api or SCIM spends a single-use, ' +
+          'time-limited activation link to set up a credential — hashed at ' +
+          'rest like a password, rate limited, spent when the setup finishes ' +
+          'rather than when the link is opened, and never signing anybody in.' },
   { name: 'XACML', groups: ['XACML'],
     specs: ['xacml30', 'xacmljson'],
     what: 'A Policy Decision Point, a policy repository that IS ' +
@@ -5163,6 +5331,12 @@ function protocolReport(rows) {
     });
     return { name: p.name, what: p.what, sockets: p.sockets || '',
              groups: p.groups.slice(0), specs: (p.specs || []).slice(0),
+             // CARRIED INTO THE DOCUMENT rather than left on the table, so the
+             // drift test can see it. A card that names no specification has
+             // to say why, and the reason travels with the card — a list of
+             // exemptions kept in the test would be a second place to edit and
+             // the one that gets forgotten.
+             notAProtocol: !!p.notAProtocol,
              endpoints: endpoints };
   });
   // The direction that catches a new protocol family arriving with no row in

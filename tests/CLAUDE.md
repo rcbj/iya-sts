@@ -151,17 +151,17 @@ because a typo in a filter must never read as "everything passed".
 ### The report, and where the tooling lives
 
 ```bash
-./local-run-tests.sh                 # ALL 23 jobs, with a report written —
+./local-run-tests.sh                 # ALL 44 jobs, with a report written —
                                      # the service in a container built from
                                      # this working tree
 ./local-run-tests.sh --no-docker     # the same, with the service run on this
                                      # machine
 ./local-run-tests.sh --keep-stack    # leave the container up afterwards
-./local-run-tests.sh --no-protocol   # only the ten in-process files
+./local-run-tests.sh --no-protocol   # only the 25 in-process files
 ./local-run-tests.sh --only=crypto --open
 ./local-run-tests.sh --vendor-check  # is tests/vendored/ still in sync?
 ./local-run-tests.sh --vendor-sync   # re-copy the parent's files over it
-./docker-run-tests.sh                # the same 23 jobs with the RUNNER in a
+./docker-run-tests.sh                # the same 44 jobs with the RUNNER in a
                                      # container too: docker and nothing else
 ./run-coverage.sh                    # the same set, with coverage collected —
                                      # in a container too, with the RUNNER in
@@ -191,6 +191,35 @@ launcher of the same name, and `tests/tools/run-report.js` is what it drives.
 It writes `tests/report/<timestamp>/` — `report.html`, JUnit `report.xml`,
 `summary.json` and one log per job — and points `tests/report/latest` at it.
 Both are gitignored.
+
+**THE SERVICE THESE JOBS DRIVE IS TLS, AND THAT COST THE SUITE EXACTLY ONE
+MODULE (2026-08-30).** `tools/trust.js` fetches the mock's certificate once the
+service answers — with verification off, necessarily, since the key is
+regenerated on every start and nothing that ran before it can have an anchor —
+and `run-report.js` hands every protocol job `NODE_EXTRA_CA_CERTS` and
+`STS_SPKI_PIN`. The second needed no new code at all: `vendored/browser_flags.js`
+has read that variable for months, because the parent project's stacks have been
+https for months.
+
+**The PEM is written into the run's own report directory**, so the certificate a
+run trusted sits beside that run's logs — when a job fails on a certificate the
+question is always *which* certificate. Everything that PROBES rather than
+tests — both launchers' `stsProbe`, `run-report.js`'s own wait,
+`tools/service.js`'s readiness loop, both compose healthchecks — asks with
+`rejectUnauthorized: false`, because the question there is whether the port
+answers and not whether it is trusted. **The JOBS get a real anchor**, which is
+what keeps an assertion about a certificate meaningful.
+
+**THE STACK'S OWN DECISIONS ARE ARGUED WHERE THEY LIVE**, not here: why the test
+stack is its own compose project on a free host port found at start (so a run
+can never take, or tear down, the `sts` container a plain `docker compose up`
+gives somebody), why it persists NOTHING, why the image is REBUILT every run,
+and why a stack that will not come up is a FAILED run rather than a quiet fall
+back to the host — all in `../local-run-tests.sh`'s header. The containerized
+runner's three — no published port at all, no postgres, and the tests image
+built from the SAME context behind `Dockerfile.dockerignore` — are in
+`../docker-compose-run-tests.yml` and `Dockerfile`, the latter with a guard that
+says so rather than failing later inside node.
 
 **THE TOOLING IS IN `tools/`, AND THAT IS THE ONE DECISION IN IT WORTH
 ARGUING.** `run.js` discovers a test as *any `.js` file in this directory that
@@ -372,14 +401,134 @@ Two rules that are not optional here:
 | `appconfig_persistence.js` | that a setting change reaches the store ON DISK, comes back the way the next start puts it back, and that a realm's settings and the process's are two different files |
 | `user_graph_permissions.js` | that a blue `reaches` line drawn from a TOKEN names the delegated permissions on it — both spellings a client may use, the `default permissions` fallback, the intersection that keeps `openid` off the label, and that a `reaches` line out of the delegation register says none of it |
 | `xacml_pep.js` | **phase five, and the only file here that spawns a CHILD PROCESS.** That the XACML engine loads in `xacml-pep/` against a thirty-line helpers shim with NOT ONE of this service's own modules in its `require.cache`, and reaches the same decision there as here on the same policy — which is what makes "the engine is a library with no I/O" a checked claim rather than a comment at the top of seven files. That the container's Dockerfile copies exactly the modules `engine.js` loads, in order, which is this repository's own version of the parent project's standing COPY-set obligation, enforced rather than remembered. That the two implementations of section 7.2 agree over seven decisions under both biases — **and that the two biases disagree somewhere**, so the agreement is a comparison rather than two functions that both say yes. Plus the sync token being a digest of what would be SENT (a policy edited and edited back gives the ORIGINAL token, where a modification stamp would not), and the register's four decisions that each prevent a wrong reading. **A child process rather than a require, and that is not a preference**: `engine.js` primes `require.cache` so the host run and the image run load the same shim, and `run.js` runs every file in ONE process — so a require here would hand that shim to `xacml_service.js` next |
+| `api_sessions.js` | **two claims.** First, that `ISSUANCE.SESSION` is asked at the FUNNEL — `startSession()` — and not at one door: it was asked only at this service's own sign-in screen while five other paths minted a session and never asked (a federated assertion, a SPNEGO ticket, a client certificate, a WS-Trust UsernameToken, the WebAuthn funnel), so an application narrowed to a role refused a password sign-in and admitted the same person through any of them. It pins that a refusal returns NULL and does not THROW — two callers wrap that call in a `try` that treats a failure as bookkeeping, so a thrown refusal would be swallowed and the session started anyway — that `gated: true` opts the one door that already asked out of being asked twice, and that a sign-in naming no application is allowed even when the decider refuses that very person, which is the existing rule and what keeps every caller unaffected. Mutation-tested against removing the gate and against throwing instead of returning null. Second, that the management API, SCIM and the SPIRE Server API sign in through **the one session store** — `authn.startSession()`, the same map browser sessions live in — with ONE ROW PER CREDENTIAL rather than one per request: twenty-six calls with the same fingerprint are one session, a different fingerprint is a different one, both appear in `logout.liveSessions()` and a global sign-out ends them through the same `terminate()`. **A register of their own was the obvious implementation and is what this file exists to prevent**: two answers to "is somebody signed in", with the wrong one being whichever surface a reader happened to look at (rule 3m). It also pins that one store does not mean one kind of ROW — an API session is drawn by its own surface, carries the fourth expiry rule (the only one extended by use) and reports calls rather than the relying parties a browser session carries — and, last so nothing above could pass by making every session an API session, that a browser session is exactly what it was |
+| `xacml_service_own.js` | that the two policies this service decides its OWN boundaries with — `role-issuance` at the nine issuance sites and `access-control` at the five gated surfaces — are reported by the console, in four states: no override (both BUILT IN and both deciding, which is why neither has ever been in the editor's chooser), an enabled override (the stored document wins), a disabled one (neither falls back), and deleted (the built-in returns). **It is in process because two of those states are reached by DISABLING the override**, and disabling `role-issuance` takes issuance policy out of the decision for the whole service — over HTTP that is a change every other job in the run would meet. It found the sixteenth defect in `xacml/CLAUDE.md`'s list: `accessPolicy()`'s `typeof repository.get === 'function'` guard was false on every call, so `xacml.accessPolicy` had never once been honoured. Mutation-tested against both spellings of it — the assertion that catches a condition nothing ever satisfies is the one about the state FLIPPING when an override is created, not one about any single value |
+| `access_policy.js` | that the XACML `access-control` policy makes OWNERSHIP a CONSTRAINT and not an alternative — a signed-in person reaches their own portal account and NOT somebody else's, for `manage-own` and for `read` separately, while the four ownerless surfaces go on behaving as plain RBAC. It exists for a regression: the policy was first written as three OR'd arms, "the resource requires nothing" was true for the portal (which narrows nobody), and it swallowed the owner comparison — so any signed-in person could reach any other person's account, with no error and no Indeterminate anywhere. `portal_access.js` stayed green throughout, because that file asserts the STRUCTURAL rule (the handler reads the identity from the session, never from the request) and this asserts what the POLICY decides once it has a trustworthy subject. Both halves are needed and neither implies the other. Mutation-tested against the OR spelling and against a wrong empty-owner reading |
+| `key_residency.js` | that a private key is decrypted while it signs and not the rest of the time: nothing decrypted after `start()` (the startup decrypt is a KEK check whose plaintext is thrown away), the public half — certificate, kid, every curve key's public JWK, which is what the JWKS endpoint walks — readable with nothing decrypted, and the three retention words doing three different things. `resident` is asserted BEFORE the two purging words, so a `report()` that always answered "nothing held" could not pass the file; the `timed` case uses the key at 700ms and checks it is still held at 1400ms, which is what separates an IDLE clock from an absolute one. Every residency check is paired with a real RS256 signature verified against the published public key, so a feature that quietly broke signing would fail here. Mutation-tested against a purge that forgets the parsed `KeyObject` and against arming the timer on decrypt rather than on use |
 | `worker_pool.js` | the four ways moving a computation into another process goes wrong: that a worker computes the SAME BYTES (literal equality for the nine deterministic algorithms; cross-verification for the three whose ECDSA half is randomized and must be), that the event loop is genuinely FREE while it does — counted in timer ticks, against an unpooled control that manages none — that a session's jobs go to one worker and unnamed ones spread, and that a SIGKILLed worker FAILS its jobs with a sentence rather than leaving a promise nobody settles. Plus `workers.count = 0` producing the same bytes here, and a realm being refused the setting at both ends |
 
+**`sts_portal_sessions.js` IS THE NEWEST OWNED JOB (2026-09-06)** and it covers
+three claims nothing else did over HTTP: that a sign-in at `/admin` and one at
+`/portal` each create a session `GET /admin-api/sessions` lists, named by the
+surface it came through; that a SIGNED-IN person reaching for somebody else's
+portal account gets their own; and that signing out INVALIDATES the session
+rather than merely tidying a list.
+
+Three things about it are worth keeping if it is reworked.
+
+**THE A01 CHECK IS THE AUDIT ROW AND NOT THE PAGE.** It posts a password change
+with somebody else's name in the body and then reads `GET /admin-api/audit` back
+for the actor. That was mutation-tested by making `/portal/password` read the
+username from the request — the classic broken-access-control bug — and **the
+page assertion still passed**: the response rendered the caller's own account
+while the WRITE went to the person they had named. A rendered page proves the
+page; only the audit row proves the write.
+
+**THE SIGN-OUT IS TWO ASSERTIONS.** The session leaves the register AND the
+cookie stops being accepted. A mutant that removed `sessions.delete(id)` was
+caught by the first; a sign-out that forgot the row and left the credential
+working would pass the first alone, which is why the second re-presents the same
+cookie at the door it was made at.
+
+**IT IS NOT A DUPLICATE OF `portal_access.js` OR `access_policy.js`.** Those two
+are in process and assert different layers — the credential layer (an id is
+looked up among the CALLER's own keys) and the policy layer (the XACML document
+denies a non-owner). Neither sends a request, so neither could see a handler
+that reads a name off the body. All three are needed and none implies another.
+
 **`vendored/` is not in that table either, and for the opposite reason: it is
-ALL tests.** Thirteen jobs and the twenty files they need, copied from the
-parent project, listed and argued in `tests/vendored/MANIFEST.js`. They are not
-described here one by one because they are not this repository's to describe —
-`docs/test-suite-map.md` over there is where each is written down, and a
-paragraph here would be a second copy of it that drifts.
+ALL tests** — nineteen jobs and the files they need, listed and argued in
+`tests/vendored/MANIFEST.js`. **It is split by OWNERSHIP and the table below is
+that split**, which is why the jobs are described here at all: the paragraph
+this replaced said they were "not this repository's to describe", and that was
+true while every one of them was a copy. TEN are this repository's own now, so
+`docs/test-suite-map.md` over there describes the parent's and this describes
+ours. For the copies the entry is deliberately short — that document is where
+each of those is written down, and a second full copy here would drift.
+
+Fourteen tests need only this service, and since 2026-08-28 they are OWNED by two
+different repositories — which is the first thing to know about the table below,
+because every one of them but the last ran from the parent's suite before that
+date. **TEN are this repository's own**: `sts_metadata.js`, `admin_api.js`,
+`sts_admin_api_operations.js` and `sts_admin_console.js`, deleted over there and
+kept here, because each asserts something about this service's `/admin` console
+or its `/admin-api` and the tree that adds a control is the tree that should
+fail when the control loses its operation — and
+`sts_delegated_permissions_example.js`, which was NEVER over there: it was
+written here on 2026-09-01 and it drives `/admin-api` to build something for
+`/admin` to draw — and `sts_consent.js`, written here the same day and here for
+a THIRD reason worth keeping apart from those two. Half of it is an ordinary
+protocol test and by the rule below belongs over there; the other half grants a
+GLOBAL CONSENT through `/admin-api/consent` and then watches a sign-in stop
+being asked, and the assertion that matters is that a console control changed
+what the AUTHORIZATION ENDPOINT does. A test with the grant in one repository
+and the sign-in in the other could not make it. **And `sts_xacml_endpoints.js`
+and `sts_xacml_editor.js`, written here on 2026-09-05, are here for that third
+reason and are the strongest case of it**: a PDP with an empty repository
+answers NotApplicable to everything, so there is no question worth asking
+`/xacml/pdp` until a policy exists, and the only way to put one there over HTTP
+is `/admin-api/xacml`. Every assertion in either file therefore spans a console
+door and a protocol door — a template built on `/admin-api` deciding at
+`/xacml/pdp`, a policy disabled on the console vanishing from what a remote PEP
+pulls, a rule built by pressing buttons on `/admin/xacml/editor` changing what
+`/xacml/protected` allows. **AND `sts_roles.js`, written here on 2026-09-05,
+which is that third reason at its widest**: a role is made on `/admin-api/roles`
+and an application is NARROWED on `/admin-api/applications`, and what that
+changes is what `/oauth2/token`, `/oauth2/authorize`, `/wstrust`, `/wsfed` and
+both SAML profiles answer. The assertion that matters is not that the register
+holds what was written — `tests/roles.js` makes that one in process — but that
+somebody is REFUSED at a protocol endpoint, in that protocol's own words, and
+that the person beside them is not. Neither half of that sentence is available
+to a repository holding only one of the two doors. **AND `sts_roles_builtin.js`,
+written here on 2026-09-05, is the tenth and is here for that same third
+reason**: it turns `authn.unauthenticatedSessions` on through `/admin-api`,
+presses a button on the sign-in screen, and then asks `/oauth2/authorize` and
+`/oauth2/token` what changed — and the thing it asserts is that a party the
+console can describe is refused at a protocol door in that protocol's own
+words. **The other four are still the parent's**, and this repository
+holds copies of three of them — `sts_persistence_postgres.js` is not vendored,
+because it needs docker.
+
+**Nineteen jobs run from `tests/vendored/`** — the fourteen below that a lone
+mock can satisfy, plus five others — so they run against this working tree with
+no parent checkout present. The paths in the first column are where each file is
+READ FROM here; for the four the parent still owns, that copy is not the source
+of truth. **The in-process pair `user_graph_permissions.js` and
+`app_permissions.js` is deliberately NOT repeated here** — it sat in this table
+while the table lived in the root `CLAUDE.md`, where the first table above was
+out of sight; both files have a row up there and a section of their own below,
+and carrying them twice is what made this table's own arithmetic wrong.
+
+| Test | What it covers |
+|---|---|
+| `tests/vendored/sts_metadata.js` **(ours)** | the `/admin/sts-metadata` drift checks — that the page lists exactly what the router registers, that every method reaches a handler, that every link resolves, and that no specification claim is idle |
+| `tests/vendored/admin_api.js` **(ours)** | the management API at `/admin-api`: its OpenAPI document, the PARITY it exists to keep — every `/admin` page and every action of its four handlers has an operation, read off this service's own answers rather than off a list in the test — every documented schema property checked against a live reply, and that a revocation made through the API is dead at `/oauth2/introspect`. It restores everything it changes, including the tokens its bulk revocations touched |
+| `tests/sts_dpop.js` | RFC 9449 end to end over HTTP: all twelve section 4.3 checks, the `cnf.jkt` binding on access and refresh tokens, `dpop_jkt`, `jti` replay, and the nonce handshake in both shapes. Almost entirely negatives, because a DPoP server that issues bound tokens and accepts good proofs looks finished and can be worth nothing |
+| `tests/oauth2_sts_endpoints.js` | every endpoint the RFC 8414 metadata advertises answers, and every token verifies against the advertised JWKS |
+| `tests/vc_did.js` | the DID-named issuer chain: advertisement → resolution → domain linkage → the key that actually verifies the credential |
+| `tests/vendored/sts_admin_api_operations.js` **(ours)** | **the other half of that API — EVERY operation it declares, driven for real, with a LEDGER that says so.** No count is written down in it, on purpose: it was ninety operations when the file was written and it is a hundred and thirty-one now (41 reads, 90 writes). Two things are asked of that ledger at the end of the run and both are about the FILE rather than the service — **every documented operation was driven**, or holds a row in `NOT_DRIVEN_HERE` naming who drives it instead (two rows, both the explorer, which `admin_api.js` owns along with its CSP), and **every write that succeeded was read back through the resource's own GET, in the scope it was written in**. Besides that: each documented example body replayed, so that a request property the document names and the handler does not read fails HERE rather than for the first caller who copies it; each handler's refusal sentence checked against the document both ways round (that sentence is what `admin_api.js` reads for the parity, so one short by an action turns the parity check off for it); every write read back through a DIFFERENT operation; and a configuration change followed as far as the persistence store's own write counters. Almost all of it in a trust realm it creates and removes |
+| `tests/vendored/sts_admin_console.js` **(ours)** | **the `/admin` console itself, IN A REAL BROWSER since 2026-08-28: the gate, all thirty-eight pages, every link, every GET form and every button on them — and the value that comes back afterwards.** It was an HTTP job, and the argument for that (this console has no script on it, so a control IS a form and pressing a button IS posting it) is still true; what it missed is that a hand-built submission is the TEST's reading of the markup rather than the browser's, that the twenty-two GET forms had no POST target to walk and so were never checked at all, that the nested-`<form>` guard is a PARSER question the old file had to reason about instead of asking, and that a notice is not a value. Status codes and headers come from **WebDriver BiDi**, because `default-src 'none'` blocks a `fetch()` from the page — the thing under test. Plus: every link really visited, which covers the seven routes with no nav row by construction; the five handlers nothing had ever pressed, `/admin/rbac`'s own grant and revoke among them; refusals split into what the BROWSER will not send and what the handler will not accept; the realm switcher; and the browser's own console, which on this console must be empty |
+| `tests/vendored/sts_delegated_permissions_example.js` **(ours)** | **THE DELEGATED PERMISSION REGISTER AS A RING, AND THE ONE JOB HERE THAT LEAVES ITS WORK BEHIND ON PURPOSE.** `abcapp1`–`abcapp5` in the DEFAULT realm, each declared for OAuth 2.0 and OpenID Connect with its supporting fields filled in, each exposing `read` and `write` under a base URI of its own, and each granted both on THE NEXT ONE ROUND — `abcapp1`→`abcapp2`→`abcapp3`→`abcapp4`→`abcapp5`→`abcapp1`: five resources, ten permissions, ten grants. **It was a complete mesh of forty grants until 2026-09-01** and the file argues the change rather than merely recording it: the mesh was the stronger test and the weaker EXAMPLE, and this job is both — forty lines between five boxes is the one graph shape that looks the same however it is drawn and however it is wrong, and this example exists to be LOOKED at. What survives is the assertion that matters: every grant still resolves to the RIGHT resource among five whose bases differ only in a digit, so a lookup matching on a prefix, a host or the bare name is wrong for four of the five pairs. What replaced the mesh's arithmetic is an EXACT-LIST assertion per entry — `abcapp2` holding `abcapp4`'s `read` would keep every count right and be wrong about the only thing the example says. Plus the two halves landing on the right ENTRIES (a grant written to the resource instead of the client reads correctly on `/permissions` and finds nothing at the token endpoint), the PICTURE — five boxes, ten lines, `may-reach` on every one and `acts` zero everywhere, because a configured grant has been exercised nought times and the renderer colours `acts && !issued` as a refusal — and the TOKEN, audienced to the one base URI of five that was asked for (its own successor, the only one it holds anything on), carrying the bare names on its scope claim, and moving exactly two of the ten grants to `asked`. It is IDEMPOTENT (the identifiers are fixed, so every previous `abcapp*` is forgotten first) and it does not tear down, because the example exists to be READ at `/admin/delegation/allowed`. **Since 2026-09-02 it also asserts the GROUPING** — that the five are ONE group and that nothing else in the default realm is in it, which are two different failures (a partition too fine, and one too coarse) that a service with only these five configured could not tell apart, and that all five applications resolve to it, since every one of them is both a client and a resource. What it deliberately does NOT assert is the direction decision: a ring is connected whichever way you walk it |
+| `tests/vendored/sts_consent.js` **(ours)** | **THE CONSENT SCREEN, AND THE OVERRIDE THAT MAKES IT NOT APPEAR.** Mostly negatives, for `sts_dpop.js`'s reason: a screen that draws, takes an Allow and hands over a code looks finished and can be worth nothing. What it asserts is that a GET of the screen records NOTHING (or anything that prefetches a link has consented for somebody), that a consent id is spendable ONCE, that a consent asked of one person cannot be drawn OR answered by another's session and that every one of those refusals leaves the pending record answerable by the person it belongs to, that Deny records nothing and the refused scope is asked again, that a second request is silent and a new scope asks about ITSELF ALONE, that `prompt=none` answers `consent_required` and `prompt=consent` asks again without destroying what was already agreed. **And the half that is not drivable from the parent's suite and is why this file is here**: a delegated permission consented globally on an application's entry stops a person who has never been here being asked — with NOTHING written about them — while a second application asking for the same permission is still asked, and removing the override asks everybody again including the people it was covering |
+| `tests/vendored/sts_xacml_endpoints.js` **(ours)** | **THE SEVEN `/xacml` ENDPOINTS, IN A THROWAWAY TRUST REALM.** Until it existed every route in `xacml/xacml.js` was uncovered — the in-process XACML suite holds the ENGINE to 455 OASIS cases and makes not one HTTP request. What is here is the surface in front of it: a template built on `/admin-api` deciding at `POST /xacml/pdp` against an attribute the request never carried; four malformed requests refused **400 and never Indeterminate**, which is the distinction a PEP most needs, since an Indeterminate would be enforced by its bias; the embedded PEP's two biases disagreeing on the one answer they are supposed to disagree on (NotApplicable, reachable only in a realm whose repository is empty); an obligation this PEP cannot discharge turning a Permit into a refusal and the SAME Permit standing once it is renamed to the one it knows; a remote PEP's pull, its ETag, its 304, and a disabled policy reaching nobody; **a registration named from the client CERTIFICATE and never from the body**, on the registration and on the heartbeat alike, which is the one defect in this family that would be a security bug; a PEP an administrator disabled staying disabled when it reconnects; a policy save that does not wait on an unreachable PEP; and both off-switches answering 501 in the realm while the default realm goes on answering. Mutation-tested against six mutants |
+| `tests/vendored/sts_xacml_editor.js` **(ours)** | **THE GUIDED POLICY EDITOR, IN A REAL BROWSER.** `tests/xacml_pap.js` holds the editor's GRAMMAR in process; what it cannot see is whether any of it reaches a page — forty forms in one table, a hidden `path` per row, an `action` that is sometimes hidden and sometimes a `<select>`, and a nested-`<form>` hazard that is a parser question rather than a taste one. So this presses buttons: every row's menu equals the grammar's own answer for that row and Remove is drawn exactly where something may be removed; a Match offers no Add menu and its function list is the two-argument boolean predicates rather than the library; a rule stops offering a second Condition once it has one; an edit that would leave the policy invalid is refused, explained, and **the stored document is byte-for-byte what it was**, which is the property that makes a live editor tolerable. **And the assertion the file is for**: a rule built out of four form submissions makes `/xacml/protected` permit somebody it refused, alternatives are shown to be ORed and matches ANDed by watching that decision move, and removing the rule on the page brings the refusal back. It found one defect on its first run — every refusal on the three `/admin/xacml` pages redirected with an EMPTY `error=` — and was mutation-tested against four more |
+| `tests/vendored/sts_roles.js` **(ours)** | **ROLES, AND THE NINE KINDS OF ISSUANCE THEY REFUSE PEOPLE AT.** In a throwaway trust realm, because this feature REFUSES people: a job that narrowed an application in the default realm and died before clearing it would leave every later job in the run signing in to a service that turned them away, and the failure would name the wrong file. Mostly negatives, for `sts_dpop.js`'s reason — a service that issues a token to somebody who holds the role is what an unmodified service does for everybody. What it asserts: the roles claim reaching a client; a narrowed application refusing at the token endpoint in **OAuth's own words** (`access_denied`, read as the error CODE rather than as a 400, because the two are a working gate and a broken handler); the person beside them not refused; a GROUP and an APPLICATION holding a role, which is the half `client_credentials` needs since there is no person in that grant at all; the six built-in roles never appearing in the claim; WS-Trust's optional AppliesTo; and `roles.enforceIssuance` off putting everything back. Mutation-tested against eight mutants |
+| `tests/vendored/sts_roles_builtin.js` **(ours)** | **THE SIX BUILT-IN ROLES, ONE SECTION EACH, POSITIVE AND NEGATIVE.** `sts_roles.js` above drives the register and every role it uses is CONFIGURED; these six are computed from what the party IS, and three of them could not be held or failed by anything arriving at an endpoint until the day this was written. **EVERYBODY is the one with no negative case** — its `holds()` is `return true`, so it refuses nobody — and the file asserts that rather than leaving the gap to be noticed, by checking the catalogue still calls it the DEFAULT requirement. The other five are asserted both ways, at BOTH doors: the sign-in screen, which refuses with the page again and the reason on it, and the authorization endpoint, reached by making the session at the permissive application and carrying it to the strict one, which is the only way to see the second gate at all. Plus the unauthenticated session itself — that declining returns to the caller rather than answering `access_denied` like Cancel, that it is the stable `anonymous` principal on a real session id, that a signed-in session is NOT in that list, and that the setting is honoured at the DOOR and not only on the page. Section 6 asserts `oauth2.rfc9700` is OFF before it asserts anything else, because the claim there is that client authentication is OBSERVED without being ENFORCED. **It found the bug that made `ALL_AUTHENTICATED_USERS` refuse everybody.** Mutation-tested against seven mutants, none of which survived |
+| `tests/sts_persistence_postgres.js` | **`persistence.mode=postgres`, and the only test anywhere that RESTARTS this service.** It starts its own database and its own mock, so it touches the shared one not at all. What survives — the realm registry with each realm's overrides, the directory in both realms, the appconfig overrides with their source — and, just as much, **what must not**: the signing key is regenerated, so the `kid` differs and a token minted before the restart is dead at introspection. Plus the two claims nothing else could check: that two processes on one database do NOT see each other's writes (`coordinates: false`, demonstrated rather than read back), and that a database that is not there leaves this service RUNNING out of its seeded directory. Skips, naming which, without docker or without a complete checkout to run |
+
+They are plain node scripts using `assert` and `bunyan`, and they take
+`WSTRUST_STS_URL` / `OID4VCI_ISSUER_URL` to locate the service. **All but two
+are driven over HTTP with no browser; `sts_admin_console.js` and
+`sts_xacml_editor.js` are the exceptions** and the first has been a Selenium job
+since 2026-08-28 — the reasoning is in
+its own header and in `docs/test-suite-map.md` over there, and the short version
+is that a console whose every control is a form is exactly the case where the
+BROWSER is the independent implementation of what a form submits.
+`sts_dpop.js` writes its **own** DPoP client rather than importing the wallet's, on
+purpose: if both sides of the exchange came from one implementation, a shared
+misunderstanding would make the test pass and interoperate with nobody. Keep that
+property when porting.
+
 
 `tools/` is not in that table because nothing in it is a test:
 `run-report.js` (the report generator), `coverage-report.js` (the V8 coverage
@@ -884,6 +1033,23 @@ the override AND by the person's own answer must report as the person's,
 because that is the fact that survives the override being taken away. Reporting
 it the other way round would make `revoke-global-consent` look as though it had
 started asking people who had already agreed.
+
+## RESTORE A SETTING WITH `reset`, NOT BY WRITING THE OLD VALUE BACK
+
+A job that changes an appconfig setting must put it back through
+`POST /admin-api/config/reset`, not with a second `set` carrying the value it
+read first. **The two do not leave the same state.** A `set` leaves the row
+reading `source: override` even when the value is identical to the default, and
+`vendored/admin_api.js` asserts that a row nobody has overridden does not say
+that — so restoring by writing back passes in the job that did it and fails the
+next job in the run, naming a setting that file never touched.
+
+This is the same shape as the slot rule below and the throwaway-realm rule
+above: **this service holds everything in memory and never restarts between
+jobs**, so anything a job leaves behind is another job's starting state. It is
+also why the counters those jobs assert are read as DELTAS rather than as
+absolute numbers — a test that only passes when it runs first is a test that has
+to be scheduled.
 
 ## RESTORE THE SLOT YOU STUBBED — WITH WHAT WAS THERE, NOT WITH `null`
 

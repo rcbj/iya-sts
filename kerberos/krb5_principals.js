@@ -44,6 +44,10 @@ const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// The mode. A LEAF (rule 3) that registers nothing and requires only `config`,
+// which this module already requires — so it can neither move a route nor
+// close a cycle.
+const mode = require('../common/mode');
 
 const REALM = config.value('krb5.realm');
 const DOMAIN = REALM.toLowerCase();
@@ -830,6 +834,21 @@ function findOrCreateUser(nameComponents, realm) {
     log.debug('Leaving findOrCreateUser(). ' + inRealm + ' is not a realm this KDC serves.');
     return null;
   }
+  // PRODUCT MODE CREATES NOBODY (2026-09-06). An AS-REQ naming a principal
+  // this KDC has never heard of is answered KDC_ERR_C_PRINCIPAL_UNKNOWN, which
+  // is what a real KDC does and what makes the principal database a statement
+  // about the deployment rather than a log of every name anybody has tried.
+  //
+  // It is checked HERE and not at the caller for the reason every predicate in
+  // common/mode.js is centralised: this function has four callers and a
+  // check at each is three chances to forget.
+  if (!mode.autoCreates()) {
+    log.info('krb5: product mode, so ' + (nameComponents || []).join('/') +
+             '@' + inRealm + ' was NOT created on demand. Principals must be ' +
+             'provisioned ahead of time.');
+    log.debug('Leaving findOrCreateUser(). Product mode creates nobody.');
+    return null;
+  }
   if (!nameComponents || nameComponents.length !== 1 || !nameComponents[0]) {
     log.debug('Leaving findOrCreateUser(). ' + (nameComponents || []).join('/') +
       ' is service-shaped, and services are not created on demand.');
@@ -886,6 +905,16 @@ function findOrCreateService(nameComponents, realm) {
   }
   if (realmsServed().indexOf(inRealm) === -1) {
     log.debug('Leaving findOrCreateService(). ' + inRealm + ' is not served here.');
+    return null;
+  }
+  // PRODUCT MODE CREATES NOTHING (2026-09-06) — see findOrCreateUser(). A
+  // service principal invented on demand is how a TGS-REQ for any name at all
+  // gets a ticket, which is exactly the mock behaviour product mode removes.
+  if (!mode.autoCreates()) {
+    log.info('krb5: product mode, so the service principal ' +
+             (nameComponents || []).join('/') + '@' + inRealm + ' was NOT ' +
+             'created on demand.');
+    log.debug('Leaving findOrCreateService(). Product mode creates nothing.');
     return null;
   }
   if (!nameComponents || nameComponents.length < 2 ||

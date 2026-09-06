@@ -114,7 +114,6 @@ var config = {
   // process and nothing here has a password to bootstrap with. /admin-api is
   // NOT gated either way, which is the way back in.
   admin: {
-    authRequired: true,
     readGroup: "admin-read",
     writeGroup: "admin-write",
     openWhenEmpty: true
@@ -255,7 +254,6 @@ var config = {
     // works over Basic, any username works over Digest with the shared
     // password below, and anybody may register a HOBA key. Turn authRequired
     // off to get the unauthenticated behaviour these endpoints used to have.
-    authRequired: true,
     authDiscovery: false,
     authRealm: "SCIM",
     scopeRead: "scim:read",
@@ -346,7 +344,6 @@ var config = {
     // Refuse a Workload API call with no workload.spiffe.io: true header, as every conforming implementation does.
     requireSecurityHeader: true,
     // Mutual TLS and SPIRE's own per-method authorization on the SPIRE Server API's TCP port. Restart-only: it decides how the socket is bound.
-    authRequired: true,
     // Trust a caller on the SPIRE Server API's Unix socket as the `local` entity, the way a real spire-server trusts its private socket.
     trustLocalSocket: true,
     // SPIFFE IDs that are administrators of the SPIRE Server API, comma-separated. SPIRE's admin_ids; no registration entry needed.

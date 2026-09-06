@@ -109,6 +109,248 @@ const stats = require('../common/admin_stats');
 // family that call would refuse.
 const applications = require('../common/applications');
 const spec = require('./admin_api_spec');
+
+// ---------------------------------------------------------------------------
+// THE DOCUMENT IS THE VALIDATOR (2026-09-06).
+//
+// Every action in the table below already carries a `requestBody` — a real
+// JSON Schema with `properties`, `required` and `additionalProperties: false`
+// — and `admin_api_spec.js` publishes it verbatim in the OpenAPI document.
+// **Until now nothing checked a request against it.** The document described
+// what to POST and the handlers read whatever arrived, so the two could
+// disagree for as long as anybody liked and the only way to find out was to
+// read both.
+//
+// ajv compiles THE SAME OBJECT the document publishes. Not a copy of it, not a
+// second description of it in another notation — the identical value, reached
+// through the identical table — which is what makes "the document is accurate"
+// a property of the code rather than a claim somebody has to re-check. That is
+// the same argument `sts_metadata.js` makes about the router and
+// `crypto_metadata.js` makes about the algorithm tables, applied to request
+// bodies.
+//
+// **WHY ajv HERE AND zod EVERYWHERE ELSE.** `common/validation.js` is zod
+// because a protocol endpoint's rules are written in prose in an RFC and have
+// to be expressed somewhere. This surface is the opposite case: the rules are
+// ALREADY written down, as JSON Schema, because the document has to publish
+// them. A zod schema here would be a second spelling of an existing artefact —
+// the "one copy of each fact" rule, broken on purpose, in the one place the
+// fact is already machine-readable.
+//
+// `strict: false` because these are OpenAPI schemas: they carry `examples` and
+// `description` members that ajv's strict mode reports as unknown keywords.
+// `allErrors` so a caller fixing a body sees everything wrong with it at once
+// — the opposite of `common/validation.js`'s first-issue-only rule, and for a
+// reason: this is a developer with a document open, not a browser mid-sign-in.
+// ---------------------------------------------------------------------------
+const Ajv = require('ajv');
+const addFormats = require('ajv-formats');
+
+const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false });
+addFormats(ajv);
+
+// ---------------------------------------------------------------------------
+// THE COMPONENTS THE DOCUMENT DEFINES, SO A `$ref` INTO THEM RESOLVES.
+//
+// Three request schemas here refer to a shared definition rather than
+// repeating it — `replaceClaims`, `replaceUserInfoClaims` and
+// `replaceSamlAttributes` all take a list of `#/components/schemas/ClaimEntry`,
+// which is exactly the reuse the components section exists for.
+//
+// **A JSON POINTER STARTING `#/` IS RESOLVED AGAINST THE ROOT OF THE SCHEMA
+// BEING COMPILED**, and a `requestBody` compiled on its own is its own root —
+// so the pointer looks for `components` INSIDE the request body and finds
+// nothing. The first version of this registered the components as a separate
+// schema under `$id: '#'` and it made no difference for exactly that reason.
+//
+// So each schema is compiled wrapped in a root that carries the components
+// beside it. `components` is not a JSON Schema keyword and ajv ignores it under
+// `strict: false` — what it is there for is to be POINTED AT. Nothing about the
+// published document changes: `admin_api_spec.js` still emits `requestBody`
+// verbatim, and this wrapper exists only for the length of the compile.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// **WHAT IS ENFORCED IS STRUCTURE. `required` AND `enum` ARE STRIPPED FROM THE
+// COMPILED COPY AND KEPT IN THE DOCUMENT.**
+//
+// The rule is the one this file rests on: *the validator adds the checks
+// nothing else makes, and never duplicates a check the handler already makes
+// better.* Two of the four JSON Schema assertions here fall on each side, and
+// the suite decided it rather than taste.
+//
+// ENFORCED, because nothing else in this service checks them:
+//
+//   * `additionalProperties: false` — a member the operation does not define.
+//     This is the one that catches the silently ignored field, which is the
+//     failure a passing test cannot see. It found four in this repository's own
+//     suite on the day it was written: `acs` and `binding` on the SAML 2.0
+//     resource, `target` on SAML 1.1, and a `name` that should have been
+//     `label` on the authorization-server create — every one of them a member
+//     the handler never read and the job asserted nothing about.
+//   * `type` — a number or an array where a string belongs.
+//
+// NOT ENFORCED, because a handler already answers them and says more:
+//
+//   * `enum` — `applicationsAction()` refuses an unknown kind by NAMING the
+//     kinds and COUNTING them, and `sts_admin_api_operations.js` asserts all
+//     three properties, because that list and the one
+//     `GET /applications/new` publishes are one table read through two doors.
+//   * `required` — `logoutAction()` answers a sign-out with no identity with
+//     *Name the identity ... in `user`*, and the same job asserts that wording
+//     SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
+//
+// In both cases ajv runs first, so enforcing would replace a sentence a caller
+// can act on with "must be equal to one of the allowed values" — and switch off
+// an assertion in the same stroke. That is the opposite of the point.
+//
+// **Both stay in the published document**, where they are exactly right:
+// documentation of the valid set and the mandatory members. What this decides
+// is only WHICH LAYER refuses, and the answer is the layer that can explain
+// itself. Stripped recursively, because these schemas nest — an array's `items`
+// and a `$ref`'d `ClaimEntry` each carry their own.
+// ---------------------------------------------------------------------------
+const NOT_ENFORCED_HERE = ['enum', 'required'];
+
+function structureOnly(node) {
+  if (Array.isArray(node)) {
+    return node.map(structureOnly);
+  }
+  if (!node || typeof node !== 'object') {
+    return node;
+  }
+  const out = {};
+  Object.keys(node).forEach(function (key) {
+    if (NOT_ENFORCED_HERE.indexOf(key) >= 0) {
+      return;
+    }
+    out[key] = structureOnly(node[key]);
+  });
+  return out;
+}
+
+function compilable(schema) {
+  return Object.assign({}, structureOnly(schema),
+                       { components: { schemas: structureOnly(spec.SCHEMAS) } });
+}
+
+// Compiled once at require time, keyed by the operation the request will reach.
+// A schema that will not compile is a MAINTAINER's mistake rather than a
+// caller's, so it is logged loudly and that operation is left unvalidated
+// rather than taking the whole service down at require time — the same
+// judgement `ldap_server.js` makes about a listener that will not bind.
+const validators = new Map();
+
+function validatorKeyOf(route, action) {
+  return route + '\u0000' + (action || '');
+}
+
+function compileRequestSchemas() {
+  log.debug("Entering compileRequestSchemas().");
+  let built = 0;
+  ROUTES.forEach(function (entry) {
+    const route = entry.route || entry.path;
+    const rows = entry.actions || [];
+    rows.forEach(function (action) {
+      if (!action.requestBody) {
+        return;
+      }
+      try {
+        validators.set(validatorKeyOf(route, action.action),
+                       ajv.compile(compilable(action.requestBody)));
+        built = built + 1;
+      } catch (e) {
+        // A schema this repository wrote that ajv will not compile. Logged by
+        // operation so it names the row to fix; the operation goes on working
+        // unvalidated, because a management API that would not start is worse
+        // than one operation whose body is unchecked.
+        log.error('admin-api: the request schema for ' + action.operationId +
+                  ' would not compile and that operation is unvalidated: ' +
+                  e.message);
+      }
+    });
+    if (entry.requestBody) {
+      try {
+        validators.set(validatorKeyOf(route, ''), ajv.compile(compilable(entry.requestBody)));
+        built = built + 1;
+      } catch (e) {
+        log.error('admin-api: the request schema for ' + (entry.operationId || route) +
+                  ' would not compile and that operation is unvalidated: ' +
+                  e.message);
+      }
+    }
+  });
+  log.debug("Leaving compileRequestSchemas(). " + built + " validator(s).");
+  return built;
+}
+
+// ---------------------------------------------------------------------------
+// Turn ajv's errors into the `{ ok: false, errors: [...] }` shape every refusal
+// on this API already uses, so a caller parses one thing.
+//
+// `instancePath` is a JSON Pointer (`/redirect_uris/0`); the leading slash is
+// dropped and the rest is written with dots, because a caller is reading it
+// beside a body they typed rather than resolving a pointer.
+// ---------------------------------------------------------------------------
+function errorsFromAjv(errors) {
+  log.debug("Entering errorsFromAjv().");
+  const out = (errors || []).map(function (e) {
+    const where = String(e.instancePath || '').replace(/^\//, '').replace(/\//g, '.');
+    const missing = e.params && e.params.missingProperty;
+    const extra = e.params && e.params.additionalProperty;
+    if (missing) {
+      return '"' + missing + '" is required.';
+    }
+    if (extra) {
+      return '"' + extra + '" is not a member of this request. The operation\'s ' +
+             'schema in the OpenAPI document lists what is.';
+    }
+    return (where ? '"' + where + '" ' : 'the request ') + e.message + '.';
+  });
+  log.debug("Leaving errorsFromAjv(). " + out.length + " message(s).");
+  return out.length ? out : ['The request body did not match this operation\'s schema.'];
+}
+
+// ---------------------------------------------------------------------------
+// The check itself, run before a handler sees the request.
+//
+// **`action` IS REMOVED BEFORE VALIDATING, and that is not a loophole.** Every
+// action resource here is `/<resource>/:action`, so the action is a PATH
+// segment and the schemas describe the body WITHOUT it — they carry
+// `additionalProperties: false`, so leaving it in would refuse every request on
+// this API. A caller that also puts `action` in the body is ignored exactly as
+// it was before: `withAction()` takes the path parameter and overwrites.
+// ---------------------------------------------------------------------------
+function checkRequestBody(req) {
+  log.debug("Entering checkRequestBody().");
+  const route = req.__adminApiRoute || '';
+  const action = String((req.params && req.params.action) || '');
+  if (req.__adminApiHandlerOwnsBody) {
+    // A NARROW DOOR: the handler validates the WHOLE body and refuses an
+    // unknown member by naming the ones it accepts. See `handlerOwnsBody` on
+    // the route table.
+    log.debug("Leaving checkRequestBody(). The handler owns this body.");
+    return { ok: true };
+  }
+  const validate = validators.get(validatorKeyOf(route, action)) ||
+                   validators.get(validatorKeyOf(route, ''));
+  if (!validate) {
+    // No schema for this operation — a GET, an unknown action the handler is
+    // about to refuse by name, or a row that carries none. Not this function's
+    // business to invent one.
+    log.debug("Leaving checkRequestBody(). No schema for this operation.");
+    return { ok: true };
+  }
+  const body = parseBody(req);
+  const subject = Object.assign({}, body);
+  delete subject.action;
+  if (validate(subject)) {
+    log.debug("Leaving checkRequestBody(). Accepted.");
+    return { ok: true };
+  }
+  log.debug("Leaving checkRequestBody(). Refused with " +
+            (validate.errors || []).length + " error(s).");
+  return { ok: false, errors: errorsFromAjv(validate.errors) };
+}
 const docs = require('./admin_api_docs');
 // The trust realm this call arrived in — for the explorer, which is the one
 // page in this service that builds its URLs in a script and therefore cannot
@@ -117,6 +359,12 @@ const realms = require('../common/realms');
 const VERSION = require('../package.json').version;
 
 const BASE = '/admin-api';
+// THE ACCESS GATE, armed by `xacml/xacml_access_pep.js` at 23c. A LEAF
+// (rule 3): with no decider installed `check()` answers "allowed", so a
+// process without the XACML family behaves exactly as this file did before.
+const accessGate = require('../common/access_gate');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 
 // Every reply here is JSON, is never cached, and is pretty-printed. The last of
 // those is not decoration: the caller of a mock's admin API is usually a person
@@ -1162,6 +1410,42 @@ const ROUTES = [
       log.debug("Leaving the management API users action endpoint.");
     },
     actions: [
+      { action: 'issue-activation', operationId: 'issueActivationLink',
+        summary: 'Issue a one-time activation link for a provisioned person',
+        description: 'How somebody created through POST /admin-api/users/create, ' +
+                     'SCIM or an LDAP add comes to have a way in. They are ' +
+                     'provisioned with no credential; this mints a single-use, ' +
+                     'time-limited URL at which they choose a password, a ' +
+                     'security key, or both.\n\n**THE URL IS RETURNED ONCE ' +
+                     'AND NEVER AGAIN.** What is stored is a scrypt hash, so ' +
+                     'this service cannot produce it a second time — only ' +
+                     'replace it, which is what calling this again does. Treat ' +
+                     'it as the credential it is: anybody holding it can ' +
+                     'complete the account setup, so a leaked link is an ' +
+                     'account takeover.\n\nIt expires after ' +
+                     '`security.activationTtlMinutes` and is spent the moment ' +
+                     'the setup FINISHES — not when the link is opened, ' +
+                     'because a link burned by a mail scanner or a browser ' +
+                     'prefetch would strand the person it was for.\n\nThere ' +
+                     'is deliberately no self-service version: with no mail ' +
+                     'channel here it would have to show the link on screen, ' +
+                     'which is an account takeover with a username as the ' +
+                     'only input.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description: 'The person, as /admin-api/users names them. ' +
+                                 'They must already exist.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The activation URL, ONCE, and when it expires.' },
+
       { action: 'create', operationId: 'createUser',
         summary: 'Put a person in the directory before they authenticate',
         description: 'An entry under `ou=users` usually appears because ' +
@@ -2024,14 +2308,28 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
     operationId: 'getIssued',
-    summary: 'Everything issued: JWTs, SAML assertions and Kerberos tickets',
+    summary: 'Everything issued, grouped into what came back in one reply',
     description: 'One list, newest first, filtered and paged. Claims and ' +
                  'facts only — the signed token, the assertion XML and the ' +
                  'ticket are never kept, and the `jti` is all any operation ' +
-                 'here needs.\n\nOID4VCI credentials are NOT in this list. ' +
-                 'They are counted on /admin-api/metrics and listed nowhere, ' +
-                 'which is a gap rather than a principle and is said here so ' +
-                 '"everything issued" is read as the three families it says.',
+                 'here needs.\n\n**AN ENTRY IS ONE ISSUANCE AND NOT ONE ' +
+                 'CREDENTIAL, since 2026-09-05.** OAuth 2.0 and OIDC are the ' +
+                 'only families here that hand back several credentials at ' +
+                 'once — an access token, a refresh token and an ID Token ' +
+                 'out of one code redemption — so those arrive as one entry ' +
+                 'in `sets` carrying its `members`. Every other family ' +
+                 'issues one credential per act, so a SAML assertion, a ' +
+                 'Kerberos ticket and an SVID are each a set of one.\n\n' +
+                 '`issued` is the same credentials flattened out of `sets`, ' +
+                 'so a caller written against the older per-credential shape ' +
+                 'reads exactly what it read. What changed under it is the ' +
+                 'paging: a page is a whole number of replies, so `page`, ' +
+                 '`pages`, `matched` and `shown` count SETS while `held` and ' +
+                 '`matchedCredentials` count credentials.\n\nOID4VCI ' +
+                 'credentials are NOT in this list. They are counted on ' +
+                 '/admin-api/metrics and listed nowhere, which is a gap ' +
+                 'rather than a principle and is said here so "everything ' +
+                 'issued" is read as the four families it says.',
     mirrors: 'GET /admin/tokens',
     parameters: [
       { name: 'family', in: 'query', required: false,
@@ -2041,12 +2339,23 @@ const ROUTES = [
       { name: 'kind', in: 'query', required: false, schema: { type: 'string' },
         description: 'One kind. ANDed with `family`, so a kind from another ' +
                      'family matches nothing — which is what an empty list ' +
-                     'then means.' },
+                     'then means.\n\n**EVERY FILTER HERE MATCHES A SET WHEN ' +
+                     'ANY MEMBER MATCHES.** Asking for `id_token` answers ' +
+                     'with the replies that CONTAIN one — the access token ' +
+                     'and the refresh token that came back with it are still ' +
+                     'in `members`, because they are part of the same reply. ' +
+                     'A caller that wants only the matching credentials ' +
+                     'filters `issued` itself; a filter that hid the ' +
+                     'neighbours would be the old per-credential list ' +
+                     'wearing this one\'s name.' },
       { name: 'state', in: 'query', required: false,
         schema: { type: 'string',
                   enum: ['valid', 'expired', 'revoked', 'not yet valid',
                          'no expiry stated'] },
-        description: 'One state.' },
+        description: 'One state, matched against any member — so a set ' +
+                     'holding an expired access token and a valid refresh ' +
+                     'token is found by both, and its own `state` reads ' +
+                     '`mixed` rather than picking one.' },
       { name: 'session', in: 'query', required: false,
         schema: { type: 'string' },
         description: 'Only what was issued UNDER one browser sign-on ' +
@@ -2059,12 +2368,42 @@ const ROUTES = [
                      'construction rather than missing. That is a fact about ' +
                      'the credential and not a gap in the recording.' }
     ].concat(pagingParameters()),
-    responseDescription: 'The matching rows, with the paging that found them.',
+    responseDescription: 'The matching sets, with the paging that found them ' +
+                         'and their credentials flattened beside them.',
     responseSchema: { $ref: '#/components/schemas/IssuedList' },
     handler: function (req, res) {
       log.debug("Entering the management API issued-list endpoint.");
       sendJson(res, 200, admin.tokensView(req.query).json);
       log.debug("Leaving the management API issued-list endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/tokens/set', tag: 'Tokens',
+    operationId: 'getIssuedSet',
+    summary: 'One issuance, and every credential it carried',
+    description: 'What `GET /admin-api/tokens` groups, opened up. Every entry ' +
+                 'in that reply\'s `sets` carries the `setKey` this takes, ' +
+                 'so a caller walks the list and opens one entry without ' +
+                 'having to know whether it holds three credentials or ' +
+                 'one.\n\nIt is addressed by `setKey` and never by the ' +
+                 'issuer\'s `setId`: a set of one has no issuance id at all, ' +
+                 'and its key is `one:<row handle>` so that the key space ' +
+                 'covers every row of that table. A key nothing holds ' +
+                 'answers 200 with `found: false` rather than 404 — a set ' +
+                 'dropped to the registry\'s cap is the ordinary end of a ' +
+                 'set\'s life and not a caller\'s mistake, and `why` says ' +
+                 'which of the two happened.',
+    mirrors: 'GET /admin/tokens/set',
+    parameters: [
+      { name: 'id', in: 'query', required: true, schema: { type: 'string' },
+        description: 'The `setKey` off a row of GET /admin-api/tokens.' }
+    ],
+    responseDescription: 'The set and its members, or `found: false` and the ' +
+                         'reason.',
+    responseSchema: { $ref: '#/components/schemas/IssuedSetDetail' },
+    handler: function (req, res) {
+      log.debug("Entering the management API issued-set endpoint.");
+      sendJson(res, 200, admin.tokenSetView(req.query).json);
+      log.debug("Leaving the management API issued-set endpoint.");
     } },
 
   { method: 'POST', route: BASE + '/tokens/:action', tag: 'Tokens',
@@ -2126,6 +2465,139 @@ const ROUTES = [
         },
         responseDescription: 'Restored, or it was not revoked — both are ' +
                              '`ok`.' },
+
+      { action: 'revoke-artifact', operationId: 'revokeIssuedArtifact',
+        summary: 'Disown one assertion, ticket or SVID (RECORD ONLY)',
+        description: '**THIS CHANGES NOTHING OUTSIDE THIS SERVICE AND THAT IS ' +
+                     'NOT A DEFECT.** A relying party validates a SAML ' +
+                     'assertion\'s signature and its Conditions and asks ' +
+                     'nobody; a Kerberos service decrypts a ticket with a key ' +
+                     'it already holds; an X509-SVID chains to a bundle. None ' +
+                     'of them will ever consult this service, so the ' +
+                     'credential goes on working until it expires and the ' +
+                     'holder is not told.\n\nWhat it does is record that ' +
+                     'THIS IDENTITY PROVIDER HAS DISOWNED the credential, ' +
+                     'which is a different claim and a useful one: it is what ' +
+                     'a global sign-out can report, what CAEP transmits to a ' +
+                     'receiver that subscribed, and what SAML Single Logout ' +
+                     'carries for an assertion issued through a browser ' +
+                     'profile. A WS-Trust assertion has neither channel and ' +
+                     'the mark is the whole of what exists for it.\n\nUntil ' +
+                     '2026-09-05 this was impossible and every surface said ' +
+                     'so. What changed is the recognition that what this ' +
+                     'service KNOWS and what a relying party will HONOUR are ' +
+                     'two claims, and only the second was ever out of reach. ' +
+                     'Every row of GET /admin-api/tokens carries ' +
+                     '`revocationReach` to keep them apart.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            artifact: { type: 'string',
+                        description: 'The `key` off a row of ' +
+                                     'GET /admin-api/tokens. This service\'s ' +
+                                     'own handle and NOT the protocol\'s — a ' +
+                                     'Kerberos ticket carries no identifier ' +
+                                     'anybody can quote, so `identifier` ' +
+                                     'cannot address every row and this can.' },
+            key: { type: 'string', description: 'Accepted for `artifact`.' }
+          },
+          required: ['artifact'],
+          examples: [{ artifact: 'artifact-12' }],
+          additionalProperties: false
+        },
+        responseDescription: 'What was marked, and a sentence saying the ' +
+                             'holder was not told.' },
+
+      { action: 'restore-artifact', operationId: 'restoreIssuedArtifact',
+        summary: 'Stop disowning one assertion, ticket or SVID (NON-SPEC)',
+        description: 'The opposite of `revoke-artifact`, and NON-SPEC for the ' +
+                     'reason every restore here is. It is a smaller act than ' +
+                     'the others, because what it takes back never reached ' +
+                     'anybody: the credential was working throughout.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            artifact: { type: 'string',
+                        description: 'The `key` off a row of ' +
+                                     'GET /admin-api/tokens.' },
+            key: { type: 'string', description: 'Accepted for `artifact`.' }
+          },
+          required: ['artifact'],
+          examples: [{ artifact: 'artifact-12' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether it had been disowned.' },
+
+      { action: 'revoke-set', operationId: 'revokeIssuedSet',
+        summary: 'Revoke every revocable credential in one issuance',
+        description: 'One act instead of one call per credential. It writes ' +
+                     'NOWHERE NEW: each member goes through the same ' +
+                     'revocation `/oauth2/revoke` performs, one at a time, ' +
+                     'into the same set of revoked `jti`s — so a token ' +
+                     'revoked here immediately introspects as inactive, is ' +
+                     'refused by UserInfo with `invalid_token`, and fails ' +
+                     'the refresh grant with `invalid_grant`.\n\nWhat it ' +
+                     'saves is the mistake this whole resource was reshaped ' +
+                     'to prevent: revoking two credentials of three and ' +
+                     'believing the grant is dead, when the refresh token ' +
+                     'left behind mints a new access token on request.\n\n' +
+                     'THE MEMBERS ARE RE-READ AT THE MOMENT OF THE CALL and ' +
+                     'never taken from the caller — the body carries a ' +
+                     '`setKey` and nothing else — so a list drawn an hour ' +
+                     'ago cannot revoke a `jti` that has since been ' +
+                     'forgotten to the cap while missing one issued ' +
+                     'since.\n\nA set holding nothing revocable is REFUSED ' +
+                     'with 400 rather than answered with "revoked 0": ' +
+                     'nothing consults this service about a SAML assertion, ' +
+                     'a Kerberos ticket or an SVID, so a success would be a ' +
+                     'claim about the world that is not true. That is the ' +
+                     'same answer `revoke-kind` gives for an unrevocable ' +
+                     'kind.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: { type: 'string',
+                   description: 'The `setKey` off a row of ' +
+                                'GET /admin-api/tokens.' },
+            setKey: { type: 'string', description: 'Accepted for `set`.' }
+          },
+          required: ['set'],
+          examples: [{ set: 'set:a1b2c3d4e5f6' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many were revocable, how many actually ' +
+                             'moved, and which kinds they were. A member ' +
+                             'already revoked is counted as revocable and ' +
+                             'not as moved, so `revoked: 0` on an `ok` reply ' +
+                             'means the set was already dead.' },
+
+      { action: 'restore-set', operationId: 'restoreIssuedSet',
+        summary: 'Un-revoke every revocable credential in one issuance ' +
+                 '(NON-SPEC)',
+        description: 'The opposite of `revoke-set`, and NON-SPEC for the ' +
+                     'reason `restore` is: no real authorization server can ' +
+                     'undo a revocation, because a resource server may ' +
+                     'already have cached the refusal. It is here because ' +
+                     'otherwise getting back to a working grant means ' +
+                     'restarting the service.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: { type: 'string',
+                   description: 'The `setKey` off a row of ' +
+                                'GET /admin-api/tokens.' },
+            setKey: { type: 'string', description: 'Accepted for `set`.' }
+          },
+          required: ['set'],
+          examples: [{ set: 'set:a1b2c3d4e5f6' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many were revocable and how many were ' +
+                             'actually put back.' },
 
       { action: 'revoke-kind', operationId: 'revokeTokensByKind',
         summary: 'Revoke every token of one kind',
@@ -2616,6 +3088,24 @@ const ROUTES = [
     } },
 
   { method: 'POST', route: BASE + '/token-lifetimes/:action',
+    // ---------------------------------------------------------------------
+    // A NARROW DOOR: THE HANDLER OWNS THE WHOLE BODY, so the ajv wrapper at
+    // the foot of this file stands aside for it.
+    //
+    // **REFUSING AN UNKNOWN KEY BY NAME IS THE ENTIRE REASON THIS RESOURCE
+    // EXISTS BESIDE `/config/set-many`**, which ignores one on purpose — so a
+    // narrow door that stopped refusing would be two operations over one
+    // function with nothing to tell them apart. The handler's refusal names
+    // the key it refused AND lists the ones it sets, and
+    // `sts_admin_api_operations.js` asserts both halves.
+    //
+    // A schema error cannot say either thing: `additionalProperties: false`
+    // answers "not a member of this request" and stops. Letting ajv go first
+    // would replace a refusal a caller can act on with a worse one and switch
+    // off the assertion that guards it, which is the same judgement
+    // `structureOnly()` makes about `enum` and `required` one level up.
+    // ---------------------------------------------------------------------
+    handlerOwnsBody: true,
     tag: 'Token lifetimes',
     mirrors: 'POST /admin/token-lifetimes',
     handler: function (req, res) {
@@ -2758,6 +3248,24 @@ const ROUTES = [
     } },
 
   { method: 'POST', route: BASE + '/saml-assertions/:action',
+    // ---------------------------------------------------------------------
+    // A NARROW DOOR: THE HANDLER OWNS THE WHOLE BODY, so the ajv wrapper at
+    // the foot of this file stands aside for it.
+    //
+    // **REFUSING AN UNKNOWN KEY BY NAME IS THE ENTIRE REASON THIS RESOURCE
+    // EXISTS BESIDE `/config/set-many`**, which ignores one on purpose — so a
+    // narrow door that stopped refusing would be two operations over one
+    // function with nothing to tell them apart. The handler's refusal names
+    // the key it refused AND lists the ones it sets, and
+    // `sts_admin_api_operations.js` asserts both halves.
+    //
+    // A schema error cannot say either thing: `additionalProperties: false`
+    // answers "not a member of this request" and stops. Letting ajv go first
+    // would replace a refusal a caller can act on with a worse one and switch
+    // off the assertion that guards it, which is the same judgement
+    // `structureOnly()` makes about `enum` and `required` one level up.
+    // ---------------------------------------------------------------------
+    handlerOwnsBody: true,
     tag: 'SAML assertions',
     mirrors: 'POST /admin/saml-assertions',
     handler: function (req, res) {
@@ -3139,8 +3647,15 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { attribute: { type: 'string' } },
-          required: ['attribute'],
+          properties: {
+            attribute: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `attribute`; `vcAction()` reads ' +
+                                 '`body.attribute || body.name`, so both ' +
+                                 'spellings have always worked and only one ' +
+                                 'was published.' }
+          },
+          anyOf: [{ required: ['attribute'] }, { required: ['name'] }],
           examples: [{ attribute: 'title' }],
           additionalProperties: false
         },
@@ -3155,8 +3670,15 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { attribute: { type: 'string' } },
-          required: ['attribute'],
+          properties: {
+            attribute: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `attribute`; `vcAction()` reads ' +
+                                 '`body.attribute || body.name`, so both ' +
+                                 'spellings have always worked and only one ' +
+                                 'was published.' }
+          },
+          anyOf: [{ required: ['attribute'] }, { required: ['name'] }],
           examples: [{ attribute: 'title' }],
           additionalProperties: false
         },
@@ -3256,8 +3778,14 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { claim: { type: 'string' } },
-          required: ['claim'],
+          properties: {
+            claim: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `claim`; `vpConfigAction()` reads ' +
+                                 '`body.claim || body.name`, so both spellings ' +
+                                 'have always worked and only one was published.' }
+          },
+          anyOf: [{ required: ['claim'] }, { required: ['name'] }],
           examples: [{ claim: 'birthdate' }],
           additionalProperties: false
         },
@@ -3270,8 +3798,14 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { claim: { type: 'string' } },
-          required: ['claim'],
+          properties: {
+            claim: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `claim`; `vpConfigAction()` reads ' +
+                                 '`body.claim || body.name`, so both spellings ' +
+                                 'have always worked and only one was published.' }
+          },
+          anyOf: [{ required: ['claim'] }, { required: ['name'] }],
           examples: [{ claim: 'birthdate' }],
           additionalProperties: false
         },
@@ -3303,7 +3837,11 @@ const ROUTES = [
             format: { type: 'string',
                       description: 'A format id. `GET ' +
                                    '/admin-api/verifier-request` lists them ' +
-                                   'under `formats`.' }
+                                   'under `formats`.' },
+            name: { type: 'string',
+                  description: 'An alias for `claim`; `vpConfigAction()` reads `body.claim || body.name`, so both spellings have always worked and only one was published.' },
+            name: { type: 'string',
+                  description: 'An alias for `claim`; `vpConfigAction()` reads `body.claim || body.name`, so both spellings have always worked and only one was published.' }
           },
           required: ['format'],
           examples: [{ format: 'dc+sd-jwt' }],
@@ -3956,9 +4494,12 @@ const ROUTES = [
           properties: {
             profile: { type: 'string', description: 'The profile id.' },
             member: { type: 'string', description: 'Any metadata member name.' },
-            value: { description: 'JSON if it parses as JSON, otherwise the string.' }
+            value: { description: 'JSON if it parses as JSON, otherwise the string.' },
+            id: { type: 'string',
+                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
           },
-          required: ['profile', 'member'],
+          required: ['member'],
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1',
                        member: 'code_challenge_methods_supported',
                        value: ['S256'] }],
@@ -3979,9 +4520,12 @@ const ROUTES = [
           type: 'object',
           properties: {
             profile: { type: 'string' },
-            member: { type: 'string' }
+            member: { type: 'string' },
+            id: { type: 'string',
+                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
           },
-          required: ['profile', 'member'],
+          required: ['member'],
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1',
                        member: 'code_challenge_methods_supported' }],
           additionalProperties: false
@@ -3997,9 +4541,12 @@ const ROUTES = [
           type: 'object',
           properties: {
             profile: { type: 'string' },
-            member: { type: 'string' }
+            member: { type: 'string' },
+            id: { type: 'string',
+                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
           },
-          required: ['profile', 'member'],
+          required: ['member'],
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1', member: 'token_endpoint' }],
           additionalProperties: false
         },
@@ -4014,8 +4561,14 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { profile: { type: 'string' } },
-          required: ['profile'],
+          properties: {
+            profile: { type: 'string' },
+            id: { type: 'string',
+                  description: 'An alias for `profile`; `asAction()` reads ' +
+                               '`body.profile || body.id`, so both spellings ' +
+                               'have always worked and only one was published.' }
+          },
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1' }],
           additionalProperties: false
         },
@@ -8490,13 +9043,158 @@ function operationSummaries() {
 // One express route per row, which for the four action resources is one pattern
 // behind every action in it. Registering at require time is what every module
 // here does; see rule 1.
+// ---------------------------------------------------------------------------
+// THE GATE (2026-09-06), AND IT IS THE ONLY THING BETWEEN THIS API AND A TOTAL
+// AUTHENTICATION BYPASS IN PRODUCT MODE.
+//
+// **THIS RESOURCE IS UNGATED IN DEVELOPMENT AND THAT IS DELIBERATE** — it is
+// what the tests drive, and it is the way back in when nobody holds a role,
+// which a service that checks no password needs because there is otherwise no
+// way to bootstrap an administrator. `mgmt-api/CLAUDE.md` has argued that since
+// this API existed, and every word of it is still true of development mode.
+//
+// It cannot survive into a product. Anybody who can reach this port can grant
+// themselves both console roles through `POST /admin-api/rbac/grant`, so an
+// ungated management API is not "a convenience beside a secured console" — it
+// is the console's gate with a documented way around it.
+//
+// **ONE MIDDLEWARE RATHER THAN A CHECK PER HANDLER**, and the reason is this
+// file's shape: there are 232 operations behind 30-odd routes, and a check per
+// handler is 232 chances to add the 233rd without one. Registered BEFORE the
+// routes below, because express applies middleware only to routes added after
+// it — rule 1's other half.
+//
+// **THE EXPLORER AND ITS DOCUMENT ARE GATED TOO.** They describe every
+// operation this service offers, which is a map of the administrative surface;
+// a product deployment that served that to anybody would be handing out the
+// floor plan. They are HTML and JavaScript rather than JSON, so the refusal is
+// shaped for a browser.
+app.use(BASE, function (req, res, next) {
+  if (!mode.gatesManagementApi()) {
+    return next();
+  }
+  const gate = admin.gateStateFor(req);
+  // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET needs
+  // Admin Read and anything else needs Admin Write. Asking `admin.js` rather
+  // than re-deriving it is what stops this becoming a second answer to who may
+  // administer this service — the mistake `logout.js` exists to prevent one
+  // layer down.
+  const needed = req.method === 'GET' ? gate.read : gate.write;
+  if (needed) {
+    // -------------------------------------------------------------------
+    // AND THEN THE POLICY (2026-09-06), which is the layer ABOVE the roles
+    // and not a replacement for them.
+    //
+    // The two console roles decide who may administer this service and stay
+    // exactly where they are — `admin.gateStateFor()` is still the one answer
+    // to that, which is what stops this becoming a second one. What the gate
+    // adds is that a deployment can narrow this surface by POLICY, with the
+    // subject taken from the SESSION that got the caller through the check
+    // above and never from anything on the request.
+    //
+    // **IT RUNS ONLY WHERE THIS SURFACE IS GATED AT ALL**, which is the same
+    // `mode.gatesManagementApi()` branch three lines up. In development this
+    // API is open by design — there is no credential, so no session, so no
+    // subject — and asking a policy whose built-in document refuses an
+    // unauthenticated subject would close the door the tests drive and the
+    // door somebody locked out of the console gets back in through. A policy
+    // layer must not be the thing that removes the recovery path.
+    //
+    // On an unedited product deployment it permits: the built-in document
+    // asks for a role only where somebody has required one, and the caller
+    // has already been shown to hold Admin Read or Admin Write.
+    const policy = accessGate.check({
+      resource: accessGate.RESOURCE.MANAGEMENT_API,
+      action: req.method === 'GET' ? accessGate.ACTION.READ
+                                   : accessGate.ACTION.WRITE,
+      subject: { name: gate.username,
+                 authenticated: !!(gate.session &&
+                                   gate.session.authenticated !== false),
+                 roles: gate.roles || [],
+                 sessionId: gate.session ? gate.session.id : null },
+      context: { method: req.method, path: req.originalUrl || req.url }
+    });
+    if (!policy.allowed) {
+      log.info('admin-api: the access policy refused ' + req.method + ' ' +
+               (req.originalUrl || req.url) + ' for ' +
+               (gate.username || '(nobody)') + '. ' + policy.why);
+      return sendJson(res, 403, {
+        error: 'forbidden',
+        errors: ['The access policy refused this request. ' + policy.why +
+                 ' This is a POLICY decision rather than a missing role: ' +
+                 (gate.username || 'the caller') + ' holds ' +
+                 ((gate.roles && gate.roles.length)
+                   ? gate.roles.join(', ') : 'no role') +
+                 ' and passed the role check. The document is on ' +
+                 '/admin/xacml and xacml.enforceAccess turns the layer off.']
+      });
+    }
+    return next();
+  }
+  log.info('admin-api: product mode refused ' + req.method + ' ' +
+           (req.originalUrl || req.url) + ' — ' +
+           (gate.username ? gate.username + ' holds ' +
+              (gate.roles.length ? gate.roles.join(', ') : 'no role')
+            : 'nobody is signed in') + '.');
+  const wantsHtml = /html/i.test(String(req.headers.accept || ''));
+  if (wantsHtml) {
+    return res.status(403).type('html').send(
+      '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+      '<title>Forbidden</title></head><body><h1>403 Forbidden</h1>' +
+      '<p>This service is in <strong>product mode</strong>, where the ' +
+      'management API requires the same sign-in and roles the console does. ' +
+      '<a href="/admin">Sign in</a>.</p></body></html>');
+  }
+  return sendJson(res, gate.username ? 403 : 401, {
+    error: 'forbidden',
+    errors: ['This service is in product mode, where ' + BASE + ' requires ' +
+             'the same sign-in and the same two roles /admin does — ' +
+             (req.method === 'GET' ? gate.readGroup : gate.writeGroup) +
+             ' for a ' + req.method + '. ' +
+             (gate.username
+               ? 'You are signed in as ' + gate.username + ' and hold ' +
+                 (gate.roles.length ? gate.roles.join(', ') : 'no role') + '.'
+               : 'Nobody is signed in on this request.') +
+             ' In development mode this API is open, which is what the tests ' +
+             'drive and the way back in when nobody holds a role.']
+  });
+});
+
+compileRequestSchemas();
+
+// ---------------------------------------------------------------------------
+// REGISTRATION IS THE CHOKE POINT, and it has to be: there is no generic
+// dispatcher here. Every handler in the table above reads its own body with
+// `parseBody(req)` and refuses in its own words, so a check written inside them
+// would be a hundred and fifty-one checks and the hundred and fifty-second
+// would be forgotten. Here it is one wrapper, driven by the same table the
+// OpenAPI document is built from, so an operation cannot acquire a schema
+// without acquiring its enforcement.
+//
+// A GET is registered exactly as before. Nothing about a query string goes
+// through here — that is `common/validation.js`'s guard and the per-page
+// schemas.
+// ---------------------------------------------------------------------------
 ROUTES.forEach(function (entry) {
   const path = entry.route || entry.path;
   if (entry.method === 'GET') {
     app.get(path, entry.handler);
     return;
   }
-  app.post(path, entry.handler);
+  app.post(path, function (req, res) {
+    // The route this request matched, so the wrapper can find its schema
+    // without re-deriving the path from what express matched.
+    req.__adminApiRoute = path;
+    req.__adminApiHandlerOwnsBody = !!entry.handlerOwnsBody;
+    const checked = checkRequestBody(req);
+    if (!checked.ok) {
+      log.debug("The management API refused a request body against " +
+                (entry.operationId || path) + "'s schema.");
+      sendJson(res, 400, { ok: false, errors: checked.errors });
+      return undefined;
+    }
+    return entry.handler(req, res);
+  });
 });
 
 log.info('The management API is at ' + BASE + ': ' +

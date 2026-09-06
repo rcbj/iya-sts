@@ -84,6 +84,8 @@ const mtls = require('./mtls');
 // verify — read here for the metadata, which must not advertise one that would
 // fall through unchecked.
 const clientAuth = require('./client_auth');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 // MORE THAN ONE AUTHORIZATION SERVER out of one process: the path component the
 // two discovery shapes already carry now selects a CONFIGURATION as well as an
 // issuer identifier. A library that registers no route and requires only
@@ -134,6 +136,15 @@ const frontchannel = require('./frontchannel_logout');
 // cannot move a route. It is where the RFC 7591 registrations are kept and
 // where every client_id this endpoint accepts is recorded.
 const applications = require('../common/applications');
+
+// The input validator. A LEAF (rule 3) — registers no route, requires only
+// `config`, `bunyan` and zod, so it closes no cycle and moves nothing in the
+// route order. `common/validation.js` argues the shape/existence line: what a
+// value may BE is refused in both modes, and whether the client is KNOWN stays
+// with `mode.js` and the application registry.
+const validation = require('../common/validation');
+const vt = validation.types;
+const vz = validation.z;
 // The delegation register (/admin/delegation). Exactly ONE thing this module
 // does reaches it — the RFC 8693 token exchange, in both of its shapes — and no
 // other grant here delegates anything. A library like the one above: it
@@ -437,9 +448,25 @@ function profileOf(req) {
 // be configured. `seen` is counted here because this is the one place every
 // request for a named authorization server passes.
 // ---------------------------------------------------------------------------
+const AS_PROFILE_PARAMS = vz.object({
+  as: vt.opt(vt.identifier)
+});
+
 function forProfile(handler) {
   return function (req, res) {
-    const id = String(req.params.as || '').trim();
+    // A PATH SEGMENT THAT BECOMES A STORE KEY, and `ensure()` CREATES the
+    // authorization server named here on first sight — so an unchecked value
+    // is a registry anybody can put anything into. `vt.identifier` bounds it
+    // and refuses whitespace and control characters; what it deliberately does
+    // NOT do is refuse an unknown name, because creating one on sight is the
+    // documented behaviour of this endpoint.
+    const named = validation.checkParsed({ as: req.params.as }, 'params',
+                                         AS_PROFILE_PARAMS);
+    if (!named.ok) {
+      log.debug("Leaving forProfile(). The authorization server name is malformed.");
+      return oauthError(res, 400, 'invalid_request', named.detail);
+    }
+    const id = String(named.value.as || '').trim();
     authorizationServers.ensure(id, { autoCreated: true, seen: true });
     req.__asProfile = id || authorizationServers.DEFAULT_ID;
     log.debug("This request is for the " + req.__asProfile + " authorization server.");
@@ -1200,7 +1227,30 @@ function customClaimContext(base, payload, user) {
 // `session_id` out is stating that there was no session, which is true of every
 // direct grant, and the console prints that rather than "unknown".
 function issuanceContext(opts) {
-  return { sessionId: (opts && opts.session_id) || '', grant: (opts && opts.grant) || '' };
+  return { sessionId: (opts && opts.session_id) || '',
+           // Carried into the registry beside the session id so that a REFRESH
+           // of this token can be judged on what was true when the person
+           // signed in. See admin_stats.js's `sessionAuthenticated`.
+           sessionAuthenticated: (opts && opts.sessionAuthenticated) !== false,
+           // WHICH RESPONSE THIS TOKEN WENT BACK IN (2026-09-05), and it is the
+           // third thing here that no token carries as a claim. **OAuth 2.0 and
+           // OIDC are the only families in this service that hand back several
+           // credentials at once** — an access token, an ID Token and a refresh
+           // token out of one code redemption; an access token and an ID Token
+           // out of one implicit response — and /admin/tokens now lists what was
+           // issued TOGETHER rather than three rows a reader has to reassemble
+           // by comparing timestamps.
+           //
+           // It is minted at the TWO CALL SITES that produce a response and
+           // passed down here, rather than derived: see the note on
+           // admin_stats.js's `setId` for why no heuristic over sub, client and
+           // instant can tell two simultaneous redemptions apart. A caller that
+           // sets nothing — the credential issuer, the OID4VP Request Object,
+           // WS-Trust's JWT — is stating that this credential was issued alone,
+           // which is true of every one of them, and the console draws it as a
+           // set of one.
+           setId: (opts && opts.set_id) || '',
+           grant: (opts && opts.grant) || '' };
 }
 
 function accessToken(base, opts) {
@@ -1527,14 +1577,54 @@ function issuanceKindsOf(opts) {
 // exists for exactly this request. `authenticated` is true either way at this
 // point: a person reached here through a session or a grant that stands in for
 // one, and a client reached here through `checkClientAuthentication()`.
+// ---------------------------------------------------------------------------
+// WHO THE ROLE GATE IS BEING ASKED ABOUT, AND WHETHER THEY AUTHENTICATED.
+//
+// BOTH ANSWERS WERE THE CONSTANT `true` UNTIL 2026-09-05, and that is the one
+// thing worth knowing about this function. Three of the six built-in roles are
+// about the difference — ALL_UNAUTHENTICATED_USERS,
+// ALL_AUTHENTICATED_APPLICATIONS and ALL_UNAUTHENTICATED_APPLICATIONS — so
+// while this said `true` twice, a policy could name them and nothing arriving
+// at this endpoint could ever hold or fail to hold them. They were names with
+// no facts behind them.
+//
+// **THE TWO KINDS TAKE THEIR ANSWER FROM DIFFERENT PLACES, and that is the
+// whole shape of it.**
+//
+//   * A USER's answer belongs to the SESSION the authorization happened on,
+//     and the session is not here — the token endpoint is a back channel with
+//     no cookie on it. So the authorization code carries it
+//     (`session_authenticated`), frozen at the moment the code was minted. A
+//     grant with no session behind it — the password grant, a token exchange —
+//     has authenticated somebody by presenting a credential at this endpoint,
+//     so `true` is the honest answer there and stays.
+//
+//   * An APPLICATION's answer belongs to THIS REQUEST, because client
+//     authentication is something the client does every time it calls. It is
+//     observed by `oauth2_bcp.js` and handed in as `clientAuthenticated`.
+//     **A missing observation is `false` and not `true`**, which is the one
+//     place in this function that fails closed: an application that did not
+//     demonstrably authenticate has not authenticated, and the permissive
+//     reading would hand ALL_AUTHENTICATED_APPLICATIONS to every public client
+//     in the service. Nothing is refused by that alone — an application
+//     requiring EVERYBODY is unaffected, which is every application that has
+//     not been told otherwise.
+// ---------------------------------------------------------------------------
 function issuanceSubjectOf(opts) {
+  log.debug("Entering issuanceSubjectOf(). grant=" + (opts.grant || '?'));
   const username = String((opts.user && opts.user.username) || opts.username ||
                           '');
   if (opts.grant === 'client_credentials') {
+    log.debug("Leaving issuanceSubjectOf(). The client IS the subject.");
     return { kind: 'application', name: String(opts.client_id || username),
-             authenticated: true };
+             authenticated: opts.clientAuthenticated === true };
   }
-  return { kind: 'user', name: username, authenticated: true };
+  // `!== false` rather than `=== true`: a code minted by a process that did
+  // not carry the field, or a grant that never had a session, must go on
+  // meaning what it meant.
+  log.debug("Leaving issuanceSubjectOf(). A person.");
+  return { kind: 'user', name: username,
+           authenticated: opts.sessionAuthenticated !== false };
 }
 
 function checkIssuance(opts) {
@@ -1562,6 +1652,24 @@ function checkIssuance(opts) {
 
 async function tokenSet(base, opts) {
   log.debug("Entering tokenSet(). scope=" + (opts.scope || '(none)'));
+  // ONE IDENTIFIER FOR EVERYTHING THIS REPLY CARRIES, minted here because this
+  // is the single function every grant that issues a token set goes through —
+  // the same property that already makes it the one place the RFC 9700 binding
+  // note is written and refreshToken() the one place a refresh token is minted.
+  // Every token below is told it, and admin_stats.js records it, so
+  // /admin/tokens can draw the reply as the one thing the client received.
+  //
+  // The parameter object is REPLACED rather than mutated, and a copy rather than
+  // a new name so that the twenty-odd reads of `opts` below are untouched. A
+  // mutation would reach back into the caller's object — `issue()` hands the
+  // same one to checkIssuance() and to the audit — and a set id appearing in a
+  // record nobody minted is worse than none at all.
+  //
+  // A REFRESH GETS A NEW ONE. This function is entered once per response, so
+  // the second generation of a grant is a set of its own; what joins the
+  // generations is `parent_refresh_jti`, which is a different relation and is
+  // drawn as one at /admin/tokens/credential.
+  opts = Object.assign({}, opts, { set_id: randomId(12) });
   // A SCOPE NAMING ANOTHER APPLICATION BECOMES THE AUDIENCE — see
   // audienceScopes(). Here rather than inside accessToken(), because the
   // decision changes three things and only one of them is the access token: the
@@ -2645,8 +2753,13 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   const roleAnswer = gate.check({
     application: String(query.client_id || ''),
     kind: gate.ISSUANCE.AUTHORIZATION_CODE,
+    // READ OFF THE SESSION SINCE 2026-09-05, where it was the constant `true`.
+    // `issueAuthorizationResponse()` is handed the session's user, and until
+    // unauthenticated sessions existed there was no session whose answer could
+    // be anything else. `!== false` keeps a session made before the field
+    // existed meaning what it meant.
     subject: { kind: 'user', name: String(user.username || ''),
-               authenticated: true },
+               authenticated: (authInfo || {}).authenticated !== false },
     claims: null
   });
   if (!roleAnswer.allowed) {
@@ -2752,6 +2865,18 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
       // arrives at the token endpoint with no cookie behind it, and a browser session
       // cannot be inferred from a back-channel request.
       session_id: sessionId,
+      // WHETHER ANYBODY AUTHENTICATED FOR THE SESSION THIS CODE WAS ISSUED ON
+      // (2026-09-05), carried for the same reason `session_id` is: the code
+      // arrives at the token endpoint over a back channel with no cookie
+      // behind it, so the session cannot be looked up and its answer cannot be
+      // inferred. Without this the token endpoint would have to assume, and
+      // what it used to assume was `true` for everybody.
+      //
+      // It is a fact ABOUT THE SESSION frozen when the code was minted, which
+      // is the right reading rather than a limitation: what a required role
+      // asks is who was authenticated when this authorization happened, and a
+      // session that has since ended does not change what happened then.
+      session_authenticated: (authInfo || {}).authenticated !== false,
       // WHICH AUTHORIZATION SERVER ISSUED IT. A code from one is not redeemable
       // at another's token endpoint, and that is not a formality: they publish
       // different capabilities, may have different clients configured and are
@@ -2785,6 +2910,19 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   // worth keeping: it is the difference between a token that came back through the
   // browser and one that will come back through the token endpoint.
   const flow = types.indexOf('code') >= 0 ? 'hybrid (authorization endpoint)' : 'implicit';
+  // THE SECOND OF THE TWO PLACES A SET ID IS MINTED, and it is here for the same
+  // reason the audience derivation two lines down is: a token that comes back
+  // from the AUTHORIZATION endpoint never goes through tokenSet() at all.
+  // `response_type=id_token token` hands the browser two credentials in one
+  // fragment, and leaving this out would draw them as two unrelated rows on
+  // /admin/tokens while the identical pair from the token endpoint drew as one.
+  //
+  // It is minted even when the response carries only ONE credential, or none at
+  // all (a bare `code`). An id nothing records costs a random string; a
+  // conditional here would be a second rule about when a set exists, and the one
+  // rule — a set is a response — is what makes "a set of one" mean the same
+  // thing on every row of that table.
+  const setId = randomId(12);
   if (types.indexOf('token') >= 0) {
     // The same reading tokenSet() does one grant later — see audienceScopes().
     // It is done here TOO rather than only there because a token that comes back
@@ -2800,6 +2938,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
                                              : audienceClaim(withOwnResource(
                                                  base, named.audiences, named.scope)),
                                            session_id: sessionId, grant: flow,
+                                           set_id: setId,
                                            // The claims request travels on the
                                            // token minted HERE too, or a client
                                            // using the implicit flow would send
@@ -2818,7 +2957,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   if (types.indexOf('id_token') >= 0) {
     out.id_token = await idToken(base, {
       user: user, client_id: String(query.client_id), nonce: query.nonce, auth_time: authTime,
-      amr: amr, acr: acr, session_id: sessionId, grant: flow,
+      amr: amr, acr: acr, session_id: sessionId, grant: flow, set_id: setId,
       access_token: out.access_token, code: out.code,
       claims: claimsRequest
     });
@@ -3015,12 +3154,113 @@ function redirectBack(res, base, redirectUri, state, params, fragment, mode) {
   log.debug("Leaving redirectBack().");
 }
 
+// ---------------------------------------------------------------------------
+// THE AUTHORIZATION REQUEST, AND WHY THIS ONE SCHEMA PASSES UNKNOWNS THROUGH.
+//
+// **`z.looseObject` AND NOT `z.object`, WHICH IS THE OPPOSITE OF EVERY OTHER
+// SCHEMA IN THIS SERVICE, AND IT IS A FACT ABOUT THIS HANDLER RATHER THAN A
+// PREFERENCE.** `common/validation.js`'s header explains that stripping
+// undeclared parameters is what RFC 6749 section 3.1 requires of an
+// authorization server, and that is still true of what this endpoint ACTS on.
+// It is not true of what it FORWARDS.
+//
+// Two things carry `q` onward whole:
+//
+//   * `bcp.checkAuthorizationRequest({ query: q, ... })`, which reads the
+//     request for RFC 9700 and looks at parameters this handler never does;
+//   * **`queryString(q, ['prompt'])`, which REBUILDS THE QUERY STRING** for the
+//     round trip through the consent screen and back.
+//
+// So a stripped parameter is not merely unread — it is DELETED from the request
+// the person resumes after consenting. A client that sent `ui_locales` or a
+// vendor extension would have it silently vanish half way through a sign-in,
+// which is the quietest possible way to break an authorization server.
+//
+// What passing through costs is that an undeclared parameter is not bounded or
+// typed. What it keeps is that every declared one is, and that `flatten()` has
+// still refused an array, a nested object and a control character on ALL of
+// them, declared or not — which is the class this work exists to close.
+//
+// **`resource` AND `claim` ARE THE TWO THAT MAY REPEAT.** RFC 8707 section 2
+// says so of the first; the second is this service's own spelling of an
+// individual claims request (see `parseClaimsRequest()`). Everything else is
+// single-valued and a repeat of it is refused, which is what makes
+// `redirect_uri` given twice an error rather than a choice this handler makes
+// silently on the caller's behalf.
+// ---------------------------------------------------------------------------
+const AUTHORIZE_QUERY = vz.looseObject({
+  // RFC 6749 section 4.1.1.
+  client_id: vt.opt(vt.identifier),
+  response_type: vz.string().max(128).optional(),
+  redirect_uri: vt.opt(vt.redirectUri),
+  scope: vt.opt(vt.scope),
+  state: vt.opt(vt.opaque),
+
+  // OpenID Connect Core section 3.1.2.1.
+  nonce: vt.opt(vt.opaque),
+  response_mode: vz.string().max(64).optional(),
+  prompt: vz.string().max(128).optional(),
+  display: vz.string().max(64).optional(),
+  max_age: vt.opt(vt.integer(0, 315360000)),
+  ui_locales: vz.string().max(256).optional(),
+  id_token_hint: vz.string().max(validation.CAP.TOKEN).optional(),
+  login_hint: vt.opt(vt.name),
+  acr_values: vz.string().max(512).optional(),
+
+  // RFC 7636 (PKCE). The verifier's length is section 4.1's, and the challenge
+  // is its base64url digest — bounded here rather than at the token endpoint
+  // too, because a challenge stored now is compared much later.
+  code_challenge: vt.opt(vz.string().min(43).max(128)),
+  code_challenge_method: vz.string().max(16).optional(),
+
+  // OpenID Connect Core section 5.5, and this service's own per-claim spelling.
+  claims: vz.string().max(validation.CAP.TEXT).optional(),
+  claim: vt.repeatable(vz.string().max(256)).optional(),
+
+  // RFC 8707 section 2 — MAY be repeated, and this is the parameter that whole
+  // rule in `common/validation.js` exists for.
+  resource: vt.repeatable(vt.uri).optional(),
+
+  // RFC 9449 section 10, RFC 9396, and OpenID4VCI's issuer_state.
+  dpop_jkt: vt.opt(vt.base64url),
+  authorization_details: vz.string().max(validation.CAP.TEXT).optional(),
+  issuer_state: vt.opt(vt.opaque),
+
+  // This service's own round-trip fields, put in the URL by its OWN screens and
+  // read back here. They are declared so that a hand-crafted one is bounded
+  // like everything else — nothing here trusts them because it wrote them.
+  authn_error: vz.string().max(256).optional(),
+  authn_error_description: vz.string().max(1024).optional(),
+  consent_error: vz.string().max(256).optional(),
+  consent_error_description: vz.string().max(1024).optional()
+});
+
 function authorizeEndpoint(req, res) {
   log.debug("Entering the authorization endpoint.");
   // This authorization server's own base, so the RFC 9207 `iss` on the response
   // and every token minted below name the server the client is talking to.
   const base = asBaseOf(req);
-  const q = req.query || {};
+
+  // --- SHAPE FIRST, AND ANSWERED HERE RATHER THAN REDIRECTED ----------------
+  //
+  // This runs BEFORE the redirect_uri is looked at, and a refusal is reported
+  // ON THIS SERVER as a 400 — never by redirecting — for the reason the RFC
+  // 9700 block below gives at length: forwarding a browser to a URI this
+  // service has not yet decided it trusts is an open redirector whatever
+  // parameters ride along. Here the case is sharper still, because **the
+  // malformed parameter may BE the redirect_uri**: answering
+  // `error=invalid_request` by redirecting to a value just refused for its
+  // shape would be using it as an address in the act of rejecting it.
+  //
+  // The schema passes unknown parameters through (see AUTHORIZE_QUERY), so
+  // nothing a client sent is lost across the consent round trip.
+  const asked = validation.check(req, 'query', AUTHORIZE_QUERY);
+  if (!asked.ok) {
+    log.debug("Leaving the authorization endpoint. The request is malformed: " +
+              asked.code + " on \"" + asked.field + "\".");
+    return oauthError(res, 400, 'invalid_request', asked.detail);
+  }
+  const q = asked.value;
   const redirectUri = String(q.redirect_uri || '');
 
   // Without a usable redirect_uri there is nowhere to report an error TO, so it
@@ -3545,7 +3785,13 @@ function logoutEndpoint(req, res) {
   const notifications = frontchannel.enabled()
     ? frontchannel.notificationsFor(session, issuerOf(asBaseOf(req))) : [];
   const notifiable = notifications.filter(function (row) { return !!row.url; });
-  const target = req.query.post_logout_redirect_uri;
+  const askedLogout = validation.check(req, 'query', LOGOUT_QUERY);
+  if (!askedLogout.ok) {
+    log.debug("Leaving the logout endpoint. The request is malformed: " +
+              askedLogout.code + " on \"" + askedLogout.field + "\".");
+    return oauthError(res, 400, 'invalid_request', askedLogout.detail);
+  }
+  const target = askedLogout.value.post_logout_redirect_uri;
   if (notifiable.length) {
     let checked = target && /^https?:\/\//i.test(String(target)) ? String(target) : '';
     if (checked) {
@@ -3556,7 +3802,7 @@ function logoutEndpoint(req, res) {
       // as a link on its own sign-out page would be splitting a hair at the
       // reader's expense.
       const linkCheck = bcp.checkPostLogoutRedirectUri({
-        target: checked, client: applications.clientConfigOf(req.query.client_id)
+        target: checked, client: applications.clientConfigOf(askedLogout.value.client_id)
       });
       if (!linkCheck.ok) checked = '';
     }
@@ -3589,7 +3835,7 @@ function logoutEndpoint(req, res) {
     // rather than followed, because forwarding the browser is the whole of what
     // section 2.1 forbids.
     const check = bcp.checkPostLogoutRedirectUri({
-      target: String(target), client: applications.clientConfigOf(req.query.client_id)
+      target: String(target), client: applications.clientConfigOf(askedLogout.value.client_id)
     });
     if (!check.ok) {
       log.debug("Leaving the logout endpoint. RFC 9700 mode refused the post_logout_redirect_uri.");
@@ -3793,13 +4039,28 @@ const USERINFO_SCOPE_CLAIMS = {
 // typed wrong is the worst possible answer: the response looks exactly like the
 // one for a parameter that was never sent.
 // ---------------------------------------------------------------------------
+const USERINFO_CLAIMS_QUERY = vz.looseObject({
+  claims: vz.string().max(validation.CAP.TEXT).optional(),
+  claim: vt.repeatable(vz.string().max(256)).optional()
+});
+
 function directClaimsRequest(req) {
   log.debug("Entering directClaimsRequest(). method=" + req.method);
   const body = req.method === 'POST' ? parseBody(req) : {};
-  const raw = req.query.claims !== undefined ? req.query.claims : body.claims;
+  // The claims request is bounded and its `claim` shorthand is DECLARED
+  // repeatable — OIDC Core section 5.5 puts a JSON document in `claims`, and
+  // this service's own `claim` names one at a time, which is the whole reason
+  // it may appear more than once. Declaring it is what keeps `flatten()` from
+  // refusing the repeat that is the point of the parameter.
+  const askedClaims = validation.check(req, 'query', USERINFO_CLAIMS_QUERY);
+  if (!askedClaims.ok) {
+    log.debug("Leaving directClaimsRequest(). The claims request is malformed.");
+    return { request: null, error: askedClaims.detail };
+  }
+  const q = askedClaims.value;
+  const raw = q.claims !== undefined ? q.claims : body.claims;
   const shorthand = []
-    .concat(req.query.claim === undefined ? []
-            : (Array.isArray(req.query.claim) ? req.query.claim : [req.query.claim]))
+    .concat(q.claim === undefined ? [] : q.claim)
     .concat(req.method === 'POST' ? bodyValues(req, body, 'claim') : []);
   if (raw === undefined && !shorthand.length) {
     log.debug("Leaving directClaimsRequest(). Nothing was sent on the request itself.");
@@ -4508,10 +4769,94 @@ async function tokenEndpoint(req, res) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE BACK-CHANNEL ENDPOINTS.
+//
+// `z.looseObject` on the TOKEN REQUEST for AUTHORIZE_QUERY's reason one door
+// along: `body` escapes `tokenGrant()` into `clientFrom()`,
+// `redemptionFingerprint()`, `bcp.checkTokenRequest()` and the claims merge,
+// each of which reads members this schema does not name. Stripping would make
+// a parameter vanish between the parse and the check that exists to read it.
+//
+// **`resource` IS DELIBERATELY NOT `repeatable` HERE, WHICH IS THE OPPOSITE OF
+// THE AUTHORIZATION ENDPOINT** — and it is not an inconsistency. A repeated
+// form field never reaches this object at all: `parseBody()` builds a plain
+// object with `out[k] = v`, so the last value wins, and the repeats are read
+// separately off the RAW body by `bodyValues(req, body, 'resource')`. Declaring
+// it repeatable here would hand `tokenGrant()` an ARRAY where sixty-odd call
+// sites across fourteen modules expect `String(body.x)` — which is the exact
+// change `helpers.js` refused to make when `bodyValues()` was written instead.
+// ---------------------------------------------------------------------------
+const TOKEN_FORM = vz.looseObject({
+  grant_type: vz.string().max(128).optional(),
+  client_id: vt.opt(vt.identifier),
+  client_secret: vz.string().max(1024).optional(),
+  code: vt.opt(vt.opaque),
+  code_verifier: vt.opt(vz.string().min(43).max(128)),
+  redirect_uri: vt.opt(vt.redirectUri),
+  refresh_token: vt.opt(vt.opaque),
+  scope: vt.opt(vt.scope),
+  username: vt.opt(vt.name),
+  password: vz.string().max(1024).optional(),
+
+  // RFC 8693 token exchange.
+  subject_token: vz.string().max(validation.CAP.TEXT).optional(),
+  subject_token_type: vt.opt(vt.uri),
+  actor_token: vz.string().max(validation.CAP.TEXT).optional(),
+  actor_token_type: vt.opt(vt.uri),
+  requested_token_type: vt.opt(vt.uri),
+  audience: vz.string().max(validation.CAP.URI).optional(),
+
+  // RFC 8707, and OpenID4VCI's pre-authorized code transaction code.
+  resource: vz.string().max(validation.CAP.URI).optional(),
+  tx_code: vz.string().max(64).optional(),
+  authorization_details: vz.string().max(validation.CAP.TEXT).optional(),
+
+  // RFC 7523 / OIDC private_key_jwt.
+  client_assertion: vz.string().max(validation.CAP.TEXT).optional(),
+  client_assertion_type: vt.opt(vt.uri)
+});
+
+// RFC 7662 and RFC 7009. Both take one token and an optional hint about which
+// kind it is, and this service reads only the first — the hint is advisory in
+// both specifications and a wrong one must not change the answer.
+const TOKEN_QUERY_FORM = vz.looseObject({
+  token: vz.string().max(validation.CAP.TEXT).optional(),
+  token_type_hint: vt.opt(vt.oneOf(['access_token', 'refresh_token'])),
+  client_id: vt.opt(vt.identifier),
+  client_secret: vz.string().max(1024).optional()
+});
+
+// OpenID Connect RP-Initiated Logout 1.0 section 2.
+//
+// **`post_logout_redirect_uri` IS A `redirectUri` AND THAT IS THE POINT OF
+// TYPING IT AT ALL**: it is an address this service sends a BROWSER to, so a
+// `javascript:` scheme here is script execution on somebody's machine at the
+// end of a sign-out. `vt.uri` refuses the executable schemes and the
+// `redirectUri` refinement refuses a fragment besides.
+const LOGOUT_QUERY = vz.looseObject({
+  post_logout_redirect_uri: vt.opt(vt.redirectUri),
+  client_id: vt.opt(vt.identifier),
+  id_token_hint: vz.string().max(validation.CAP.TOKEN).optional(),
+  state: vt.opt(vt.opaque),
+  logout_hint: vz.string().max(256).optional(),
+  ui_locales: vz.string().max(256).optional()
+});
+
 async function tokenGrant(req, res) {
   log.debug("Entering the token endpoint.");
   const base = asBaseOf(req);
-  const body = parseBody(req);
+  // `checkParsed()` and not `check(req, 'body', ...)`: this service parses every
+  // body as raw text, so the parsed object is what a handler holds. See that
+  // function's header.
+  const posted = validation.checkParsed(parseBody(req), 'body', TOKEN_FORM);
+  if (!posted.ok) {
+    res.set('Cache-Control', 'no-store');
+    log.debug("Leaving the token endpoint. The request is malformed: " +
+              posted.code + " on \"" + posted.field + "\".");
+    return oauthError(res, 400, 'invalid_request', posted.detail);
+  }
+  const body = posted.value;
   const client = clientFrom(req, body);
   const grant = String(body.grant_type || '');
   res.set('Cache-Control', 'no-store');
@@ -4734,6 +5079,63 @@ async function tokenGrant(req, res) {
     }
   }
 
+  // WHAT THIS REQUEST DEMONSTRATED ABOUT THE CLIENT, observed once and reused.
+  //
+  // An OBSERVATION rather than a check — `checkClientAuthentication()` above
+  // has already applied whatever policy RFC 9700 mode asks for and refused the
+  // request if it failed. This is the FACT the role gate needs:
+  // ALL_AUTHENTICATED_APPLICATIONS and ALL_UNAUTHENTICATED_APPLICATIONS are
+  // about what the client is, which is true whether or not the BCP mode is on.
+  // Its header argues why it is not mode-gated.
+  //
+  // Here rather than inside `issuanceSubjectOf()` because that function is
+  // synchronous and this is a signature check; and once rather than per grant,
+  // because it is a fact about the REQUEST and six grants recomputing it is
+  // five that would agree and a sixth added later that would not.
+  const clientObservation = await bcp.observeClientAuthentication({
+    clientId: String(client.client_id || ''),
+    clientSecret: client.client_secret,
+    assertion: client.assertion,
+    assertionType: client.assertionType,
+    request: req,
+    audiences: [base + '/oauth2/token', issuerOf(base), base],
+    registered: applications.clientConfigOf(client.client_id)
+  });
+
+  // ---------------------------------------------------------------------
+  // PRODUCT MODE: THERE ARE NO PUBLIC CLIENTS (2026-09-06).
+  //
+  // The observation above is exactly that — an observation, made in both modes
+  // because `/admin/delegation` and the role gate both want to know what the
+  // client IS. This is the ENFORCEMENT, and it is the third of the four things
+  // product mode requires: every OAuth 2.0 and OpenID Connect application holds
+  // a secret and authenticates with it.
+  //
+  // **IT IS HERE AND NOT IN `client_auth.js`** because that module answers "did
+  // this credential verify" and this is a different question — "was one
+  // required" — which is a property of the deployment rather than of the
+  // credential. Putting it there would mean a module that verifies credentials
+  // deciding when one is needed, and every caller inheriting that decision
+  // whether or not it wanted it.
+  //
+  // `invalid_client` with a 401, which is RFC 6749 section 5.2's answer for a
+  // client that failed to authenticate — not `unauthorized_client`, which is
+  // about the GRANT a client may use and would send an author looking at their
+  // grant type.
+  if (mode.requiresClientSecret() && !clientObservation.authenticated) {
+    log.info('oauth2: product mode refused the token request from "' +
+             String(client.client_id || '(unnamed)') + '": ' +
+             clientObservation.why);
+    res.status(401).type('application/json').send(JSON.stringify({
+      error: 'invalid_client',
+      error_description: 'This service is in product mode, where every ' +
+        'application must hold a client secret and authenticate with it — ' +
+        'there are no public clients. ' + clientObservation.why
+    }));
+    log.debug("Leaving the token endpoint. Product mode refused an unauthenticated client.");
+    return;
+  }
+
   const respond = function (payload) {
     res.status(200).type('application/json').send(JSON.stringify(payload));
     log.debug("Leaving the token endpoint. Issued: " + Object.keys(payload).join(', '));
@@ -4746,7 +5148,15 @@ async function tokenGrant(req, res) {
   // and six call sites that must remember is five that will and a sixth added
   // later that will not, which is the reasoning that keeps signJwt() the single
   // counter and refreshToken() the single minter.
-  const issue = function (opts) {
+  const issue = function (rawOpts) {
+    // THE CLIENT'S OBSERVED ANSWER IS INJECTED HERE rather than passed by each
+    // grant, for the reason the paragraph above about `request: req` gives:
+    // every grant mints through this closure, so every grant is decided on the
+    // same fact, and a seventh added below inherits it without its author
+    // having to know it exists. A grant that already stated it — none does —
+    // would win, which is the ordinary Object.assign reading.
+    const opts = Object.assign({ clientAuthenticated: clientObservation.authenticated },
+                               rawOpts);
     // THE ROLE GATE, HERE FOR THE REASON THE PARAGRAPH ABOVE GIVES ABOUT THE
     // CLIENT CERTIFICATE. Every grant mints through this closure, so every
     // grant is decided, and a seventh added below inherits the decision
@@ -4915,6 +5325,13 @@ async function tokenGrant(req, res) {
       // ordinary case: most tokens this service issues belong to a sign-on session
       // and only arrive at the console as belonging to one because of this line.
       session_id: record.session_id || '', grant: 'authorization_code',
+      // Off the code too, and for the same reason as the line above it: the
+      // person is not here and their session cannot be looked up from a
+      // back-channel request, so what the role gate is told about them is what
+      // was true when the code was minted. `!== false` keeps a code minted by
+      // an older process — one whose records have no such field — meaning what
+      // it meant, which is that somebody authenticated.
+      sessionAuthenticated: record.session_authenticated !== false,
       authorization_details: grantIdentifiers(record.authorization_details, record.user),
       // Off the code as well. What the client asked for at the authorization
       // endpoint is what the UserInfo endpoint honours, and the access token is
@@ -5145,7 +5562,15 @@ async function tokenGrant(req, res) {
       // own jti. Nothing on the wire carries it — a refresh token names no session —
       // so without this every second-generation token would show as sessionless and a
       // session's token list would stop growing the moment a client refreshed.
-      session_id: stats.sessionIdOfJti(claims.jti), grant: 'refresh_token'
+      session_id: stats.sessionIdOfJti(claims.jti),
+      // Off the REGISTRY, by the same jti the session id comes from, and for
+      // the identical reason: a refresh carries no cookie and no session
+      // identifier, so what this grant can say about the person is what was
+      // recorded when the token it is refreshing was minted. Without this an
+      // unauthenticated session's tokens would come back authenticated on
+      // their second generation.
+      sessionAuthenticated: stats.sessionAuthenticatedOfJti(claims.jti),
+      grant: 'refresh_token'
     });
     // RFC 9700 section 2.2.2 — ROTATION. The token just redeemed is retired:
     // marked as rotated here (which is what makes a later presentation of it a
@@ -5704,8 +6129,13 @@ app.post('/oauth2/token', function (req, res) {
 // --- introspection (RFC 7662) ------------------------------------------------
 function introspectEndpoint(req, res) {
   log.debug("Entering the introspection endpoint.");
-  const body = parseBody(req);
+  const posted = validation.checkParsed(parseBody(req), 'body', TOKEN_QUERY_FORM);
   res.set('Cache-Control', 'no-store');
+  if (!posted.ok) {
+    log.debug("Leaving the introspection endpoint. The request is malformed.");
+    return oauthError(res, 400, 'invalid_request', posted.detail);
+  }
+  const body = posted.value;
   const inactive = function () {
     res.status(200).type('application/json').send(JSON.stringify({ active: false }));
     log.debug("Leaving the introspection endpoint. The token is not active.");
@@ -5747,7 +6177,12 @@ app.post('/oauth2/introspect', introspectEndpoint);
 // stops introspecting as active and stops refreshing.
 function revokeEndpoint(req, res) {
   log.debug("Entering the revocation endpoint.");
-  const body = parseBody(req);
+  const posted = validation.checkParsed(parseBody(req), 'body', TOKEN_QUERY_FORM);
+  if (!posted.ok) {
+    log.debug("Leaving the revocation endpoint. The request is malformed.");
+    return oauthError(res, 400, 'invalid_request', posted.detail);
+  }
+  const body = posted.value;
   const token = String(body.token || '');
   if (token) {
     try {
@@ -5782,7 +6217,31 @@ function clientRecord(base, metadata, clientId, secret, token) {
 function registerEndpoint(req, res) {
   log.debug("Entering the client registration endpoint.");
   const base = baseUrlOf(req);
-  const metadata = parseBody(req);
+  // ---------------------------------------------------------------------
+  // `checkDocument()` AND NOT A SCHEMA, AND THIS IS THE ENDPOINT THAT
+  // ARGUMENT WAS WRITTEN FOR.
+  //
+  // RFC 7591 section 2 lets a client register ANY metadata it likes, and
+  // `applications.js` keeps the whole document verbatim in
+  // `appRegistrationJson` precisely because no fixed attribute set can
+  // represent it. So the shape is not this service's to decide: the very
+  // next line expects `redirect_uris` to be an ARRAY, and `jwks` is a
+  // nested object. Running the scalar-enforcing `checkParsed()` over this
+  // would refuse every conforming client registration in existence.
+  //
+  // What IS checked is what is true of any JSON this service accepts: no
+  // `__proto__` at any depth, a bounded nesting and a bounded key count.
+  // The pollution case is real rather than theoretical here — this
+  // document is stored and later rebuilt into a client record with
+  // attributes merged over it.
+  // ---------------------------------------------------------------------
+  const document = validation.checkDocument(parseBody(req), 'registration');
+  if (!document.ok) {
+    log.debug("Leaving the client registration endpoint. The document is refused: " +
+              document.code + ".");
+    return oauthError(res, 400, 'invalid_client_metadata', document.detail);
+  }
+  const metadata = document.value;
   if (metadata.redirect_uris && !Array.isArray(metadata.redirect_uris)) {
     return oauthError(res, 400, 'invalid_redirect_uri', 'redirect_uris must be an array.');
   }
@@ -5813,9 +6272,23 @@ app.post('/oauth2/register', registerEndpoint);
 
 // The management calls all authenticate with the registration access token the
 // registration handed out.
+const REGISTERED_CLIENT_PARAMS = vz.object({
+  client_id: vt.identifier
+});
+
 function withRegisteredClient(req, res, handler) {
-  log.debug("Entering withRegisteredClient(). client_id=" + req.params.client_id);
-  const record = applications.registrationOf(req.params.client_id);
+  // A PATH parameter, and it is checked like any other value from outside. An
+  // express route parameter cannot be an array or a nested object the way a
+  // query parameter can, so what this catches is a control character and a
+  // length — a client_id is an identifier and 8kb of one is not.
+  const named = validation.checkParsed({ client_id: req.params.client_id },
+                                       'params', REGISTERED_CLIENT_PARAMS);
+  if (!named.ok) {
+    log.debug("Leaving withRegisteredClient(). The client_id is malformed.");
+    return oauthError(res, 400, 'invalid_request', named.detail);
+  }
+  log.debug("Entering withRegisteredClient(). client_id=" + named.value.client_id);
+  const record = applications.registrationOf(named.value.client_id);
   if (!record) {
     log.debug("Leaving withRegisteredClient(). No such client.");
     return oauthError(res, 404, 'invalid_client', 'No such registered client.');

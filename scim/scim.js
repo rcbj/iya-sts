@@ -178,6 +178,15 @@ const SCIMMY = require('scimmy');
 
 const app = require('../common/app');
 const { log, xmlEscape, baseUrlOf } = require('../common/helpers');
+
+// The input validator. A LEAF (rule 3): it registers no route and closes no
+// cycle. What it adds HERE is narrow on purpose — scimmy already enforces RFC
+// 7643 over a resource body on the way in AND out, so a second schema over the
+// same document would be the "one copy of each fact" rule broken in the one
+// place the fact is already checked. What scimmy does NOT do is bound a query
+// parameter before its own filter parser sees it, or refuse a `__proto__` in a
+// document it is about to coerce.
+const validation = require('../common/validation');
 const config = require('../common/config');
 const stats = require('../common/admin_stats');
 const audit = require('../common/audit');
@@ -453,15 +462,38 @@ function scimBody(req) {
     log.debug("Leaving scimBody(). There was no body.");
     return undefined;
   }
+  let parsed;
   try {
-    const parsed = JSON.parse(raw);
-    log.debug("Leaving scimBody(). Parsed " + raw.length + " byte(s).");
-    return parsed;
+    parsed = JSON.parse(raw);
   } catch (e) {
     log.debug("Leaving scimBody(). It was not JSON.");
     throw new SCIMMY.Types.Error(400, 'invalidSyntax',
       'The request body is not JSON: ' + e.message);
   }
+  // ---------------------------------------------------------------------
+  // **A `__proto__` AT ANY DEPTH IS REFUSED BEFORE scimmy COERCES IT.**
+  // `JSON.parse` produces a real own `__proto__` property — harmless in
+  // itself, and dangerous the moment anything MERGES the object, which is
+  // exactly what a SCIM PATCH and scimmy's own coercion do.
+  //
+  // **OUTSIDE THE catch ABOVE, AND THAT IS NOT A TIDY-UP.** Thrown inside it,
+  // this refusal came back as *"The request body is not JSON: …"*, which is
+  // false in the one way that matters — the body IS JSON, and a client told
+  // its syntax is wrong will go looking in the wrong place. The two failures
+  // are different and answer differently.
+  //
+  // The SHAPE is deliberately not checked here: RFC 7643 is scimmy's to
+  // enforce and it does, on the way in and on the way out. A second schema
+  // over the same document would be the "one copy of each fact" rule broken
+  // where the fact is already checked.
+  // ---------------------------------------------------------------------
+  const safe = validation.checkDocument(parsed, 'SCIM document');
+  if (!safe.ok) {
+    log.debug("Leaving scimBody(). " + safe.code + ".");
+    throw new SCIMMY.Types.Error(400, 'invalidSyntax', safe.detail);
+  }
+  log.debug("Leaving scimBody(). Parsed " + raw.length + " byte(s).");
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -479,15 +511,40 @@ function scimBody(req) {
 // 3.4.2.4 permits exactly this and requires the response to say what actually
 // happened, which the ListResponse's `itemsPerPage` does.
 // ---------------------------------------------------------------------------
+// RFC 7644 section 3.4.2.2 sets no length on a filter, so this is this
+// service's own bound. A real filter over a dozen attributes is a few hundred
+// characters; 4096 leaves room for one nobody would write by hand.
+const SCIM_QUERY_MAX = 4096;
+
 function queryParams(req) {
   log.debug("Entering queryParams().");
   const query = req.query || {};
   const params = {};
+  // **BOUNDED BEFORE scimmy's FILTER PARSER SEES THEM.** `filter` is not a
+  // string this service compares — it is an EXPRESSION LANGUAGE
+  // (RFC 7644 section 3.4.2.2) that `SCIMMY.Types.Filter` parses, so its cost
+  // is a function of its length and its nesting rather than of the directory.
+  // A megabyte of `and (...)` is a parse, not a search, and nothing before
+  // this said how long one may be. `attributes` and `sortBy` are attribute
+  // paths and are bounded for the same reason one step down.
+  //
+  // The cap is generous — a real filter over a dozen attributes is a few
+  // hundred characters — and REFUSING is right rather than truncating: half a
+  // filter is a different query, and answering one silently is worse than
+  // answering none.
   ['filter', 'attributes', 'excludedAttributes', 'sortBy', 'sortOrder'].forEach(function (name) {
     const raw = query[name];
     const value = Array.isArray(raw) ? raw[0] : raw;
     if (value !== undefined && String(value) !== '') {
-      params[name] = String(value);
+      const text = String(value);
+      if (text.length > SCIM_QUERY_MAX) {
+        throw new SCIMMY.Types.Error(400, 'invalidFilter',
+          'The "' + name + '" parameter is ' + text.length + ' characters and ' +
+          'the limit is ' + SCIM_QUERY_MAX + '. A filter is an expression this ' +
+          'service parses rather than a value it compares, so its cost is a ' +
+          'property of its length.');
+      }
+      params[name] = text;
     }
   });
   ['startIndex', 'count'].forEach(function (name) {

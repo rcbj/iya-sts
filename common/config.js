@@ -537,6 +537,322 @@ const SETTINGS = [
                  'relatives) in either mode — a forwarded certificate is a ' +
                  'certificate anybody can forge.' },
 
+  // -------------------------------------------------------------------------
+  // THE MODE. What this service IS, rather than what any one surface requires.
+  //
+  // **IT IS ONE SETTING BECAUSE "IS AUTHENTICATION REQUIRED HERE" MUST HAVE
+  // ONE ANSWER.** Until 2026-09-06 it had four — `admin.authRequired`,
+  // `scim.authRequired`, `spiffe.authRequired` and, by omission, every other
+  // surface that simply never checked anything. Those three rows are gone and
+  // this replaces them, because a service that required a credential at SCIM
+  // and not at the console was not "partly secured", it was unsecured with a
+  // longer configuration file.
+  //
+  // `development` IS EVERYTHING THIS SERVICE HAS EVER DONE and is the default,
+  // so an unedited process behaves exactly as it did: no password is checked
+  // anywhere, an unknown user or application is created on first sight, a
+  // public client needs no secret, and `/admin-api` is open. That is what makes
+  // it a mock, and a mock is what exercises a client.
+  //
+  // `product` is the same protocol implementations with the permissiveness
+  // taken out: a credential is verified against a stored `userPassword`, every
+  // referenced object must already exist, an OAuth client must hold a secret,
+  // and `/admin-api` is gated like every other door. **The protocol code is the
+  // same code** — see common/mode.js, which is the one place either answer is
+  // given.
+  //
+  // RUNTIME-SETTABLE AND PER REALM, following `oauth2.rfc9700` exactly and for
+  // the same reason: a realm binds no socket, so one process can host a
+  // development realm and a product realm at once and a client can be exercised
+  // against both without a second service. That is also what lets a test flip
+  // to `product`, assert what is now refused, and flip back.
+  // -------------------------------------------------------------------------
+  { key: 'admin.bootstrapUsername', group: 'Admin console',
+    label: 'Product-mode bootstrap account',
+    path: 'admin.bootstrapUsername', env: 'STS_ADMIN_BOOTSTRAP_USERNAME',
+    type: 'string', dflt: 'admin', runtime: false,
+    restartReason: 'the bootstrap runs once, between the persistence store ' +
+                   'opening and the listener binding, so a change after that ' +
+                   'has nothing left to name',
+    description: 'Who gets the generated password when this service starts in ' +
+                 'product mode and NOBODY in the realm holds a credential. It ' +
+                 'is logged once and never again, and it is the only way into ' +
+                 'a fresh product deployment — the console needs a credential ' +
+                 'and /admin-api is gated behind the same one. It does ' +
+                 'nothing in development mode (every password is accepted, so ' +
+                 'there is nothing to bootstrap) and nothing where somebody ' +
+                 'already holds a credential, so it cannot overwrite a ' +
+                 'password or resurrect a disabled administrator.' },
+
+  // -------------------------------------------------------------------------
+  // KEY MATERIAL. Where this service's signing keys come from, and what
+  // protects them when they are written down.
+  //
+  // **DEVELOPMENT GENERATES ON EVERY START AND THAT IS A FEATURE**, not an
+  // omission: a mock is disposable, its tokens are meant to die with it, and a
+  // key regenerated per start is what makes two instances impossible to confuse
+  // (the `kid` is derived from the key material — see helpers.js).
+  //
+  // **PRODUCT GENERATES ONCE.** A token issued yesterday has to verify today,
+  // so the keys are written to the persistence store — which is why product
+  // mode REQUIRES a store — encrypted with AES-256-GCM under a key this service
+  // never generates and never stores. See common/keystore.js and
+  // common/secrets.js.
+  // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // WEB SECURITY. The controls that protect the browser-facing surfaces — the
+  // sign-in screen, the consent screen, the admin console and the User Portal
+  // — against the OWASP Top Ten. See common/websecurity.js.
+  // -------------------------------------------------------------------------
+  { key: 'xacml.enforceAccess', group: 'XACML',
+    label: 'Decide access with policy',
+    path: 'xacml.enforceAccess', env: 'STS_XACML_ENFORCE_ACCESS',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the admin console, the management API, the User ' +
+                 'Portal, SCIM and the SPIRE Server API ask the embedded PDP ' +
+                 'before letting a subject through. ON by default, and it ' +
+                 'changes nothing on an unedited service: the built-in ' +
+                 '`access-control` policy permits a subject that holds a ' +
+                 'required role, permits when the resource requires none — ' +
+                 'which is every surface nobody has narrowed — and permits ' +
+                 'somebody acting on a resource they OWN, which is the User ' +
+                 'Portal\'s rule.\n\nTurning it off does NOT open the ' +
+                 'doors: the roles the console and SCIM already enforce are ' +
+                 'unaffected, because this is the POLICY layer above them. ' +
+                 'What it removes is the ability to write a rule — a helpdesk ' +
+                 'role that may manage somebody else\'s account, say — that ' +
+                 'no handler implements.' },
+
+  { key: 'xacml.accessPolicy', group: 'XACML',
+    label: 'Access policy name',
+    path: 'xacml.accessPolicy', env: 'STS_XACML_ACCESS_POLICY',
+    type: 'string', dflt: 'access-control', runtime: true,
+    description: 'The policy the embedded access PEP evaluates. A repository ' +
+                 'entry of this name in `ou=policies` OVERRIDES the built-in ' +
+                 'one, which is how a deployment writes its own; deleting ' +
+                 'that entry puts the built-in one back. The built-in policy ' +
+                 'is CALLED rather than seeded, for the reason the issuance ' +
+                 'policy is: `ou=policies` is per realm, and seeding once in ' +
+                 'the default realm would leave every realm created later ' +
+                 'unable to decide anything.' },
+
+  { key: 'security.rateLimitWindowS', group: 'Web security',
+    label: 'Rate-limit window (seconds)',
+    path: 'security.rateLimitWindowS', env: 'STS_SECURITY_RATE_WINDOW_S',
+    type: 'int', dflt: 60, runtime: true, min: 1, max: 3600,
+    description: 'How long a rate-limit window lasts. A FIXED WINDOW rather ' +
+                 'than a token bucket, deliberately: what it has to stop is ' +
+                 'thousands of guesses a second, the refill semantics do not ' +
+                 'matter for that, and "5 in 60 seconds" is something an ' +
+                 'operator can reason about.' },
+
+  { key: 'security.rateLimitPerIdentity', group: 'Web security',
+    label: 'Attempts per identity per window',
+    path: 'security.rateLimitPerIdentity',
+    env: 'STS_SECURITY_RATE_PER_IDENTITY',
+    type: 'int', dflt: 5, runtime: true, min: 1, max: 1000,
+    description: 'How many credential attempts one IDENTITY may make in a ' +
+                 'window, counted across every address — so an account ' +
+                 'cannot be ground down from a botnet. Applies to the ' +
+                 'sign-in screen, an activation URL and a password change.' },
+
+  { key: 'security.rateLimitPerAddress', group: 'Web security',
+    label: 'Attempts per address per window',
+    path: 'security.rateLimitPerAddress',
+    env: 'STS_SECURITY_RATE_PER_ADDRESS',
+    type: 'int', dflt: 20, runtime: true, min: 1, max: 10000,
+    description: 'How many credential attempts one ADDRESS may make in a ' +
+                 'window, counted across every identity — so one address ' +
+                 'cannot grind down many accounts. Both buckets are needed: ' +
+                 'either alone is the half an attacker does not use. It is ' +
+                 'higher than the per-identity limit because an address is ' +
+                 'often a proxy carrying many legitimate people; ' +
+                 'global.trustProxy decides whether X-Forwarded-For is read.' },
+
+  { key: 'security.activationTtlMinutes', group: 'Web security',
+    label: 'Activation link lifetime (minutes)',
+    path: 'security.activationTtlMinutes',
+    env: 'STS_SECURITY_ACTIVATION_TTL_MINUTES',
+    type: 'int', dflt: 1440, runtime: true, min: 1, max: 43200,
+    description: 'How long an activation URL stays valid. It is the one ' +
+                 'credential in this service that can complete an account ' +
+                 'setup on its own, so a leaked one is an account takeover — ' +
+                 'which is why it is single-use, hashed at rest like a ' +
+                 'password, and expires. A day is the default because the ' +
+                 'link is delivered by hand here (there is no mail channel), ' +
+                 'and an hour would strand most of them.' },
+
+  { key: 'keys.source', group: 'Key material', label: 'Where signing keys come from',
+    path: 'keys.source', env: 'STS_KEYS_SOURCE', type: 'enum',
+    enumValues: ['auto', 'generated', 'persisted'],
+    dflt: 'auto', runtime: false,
+    restartReason: 'the signing keys are loaded once, before the listener ' +
+                   'binds; changing where they come from after that would ' +
+                   'mean a running service holding keys from one source and ' +
+                   'reporting another',
+    description: '`auto` follows the MODE — generated in development, ' +
+                 'persisted in product — and is what almost every deployment ' +
+                 'wants. The other two override it: `generated` makes a new ' +
+                 'key on every start (a product-mode service that does this ' +
+                 'invalidates every token it issued the moment it restarts), ' +
+                 'and `persisted` reads and writes the store in development ' +
+                 'too, which is the setting to use when TESTING the key ' +
+                 'store without turning on everything else product mode does.' },
+
+  // -------------------------------------------------------------------------
+  // HOW LONG A DECRYPTED PRIVATE KEY MAY STAY IN MEMORY (2026-09-06).
+  //
+  // Where key material PERSISTS it is held in this process as CIPHERTEXT, and
+  // the plaintext exists only while something is signing with it. These two
+  // rows are how long "while" is. `common/keystore.js` carries the argument,
+  // including — importantly — what this does NOT defend against.
+  // -------------------------------------------------------------------------
+  { key: 'keys.plaintextRetention', group: 'Key material',
+    label: 'How long a decrypted private key is kept',
+    path: 'keys.plaintextRetention', env: 'STS_KEYS_PLAINTEXT_RETENTION',
+    type: 'enum', enumValues: ['timed', 'per-use', 'resident'],
+    dflt: 'timed', runtime: true,
+    description: 'THREE WORDS RATHER THAN A FLAG, because the middle one is ' +
+                 'the default and a boolean could only have reached two of ' +
+                 'them. `timed` decrypts a realm\'s signing key on first use ' +
+                 'and purges it once it has gone unused for ' +
+                 '`keys.plaintextTtlS`; `per-use` purges it at the end of the ' +
+                 'turn of the event loop that needed it, so the plaintext is ' +
+                 'resident for microseconds and every signature pays a ' +
+                 'decrypt and a key parse; `resident` decrypts once and keeps ' +
+                 'it for the life of the process, which is what this service ' +
+                 'did before the setting existed. **It only means anything ' +
+                 'where keys PERSIST** — a development service generates its ' +
+                 'key in memory and has no ciphertext to fall back to, so ' +
+                 'there is nothing to purge to.' },
+
+  { key: 'keys.plaintextTtlS', group: 'Key material',
+    label: 'Decrypted key idle timeout (seconds)',
+    path: 'keys.plaintextTtlS', env: 'STS_KEYS_PLAINTEXT_TTL_S',
+    type: 'int', dflt: 300, min: 0, max: 86400, step: 1, runtime: true,
+    description: 'Under `keys.plaintextRetention: timed`, how long a ' +
+                 'decrypted signing key may sit unused before it is dropped. ' +
+                 'The clock restarts on every use, so a busy realm keeps its ' +
+                 'key and an idle one lets it go. Zero behaves as `per-use`. ' +
+                 'Read under any other retention word, it means nothing and ' +
+                 'the console says so.' },
+
+  { key: 'keys.kekProvider', group: 'Key material',
+    label: 'Key-encryption key provider',
+    path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
+    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'file', runtime: false,
+    restartReason: 'the key-encryption key is read once, at startup, before ' +
+                   'the signing keys are decrypted',
+    description: 'Where the AES-256 key that protects the stored signing keys ' +
+                 'is READ FROM. This service never generates it and never ' +
+                 'writes it anywhere. `file` is the default because it needs ' +
+                 'nothing — Kubernetes and Docker both mount a secret as a ' +
+                 'file — and the other four are that same idea with a cloud ' +
+                 'provider\'s access control in front of it. Each of those ' +
+                 'lazily requires its official SDK, which is deliberately NOT ' +
+                 'a dependency of this service: it is a mock first, and four ' +
+                 'cloud SDKs nobody uses would be carried by every install. ' +
+                 'A missing one is reported with the package name to install.' },
+
+  { key: 'keys.kekFile', group: 'Key material', label: 'Key-encryption key file',
+    path: 'keys.kekFile', env: 'STS_KEYS_KEK_FILE', type: 'string',
+    dflt: '/run/secrets/sts-kek', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'The path the `file` provider reads. At least 32 bytes, as ' +
+                 'raw bytes, hex or base64 — `openssl rand -base64 32 > ' +
+                 '/run/secrets/sts-kek`. A file readable by group or other is ' +
+                 'REPORTED rather than refused: the fix may be impossible ' +
+                 'inside a container whose mount the operator does not ' +
+                 'control, and a service that will not start is one somebody ' +
+                 'works around by putting the key in an environment variable.' },
+
+  { key: 'keys.kekRef', group: 'Key material', label: 'Key-encryption key reference',
+    path: 'keys.kekRef', env: 'STS_KEYS_KEK_REF', type: 'string',
+    dflt: '', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'What the cloud providers name the secret by: an AWS Secrets ' +
+                 'Manager name or ARN, a GCP resource name ' +
+                 '(projects/<p>/secrets/<s>, with /versions/latest added when ' +
+                 'no version is given), an Azure Key Vault secret name, or a ' +
+                 'HashiCorp Vault read path. Unused by the `file` provider.' },
+
+  { key: 'keys.kekVault', group: 'Key material', label: 'Vault or Key Vault URL',
+    path: 'keys.kekVault', env: 'STS_KEYS_KEK_VAULT', type: 'string',
+    dflt: '', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) or ' +
+                 'the HashiCorp Vault endpoint. Empty lets the Vault SDK fall ' +
+                 'back to VAULT_ADDR, which is what an agent sidecar sets.' },
+
+  { key: 'keys.kekField', group: 'Key material', label: 'Vault secret field',
+    path: 'keys.kekField', env: 'STS_KEYS_KEK_FIELD', type: 'string',
+    dflt: 'value', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'Which field of a HashiCorp Vault secret holds the key. Both ' +
+                 'KV engine versions are handled without a setting — v2 nests ' +
+                 'the data one level deeper than v1 and the answer is ' +
+                 'unwrapped by shape, because a deployment usually does not ' +
+                 'know which engine it is on.' },
+
+  { key: 'keys.kekToken', group: 'Key material', label: 'Vault token',
+    path: 'keys.kekToken', env: 'STS_KEYS_KEK_TOKEN', type: 'string',
+    dflt: '', runtime: false, secret: true,
+    restartReason: 'read once at startup',
+    description: 'A HashiCorp Vault token, when one is not coming from the ' +
+                 'environment. Empty is the ordinary case: the SDK reads ' +
+                 'VAULT_TOKEN, which is what an agent sidecar or an auth ' +
+                 'method writes.' },
+
+  { key: 'keys.kekRegion', group: 'Key material', label: 'AWS region',
+    path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
+    dflt: '', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'The AWS region for Secrets Manager. Empty uses the SDK\'s ' +
+                 'own resolution (AWS_REGION, the shared config file, the ' +
+                 'instance metadata service), which is what an in-cluster ' +
+                 'deployment relies on.' },
+
+  { key: 'global.mode', group: 'Global', label: 'Mode',
+    path: 'mode', env: 'STS_MODE', type: 'enum',
+    enumValues: ['development', 'product'],
+    // RUNTIME-SETTABLE AND NOT `realmRuntime`, which is the marker's whole
+    // point: that one means "restart-only for the PROCESS, but a realm may
+    // carry it anyway", and it exists for `oauth2.rfc9700` because that row
+    // decides whether a SOCKET is bound as TLS. Nothing about the mode is a
+    // property of a listener — every predicate in common/mode.js is read per
+    // request — so the process can change it at runtime like any ordinary
+    // runtime row, and a realm can carry one of its own because that is what
+    // every runtime row already allows. `tests/config_realm_layer.js` asserts
+    // that `realmRuntime` still has exactly one holder, which is how a second
+    // one stays a decision rather than a copied line.
+    dflt: 'development', runtime: true,
+    description: 'What this service is. `development` is the mock every ' +
+                 'release before 2026-09-06 was: no password is checked in ' +
+                 'any protocol, an unknown user, application, service ' +
+                 'principal or authorization server is created the first time ' +
+                 'it is named, an OAuth client needs no secret, and ' +
+                 '/admin-api is open so that a test can drive it and so that ' +
+                 'somebody who holds no role can get back in. `product` runs ' +
+                 'the SAME protocol implementations with the permissiveness ' +
+                 'removed: a presented credential is verified against the ' +
+                 'hashed `userPassword` on the person\'s directory entry, ' +
+                 'every referenced object must have been created ahead of ' +
+                 'time, every OAuth 2.0 and OpenID Connect application must ' +
+                 'hold a client secret, and /admin-api requires the same ' +
+                 'sign-in and roles the console does. It is settable per ' +
+                 'trust realm, so one process can serve both at once. ' +
+                 'GET /admin/mode lists every requirement and says which ' +
+                 'answer each is given in each mode.\n\nIT CAN BE CHANGED ' +
+                 'WHILE RUNNING, and the order matters when it is: /admin-api ' +
+                 'is open right up until the moment it is set to `product`, ' +
+                 'so provision the credentials FIRST and switch second. A ' +
+                 'realm switched with nobody holding a credential has no way ' +
+                 'in — the startup bootstrap runs at startup and not on a ' +
+                 'change, deliberately, because a service that minted an ' +
+                 'administrator every time a setting moved would be a service ' +
+                 'with an administrator nobody asked for.' },
+
   { key: 'global.logLevel', group: 'Global', label: 'Log level',
     path: 'logLevel', env: 'STS_LOG_LEVEL', type: 'enum',
     enumValues: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
@@ -577,7 +893,14 @@ const SETTINGS = [
   // and `node env/generate_defaults.js` free of child processes they would
   // never use and would have to wait for.
   { key: 'workers.count', group: 'Global', label: 'Worker processes',
-    env: 'STS_WORKERS_COUNT', type: 'int', dflt: 2, min: 0, max: 32,
+    // FIVE SINCE 2026-09-06, where it was two. The pool is what keeps a
+    // post-quantum signature off the thread holding six listener families —
+    // an SLH-DSA sign measured at 15 SECONDS on this hardware — and two
+    // workers means the third concurrent one waits behind them. Five is a
+    // working default for a machine with more than four cores and still costs
+    // nothing until the first post-quantum job, because the pool is lazy and
+    // forks nothing before then.
+    env: 'STS_WORKERS_COUNT', type: 'int', dflt: 5, min: 0, max: 32,
     runtime: true, perProcess: true,
     description: 'How many child processes the post-quantum signing, ' +
                  'verification and key generation are handed to, so that the ' +
@@ -1154,26 +1477,6 @@ const SETTINGS = [
   // nothing" is now qualified everywhere it appears rather than deleted: it is
   // still true of every OTHER group, and of these two everywhere except this
   // console.
-  { key: 'admin.authRequired', group: 'Admin console',
-    label: 'Require a sign-in for /admin',
-    env: 'ADMIN_AUTH_REQUIRED', type: 'bool', dflt: true, runtime: true,
-    description: 'When on, every /admin page and every /admin form needs a ' +
-                 'browser sign-on session from the authentication service at ' +
-                 '/authn/login, and the person signed in needs a console ' +
-                 'role: admin.readGroup to READ a page, admin.writeGroup to ' +
-                 'POST a form. A browser with no session is sent to the ' +
-                 'sign-in screen and returned to the page it asked for; a ' +
-                 'caller asking for ?format=json, or posting JSON, is refused ' +
-                 '401 or 403 rather than redirected, because a redirect to an ' +
-                 'HTML login screen is not an answer a program can read. ' +
-                 'Turning it OFF restores the behaviour this console had ' +
-                 'before any of this existed — completely open — which stays ' +
-                 'reachable on purpose, for the reason every refusal here is ' +
-                 'switchable: a client is exercised by both answers. It does ' +
-                 'NOT gate /admin-api, which is open either way and is ' +
-                 'deliberately the way back in for somebody who has locked ' +
-                 'themselves out; see admin.openWhenEmpty.' },
-
   { key: 'admin.readGroup', group: 'Admin console', label: 'Admin Read role',
     env: 'ADMIN_READ_GROUP', type: 'string', dflt: 'admin-read', runtime: true,
     description: 'The cn of the directory group whose members may READ the ' +
@@ -2313,21 +2616,6 @@ const SETTINGS = [
   // const at require time. Turning a scheme off removes it from the
   // WWW-Authenticate challenge AND from the published ServiceProviderConfig
   // together, because both are built from one table.
-  { key: 'scim.authRequired', group: 'SCIM', label: 'Require authentication',
-    env: 'SCIM_AUTH_REQUIRED', type: 'bool', dflt: true, runtime: true,
-    description: 'When on, every SCIM endpoint refuses a request that carries ' +
-                 'no credential with 401 and a WWW-Authenticate header per ' +
-                 'offered scheme (RFC 7644 section 2 makes that header a ' +
-                 'SHALL). Turning it OFF restores the behaviour these ' +
-                 'endpoints had before authentication existed — unauthenticated ' +
-                 'provisioning — which stays reachable on purpose, because a ' +
-                 'client is exercised by both answers and because a mock that ' +
-                 'could not reproduce the permissive case would have lost ' +
-                 'something. A credential that IS presented is still checked ' +
-                 'either way: a broken token is a 401 whether or not one was ' +
-                 'required, or a client testing its expired-token path would ' +
-                 'get a 200.' },
-
   { key: 'scim.authDiscovery', group: 'SCIM', label: 'Authenticate discovery too',
     env: 'SCIM_AUTH_DISCOVERY', type: 'bool', dflt: false, runtime: true,
     description: 'Whether /ServiceProviderConfig, /ResourceTypes and /Schemas ' +
@@ -2916,22 +3204,6 @@ const SETTINGS = [
                  'would otherwise grow without bound in a process that ' +
                  'never restarts.' },
 
-  { key: 'ssf.authRequired', group: 'SSF', label: 'Require authentication',
-    env: 'STS_SSF_AUTH_REQUIRED', type: 'bool', dflt: true, runtime: true,
-    description: 'When on, the stream management, status, subject, ' +
-                 'verification and poll endpoints refuse a request carrying ' +
-                 'no credential with 401 and a WWW-Authenticate header. SSF ' +
-                 '1.0 section 8 says these endpoints MUST be protected and ' +
-                 'publishes what they accept in authorization_schemes. It ' +
-                 'is the same turnstile SCIM is: anybody can get a token ' +
-                 'with the ssf scope from this service\'s own token ' +
-                 'endpoint with any grant, and any username with any ' +
-                 'password but "invalid" passes Basic. What it buys is that ' +
-                 'a client\'s 401 path can be run at all. The transmitter ' +
-                 'metadata stays OPEN either way — a receiver has to be ' +
-                 'able to read what the endpoints are before it can ' +
-                 'authenticate to one.' },
-
   { key: 'ssf.authScopeRead', group: 'SSF', label: 'Scope to read a stream',
     env: 'STS_SSF_AUTH_SCOPE_READ', type: 'string', dflt: 'ssf:read',
     runtime: true,
@@ -3444,6 +3716,53 @@ const SETTINGS = [
                  'protocol\'s own words: access_denied at an OAuth endpoint, ' +
                  'a page at a browser one.' },
 
+  // THE SETTING THAT MAKES TWO OF THE SIX BUILT-IN ROLES REACHABLE AT ALL.
+  //
+  // `ALL_UNAUTHENTICATED_USERS` names a person who has NOT authenticated, and
+  // until 2026-09-05 there was no such person for any issuance to be about:
+  // every session this service held was one somebody had signed into, so the
+  // role was a name a policy could match and nothing could ever hold at an
+  // issuance site. The sign-in screen's Cancel button is not it — that returns
+  // `access_denied` to the calling protocol and creates nothing, which is the
+  // OAuth contract and is deliberately untouched.
+  //
+  // With this on, the sign-in screen grows a THIRD button — "Continue without
+  // signing in" — and pressing it mints a real session that says
+  // `authenticated: false`. Everything downstream then reads that flag instead
+  // of assuming what it used to assume, so an application requiring
+  // ALL_AUTHENTICATED_USERS refuses that session and one requiring EVERYBODY
+  // does not. That difference IS the distinction between the two roles, and it
+  // was not observable before.
+  //
+  // OFF BY DEFAULT, unlike `roles.enforceIssuance` beside it, and the reason is
+  // that this one changes a SCREEN. Enforcement on by default changes nothing
+  // for an unedited service because everybody holds EVERYBODY; a third button
+  // on every sign-in screen in the service would change what every existing
+  // caller's user sees, which is not something a default should do.
+  //
+  // The group is `Roles` and the key is `authn.` on purpose, and the split is
+  // the one the WS-Federation assertion setting already makes: the key says
+  // which module OWNS the behaviour, and the group says which page a person
+  // reasoning about it is on. Somebody reading ALL_UNAUTHENTICATED_USERS on
+  // /admin/roles and wondering how anything could ever hold it is the reader
+  // this row is for.
+  { key: 'authn.unauthenticatedSessions', group: 'Roles',
+    label: 'Offer "Continue without signing in"',
+    env: 'STS_AUTHN_UNAUTHENTICATED_SESSIONS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Show a third button on /authn/login that starts a session ' +
+                 'for somebody who declines to authenticate. The session is ' +
+                 'real — it has a cookie, it satisfies a flow already in ' +
+                 'progress, and it appears on /admin/sessions in a section of ' +
+                 'its own — but it is marked `authenticated: false`, so an ' +
+                 'application requiring ALL_AUTHENTICATED_USERS refuses it ' +
+                 'and one requiring EVERYBODY does not. That is the only ' +
+                 'place in this service where the difference between those ' +
+                 'two built-in roles can be seen. The person is the stable ' +
+                 '`anonymous` principal, which gets a directory entry like ' +
+                 'anybody else and can therefore hold configured roles too. ' +
+                 'Cancel is unchanged and still answers access_denied.' },
+
   { key: 'roles.maxRoles', group: 'Roles', label: 'Maximum roles',
     env: 'STS_ROLES_MAX', type: 'int', dflt: 200, runtime: true,
     description: 'How many entries ou=roles may hold. The same cap every ' +
@@ -3730,28 +4049,6 @@ const SETTINGS = [
                  'client that omits it has a bug this is the only thing that ' +
                  'will ever tell them about. Off is for the case where you ' +
                  'are deliberately testing something else.' },
-
-  { key: 'spiffe.authRequired', group: 'SPIFFE',
-    label: 'Authenticate the SPIRE Server API',
-    env: 'STS_SPIFFE_AUTH_REQUIRED', type: 'bool', dflt: true,
-    runtime: false,
-    restartReason: 'the SPIRE Server API\'s TCP port is bound as mutual TLS ' +
-                   'or as plain gRPC when the process starts, and a setting ' +
-                   'that changed the checks without changing the socket ' +
-                   'would report a mode this service was not in',
-    description: 'ON, the SPIRE Server API behaves the way a real ' +
-                 'spire-server does: its TCP port is MUTUAL TLS, a caller ' +
-                 'presents an X509-SVID from this trust domain, and every ' +
-                 'method is authorized against SPIRE\'s own table — local, ' +
-                 'agent, admin, downstream — which GET /spiffe publishes in ' +
-                 'full. The Unix socket stays plain and is the `local` ' +
-                 'entity, which is how the spire-server CLI reaches a real ' +
-                 'one. OFF, the port is plain gRPC and every method is open ' +
-                 'to everybody, which is what this service did before this ' +
-                 'setting existed. **This does not touch the Workload API**, ' +
-                 'whose specification says a client MUST NOT be required to ' +
-                 'authenticate — see spiffe.attestWorkloads for the only ' +
-                 'thing that decides who gets what there.' },
 
   { key: 'spiffe.trustLocalSocket', group: 'SPIFFE',
     label: 'Trust the SPIRE Server API socket as local',
