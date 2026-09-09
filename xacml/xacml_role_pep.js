@@ -88,6 +88,11 @@ const roles = require('../common/roles');
 const gate = require('../common/issuance_gate');
 const model = require('./xacml_model');
 const store = require('./xacml_store');
+// The decision counters. A LEAF that registers no route and requires only
+// config, realms, helpers and the PEP register — see its header for why it may
+// not require the console, which is the constraint that decides where the
+// /admin/xacml/monitor page lives.
+const monitor = require('./xacml_monitor');
 const pdp = require('./xacml_pdp');
 const pip = require('./xacml_pip');
 const templates = require('./xacml_templates');
@@ -254,11 +259,58 @@ function buildRequest(asked, held, fromToken, required) {
 }
 
 // ---------------------------------------------------------------------------
+// A DRY RUN IS A QUESTION ABOUT A DECISION AND NOT ONE (2026-09-06).
+//
+// `preview: true` on the request means NOTHING IS BEING ISSUED — somebody is
+// looking at a page that says what would happen. Two things must not follow
+// from that:
+//
+//   * **No audit row.** `xacml.issuance.refused` says this service refused to
+//     issue something, and it did not: nobody asked it to. A page that listed
+//     forty applications and permitted two would otherwise write thirty-eight
+//     of those rows on every load, into a ring that holds 5,000 events — so
+//     drawing a page would push real refusals out of the log.
+//   * **No counter.** `/admin/xacml/monitor` answers "what is this service
+//     actually deciding", and its own header keeps a decision apart from an
+//     enforcement precisely so the number means something. A hypothetical is
+//     neither.
+//
+// **THE DECISION ITSELF IS IDENTICAL.** The flag reaches nothing above the two
+// funnels: same policy, same PIP, same request, same answer — which is what
+// keeps a preview worth having at all. `issuance_gate.js` needed no change,
+// because it hands the request through untouched.
+//
+// It is held in a module variable rather than threaded through the eleven
+// return sites, and SAVED AND RESTORED rather than merely set: `decide()` is
+// synchronous from end to end — its own header in `issuance_gate.js` says why
+// it must stay so — so nothing can interleave, and the save/restore is what
+// makes that a property of this code rather than of an assumption about its
+// callers.
+//
+// Two callers set it: `preview()` below, which is the console's dry run at
+// `/admin/roles` and had been writing those rows since it was written, and the
+// user portal's applications page, which asks this question once per
+// application every time somebody opens it.
+// ---------------------------------------------------------------------------
+let dryRun = false;
+
+// ---------------------------------------------------------------------------
 // THE DECISION.
 // ---------------------------------------------------------------------------
 function decide(asked) {
+  const outer = dryRun;
+  dryRun = !!(asked && asked.preview);
+  try {
+    return decideNow(asked);
+  } finally {
+    dryRun = outer;
+  }
+}
+
+function decideNow(asked) {
   log.debug('Entering decide(). application=' + asked.application +
-            ' kind=' + asked.kind);
+            ' kind=' + asked.kind +
+            (dryRun ? ' (a dry run: nothing is audited or counted)' : ''));
 
   if (config.value('xacml.enabled') === false) {
     log.debug('Leaving decide(). The XACML family is switched off.');
@@ -328,14 +380,18 @@ function decide(asked) {
   // is the policy working, a NotApplicable is a policy that did not cover the
   // question, and an Indeterminate is a policy that could not be evaluated.
   const why = reasonFor(answer, held, required, asked);
-  audit.audit({
-    action: 'xacml.issuance.refused',
-    actor: subject.name || '',
-    protocol: 'XACML',
-    detail: answer.decision + ' for ' + (asked.kind || 'an issuance') +
-            ' to "' + asked.application + '": ' + why
-  });
-  log.info('xacml: REFUSED ' + (asked.kind || 'an issuance') + ' for "' +
+  if (!dryRun) {
+    audit.audit({
+      action: 'xacml.issuance.refused',
+      actor: subject.name || '',
+      protocol: 'XACML',
+      detail: answer.decision + ' for ' + (asked.kind || 'an issuance') +
+              ' to "' + asked.application + '": ' + why
+    });
+  }
+  log.info('xacml: ' +
+           (dryRun ? 'a dry run would have REFUSED ' : 'REFUSED ') +
+           (asked.kind || 'an issuance') + ' for "' +
            asked.application + '" to "' + (subject.name || 'nobody') +
            '" — ' + answer.decision + '. ' + why);
   log.debug('Leaving decide(). ' + answer.decision + '.');
@@ -358,14 +414,39 @@ function reasonFor(answer, held, required, asked) {
     'Indeterminate, because the alternative is issuing on an error.';
 }
 
+// ---------------------------------------------------------------------------
+// THE TWO FUNNELS EVERY ANSWER PASSES THROUGH, AND SINCE 2026-09-06 THEY COUNT.
+//
+// `xacml_monitor.js` is told here rather than at the eleven return sites
+// above, and that is the reason this pair existed before the counting did: a
+// return path added later is counted BY CONSTRUCTION rather than by whoever
+// adds it remembering to. The same argument `delegation.js` makes for its own
+// funnel.
+//
+// `record()` never throws — its header says why at length, and this is the
+// call site the argument is about: every issuance in this service comes
+// through here, so a counter that could fail would be a monitoring feature
+// causing the outage it exists to show.
+// ---------------------------------------------------------------------------
 function allowed(why, held, required, answer) {
+  const decision = answer ? answer.decision : model.DECISION.NOT_APPLICABLE;
+  // NOT ON A DRY RUN. See the block above `decide()`: the monitor answers what
+  // this service is actually deciding, and a page asking what WOULD happen is
+  // not an issuance. It is skipped here rather than by the caller so that both
+  // funnels obey it — which is the same argument this pair exists for.
+  if (!dryRun) {
+    monitor.record('issuance', { decision: decision, allowed: true });
+  }
   return { allowed: true,
-           decision: answer ? answer.decision : model.DECISION.NOT_APPLICABLE,
+           decision: decision,
            why: why, roles: held || [], required: required || [],
            policy: issuancePolicyName() };
 }
 
 function refused(why, decision, held, required, answer) {
+  if (!dryRun) {
+    monitor.record('issuance', { decision: decision, allowed: false });
+  }
   return { allowed: false, decision: decision, why: why,
            roles: held || [], required: required || [],
            policy: issuancePolicyName(),
@@ -430,7 +511,14 @@ function preview(question) {
     application: String(asked.application || ''),
     kind: asked.kind || gate.ISSUANCE.ACCESS_TOKEN,
     subject: asked.subject || { kind: 'user', name: '', authenticated: false },
-    claims: asked.claims || null
+    claims: asked.claims || null,
+    // A DRY RUN, AND SAYING SO IS A FIX RATHER THAN A NEW FEATURE. This
+    // function has always been `/admin/roles`'s "would alice be issued a
+    // token" button, and every refused preview it answered wrote an
+    // `xacml.issuance.refused` audit row and moved a counter on
+    // /admin/xacml/monitor — for an issuance nobody had asked for. The
+    // decision is unchanged; what stops is the recording of it.
+    preview: true
   });
   log.debug('Leaving preview(). ' + (answer.allowed ? 'Permit.' : 'Refused.'));
   return answer;

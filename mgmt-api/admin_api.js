@@ -84,7 +84,13 @@
 // ---------------------------------------------------------------------------
 
 const app = require('../common/app');
-const { log, parseBody, baseUrlOf } = require('../common/helpers');
+const { log, parseBody, baseUrlOf, STS } = require('../common/helpers');
+// BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
+// cannot move one or join a cycle. `crypto.js` is THE one place this service
+// verifies a signature, and `roles.js` is what turns an access token's scopes
+// into the roles the access policy asks for — see the gate below.
+const stsCrypto = require('../common/crypto');
+const roles = require('../common/roles');
 const admin = require('../admin-ui/admin');
 // The setting table, for the two narrow doors' request schemas: their
 // properties are BUILT from the keys those doors refuse against, and the
@@ -356,7 +362,17 @@ const docs = require('./admin_api_docs');
 // page in this service that builds its URLs in a script and therefore cannot
 // have its markup rewritten. See docs.page().
 const realms = require('../common/realms');
-const VERSION = require('../package.json').version;
+// THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
+// from this repository, so it cannot move a route or join a cycle.
+//
+// **IT USED TO BE `require('../package.json').version`**, which is M.N.0 — the
+// manifest's placeholder patch, not the build number. So the index and the
+// OpenAPI document's `info.version` both named a release and no build, and two
+// containers built a month apart reported the same string. See
+// common/version.js.
+const version = require('../common/version');
+const APP_VERSION = version.load();
+const VERSION = APP_VERSION.version;
 
 const BASE = '/admin-api';
 // THE ACCESS GATE, armed by `xacml/xacml_access_pep.js` at 23c. A LEAF
@@ -855,19 +871,43 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'directory entries and nothing else), the trust realm ' +
                  'registry, and the runtime appconfig overrides that ' +
                  '`POST /admin-api/config/set` writes.\n\n' +
-                 'NOTHING THIS SERVICE MINTS EVER PERSISTS, in any mode: ' +
-                 'sessions, access tokens, ID Tokens, refresh tokens, ' +
-                 'authorization codes, pre-authorized codes, SAML artifacts, ' +
-                 'Kerberos tickets, the replay caches, the statistics and the ' +
-                 'audit log all go with the process. The signing key is ' +
-                 'regenerated on every start, so a token restored from a disk ' +
-                 'would verify against nothing.\n\n' +
-                 'PERSISTENCE IS NOT COORDINATION. Two processes pointed at ' +
-                 'one Postgres database each hold their own copy of the ' +
-                 'directory in memory and will not see each other\'s writes ' +
-                 'until they restart. `status.coordinates` is `false` and ' +
-                 'says so; running several copies against one store is not ' +
-                 'yet a way to scale this service.\n\n' +
+                 'AND, IN PRODUCT MODE ON A POSTGRES STORE SINCE ' +
+                 '2026-09-06, WHAT THIS SERVICE MINTS: sessions, access ' +
+                 'tokens, ID Tokens, refresh tokens, authorization codes, ' +
+                 'pre-authorized codes, SAML artifacts, Kerberos ' +
+                 'principals and tickets, the replay caches, the ' +
+                 'statistics and the audit log — each row encrypted under ' +
+                 'the same key-encryption key that protects the signing ' +
+                 'keys, so a dump of the table is not a set of usable ' +
+                 'credentials. `status.minted` reports it.\n\n' +
+                 'IN DEVELOPMENT MODE NONE OF THAT PERSISTS, and the ' +
+                 'reason is the one the rule always rested on: the ' +
+                 'signing key is regenerated on every start there, so a ' +
+                 'token restored from a disk would verify against ' +
+                 'nothing. Product mode keeps its keys — which is why it ' +
+                 'requires a store — and that single fact is what makes ' +
+                 'restoring the rest of it honest. The ldif store holds ' +
+                 'no minted state in either mode: it writes whole files ' +
+                 'per flush, which is right for a directory somebody ' +
+                 'types into and wrong for a session table that changes ' +
+                 'on every request.\n\n' +
+                 'PROCESSES AGAINST ONE POSTGRES STORE COORDINATE SINCE ' +
+                 '2026-09-06, and this paragraph said the opposite before ' +
+                 'it. Every change is written to a monotonic log inside ' +
+                 'the transaction that made it, and each process applies ' +
+                 'what the others committed — the directory, the realms, ' +
+                 'the settings and the minted rows alike. A LISTEN/NOTIFY ' +
+                 'nudge only makes that prompt: the LOG is the contract, ' +
+                 'so a missed notification costs latency and never a ' +
+                 'change. `status.coordinates` and `status.replication` ' +
+                 'report it; `persistence.coordinate` turns it off.\n\n' +
+                 'IT SHARES STATE AND NOT SOCKETS. The KDC, both LDAP ' +
+                 'listeners, the two TLS ports and SPIFFE\'s four are ' +
+                 'bound per process. And the replay caches and DPoP jti ' +
+                 'sets CONVERGE rather than synchronise: between a write ' +
+                 'in one process and its arrival in another there is a ' +
+                 'window the size of persistence.pollInterval in which a ' +
+                 'proof one process refused is accepted by another.\n\n' +
                  'FIVE OF THE SIX SETTINGS ARE RESTART-ONLY, because the ' +
                  'store is opened and read before the HTTP listener binds. ' +
                  '`persistence.databaseUrl` is never echoed back in `status` ' +
@@ -1023,8 +1063,28 @@ const ROUTES = [
       sendJson(res, 200, {
         name: 'mock STS management API',
         version: VERSION,
+        // THE PROVENANCE OF THAT NUMBER, BROKEN OUT rather than left as a
+        // string to be parsed. A test asserting "this stack is running the
+        // build it just made" wants the build number on its own, and a report
+        // saying which commit an instance is on wants the commit — splitting
+        // them here is the difference between a client reading a field and a
+        // client writing a regular expression over `version`.
+        //
+        // `stamped` is the one that is easy to leave out and worth most: false
+        // means this process computed its own number at startup because nothing
+        // stamped an artifact, so the build number is the moment it STARTED and
+        // comparing it with another instance's says nothing.
+        build: APP_VERSION.build,
+        commit: APP_VERSION.commit || undefined,
+        builtAt: APP_VERSION.builtAt,
+        stamped: APP_VERSION.stamped === true,
         openapi: base + BASE + '/openapi.json',
-        docs: base + BASE + '/docs',
+        // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09 and this field
+        // still names it, because a client that read it wants to know
+        // where the explorer IS rather than which path space it is in.
+        // It moved when this API began requiring a token a browser has
+        // no way to carry.
+        docs: base + '/admin/api-explorer',
         console: base + '/admin',
         protected: false,
         operations: operationSummaries()
@@ -1254,50 +1314,87 @@ const ROUTES = [
         responseSchema: { $ref: '#/components/schemas/KeyExport' } }
     ] },
 
-  { method: 'GET', path: BASE + '/docs', tag: 'Service',
-    operationId: 'getDocs',
-    summary: 'The explorer: every operation, with a form that calls it',
-    description: 'A page that reads the document above and renders one form ' +
-                 'per operation. It is this repository\'s own rather than ' +
-                 'Swagger UI, and the reason is the service it lives in: ' +
-                 'swagger-ui-dist is 11.7 MB with an install-time telemetry ' +
-                 'dependency, in a service that is deliberately ' +
-                 'dependency-light and must build offline. It does the same ' +
-                 'job — read the spec, fill a form, see the response.',
-    mirrors: 'GET /admin',
-    responseDescription: 'The explorer page.',
-    responseType: 'text/html',
-    responseSchema: { type: 'string' },
-    handler: function (req, res) {
-      log.debug("Entering the API explorer page.");
-      // The one place in this service that relaxes the Content-Security-Policy
-      // app.js sets, and it relaxes exactly one clause: this page has a script
-      // and every other page here has none. It is served from a file of its
-      // own rather than inline precisely so that `'self'` is enough and
-      // `'unsafe-inline'` is not needed — see the note in admin_api_docs.js.
-      res.setHeader('Content-Security-Policy', docs.CONTENT_SECURITY_POLICY);
-      res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         .send(docs.page(baseUrlOf(req), BASE, VERSION, realms.currentPrefix()));
-      log.debug("Leaving the API explorer page.");
+  // ---------------------------------------------------------------------
+  // THE EXPLORER USED TO BE HERE — `GET /admin-api/docs` and
+  // `/admin-api/docs/explorer.js` — AND MOVED TO THE CONSOLE ON 2026-09-09.
+  //
+  // It is `/admin/api-explorer`, built by `admin-ui/api_explorer.js` at 19a.
+  // The move happened because of the change three sections up: this API began
+  // requiring an OAuth 2.0 access token, and a browser navigating to a URL
+  // carries none — so the one page in this service written to be opened in a
+  // browser had become the one page a browser could not open. The console
+  // linked to it and the link answered 401.
+  //
+  // **THE OPERATION BELOW IS WHAT RULE 7 ASKS FOR NOW.** A console page gets an
+  // operation here that names it, and this is that page's — it reports what the
+  // explorer is reading and what the caller's roles would let them do, without
+  // repeating the document, which `GET /admin-api/openapi.json` above already
+  // is.
+  //
+  // Two things did NOT move and are worth saying so nobody goes looking:
+  // `admin_api_docs.js` and `admin_api_explorer.js` are still in this
+  // directory, because the style, the script and the realm-prefix argument
+  // belong to this API's document rather than to the console's shell. The
+  // console requires them.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/api-explorer', tag: 'Service',
+    operationId: 'getApiExplorer',
+    summary: 'What the console\'s API explorer reads, and what you may drive',
+    description: 'The explorer is a page of the ADMIN CONSOLE at ' +
+                 '`/admin/api-explorer` — it was `/admin-api/docs` until ' +
+                 '2026-09-09, when this API began requiring an access token a ' +
+                 'browser cannot carry. This operation reports where the ' +
+                 'document is, how many paths and operations it describes, ' +
+                 'and the audience a token for this API must name. It does ' +
+                 'NOT repeat the document: `GET ' + BASE + '/openapi.json` ' +
+                 'is the document.\n\nThe `scope` member is what the ' +
+                 'CONSOLE SESSION\'s roles would grant — it is what the page ' +
+                 'puts in the token it mints for the person reading it, so a ' +
+                 'reader holding Admin Read alone sees `admin:read` and knows ' +
+                 'before pressing anything that a write would be refused. ' +
+                 '**It is EMPTY when this operation is called with an access ' +
+                 'token rather than read off the page**, which is the ordinary ' +
+                 'case here: there is no console session on such a request, ' +
+                 'and reporting the token\'s own scopes back to the caller ' +
+                 'that sent them would be telling somebody what they just ' +
+                 'said.',
+    mirrors: 'GET /admin/api-explorer',
+    responseDescription: 'Where the explorer reads from, and what the caller ' +
+                         'may drive.',
+    responseSchema: { type: 'object', properties: {
+      page: { type: 'string', description: 'The console page.' },
+      api: { type: 'string', description: 'The API it drives.' },
+      document: { type: 'string',
+                  description: 'Where the page reads the OpenAPI document ' +
+                               'from — a console path, so that it arrives on ' +
+                               'the session the page was drawn with.' },
+      version: { type: 'string', description: 'This build, M.N.O.' },
+      paths: { type: 'integer', description: 'Paths in the document.' },
+      operations: { type: 'integer', description: 'Operations in it.' },
+      scope: { type: 'string',
+               description: 'The scopes this caller\'s roles grant.' },
+      audience: { type: 'string',
+                  description: 'What a token for this API must name in `aud`. ' +
+                               'Computed outside any realm, because the ' +
+                               'credential is service-wide.' },
+      tokenInReply: { type: 'boolean',
+                      description: 'Always false, and named so that its ' +
+                                   'absence is a statement rather than an ' +
+                                   'omission: the console page is handed a ' +
+                                   'token because it has already ' +
+                                   'authenticated the person reading it, and ' +
+                                   'this reply is read by scripts.' }
     } },
-
-  { method: 'GET', path: BASE + '/docs/explorer.js', tag: 'Service',
-    operationId: 'getDocsScript',
-    summary: 'The explorer\'s script',
-    description: 'The only script this service serves. It is a separate ' +
-                 'resource rather than an inline block so that the page can ' +
-                 'be allowed `script-src \'self\'` instead of ' +
-                 '`\'unsafe-inline\'`.',
-    mirrors: 'GET /admin',
-    responseDescription: 'The script.',
-    responseType: 'application/javascript',
-    responseSchema: { type: 'string' },
     handler: function (req, res) {
-      log.debug("Entering the API explorer script endpoint.");
-      res.setHeader('Content-Security-Policy', docs.CONTENT_SECURITY_POLICY);
-      res.status(200).type('application/javascript')
-         .set('Cache-Control', 'no-store').send(docs.SCRIPT);
-      log.debug("Leaving the API explorer script endpoint.");
+      log.debug("Entering the API explorer operation.");
+      // LAZILY REQUIRED, and it is the one lazy require in this file. That
+      // module is loaded at 19a — after this one — because it needs the route
+      // table below to build its document; a require at the top of this file
+      // would be a cycle, and one in the other direction would move routes.
+      // The same arrangement `xacml.js` and `xacml_admin.js` have.
+      sendJson(res, 200,
+               require('../admin-ui/api_explorer').explorerJson(req));
+      log.debug("Leaving the API explorer operation.");
     } },
 
   { method: 'GET', path: BASE + '/status', tag: 'Service',
@@ -1400,8 +1497,66 @@ const ROUTES = [
       log.debug("Leaving the management API users endpoint.");
     } },
 
+  // RULE 7 FOR /admin/users/new, and it earns its place beyond the parity for
+  // the same reason `getNewApplicationForm` does one resource along: what it
+  // answers is the CLOSED CATALOGUE `createUser()` validates `attributes`
+  // against. A caller that reads this cannot construct a create the service
+  // will refuse with "a person here does not have an attribute called ...",
+  // and it learns the list from the service rather than from a copy of it in a
+  // document.
+  //
+  // THERE IS NO POST BESIDE IT, which is rule 7 read exactly rather than by
+  // shape: that page's controls post `action=create` and `action=fill`, the
+  // first is `createUser` below and already exists, and the second creates
+  // nothing — it fills a FORM in for a person to edit, and the values it writes
+  // are the ones `invent: true` on a create has always written directly. An
+  // operation that returned form values to nobody would be an operation with no
+  // act behind it.
+  { method: 'GET', path: BASE + '/users/new', tag: 'Users',
+    operationId: 'getNewUserForm',
+    summary: 'Every attribute a person may be created with, and the four ways ' +
+             'they can be given a way in',
+    description: 'The ATTRIBUTE CATALOGUE a create takes in `attributes` — one ' +
+                 'row per attribute a person in this directory may carry, each ' +
+                 'naming the claim it reaches in an issued token or credential ' +
+                 'and the document its name comes from — plus the container DN ' +
+                 'the entry would land in, the realm, and the four `credential` ' +
+                 'options.\n\n**It creates nobody**: the create is `POST ' +
+                 '/admin-api/users/create`. This is the list that call ' +
+                 'validates against, and an attribute name that is not on it is ' +
+                 'REFUSED rather than dropped — so a caller that reads this ' +
+                 'first cannot be told afterwards that half of what it sent was ' +
+                 'ignored.\n\n**`uid` and `userPassword` are deliberately not ' +
+                 'on it.** `uid` is the username, sent as `username`, and a ' +
+                 'second way to set it would allow an entry at `uid=alice` ' +
+                 'whose uid attribute says `bob`. A password goes through ' +
+                 '`credential`, so that `credentials.js` hashes it — an ' +
+                 'attribute door that took `userPassword` would write one in ' +
+                 'the clear.\n\n**The container is THIS REALM\'S.** The ' +
+                 'embedded directory is per trust realm, so ' +
+                 '`/realm/acme/admin-api/users/new` answers with acme\'s ' +
+                 '`ou=users` and a person created there is invisible to every ' +
+                 'other realm.',
+    mirrors: 'GET /admin/users/new',
+    responseDescription: 'The attribute catalogue, the credential options, the ' +
+                         'container and the realm.',
+    responseSchema: { $ref: '#/components/schemas/NewUserForm' },
+    handler: function (req, res) {
+      log.debug("Entering the management API new-user endpoint.");
+      sendJson(res, 200, admin.newUserView(req).json);
+      log.debug("Leaving the management API new-user endpoint.");
+    } },
+
   { method: 'POST', route: BASE + '/users/:action', tag: 'Users',
-    mirrors: 'POST /admin/users',
+    // TWO CONSOLE PATHS, AND BOTH ARE NAMED. One resource legitimately mirrors
+    // several controls — /admin-api/xacml/{action} names three — and this
+    // action switch is reached from the Users list and from /admin/users/new,
+    // which posts to itself rather than to the list so that a generated
+    // password and an activation link can be answered in a page body rather
+    // than in a 303's query string. Naming only the first would leave the
+    // console suite unable to tell that page's Create button from a control
+    // that reaches nothing.
+    mirrors: 'POST /admin/users and POST /admin/users/new',
     handler: function (req, res) {
       log.debug("Entering the management API users action endpoint.");
       const body = parseBody(req);
@@ -1465,12 +1620,24 @@ const ROUTES = [
                      'than `uid=<name>,ou=users`. An `ldapadd` under ' +
                      '`ou=users` gets the same refusal as ' +
                      'LDAP_ENTRY_ALREADY_EXISTS (68), because all three call ' +
-                     'one function.\n\n**No password is set** — none is ever ' +
-                     'checked here, in this protocol or any other. Creating ' +
+                     'one function.\n\n**No password is set unless one is ' +
+                     'ASKED FOR** through `credential` below. That default is ' +
+                     'what this operation has always done and is right in ' +
+                     'development mode, where no password is checked here in ' +
+                     'this protocol or any other; in product mode a person ' +
+                     'with no credential cannot sign in, and `activation` is ' +
+                     'how they are given one. Creating ' +
                      'the entry does not put the name in `GET ' +
                      '/admin-api/users`: that lists identities this service ' +
                      'has SEEN authenticate, and this writes what the ' +
-                     'directory HOLDS.',
+                     'directory HOLDS.\n\n**SINCE 2026-09-06 IT TAKES THE ' +
+                     'PERSON\'S DETAILS AND A CREDENTIAL**, which is what the ' +
+                     'console\'s /admin/users/new form posts. `attributes` are ' +
+                     'checked against the catalogue `GET /admin-api/users/new` ' +
+                     'publishes and an unknown name is REFUSED rather than ' +
+                     'dropped; `invent` decides whether the rest are made up, ' +
+                     'and it DEFAULTS TO TRUE so that a caller written before ' +
+                     'this gets exactly what it always got.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -1488,13 +1655,152 @@ const ROUTES = [
                     description: 'Optional. What the entry\'s `description` ' +
                                  'says about why it exists; the default says ' +
                                  'it was created by hand rather than by ' +
-                                 'authenticating.' }
+                                 'authenticating. An `attributes.description` ' +
+                                 'wins over it, because an operator\'s own ' +
+                                 'sentence about a person is the more useful ' +
+                                 'one and two values would be the entry ' +
+                                 'answering the question twice.' },
+            attributes: {
+              type: 'object',
+              description: 'What is known about them, as `{attribute: value}`. ' +
+                           'The names are the catalogue `GET ' +
+                           '/admin-api/users/new` publishes, in that document\'s ' +
+                           'own spelling, and they are the names the entry ' +
+                           'carries — so an `ldapsearch` shows exactly what was ' +
+                           'sent.\n\n**A NAME THAT IS NOT ON THE CATALOGUE IS ' +
+                           'REFUSED and the whole create fails**, rather than ' +
+                           'the value being ignored: silently dropping it would ' +
+                           'answer "created" to a request asking for something ' +
+                           'this did not do. `userPassword` is refused by that ' +
+                           'rule — use `credential` — and so is `uid`, which is ' +
+                           '`username`.\n\nAn empty string is the same as ' +
+                           'sending nothing: the attribute is absent from the ' +
+                           'entry rather than present and empty.',
+              additionalProperties: true
+            },
+            invent: {
+              type: 'boolean',
+              description: 'Whether to MAKE UP the attributes not sent. ' +
+                           '**Defaults to TRUE**, which is what this operation ' +
+                           'has always done and what its own description above ' +
+                           'promises: `vc_claims.js` invents a consistent ' +
+                           'person per username, so the entry and any ' +
+                           'credential issued for them agree from the ' +
+                           'start.\n\nSend `false` for an entry carrying ' +
+                           'ONLY what you sent — its object classes, its uid, a ' +
+                           'description and your attributes. That is what the ' +
+                           'console\'s form does. It is not a promise the ' +
+                           'entry stays that way: the Populate button on ' +
+                           '/admin/vc fills every missing SELECTED attribute on ' +
+                           'every person, and does not know which were typed.'
+            },
+            credential: {
+              type: 'string',
+              description: 'How they first get in. `none` (the default, and ' +
+                           'what this operation did before there were any — in ' +
+                           'development mode it is enough, since no password is ' +
+                           'checked anywhere here); `password`, hashing the ' +
+                           '`password` field onto the entry; `generate`, ' +
+                           'making one up and RETURNING IT ONCE in `password`; ' +
+                           '`activation`, issuing a single-use link and ' +
+                           'returning it ONCE in `activationUrl` for you to ' +
+                           'send them, at which they choose a password, a ' +
+                           'security key or both.\n\n**A CREDENTIAL STEP THAT ' +
+                           'FAILS DOES NOT UNDO THE CREATE.** A password can ' +
+                           'only be written onto an entry that exists, so the ' +
+                           'person is there either way; the reply is `ok: true` ' +
+                           'with `credentialError` set and says so, because ' +
+                           'answering `ok: false` would send a caller to create ' +
+                           'them again and meet "that username is taken".',
+              enum: ['none', 'password', 'generate', 'activation']
+            },
+            password: { type: 'string',
+                        description: 'Read only when `credential` is ' +
+                                     '`password`. Hashed with scrypt by ' +
+                                     'credentials.js and never stored or ' +
+                                     'logged in the clear; nothing in this ' +
+                                     'service can show it again.' },
+            passwordConfirm: { type: 'string',
+                               description: 'Optional, and CHECKED WHERE SENT: ' +
+                                            'the console\'s form always sends ' +
+                                            'it, because a mistyped password ' +
+                                            'nobody can read back is a person ' +
+                                            'who cannot sign in and nobody who ' +
+                                            'can say why. An API caller with ' +
+                                            'one value has nothing to mistype ' +
+                                            'against and may omit it.' }
           },
           required: ['username'],
-          examples: [{ username: 'rcbj' }],
+          examples: [{ username: 'rcbj' },
+                     { username: 'dana', invent: false,
+                       attributes: { givenName: 'Dana', sn: 'Okafor',
+                                     mail: 'dana@example.com',
+                                     employeeNumber: 'E004417' },
+                       credential: 'activation' }],
           additionalProperties: false
         },
-        responseDescription: 'The entry as created, in `entry`, with its `dn`.' }
+        responseDescription: 'The entry as created, in `entry`, with its `dn`; ' +
+                             '`typed` naming the attributes you sent and ' +
+                             '`invented` whether the rest were made up. A ' +
+                             'generated password is in `password` and an ' +
+                             'activation link in `activationUrl` — EACH ' +
+                             'RETURNED ONCE, because what is stored is a hash ' +
+                             'and this service cannot produce either again.' },
+
+      // THE OPERATION THAT WAS DOCUMENTED BEFORE IT EXISTED (2026-09-06).
+      // `common/credentials.js` names `POST /admin-api/users/set-password`
+      // twice — in the sentence a refused sign-in gets, and in the banner the
+      // product-mode bootstrap prints telling an operator to change the
+      // generated password — and no such operation had ever been written.
+      // Somebody following either instruction got a 404 naming an endpoint
+      // this service documents.
+      { action: 'set-password', operationId: 'setUserPassword',
+        summary: 'Set or replace somebody\'s password',
+        description: 'Hashed with scrypt by `credentials.js`, which is the one ' +
+                     'place in this service a password is ever verified or ' +
+                     'set, and written to `userPassword` on their directory ' +
+                     'entry. **It cannot be read back by anything** — not this ' +
+                     'API, not the console, not an `ldapsearch`, which sees the ' +
+                     'hash — so a lost password is replaced rather than ' +
+                     'recovered.\n\nSend `password`, or `generate: true` to ' +
+                     'have one made up and RETURNED ONCE. The person must ' +
+                     'already exist; this creates nobody.\n\n**IN ' +
+                     'DEVELOPMENT MODE THIS CHANGES ALMOST NOTHING AND IS ' +
+                     'STILL WORTH DOING.** Nothing here checks a password in ' +
+                     'development — every one is accepted — so setting one ' +
+                     'does not make a sign-in work that would otherwise fail. ' +
+                     'What it does is put the attribute on the entry, which is ' +
+                     'what an LDAP client reads, what `hasPassword()` counts, ' +
+                     'and what product mode would need. In PRODUCT mode it is ' +
+                     'the credential.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description: 'The person, as /admin-api/users names them. ' +
+                                 'They must already exist.' },
+            username: { type: 'string', description: 'Accepted for `user`.' },
+            password: { type: 'string',
+                        description: 'The password to set. Required unless ' +
+                                     '`generate` is true.' },
+            passwordConfirm: { type: 'string',
+                               description: 'Optional, checked where sent.' },
+            generate: { type: 'boolean',
+                        description: 'Make one up instead — 32 bytes of ' +
+                                     'randomBytes, base64url, the same ' +
+                                     'generator the product-mode bootstrap ' +
+                                     'account uses. It is RETURNED ONCE in ' +
+                                     '`password` and never again.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice', generate: true }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether it was set, and — only where it was ' +
+                             'GENERATED — the password, once. A password you ' +
+                             'sent is never echoed back: you already hold it, ' +
+                             'and returning it would put it in a second place.' }
     ] },
 
   // ---------------------------------------------------------------------
@@ -1813,9 +2119,13 @@ const ROUTES = [
                  'client can delete or rename one through the protocol ' +
                  'between one call and the next, and that is the interesting ' +
                  'case rather than a routing problem.\n\nA GROUP HERE GRANTS ' +
-                 'NOTHING: no token, assertion, ticket or PAC this service ' +
-                 'issues carries a group from this directory, and no ' +
-                 'endpoint reads one.',
+                 'NOTHING, with two exceptions: no endpoint in this service ' +
+                 'decides anything on a group, and the only two that do are ' +
+                 '`admin.readGroup` and `admin.writeGroup`, which say who may ' +
+                 'use the console. A token CAN carry one — `groups.claim` is ' +
+                 'on by default and puts the subject\'s groups in every access ' +
+                 'token, ID Token and SAML assertion — and carrying a fact is ' +
+                 'not acting on one.',
     mirrors: 'GET /admin/groups',
     parameters: [
       { name: 'group', in: 'query', required: false,
@@ -1846,6 +2156,157 @@ const ROUTES = [
       sendJson(res, 200, admin.groupsView(req).json);
       log.debug("Leaving the management API groups endpoint.");
     } },
+
+  // ---------------------------------------------------------------------------
+  // AND THE TWO WRITES (2026-09-06), WHICH CLOSED A HOLE RATHER THAN ADDING A
+  // FEATURE.
+  //
+  // Until today `/admin-api/groups` was a READ and so was `/admin/groups`, and
+  // the only two doors onto a group in this directory were an `ldapadd` on the
+  // raw socket and `POST /scim/v2/Groups`. So this API could put a PERSON in
+  // the directory (`/users/create`) and could not put them in a GROUP, and the
+  // console could report a dangling member, a claimed membership and the two
+  // groups that decide who may use it without being able to create any of them.
+  //
+  // **RULE 7 COULD NOT HAVE CAUGHT IT AND THAT IS THE INTERESTING PART.** That
+  // rule is a parity check between the console and this API — every control
+  // there has an operation here, every operation here names a control there —
+  // and it is satisfied exactly when both are missing. It reports drift, not
+  // absence. What found this was a load test that had to reach for SCIM to make
+  // fifty groups on a service whose own management API creates users five
+  // thousand at a time.
+  //
+  // THE ACTION SWITCH IS IN `admin.groupsAction()` and not here, exactly as the
+  // users one is: two doors onto one action must not be two readings of what
+  // was sent.
+  // ---------------------------------------------------------------------------
+  { method: 'POST', route: BASE + '/groups/:action', tag: 'Groups',
+    mirrors: 'POST /admin/groups',
+    handler: function (req, res) {
+      log.debug("Entering the management API groups action endpoint.");
+      const body = parseBody(req);
+      const result = admin.groupsAction(withAction(req, body));
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API groups action endpoint.");
+    },
+    actions: [
+      { action: 'create', operationId: 'createGroup',
+        summary: 'Put a group in the directory',
+        description: 'An entry under `ou=groups`, as a `groupOfNames` — so it ' +
+                     'is counted as a group by BOTH of the rules ' +
+                     '/admin/groups applies, its placement and its object ' +
+                     'class, and stays one if a client moves it.\n\n**The ' +
+                     'name becomes the `cn` AND the RDN**, so it is refused ' +
+                     'if it carries a character RFC 4514 section 2.4 reserves ' +
+                     'in a DN (one of `, = + < > # ; " \\`) — the same rule ' +
+                     'a username is refused by, and refused rather than ' +
+                     'escaped for the same reason: an `ldapadd` can still ' +
+                     'create such an entry with the escaping written out. A ' +
+                     'DN sent here is refused too, because what it would ' +
+                     'create is a group whose name is another group\'s ' +
+                     'DN.\n\n**A member that names nothing is WRITTEN, not ' +
+                     'refused.** This directory does no referential integrity ' +
+                     'in either direction — deleting a person leaves their DN ' +
+                     'in every group that listed them — so a create that ' +
+                     'refused a dangling member would make the state ' +
+                     '/admin/groups exists to report impossible to produce ' +
+                     'from this door. They come back in `dangling`.\n\n**An ' +
+                     'empty group is allowed and RFC 4519 says it should not ' +
+                     'be** (`member` is MUST on `groupOfNames`). SCIM already ' +
+                     'creates one; a management API stricter than SCIM about ' +
+                     'the same store would be two doors disagreeing about ' +
+                     'what this directory holds.\n\n**IT GRANTS NOTHING.** ' +
+                     'No endpoint here decides anything on a group. The two ' +
+                     'that do are `admin.readGroup` and `admin.writeGroup`, ' +
+                     'and they are granted at POST /admin-api/rbac rather ' +
+                     'than by creating a group with the right name — though ' +
+                     'creating one with the right name and adding somebody ' +
+                     'to it does the same thing, because those two ARE ' +
+                     'ordinary groups in this directory.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            group: { type: 'string',
+                     description: 'The `cn`. Not a DN — this puts it under ' +
+                                  '`ou=groups` in the realm the call is made ' +
+                                  'in.' },
+            displayName: { type: 'string',
+                           description: 'Accepted for `group`, spelt the way ' +
+                                        'SCIM spells it.' },
+            note: { type: 'string',
+                    description: 'What the entry\'s `description` says about ' +
+                                 'why it exists. Defaults to a sentence ' +
+                                 'saying it was created by hand rather than ' +
+                                 'by a directory client.' },
+            members: {
+              description: 'Who is in it, as an array of user names or DNs — ' +
+                           'a group can hold another group, and no user name ' +
+                           'names one. A form sends one string, split on ' +
+                           'newlines and commas. A bare name resolves to that ' +
+                           'person\'s OWN entry wherever it is, because ' +
+                           'somebody seeded by a client certificate is at ' +
+                           '`cn=<name>,ou=users` and a value written in the ' +
+                           '`uid=` form would dangle beside the entry it ' +
+                           'meant to name.',
+              oneOf: [{ type: 'array', items: { type: 'string' } },
+                      { type: 'string' }]
+            }
+          },
+          required: ['group'],
+          examples: [{ group: 'developers', note: 'the people who write it',
+                       members: ['alice', 'bob'] }],
+          additionalProperties: false
+        },
+        responseDescription: 'The DN it was created at, the membership values ' +
+                             'written, and which of them name nothing.' },
+
+      { action: 'add-member', operationId: 'addGroupMember',
+        summary: 'Put somebody in a group that already exists',
+        description: 'One membership value onto one group. `group` is its ' +
+                     '`cn` or its whole DN; `member` is a user name or any ' +
+                     'DN.\n\n**IT IS IDEMPOTENT.** Adding somebody already ' +
+                     'listed answers `ok: true` with `changed: false` rather ' +
+                     'than an error, so a script that adds on every run does ' +
+                     'not fail on its second one. Membership is asked across ' +
+                     '`member`, `uniqueMember` and `memberUid` together, ' +
+                     'which is how /admin/groups and the groups claim ask it ' +
+                     '— an add that could not see a `memberUid` would write a ' +
+                     'second value for one membership.\n\n**It writes onto ' +
+                     '`member`** whatever else the entry carries, rather than ' +
+                     'extending whichever convention the group already uses: ' +
+                     'this service\'s groups claim, the console and RFC 4519 ' +
+                     'all read `member` first, and guessing which of three ' +
+                     'attributes was meant would be this operation deciding ' +
+                     'something the caller did not say.\n\n**It does not ' +
+                     'create the group as a side effect.** A typo in the name ' +
+                     'would then be a new group rather than an error. And it ' +
+                     'writes nothing onto the PERSON: `memberOf` is ' +
+                     'maintained by nothing here — it is not even a standard ' +
+                     'attribute — and a value written there is one no other ' +
+                     'door in this service can take away.\n\n**Removing one ' +
+                     'is not here.** It is an `ldapmodify` or a SCIM `PATCH`, ' +
+                     'and POST /admin-api/rbac for the two groups that grant ' +
+                     'the console.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            group: { type: 'string',
+                     description: 'The group\'s `cn` or its whole DN.' },
+            member: { type: 'string',
+                      description: 'A user name, or the DN of any entry.' },
+            user: { type: 'string', description: 'Accepted for `member`.' },
+            username: { type: 'string', description: 'Accepted for `member`.' }
+          },
+          required: ['group', 'member'],
+          examples: [{ group: 'developers', member: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether anything changed, the value written, ' +
+                             'and whether it resolves to an entry this ' +
+                             'directory holds.' }
+    ] },
 
   // --- The directory itself, entry by entry --------------------------------
   //
@@ -5164,6 +5625,65 @@ const ROUTES = [
       log.debug("Leaving the management API XACML decision endpoint.");
     } },
 
+  // THE ONLY XACML OPERATION ABOUT TRAFFIC. The other six describe the
+  // repository — what policies exist, what one says, what the PDP would decide
+  // about a subject you name. This one answers what is actually HAPPENING, and
+  // it is the operation somebody reaches for when authorization is
+  // misbehaving rather than when it is being set up.
+  //
+  // NO POST BESIDE IT, and that is rule 7 read exactly rather than by shape:
+  // the page it mirrors has no control. A reset was refused rather than
+  // forgotten — a console that could zero its own monitoring would make every
+  // number on it a number somebody might have zeroed, and the audit log, which
+  // is the durable record, cannot be reset either.
+  { method: 'GET', path: BASE + '/xacml/monitor', tag: 'XACML',
+    operationId: 'getXacmlMonitor',
+    summary: 'How many authorization decisions are being made, by which ' +
+             'enforcement point, and how many are refusals',
+    description: 'Everything /admin/xacml/monitor draws: the global figures ' +
+                 '— policies, enforcement points, decisions, allows, ' +
+                 'declines — and then every PEP with its own counts, ' +
+                 'EMBEDDED and REMOTE in one list.\n\n**A DECISION IS NOT ' +
+                 'AN ENFORCEMENT.** XACML has four decisions (Permit, Deny, ' +
+                 'NotApplicable, Indeterminate) and a PEP has two outcomes, ' +
+                 'and what maps between them is the PEP\'s BIAS: a ' +
+                 'deny-biased PEP refuses a NotApplicable that a ' +
+                 'permit-biased one allows, from the same decision on the ' +
+                 'same request. An obligation the PEP cannot discharge also ' +
+                 'turns a Permit into a refusal (section 7.2) — the one ' +
+                 'enforcement outcome that looks like a bug from the client ' +
+                 'side and is the specification working. So `allowed` is not ' +
+                 '`permit`, and both are reported.\n\n**WHAT THIS SERVICE ' +
+                 'SAW IS NOT WHAT IT WAS TOLD.** `decisions.here` was ' +
+                 'counted by this process as it happened; `decisions.remote` ' +
+                 'is what registered PEPs REPORT on their heartbeats, ' +
+                 'cumulative in their own memory, and a PEP that restarts ' +
+                 'makes it go down. `decisions.combined` adds the two, which ' +
+                 'is the figure a deployment wants and is arithmetic over ' +
+                 'two kinds of evidence rather than a ' +
+                 'measurement.\n\n**THE EMBEDDED PEPS ARE NOT ' +
+                 '"REGISTERED" AND CANNOT BE.** They are compiled into this ' +
+                 'process, so their existence is a fact about the build. A ' +
+                 'remote PEP registers because it has no other way to be ' +
+                 'known about — and even that is not a permission: an ' +
+                 'unregistered PEP can pull GET /xacml/pep/policies and ' +
+                 'enforce perfectly, and appears here nowhere. This is every ' +
+                 'enforcement point the service KNOWS ABOUT, which is a ' +
+                 'smaller claim than every one that exists.\n\nThe ' +
+                 'counters are IN MEMORY, start with the process (`since`) ' +
+                 'and are per trust realm. The durable record of a refusal ' +
+                 'is GET /admin-api/audit, which has the reason as well as ' +
+                 'the count.',
+    mirrors: 'GET /admin/xacml/monitor',
+    responseDescription: 'The global figures, and one row per enforcement ' +
+                         'point.',
+    responseSchema: { $ref: '#/components/schemas/XacmlMonitor' },
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML monitor endpoint.");
+      sendJson(res, 200, admin.xacmlMonitorView(req));
+      log.debug("Leaving the management API XACML monitor endpoint.");
+    } },
+
   { method: 'GET', path: BASE + '/xacml/peps', tag: 'XACML',
     operationId: 'getXacmlPeps',
     summary: 'The REMOTE Policy Enforcement Points that pull this ' +
@@ -5219,7 +5739,13 @@ const ROUTES = [
                      'directory entry, and each parameter is sent as ' +
                      '`p_<name>`; anything omitted takes the template\'s own ' +
                      'default, so a call with only `template` produces the ' +
-                     'documented example.\n\nA template BUILDS THE MODEL and ' +
+                     'documented example.\n\n`blank` is the one template ' +
+                     'that is not an example: it builds an EMPTY Policy, or ' +
+                     'an empty PolicySet with `p_kind=policyset` — which is ' +
+                     'the only way to create one of those without ALFA. An ' +
+                     'empty deny-unless-permit document DENIES rather than ' +
+                     'answering NotApplicable, so build it before making it ' +
+                     'the root.\n\nA template BUILDS THE MODEL and ' +
                      'the writer serializes it, rather than substituting ' +
                      'into XML text — so a role called `a"b` cannot produce ' +
                      'a document that will not parse.\n\nThe FIRST policy in ' +
@@ -7474,6 +8000,65 @@ const ROUTES = [
       log.debug("Leaving the management API SCIM endpoint.");
     } },
 
+  // WHAT THAT SURFACE IS ACTUALLY DOING, as opposed to what it is. The
+  // operation above mirrors /admin/scim, which is a page about the SURFACE;
+  // this one mirrors /admin/scim/monitor, which the console files under
+  // MONITORING because where a page goes is decided by the question it
+  // answers. Both read one set of counters in common/admin_stats.js through
+  // two functions, so there is no second tally for them to disagree over.
+  //
+  // NO POST BESIDE IT, and that is rule 7 read exactly rather than by shape:
+  // the page it mirrors has no control. A reset was refused rather than
+  // forgotten — a console that could zero its own monitoring would make every
+  // number on it a number somebody might have zeroed, and the audit log, which
+  // is the durable record, cannot be reset either.
+  { method: 'GET', path: BASE + '/scim/monitor', tag: 'SCIM',
+    operationId: 'getScimMonitor',
+    summary: 'How many SCIM calls there have been, from whom, of what kind, ' +
+             'and how many failed',
+    description: 'Everything /admin/scim/monitor draws: the call totals, one ' +
+                 'row per operation with its successes, failures, latency and ' +
+                 'bytes returned, one row per resource type, one row per ' +
+                 'authenticated client, the authentication schemes with the ' +
+                 'ones at zero included, what went back by status class, ' +
+                 'status and `scimType`, and the last fifty requests ' +
+                 'individually.\n\n**A CLIENT IS AN AUTHENTICATED ' +
+                 'PRINCIPAL, NOT A CONNECTION.** SCIM is stateless HTTP — no ' +
+                 'session, no registration, nothing to be connected — so ' +
+                 '`authentication.distinct` is how many different names have ' +
+                 'successfully authenticated since this process started. It ' +
+                 'never goes down: a provisioning client that has stopped ' +
+                 'calling is indistinguishable from one that is between ' +
+                 'calls.\n\n**A REFUSED CALLER IS NOT A CLIENT.** Calls the ' +
+                 'gate turned away are counted in `authentication.refused` ' +
+                 'and appear in no `clients` row, even when the credential ' +
+                 'carried a name — Basic and Digest both put one on the wire. ' +
+                 'Attributing traffic to an identity this service declined to ' +
+                 'believe is the one mistake this reply could make that would ' +
+                 'matter.\n\n**THE OPERATION COUNTS DO NOT SUM TO ' +
+                 '`calls`.** One `POST /scim/v2/Bulk` carrying five creates ' +
+                 'is one `bulk` AND five `create`s, because each of the five ' +
+                 'really is performed.\n\n**AN ABSENT MEASUREMENT IS NULL ' +
+                 'AND NOT ZERO.** `averageMs`, `maxMs` and `successRate` are ' +
+                 'null where nothing has been called: an average over no ' +
+                 'samples is absent, and a 100% success rate on zero requests ' +
+                 'is the most misleading number here.\n\nThe counters are ' +
+                 'IN MEMORY, start with the process (`since`) and are PER ' +
+                 'TRUST REALM, like the directory SCIM writes into. The ' +
+                 'durable record of what SCIM was asked to do is GET ' +
+                 '/admin-api/audit, which has the actor and the target as ' +
+                 'well as the count.',
+    mirrors: 'GET /admin/scim/monitor',
+    responseDescription: 'The call totals, the per-operation, per-resource, ' +
+                         'per-client and per-scheme breakdowns, and the ' +
+                         'recent requests.',
+    responseSchema: { $ref: '#/components/schemas/ScimMonitor' },
+    handler: function (req, res) {
+      log.debug("Entering the management API SCIM monitor endpoint.");
+      sendJson(res, 200, admin.scimMonitorJson(req));
+      log.debug("Leaving the management API SCIM monitor endpoint.");
+    } },
+
   { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
     operationId: 'getAudit',
     summary: 'What happened here, in order, filtered and paged',
@@ -9069,7 +9654,176 @@ function operationSummaries() {
 // a product deployment that served that to anybody would be handing out the
 // floor plan. They are HTML and JavaScript rather than JSON, so the refusal is
 // shaped for a browser.
+// ---------------------------------------------------------------------------
+// AND SINCE 2026-09-09 THE FIRST QUESTION IS AN ACCESS TOKEN, IN EVERY MODE.
+//
+// The paragraphs above are the record of what this surface used to be and are
+// kept because the argument they make is still the argument for the OFF
+// switch: `adminApi.authRequired` restores the open API exactly, and it is
+// the way back in when nobody can mint a token.
+//
+// What changed is the default. `/admin-api` is a MACHINE surface — no browser,
+// no session, no sign-in screen — so it is reached the way a machine reaches a
+// resource server: an OAuth 2.0 access token this service issued, audienced to
+// this API, carrying `admin:read` for a read and `admin:write` for anything
+// that changes state. Three things are checked and each refuses differently,
+// because they are three different mistakes:
+//
+//   * NO TOKEN, or one this service did not sign, or an expired one — 401 with
+//     a `WWW-Authenticate` header naming the scopes, which is what an OAuth
+//     client is built to read.
+//   * A TOKEN FOR SOMETHING ELSE — 403. An access token is a bearer
+//     credential, so one minted for another resource server must not be
+//     replayable here; that is the whole purpose of `aud` and it is the check
+//     most often left out.
+//   * A TOKEN WITHOUT THE SCOPE THE OPERATION NEEDS — 403 from the POLICY,
+//     not from this code. The scopes become the built-in ADMIN_READ and
+//     ADMIN_WRITE roles (see `common/roles.js`) and the XACML access-control
+//     document asks for the one the action requires, so what this surface
+//     demands is stated where every other access decision in this service is
+//     stated rather than in an `if` here.
+//
+// THE SCOPE IS NOT THE ROLE AND THE MAPPING IS DELIBERATE. A scope is what a
+// client asked for and the authorization server granted; a role is what a
+// policy names. Keeping them apart is what lets a deployment write "a read of
+// the management API needs ADMIN_READ" without the document knowing that OAuth
+// exists.
+// ---------------------------------------------------------------------------
+function bearerOf(req) {
+  const said = String((req.headers && req.headers.authorization) || '');
+  if (!/^bearer\s+/i.test(said)) {
+    return '';
+  }
+  return said.replace(/^bearer\s+/i, '').trim();
+}
+
+// What `aud` has to name. Empty configuration means this service's own
+// `/admin-api` under the host the request arrived on, which is exactly what a
+// client gets by asking `resource=<base>/admin-api` at the token endpoint.
+function wantedAudience(req) {
+  const pinned = String(config.value('adminApi.audience') || '').trim();
+  if (pinned) {
+    return pinned;
+  }
+  // COMPUTED OUTSIDE ANY REALM, for the reason the signing key is taken from
+  // the default realm below: this credential is service-wide. `baseUrlOf()`
+  // glues on `realms.currentPrefix()`, so under `/realm/acme` it would answer
+  // `https://host/realm/acme/admin-api` — a different audience per realm, and
+  // therefore a token per realm, which is exactly the per-realm administrator
+  // this service refuses to have. Running in the default realm gives the empty
+  // prefix and one audience everywhere.
+  return realms.run(realms.get(realms.DEFAULT_ID), function () {
+    return baseUrlOf(req);
+  }) + BASE;
+}
+
+function audienceAccepted(claims, req) {
+  const wanted = wantedAudience(req);
+  const held = Array.isArray(claims.aud) ? claims.aud
+    : (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
+  return held.map(String).indexOf(wanted) >= 0;
+}
+
 app.use(BASE, function (req, res, next) {
+  if (config.value('adminApi.authRequired')) {
+    const scopesWanted = req.method === 'GET' ? 'admin:read' : 'admin:write';
+    const presented = bearerOf(req);
+    if (!presented) {
+      res.set('WWW-Authenticate',
+              'Bearer realm="' + BASE + '", scope="admin:read admin:write"');
+      return sendJson(res, 401, { error: 'unauthorized', errors: [
+        'This API requires an OAuth 2.0 access token. Ask ' +
+        '/oauth2/token for one with `grant_type=client_credentials`, ' +
+        '`scope=admin:read admin:write` and `resource=' +
+        wantedAudience(req) + '`, then send it as `Authorization: Bearer`. ' +
+        'adminApi.authRequired turns this off.'] });
+    }
+    // ---------------------------------------------------------------------
+    // VERIFIED AGAINST THE DEFAULT REALM'S KEY, WHEREVER THIS IS REACHED.
+    //
+    // `STS` is a proxy over the AMBIENT realm's key set, so under
+    // `/realm/<id>/admin-api` it is that realm's — and a token minted at the
+    // default realm's token endpoint then fails to verify, which is a 401 on a
+    // perfectly good credential.
+    //
+    // Taking the default realm's key is not a workaround for that; it is the
+    // same rule the console's two roles already follow, for the same reason.
+    // Those are groups in the DEFAULT realm's directory, read there from every
+    // realm, "because a per-realm roster would mean anybody who can create a
+    // realm can make themselves an administrator of the service". A per-realm
+    // SIGNING KEY for this API is that hole with a different shape: anybody who
+    // could create a realm could mint themselves a token its own management API
+    // would believe. So the credential for this surface is service-wide, and
+    // what a realm still decides is what the operations reach.
+    //
+    // The AUDIENCE needs no such care: `baseUrlOf()` answers scheme and host
+    // with no path, so `<base>/admin-api` is the same string in every realm.
+    // ---------------------------------------------------------------------
+    let claims = null;
+    try {
+      const certPem = realms.run(realms.get(realms.DEFAULT_ID),
+                                 function () { return STS.certPem; });
+      claims = stsCrypto.verifyJws(presented, certPem);
+    } catch (e) {
+      claims = null;
+    }
+    if (!claims) {
+      res.set('WWW-Authenticate',
+              'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+      return sendJson(res, 401, { error: 'invalid_token', errors: [
+        'That access token was not issued by this service, or its signature ' +
+        'does not verify. Tokens are signed with the key at /oauth2/jwks and ' +
+        'that key is regenerated on every start in development mode.'] });
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.exp && Number(claims.exp) <= now) {
+      res.set('WWW-Authenticate',
+              'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+      return sendJson(res, 401, { error: 'invalid_token', errors: [
+        'That access token expired at ' +
+        new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
+    }
+    if (!audienceAccepted(claims, req)) {
+      return sendJson(res, 403, { error: 'forbidden', errors: [
+        'That access token is for a different audience. It carries ' +
+        JSON.stringify(claims.aud || null) + ' and this API answers to "' +
+        wantedAudience(req) + '". A bearer token minted for another resource ' +
+        'server must not be replayable here, which is what `aud` is for.'] });
+    }
+    const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
+    const who = String(claims.client_id || claims.sub || '(a client)');
+    const held = roles.rolesOf({ kind: 'application', name: who,
+                                 authenticated: true, scopes: scopes });
+    const policy = accessGate.check({
+      resource: accessGate.RESOURCE.MANAGEMENT_API,
+      action: req.method === 'GET' ? accessGate.ACTION.READ
+                                   : accessGate.ACTION.WRITE,
+      // THE REQUIREMENT IS STATED HERE AND ENFORCED THERE. `requiredRoles`
+      // travels in the REQUEST — the `access-control` document is written to
+      // take it from there, which is what lets one policy decide for every
+      // surface — so naming the role per action is the whole of encoding
+      // "a read needs ADMIN_READ and a write needs ADMIN_WRITE" in XACML.
+      // Nothing in this file decides the outcome; it decides the question.
+      requiredRoles: [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'],
+      subject: { name: who, authenticated: true, roles: held, sessionId: null },
+      context: { method: req.method, path: req.originalUrl || req.url }
+    });
+    if (!policy.allowed) {
+      log.info('admin-api: the access policy refused ' + req.method + ' ' +
+               (req.originalUrl || req.url) + ' for ' + who + '. ' +
+               policy.why);
+      return sendJson(res, 403, { error: 'forbidden', errors: [
+        'The access policy refused this request. ' + policy.why +
+        ' This token carries the scope(s) ' +
+        (scopes.length ? scopes.join(', ') : '(none)') + ', which is the ' +
+        'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. A ' +
+        (req.method === 'GET' ? 'read needs admin:read (ADMIN_READ)'
+                              : 'write needs admin:write (ADMIN_WRITE)') +
+        '. The document is on /admin/xacml and xacml.enforceAccess turns ' +
+        'the layer off.'] });
+    }
+    return next();
+  }
   if (!mode.gatesManagementApi()) {
     return next();
   }
@@ -9197,13 +9951,38 @@ ROUTES.forEach(function (entry) {
   });
 });
 
+// WHAT THIS BANNER SAYS CHANGED ON 2026-09-08 AND THE OLD TEXT IS WORTH
+// RECORDING, because it was true for as long as this file existed and is now
+// exactly wrong: it read "It is NOT protected", and told a reader that this
+// was the surface to reach for when nobody holds a console role. Anybody
+// working from a log line from an older build will look for that sentence, so
+// the replacement contradicts it in the same place rather than going quiet.
+//
+// It is computed at require time and says "currently", because
+// `adminApi.authRequired` is changeable while running — a banner that stated
+// it as a fact would be a line in a log claiming something the operator turned
+// off ten minutes later.
 log.info('The management API is at ' + BASE + ': ' +
          operationSummaries().length + ' operations over the same functions ' +
          'the /admin console calls. Its OpenAPI document is at ' + BASE +
          '/openapi.json and an explorer that calls it is at ' + BASE +
-         '/docs. It is NOT protected — and the console now IS ' +
-         '(admin.authRequired), so this is the surface to reach for when ' +
-         'nobody holds a console role: POST ' + BASE + '/rbac/grant.');
+         '/docs. ' +
+         (config.value('adminApi.authRequired')
+           ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
+             'audience ' + (config.value('adminApi.audience') || BASE) + ', ' +
+             'scope admin:read to read and admin:write to write, checked as a ' +
+             'XACML access decision against the ADMIN_READ and ADMIN_WRITE ' +
+             'roles. Get one from the client_credentials grant as the seeded ' +
+             'application sts-management-api, whose secret is ' +
+             'adminApi.clientSecret. THAT SETTING IS THE BOOTSTRAP: this ' +
+             'surface used to be the way back in when nobody held a console ' +
+             'role, and it is only still that if the secret was pinned before ' +
+             'the start — a secret minted per start is readable only through ' +
+             'the API it unlocks.'
+           : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
+             'console IS (admin.authRequired), so this is the surface to ' +
+             'reach for when nobody holds a console role: POST ' + BASE +
+             '/rbac/grant.'));
 
 module.exports = {
   BASE: BASE,

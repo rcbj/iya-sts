@@ -6,9 +6,16 @@
 // STARTING POINTS: A POLICY SOMEBODY CAN EDIT, RATHER THAN A BLANK ONE.
 //
 // The guided editor can build any policy from nothing, one element at a time,
-// and nobody wants to. A template is the first twenty clicks already made — a
-// working, valid, evaluable policy in a shape people actually write — and the
-// editor takes it from there.
+// and mostly nobody wants to. A template is the first twenty clicks already
+// made — a working, valid, evaluable policy in a shape people actually write
+// — and the editor takes it from there.
+//
+// **THE `blank` ROW IS THE EXCEPTION AND IT IS DELIBERATE.** "Mostly" is
+// doing work in that paragraph: somebody who means to write the policy
+// themselves had no door at all, because deleting the rules out of an RBAC
+// document is not the same thing as starting from an empty one. That row
+// makes no argument and produces nothing to read — see its own comment for
+// what it costs, which is that an empty deny-unless-permit document DENIES.
 //
 // ADDING A TEMPLATE IS A ROW IN `TEMPLATES` BELOW AND NOTHING ELSE. That is
 // the whole design and it is the promise this file has to keep: the console
@@ -37,13 +44,18 @@
 // be refused rather than becoming the broken policy everybody starts from.
 //
 // ---------------------------------------------------------------------------
-// TWO TEMPLATES, AND THEY ARE THE TWO HALVES OF THE ARGUMENT XACML EXISTS FOR.
+// RBAC AND ABAC ARE THE TWO HALVES OF THE ARGUMENT XACML EXISTS FOR.
 //
 // RBAC asks "what ROLE do you hold", ABAC asks "what is TRUE about you, this
 // resource, and right now". The first is what most deployments have and the
 // second is what they wanted; having both here side by side, producing
 // documents in the same language, is the clearest way to show what the
 // difference actually costs in policy.
+//
+// The other three rows are not part of that argument and are not a third and
+// fourth position in it: `role-issuance` and `access-control` are the two
+// documents this service asks about ITSELF, and `blank` is an empty page.
+// This comment said "TWO TEMPLATES" until 2026-09-06, when there were five.
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
@@ -780,6 +792,110 @@ const TEMPLATES = [
         obligations: [], advice: []
       };
     }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // THE BLANK ONE, AND IT IS THE ODD ROW IN THIS TABLE.
+    //
+    // Every other template here is an argument — RBAC against ABAC, and the
+    // two documents this service asks about itself. This one makes no
+    // argument at all: it produces an EMPTY Policy or an EMPTY PolicySet with
+    // a name, a version and a combining algorithm and nothing inside it, and
+    // hands it to the editor.
+    //
+    // The header of this file says a template is "the first twenty clicks
+    // already made", and that sentence is why this row did not exist for the
+    // first four. It is still true of the other four; what it missed is that
+    // SOMEBODY WHO WANTS TO WRITE THE POLICY THEMSELVES had no door at all.
+    // Deleting the rules out of an RBAC policy is not the same starting point
+    // — it leaves the RBAC PolicyId, the RBAC description and whatever the
+    // template's own name was — and until this row the only way to reach an
+    // empty document was to write ALFA, which is a second language to learn
+    // before you may use the editor at all.
+    //
+    // **THIS IS ALSO THE ONLY WAY TO CREATE A PolicySet FROM THE CONSOLE.**
+    // The other four all build a `Policy`, so the whole PolicySet half of the
+    // editor — nested policies, `PolicyIdReference`, the policy-combining
+    // menu, which is a different set of URIs from the rule-combining one —
+    // was reachable only by importing ALFA's `policyset`. That was a gap
+    // rather than a decision, and it is closed by a parameter rather than by
+    // a fifth and sixth row, because the two documents differ in their
+    // children and in nothing else a person choosing between them cares
+    // about.
+    //
+    // WHAT IT DECIDES BEFORE YOU EDIT IT, which is the thing to know before
+    // making it the root: an empty deny-unless-permit document DENIES. It
+    // does not answer NotApplicable and it is not inert. That is the same
+    // choice `xacml_editor.js` makes for a child policy added in the editor,
+    // and for the same reason — this editor is LIVE, so a blank document that
+    // started life permitting whatever reached it would be a hole opened by
+    // pressing Create. The `blurb` says so on the page, because the person
+    // pressing Create is exactly the person who has not read this file.
+    // -----------------------------------------------------------------------
+    id: 'blank',
+    label: 'Blank (for the brave)',
+    blurb: 'An empty document with nothing in it: a name, a version and a ' +
+           'combining algorithm. IT DENIES EVERYTHING until you add a rule, ' +
+           'because deny-unless-permit over nothing at all is a Deny — so ' +
+           'build it before you make it the root.',
+    what: 'Produces a Policy with no rules, or a PolicySet with no policies. ' +
+          'No Target, so it applies to every request; deny-unless-permit, so ' +
+          'it refuses every one of them until you say otherwise. This is the ' +
+          'starting point for writing a policy in the editor rather than ' +
+          'editing one somebody else shaped, and it is the only way to ' +
+          'create a PolicySet here without importing ALFA. The combining ' +
+          'algorithm is a dropdown on the document\'s own row in the editor, ' +
+          'so it is not a parameter here.',
+    parameters: [
+      { name: 'kind', label: 'Policy or PolicySet', dflt: 'policy',
+        type: 'string',
+        help: 'policy or policyset. A Policy holds RULES and a PolicySet ' +
+              'holds POLICIES — a nested one, or a PolicyIdReference naming ' +
+              'another entry in this repository, which is how a PDP reaches ' +
+              'more than one document. ANYTHING BUT "policyset" MEANS A ' +
+              'POLICY, which is the reading `yes` and `no` get everywhere ' +
+              'else on these forms; the Kind column on this page says which ' +
+              'you got before you have clicked anything else.' }
+    ],
+    build: function (answers, options) {
+      log.debug('Entering buildBlank().');
+      const given = answers || {};
+      const set = String(given.kind || '').trim().toLowerCase() === 'policyset';
+      const policy = {
+        kind: set ? 'PolicySet' : 'Policy',
+        id: options.idBase,
+        version: '1.0',
+        description: 'An empty ' + (set ? 'PolicySet' : 'Policy') +
+                     ' to build on. It ' +
+                     (set ? 'holds no policies' : 'holds no rules') +
+                     ' yet, and deny-unless-permit over nothing at all is a ' +
+                     'DENY — so this document refuses every request until ' +
+                     'you put something in it. Edit this description: it is ' +
+                     'what the next person reads first.',
+        // DENY-UNLESS-PERMIT, and the two spellings are genuinely different
+        // URIs rather than one with a word swapped — a PolicySet carrying the
+        // rule-combining spelling names an algorithm that does not exist for
+        // it. `xacml_editor.js` chooses the menu by the node for the same
+        // reason.
+        combiningAlgId: set ? model.POLICY_ALG.DENY_UNLESS_PERMIT
+                            : model.RULE_ALG.DENY_UNLESS_PERMIT,
+        // NO TARGET, so it applies to every request. An empty document that
+        // applied to nothing would be TWO things to undo before it decided
+        // anything, and the second one is invisible: a target nobody added is
+        // easy to add, where a target that is there and matches nothing looks
+        // exactly like a policy that is working.
+        target: null,
+        obligations: [], advice: []
+      };
+      if (set) {
+        policy.children = [];
+      } else {
+        policy.variables = {};
+        policy.rules = [];
+      }
+      log.debug('Leaving buildBlank(). An empty ' + policy.kind + '.');
+      return policy;
+    }
   }
 ];
 
@@ -821,7 +937,12 @@ function build(id, answers, options) {
   const policy = template.build(filled, {
     idBase: settings.idBase || 'urn:sts-mock:xacml:policy:' + slug(name)
   });
-  log.debug('Leaving build(). ' + policy.rules.length + ' rule(s).');
+  // A PolicySet HAS NO `rules`, and this line said `undefined rule(s)` for
+  // one from the moment the blank template could build one. What a document
+  // holds is named by what it IS.
+  log.debug('Leaving build(). ' + (policy.kind === 'PolicySet'
+    ? (policy.children || []).length + ' child policy(ies).'
+    : (policy.rules || []).length + ' rule(s).'));
   return { ok: true, policy: policy, answers: filled, template: template };
 }
 

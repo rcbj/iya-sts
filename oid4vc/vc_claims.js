@@ -196,6 +196,65 @@ VC_ATTRIBUTES.forEach(function (row) {
   BY_LDAP.set(row.ldap.toLowerCase(), row);
 });
 
+// ---------------------------------------------------------------------------
+// THE SAME CATALOGUE READ AS "WHAT A PERSON HERE HAS", WHICH IS A DIFFERENT
+// QUESTION FROM "WHAT A CREDENTIAL MAY CARRY" AND HAS THE SAME ANSWER.
+//
+// Added 2026-09-06 for /admin/users/new, the form on which an operator types a
+// person's details by hand instead of accepting the invented ones. That form
+// needs a list of the fields a person in this directory HAS, and `createUser()`
+// needs a list of the attributes it will accept from a caller — and if those
+// two lists were written out separately they would be a form offering a field
+// the writer silently drops, which is the worst shape a form can have.
+//
+// **IT IS THE WHOLE CATALOGUE AND NOT THE SELECTED ROWS.** `selectedRows()` is
+// about what an ISSUED CREDENTIAL asserts, which is a choice made on
+// /admin/vc; a person's telephone number is a fact about them whether or not
+// any credential carries it, and a create form that hid the unselected rows
+// would make the directory's contents depend on an unrelated page's setting.
+//
+// **`uid` IS THE ONE ROW LEFT OUT, AND ITS ABSENCE IS THE POINT.** It is the
+// USERNAME — `namePlan()` builds the DN out of it — so a form field for it
+// would be a second box asking the same question as the one marked required,
+// and a caller that filled both differently would create `uid=alice` whose uid
+// says `bob`. The username is asked for once, at the top.
+//
+// `description` STAYS IN, though it is the one row that is never invented
+// (`from` is null): this service writes a sentence there saying why the entry
+// exists, and an operator who wants to say something else about a person
+// should be able to. `createUser()` lets a typed one win over its own note and
+// says so.
+// ---------------------------------------------------------------------------
+const PERSON_FIELDS = VC_ATTRIBUTES.filter(function (row) {
+  return row.ldap.toLowerCase() !== 'uid';
+});
+
+// Lower-cased attribute name -> row, over PERSON_FIELDS. What a writer checks a
+// caller's attribute name against; the store lower-cases every name on the way
+// in, so this is keyed the way a stored entry is.
+const PERSON_BY_LDAP = new Map();
+PERSON_FIELDS.forEach(function (row) {
+  PERSON_BY_LDAP.set(row.ldap.toLowerCase(), row);
+});
+
+// The rows, in catalogue order, for a caller that is going to draw them. A COPY
+// of the array — the rows themselves are shared, because they are read-only
+// everywhere — so that a caller sorting or splicing the list cannot reorder the
+// catalogue for everybody else.
+function personFields() {
+  return PERSON_FIELDS.slice(0);
+}
+
+// The row for one attribute name, in any case, or null. This is the whole of
+// the "may a create write this?" decision, and it is a lookup rather than a
+// regex on purpose: the set of attributes a person here has is a LIST, and a
+// caller sending `userPassword` or `oauthClientSecret` on a create form is
+// refused because those are not on it rather than because somebody remembered
+// to name them.
+function personField(name) {
+  return PERSON_BY_LDAP.get(String(name == null ? '' : name).trim().toLowerCase()) || null;
+}
+
 // What the directory should CALL each of these when it shows them. ldap_server.js
 // merges this into its own CANONICAL_NAMES table rather than repeating the
 // spellings, because a page showing `schacdateofbirth` where the schema document
@@ -248,11 +307,21 @@ const DEFAULT_SELECTION = VC_ATTRIBUTES.filter(function (row) { return row.byDef
 // build. `realms.obj(factory)` is a plain object per realm, so
 // `state.selection` reads and `state.selection = wanted` writes work exactly as
 // the binding this replaced did, and each realm's default is the same default.
+// **AN ARRAY AND NOT A SET, AND ONLY SO THAT IT CAN BE PERSISTED
+// (2026-09-07).** This store is the credential claim set — an operator's
+// choice, not something minted — and it has to reach every request worker or
+// each one issues a different credential. A store replicates by declaring
+// `persist:`, and what is written is `JSON.stringify` of the value: a Set
+// serialises to `{}`, so declaring one would have persisted the shape and lost
+// every member, silently and with nothing failing.
+//
+// The working value inside setSelection() is still a Set — membership and
+// difference are what that function does — and only the STORED form is a list.
 const state = realms.obj(function () {
-  return { selection: new Set(DEFAULT_SELECTION.map(function (name) {
+  return { selection: DEFAULT_SELECTION.map(function (name) {
     return name.toLowerCase();
-  })) };
-});
+  }) };
+}, { persist: 'vc_claims.state' });
 
 // The selected rows, in CATALOGUE order rather than in the order they were
 // chosen. The order reaches the credential (it is the order of the Disclosures
@@ -261,12 +330,12 @@ const state = realms.obj(function () {
 // credential to anything diffing them.
 function selectedRows() {
   return VC_ATTRIBUTES.filter(function (row) {
-    return state.selection.has(row.ldap.toLowerCase());
+    return state.selection.indexOf(row.ldap.toLowerCase()) >= 0;
   });
 }
 
 function isSelected(ldapName) {
-  return state.selection.has(String(ldapName || '').toLowerCase());
+  return state.selection.indexOf(String(ldapName || '').toLowerCase()) >= 0;
 }
 
 function selectedNames() {
@@ -300,7 +369,8 @@ function setSelection(names) {
     log.debug("Leaving setSelection(). " + errors.length + " error(s); nothing changed.");
     return { ok: false, errors: errors };
   }
-  const before = state.selection;
+  // A Set for the difference below; the stored form is the list.
+  const before = new Set(state.selection);
   const added = [];
   const removed = [];
   wanted.forEach(function (key) {
@@ -309,7 +379,7 @@ function setSelection(names) {
   before.forEach(function (key) {
     if (!wanted.has(key)) removed.push(BY_LDAP.get(key).ldap);
   });
-  state.selection = wanted;
+  state.selection = Array.from(wanted);
   log.info('vc: the credential claim set is now ' + (selectedNames().join(', ') || '(empty)') +
            '. Added: ' + (added.join(', ') || 'nothing') + '. Removed: ' +
            (removed.join(', ') || 'nothing') + '.');
@@ -846,6 +916,12 @@ module.exports = {
   setSelection: setSelection,
   resetSelection: resetSelection,
   personaFor: personaFor,
+  // The catalogue read as "what a person here has" — /admin/users/new draws
+  // from this and ldap_server.js's createUser() checks against it, so the form
+  // cannot offer a field the writer would drop. See PERSON_FIELDS above.
+  PERSON_FIELDS: PERSON_FIELDS,
+  personFields: personFields,
+  personField: personField,
   generatedFor: generatedFor,
   // Filled by ldap_server.js at its require time; see the note above it.
   setDirectory: setDirectory,

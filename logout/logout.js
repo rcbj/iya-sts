@@ -954,6 +954,27 @@ function liveSessions() {
   // past `expires` is a session that has ended and has not been swept — and
   // this page is what is LIVE.
   authn.sessions.forEach(function (session) {
+    // ---------------------------------------------------------------------
+    // AN ARRIVAL SESSION IS NOT SOMEBODY BEING SIGNED IN, so it is not on this
+    // list. `authn.startArrivalSession()` gives every browser one the moment it
+    // reaches a protocol's front door: it holds the `anonymous` principal,
+    // nobody has chosen it, and `authn.sessionOf()` already declines to hand it
+    // to any protocol reader for the same reason.
+    //
+    // This list answers "who is signed in" — it is what `/admin/sessions`,
+    // `GET /admin-api/sessions` and a global sign-out all read — so a row
+    // nobody is in would be a Revoke button that ends nothing. Measured on the
+    // first full suite run, it was worse than untidy: every cookie-less probe
+    // of a front door added one, and the list came back holding its own
+    // two-hundred-row page cap, so a job asserting "the count went up by
+    // exactly two" was reading a saturated list.
+    //
+    // The row appears the moment it becomes a sign-in: startSession() upgrades
+    // it in place and `chosen` becomes true.
+    // ---------------------------------------------------------------------
+    if (session.chosen === false) {
+      return;
+    }
     if (session.expires && session.expires <= nowMs) {
       return;
     }
@@ -979,9 +1000,31 @@ function liveSessions() {
       // The KIND has to differ even though the store does not: a SCIM client
       // drawn as a "Browser sign-on session" would be this page saying
       // something untrue about the one thing it exists to report.
-      kind: session.credentialKey
-        ? (session.via || 'API') + ' session'
-        : 'Browser sign-on session',
+      // **AND A THIRD KIND SINCE 2026-09-06: A RELYING PARTY SESSION.** The
+      // admin console and the User Portal authenticate through this service's
+      // own authorization server now, so each holds a session of ITS OWN,
+      // established from an ID Token and derived from the sign-on session the
+      // authorization endpoint answered out of. `rpSurface` is what tells it
+      // apart, exactly as `credentialKey` tells an API session apart — one
+      // store, three kinds of row, one predicate each.
+      //
+      // Drawing it as a "Browser sign-on session" would be wrong in the way
+      // that matters most on this page: an operator ending what they think is
+      // somebody's whole sign-in would be ending one application's session and
+      // leaving the sign-on session — and every other application on it —
+      // alive. The two rows are visibly different, and `derivedFrom` says
+      // which sign-on session this one hangs off.
+      kind: session.rpSurface
+        ? (session.rpLabel || session.rpSurface) + ' session'
+        : session.credentialKey
+          ? (session.via || 'API') + ' session'
+          : 'Browser sign-on session',
+      // The sign-on session this one was derived from, where there is one.
+      // Empty on every other row. It is what makes the cascade visible: ending
+      // the parent ends this, and a reader looking at two rows for one person
+      // can see which is which rather than inferring it from the times.
+      derivedFrom: session.derivedFrom || '',
+      rpClientId: session.rpClientId || '',
       key: stats.identityKeyOf(username),
       username: username,
       sub: (session.user && session.user.sub) || '',
@@ -1004,11 +1047,19 @@ function liveSessions() {
       // is a record that a credential keeps being accepted — so it reports the
       // thing that IS true of it and that a reader wants: how much it is being
       // used and when it last was.
-      detail: session.credentialKey
-        ? (session.calls || 1) + ' call(s), last at ' +
-          new Date(session.lastSeenAt || session.expires || 0).toISOString()
-        : (rides.length ? 'carries ' + rides.join(', ')
-                        : 'nothing is signed into on it yet'),
+      detail: session.rpSurface
+        // A relying party session carries no relying parties of its own: it IS
+        // one. What a reader wants is which client holds it and which sign-on
+        // session it rests on, because ending THAT ends this.
+        ? 'held by ' + (session.rpClientId || session.rpSurface) +
+          (session.derivedFrom
+            ? ', derived from sign-on session ' + session.derivedFrom
+            : ', with no sign-on session behind it')
+        : session.credentialKey
+          ? (session.calls || 1) + ' call(s), last at ' +
+            new Date(session.lastSeenAt || session.expires || 0).toISOString()
+          : (rides.length ? 'carries ' + rides.join(', ')
+                          : 'nothing is signed into on it yet'),
       // WHETHER ANYBODY AUTHENTICATED FOR IT (2026-09-05).
       //
       // Only a browser session can answer anything but `true`. A Kerberos TGT

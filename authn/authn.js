@@ -195,7 +195,7 @@ const AUTHN_TTL_MS = 10 * 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const sessions = realms.map();         // session id -> the signed-in user
+const sessions = realms.map({ persist: 'authn.sessions' });  // session id -> the signed-in user
 
 // The requests waiting at the login screen: what to do with the person once
 // they have signed in, and what to tell them they are signing in FOR.
@@ -204,7 +204,7 @@ const sessions = realms.map();         // session id -> the signed-in user
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pending = realms.map();          // authn id -> { returnTo, details, ... }
+const pending = realms.map({ persist: 'authn.pending' });  // authn id -> { returnTo, details, ... }
 
 // WebAuthn, IN EITHER OF ITS TWO ROLES. The verifier is ./webauthn — written
 // from the specification and sharing no code with the debugger's own decoder,
@@ -241,14 +241,14 @@ const webauthnVerifier = require('./webauthn');
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const webauthnCredentials = realms.map();  // username -> { credentialId, publicKeyJwk, signCount }
+const webauthnCredentials = realms.map({ persist: 'authn.webauthnCredentials' });  // username -> { credentialId, publicKeyJwk, signCount }
 // mfa id -> { authn, username, challenge, passwordless, expires }
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingMfa = realms.map();
+const pendingMfa = realms.map({ persist: 'authn.pendingMfa' });
 const MFA_TTL_MS = 5 * 60 * 1000;
 
 // --- the browser session -----------------------------------------------------
@@ -286,7 +286,469 @@ function sessionOf(req) {
     log.debug("Leaving sessionOf(). The session had expired and was discarded.");
     return null;
   }
+  // -------------------------------------------------------------------------
+  // AN ANONYMOUS SESSION NOBODY HAS CHOSEN YET IS NOT A SIGN-IN, AND THIS IS
+  // THE ONE PLACE THAT HAS TO KNOW IT.
+  //
+  // `startArrivalSession()` below gives every browser its own anonymous
+  // unauthenticated session the moment it arrives at a protocol's front door.
+  // It is the SAME KIND of session the "Continue without signing in" button
+  // makes — the `anonymous` principal, `authenticated: false` — and there is
+  // one instance per browser rather than one shared row, so two visitors are
+  // two sessions on `/admin/sessions` exactly as two signed-in people are.
+  //
+  // **WHAT SEPARATES THEM IS `chosen`, AND WITHOUT IT SIGN-IN STOPS WORKING.**
+  // `/oauth2/authorize` — and both SAML profiles, and WS-Federation — decide
+  // whether to show the sign-in screen by asking this function whether there is
+  // a session: `if (session && !forcePrompt)` issues out of it. So a browser
+  // handed an anonymous session on arrival would never be prompted again, and
+  // this service would issue tokens for `anonymous` to every first-time
+  // visitor. That is not a subtle degradation; it is the sign-in screen
+  // becoming unreachable.
+  //
+  // So an arrival session carries `chosen: false` and this funnel declines to
+  // hand it out. The moment somebody signs in — or presses the button, which
+  // is CHOOSING to be anonymous — the row is upgraded in place and `chosen`
+  // becomes true, and every reader sees it from then on.
+  //
+  // Filtered HERE rather than at the six call sites, because a funnel every
+  // reader already goes through is the only place this can be made true by
+  // construction rather than by everybody remembering.
+  // -------------------------------------------------------------------------
+  if (session.chosen === false) {
+    log.debug("Leaving sessionOf(). An anonymous session nobody has chosen yet.");
+    return null;
+  }
   log.debug("Leaving sessionOf(). Signed in as " + session.user.username + ".");
+  return session;
+}
+
+// ---------------------------------------------------------------------------
+// THE TRACKING SESSION: A COOKIE FROM THE FIRST PROTOCOL REQUEST (2026-09-07).
+//
+// Until now the session cookie was written at the END of a sign-in, and
+// everything before that — the authorization request, the trip to the screen,
+// the form post — was correlated by a `pending` record whose id travels in the
+// URL. That works and it means a browser has no identity at all until it has
+// authenticated, which costs two things worth having:
+//
+//   * **The flow cannot be followed.** `/admin/sessions` shows sign-ins; a
+//     person who arrived, was shown the screen and gave up is invisible, and so
+//     is the request that brought them.
+//   * **Nothing about the browser is stable across the hops.** Everything that
+//     wants to recognise the same visitor twice has to be handed an identifier
+//     through the URL by whichever module happens to own that hop.
+//
+// So a browser that arrives at a protocol's front door with no cookie gets one
+// now, naming a row that holds nobody. When they sign in, `startSession()`
+// UPGRADES that row in place — same id, so the cookie the browser already has
+// goes on naming their session and nothing has to be re-issued.
+//
+// **IT HOLDS NO PRINCIPAL, and that is what keeps it honest.** `user` is null
+// and `authenticated` is false, and `sessionOf()` above refuses to hand it to
+// anybody, so no issuance site, no console gate and no role check can mistake
+// it for a party. The only things that see it are the ones that ask for it by
+// name.
+// ---------------------------------------------------------------------------
+function startArrivalSession(req, res, via) {
+  log.debug("Entering startArrivalSession().");
+  const existing = cookiesOf(req)[SESSION_COOKIE];
+  if (existing && sessions.get(existing)) {
+    // Already has one — a live sign-in, or an arrival session from an earlier
+    // hop. Either way this browser is already correlated and must not be given
+    // a second identity.
+    log.debug("Leaving startArrivalSession(). It already carries one.");
+    return null;
+  }
+  const sessionId = randomId(24);
+  const session = {
+    id: sessionId,
+    // THE ANONYMOUS PRINCIPAL, which is what makes this the same kind of
+    // session the button makes rather than a third thing. One directory entry,
+    // many sessions — see ANONYMOUS_USERNAME's header.
+    user: userFor(ANONYMOUS_USERNAME),
+    authenticated: false,
+    // NOBODY HAS CHOSEN THIS. See sessionOf() above for what turns on it.
+    chosen: false,
+    authTime: nowSec(),
+    // ---------------------------------------------------------------------
+    // THE FLOW'S CLOCK AND NOT THE SESSION'S, which is a correction rather
+    // than a preference. It was SESSION_TTL_MS, and the first full suite run
+    // showed what that costs: an arrival session is minted for EVERY
+    // cookie-less request to a protocol front door, which in a test run — or
+    // behind any crawler — is most of them, and at the session TTL they
+    // accumulate. `GET /admin-api/sessions?per=200` came back holding its
+    // two-hundred-row cap, so a job asserting "the count went up by exactly
+    // two" was reading a saturated list.
+    //
+    // Nobody is in one of these, and the only thing it has to outlive is the
+    // sign-in it was created for — which is exactly what AUTHN_TTL_MS is: the
+    // time a pending authentication waits at the screen. An arrival session
+    // that has not become a sign-in in ten minutes is a browser that went
+    // away.
+    // ---------------------------------------------------------------------
+    expires: Date.now() + AUTHN_TTL_MS,
+    startedAt: Date.now(),
+    lastSeenAt: Date.now(),
+    amr: [], acr: '0',
+    via: via || 'unknown',
+    relyingParties: []
+  };
+  sessions.set(sessionId, session);
+  setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; HttpOnly; ' +
+                  'SameSite=Lax' +
+                  (config.value('global.https') ? '; Secure' : ''));
+  log.debug("Leaving startArrivalSession(). " + sessionId + ".");
+  return session;
+}
+
+// ---------------------------------------------------------------------------
+// WHERE AN ARRIVAL SESSION IS ACTUALLY STARTED: a middleware over the protocol
+// front doors, registered HERE and nowhere else.
+//
+// **THE POSITION IS THE MECHANISM.** Rule 1 in the root CLAUDE.md: express
+// applies a middleware only to routes added AFTER it, and this module is 8 in
+// the require order. So a middleware registered here covers every browser
+// protocol that follows — the authorization endpoint (9), WS-Federation (10),
+// both SAML profiles (10a, 10b), federation (10c), OID4VC, the portal and the
+// console — and covers nothing registered before it, which is `home` and
+// WS-Trust. That is the right set by construction rather than by a list
+// somebody keeps up to date, and WS-Trust is SOAP with no browser in it.
+//
+// **THE PATHS ARE STILL NAMED, and the list is of FRONT DOORS rather than of
+// families.** A protocol has one or two paths a browser ARRIVES at and many it
+// only reaches mid-flow, and giving a cookie to a callback or a metadata fetch
+// would mint a session for a machine that will never send it back — one row
+// per metadata poll, for ever. So the list is the entry points, and anything
+// not on it is left alone.
+//
+// A request that already carries a session cookie is untouched, so this fires
+// once per browser and not once per request.
+// ---------------------------------------------------------------------------
+const ARRIVAL_PATHS = [
+  '/oauth2/authorize',
+  '/oauth2/device_authorization',
+  '/wsfed',
+  '/saml2/sso',
+  '/saml11/sso',
+  '/portal',
+  '/admin'
+];
+
+function isArrivalPath(pathOnly) {
+  for (let i = 0; i < ARRIVAL_PATHS.length; i++) {
+    const entry = ARRIVAL_PATHS[i];
+    if (pathOnly === entry || pathOnly.indexOf(entry + '/') === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+app.use(function (req, res, next) {
+  // ---------------------------------------------------------------------
+  // THE SLIDE RUNS ON EVERY REQUEST; THE MINT ONLY ON A FRONT DOOR.
+  //
+  // They are two different questions and were one for an hour. "Has this
+  // browser been quiet for ten minutes" is asked of every request that
+  // presents the cookie — the sign-in screen, the form post, the consent
+  // screen, none of which is a front door — because inactivity is about the
+  // BROWSER and not about which path it happened to ask for. "Should this
+  // browser be given an identity" is asked only where a protocol actually
+  // begins, or a metadata poll would mint one per poll for ever.
+  // ---------------------------------------------------------------------
+  touchArrivalSession(req);
+
+  // The realm prefix is already stripped by app.js's first middleware, so this
+  // sees the path as the routes are registered — which is the whole reason no
+  // route in this service carries a realm.
+  const pathOnly = String(req.url || '').split('?')[0];
+  if (!isArrivalPath(pathOnly)) {
+    next();
+    return;
+  }
+  try {
+    startArrivalSession(req, res, 'arrival');
+  } catch (e) {
+    // A session that could not be started must not fail the request it was
+    // started for: the person is trying to sign in, and the flow works without
+    // this — a sign-in mints its own session at the end exactly as it always
+    // did. Logged because it is a fault rather than an ordinary outcome.
+    log.error('authn: an arrival session could not be started for ' +
+              pathOnly + ': ' + e.message);
+  }
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// TEN MINUTES OF INACTIVITY, NOT TEN MINUTES.
+//
+// The expiry on an arrival session slides: every request that presents one
+// pushes it out again, and it goes when the browser has been quiet for
+// `AUTHN_TTL_MS`. Ten minutes from CREATION — which is what this was first
+// written as — is a different rule and the wrong one: a person reading the
+// sign-in screen, being sent to a home realm and coming back would lose the
+// identity their flow was being correlated by, part way through, for no reason
+// they could see.
+//
+// It is a SLIDE and not a renewal, so it cannot extend a session that has
+// already gone: an expired row is left to `sessionOf()`'s own sweep, which
+// ends it properly rather than quietly reviving it.
+//
+// A SIGNED-IN session is not touched here. Those carry `SESSION_TTL_MS` and
+// their own rules about when they end, and an arrival session's clock has no
+// business being applied to one.
+// ---------------------------------------------------------------------------
+function touchArrivalSession(req) {
+  const id = cookiesOf(req)[SESSION_COOKIE];
+  if (!id) {
+    return;
+  }
+  const session = sessions.get(id);
+  if (!session || session.chosen !== false) {
+    return;
+  }
+  if (session.expires && session.expires <= Date.now()) {
+    // Already gone. Not revived — see the header.
+    return;
+  }
+  session.expires = Date.now() + AUTHN_TTL_MS;
+  session.lastSeenAt = Date.now();
+  // AND WRITTEN BACK THROUGH THE STORE. `sessions` is `realms.map({persist})`,
+  // whose journal sees `set()` and not a field stamped on the object it handed
+  // out — so an extension made in place reaches this process's memory and
+  // nothing else. Another process would go on holding the OLD expiry and
+  // refuse a session somebody is actively using.
+  sessions.set(id, session);
+}
+
+// The arrival session behind the cookie, if that is what it is. It exists for
+// startSession()'s upgrade below and for nothing else — every other reader
+// wants sessionOf(), which is the question they are actually asking, and which
+// deliberately declines to hand one of these out.
+function arrivalSessionOf(req) {
+  const id = cookiesOf(req)[SESSION_COOKIE];
+  if (!id) {
+    return null;
+  }
+  const session = sessions.get(id);
+  if (!session || session.chosen !== false) {
+    return null;
+  }
+  if (session.expires < Date.now()) {
+    return null;
+  }
+  return session;
+}
+
+// ===========================================================================
+// RELYING-PARTY SESSIONS: THE ONE THIS SERVICE'S OWN HOSTED SURFACES HOLD
+// (2026-09-06).
+//
+// `/admin` and `/portal` do not read the session above any more. They are
+// RELYING PARTIES of this service's own authorization server: an
+// unauthenticated request is sent through `/oauth2/authorize`, comes back to a
+// registered redirect URI with a code, and the ID Token that code buys is what
+// establishes the session they read. `common/oidc_rp.js` runs that flow and
+// this is where the session it produces lives.
+//
+// **THERE ARE NOW TWO KINDS OF BROWSER SESSION AND KEEPING THEM APART IS THE
+// WHOLE POINT.** The one above is the SINGLE SIGN-ON session — what a person
+// has with this identity provider, what `/oauth2/authorize` reads to decide
+// whether to draw the sign-in screen, and what every protocol family here
+// shares. The one below is what ONE APPLICATION has with a person who signed
+// in through that provider, which is a different fact with a different
+// lifetime: a real relying party holds its own session and would not be able
+// to read the provider's.
+//
+// **THEY ARE IN ONE STORE, and that is rule 3m rather than a shortcut.** A
+// second register would be a second answer to "is somebody signed in" —
+// `logout/logout.js` reads this map, `/admin/sessions` draws it, CAEP observes
+// it, and the half a reader happened to look at would be the half that was
+// wrong. This is the same argument the KEYED sessions above make, one shape
+// along: the management API, SCIM and the SPIRE Server API are rows in this
+// map too, told apart by a field rather than by a store of their own.
+//
+// Four things about a derived session:
+//
+//   * **IT IS NOT AN AUTHENTICATION AND NOTHING RECORDS ONE.** The person
+//     authenticated at the authorization endpoint and `startSession()` counted
+//     it there. A second `recordAuthentication()` here would double every
+//     console sign-in on `/admin/users` and in the audit log — which is
+//     exactly the defect `federation_sp.js` records having shipped once, and
+//     the reason its `completeSignIn()` passes through `startSession()`'s
+//     sixth argument rather than calling the funnel twice.
+//   * **IT CARRIES ITS OWN COOKIE, NAMED BY THE SURFACE.** Two surfaces, two
+//     cookies, so signing in to the portal does not sign anybody in to the
+//     console — which is what makes them two applications rather than one
+//     wearing two paths. Neither is `SESSION_COOKIE`.
+//   * **IT NAMES THE SSO SESSION IT CAME FROM (`derivedFrom`) AND DIES WITH
+//     IT.** Signing out at `/logout` ends the provider session, and a console
+//     session that outlived it would be a sign-out that visibly did nothing on
+//     the one surface an operator is looking at. The cascade is in
+//     `dropSession()`, so every door that ends a session ends the ones derived
+//     from it — the same argument that function's header already makes about
+//     being the single place a session ends.
+//   * **IT IS NOT EXTENDED BY USE.** It expires when the ID Token's own
+//     session would: absolute, like the browser session it descends from.
+// ===========================================================================
+
+// Every derived session hanging off one SSO session, by id. Used by the
+// cascade below and by nothing else — it is a WALK rather than an index for
+// `startSession()`'s keyed-session reason: an index would be a second map to
+// hold in step with this one, and these maps are already bounded by the sweep.
+function derivedFrom(parentId, store) {
+  log.debug("Entering derivedFrom(). parentId=" + parentId);
+  const map = store || sessions.realmMap();
+  const found = [];
+  map.forEach(function (held, id) {
+    if (held && held.derivedFrom === parentId) {
+      found.push({ id: id, session: held });
+    }
+  });
+  log.debug("Leaving derivedFrom(). " + found.length + " derived session(s).");
+  return found;
+}
+
+// The session ONE hosted surface holds. `cookie` is that surface's own cookie
+// name — `oidc_rp.js` takes it from the application's row, so the name a
+// browser carries and the name this reads cannot come apart.
+//
+// **IT CHECKS THE PARENT AS WELL AS THE CLOCK.** The cascade in dropSession()
+// is what normally ends these, and it reaches only the sessions in the store it
+// is walking; a derived session whose parent is gone must not be honoured on
+// the strength of its own unexpired cookie, because "the person signed out" is
+// exactly the case that matters. So the parent is looked up on every read. That
+// is a Map lookup on a request that already does several.
+function relyingPartySessionOf(req, cookie, realmId) {
+  log.debug("Entering relyingPartySessionOf(). cookie=" + cookie);
+  const id = cookiesOf(req)[String(cookie || '')];
+  if (!id) {
+    log.debug("Leaving relyingPartySessionOf(). No cookie.");
+    return null;
+  }
+  const store = realmId ? sessions.realmMap(realmId) : sessions.realmMap();
+  const session = store.get(id);
+  if (!session) {
+    log.debug("Leaving relyingPartySessionOf(). The cookie names no session.");
+    return null;
+  }
+  if (session.expires < Date.now()) {
+    expireSession(store, id, session, 'a request that presented it');
+    log.debug("Leaving relyingPartySessionOf(). It had expired.");
+    return null;
+  }
+  if (session.derivedFrom && !store.get(session.derivedFrom)) {
+    // The provider session is gone and this one is therefore over. It is ENDED
+    // rather than merely refused, so that /admin/sessions stops listing it and
+    // the audit log carries the row: a session that keeps being refused and
+    // keeps being listed is the worst of both answers.
+    log.info('authn: the ' + (session.rpSurface || 'relying party') +
+             ' session ' + id + ' is being ended because the sign-on session ' +
+             'it was derived from (' + session.derivedFrom + ') is gone. A ' +
+             'relying party session cannot outlive the provider session it ' +
+             'was issued against.');
+    dropSession(id, 'the sign-on session it came from ended', true, req);
+    log.debug("Leaving relyingPartySessionOf(). Its parent is gone.");
+    return null;
+  }
+  log.debug("Leaving relyingPartySessionOf(). Signed in as " +
+            session.user.username + ".");
+  return session;
+}
+
+// Create one. Called only from `common/oidc_rp.js`, once, after an ID Token has
+// been verified — which is why this takes CLAIMS rather than a username and a
+// password: what it is turning into a session is a statement this service made
+// about somebody, and every field below comes off that statement rather than
+// out of a form.
+function startRelyingPartySession(spec) {
+  log.debug("Entering startRelyingPartySession(). surface=" + spec.surface);
+  const claims = spec.claims || {};
+  const username = String(spec.username || claims.preferred_username ||
+                          claims.sub || '');
+  const sessionId = randomId(24);
+  const store = sessions.realmMap();
+  // THE EXPIRY IS THE PARENT'S WHERE THERE IS ONE. A relying party session that
+  // outlived the provider session would be refused on the next read anyway (see
+  // the parent check above), so making it longer would only mean listing a row
+  // that is already dead. Shorter is a legitimate thing for a deployment to
+  // want and is not built: one lifetime is what `logout.js`'s
+  // SESSION_EXPIRY_RULES can describe honestly.
+  const parent = spec.parent ? store.get(spec.parent) : null;
+  const session = {
+    id: sessionId,
+    user: userFor(username),
+    authTime: Number(claims.auth_time) || nowSec(),
+    expires: parent ? parent.expires : Date.now() + SESSION_TTL_MS,
+    // Off the ID TOKEN and not off the parent, because the token is what this
+    // application was actually told. They agree today — the same process
+    // issued both — and a relying party that read the provider's own record
+    // instead of the statement it was handed would be a relying party in name.
+    authenticated: claims.mock_authenticated !== false,
+    amr: Array.isArray(claims.amr) ? claims.amr : (spec.amr || []),
+    acr: claims.acr || spec.acr || '',
+    via: spec.via || 'OAuth 2.0 / OIDC',
+    // WHAT MAKES IT A DERIVED SESSION. `rpSurface` is what /admin/sessions
+    // draws in its Kind column and what `logout.js` reads; `rpClientId` is the
+    // application entry it belongs to, so a row can be followed back to the
+    // client that holds it.
+    derivedFrom: spec.parent || '',
+    rpSurface: String(spec.surface || ''),
+    rpLabel: String(spec.label || spec.surface || ''),
+    rpClientId: String(spec.clientId || ''),
+    // The id token's own session identifier where it carried one, so a
+    // front-channel logout can name this session the way OpenID Connect
+    // Front-Channel Logout section 3 means.
+    rpSid: String(claims.sid || ''),
+    credentialKey: null,
+    lastSeenAt: Date.now(),
+    calls: 1
+  };
+  store.set(sessionId, session);
+  armSessionSweep();
+  setCookieHeader(spec.res, String(spec.cookie) + '=' + sessionId +
+                  '; Path=/; HttpOnly; SameSite=Lax' +
+                  (config.value('global.https') ? '; Secure' : ''));
+  // THE AUDIT ROW SAYS WHERE IT CAME FROM, and it is a `session.start` like
+  // every other because that is what happened. What tells it apart from the
+  // sign-in that produced the ID Token is the summary and the detail: an
+  // operator reading two rows a second apart has to be able to see that one is
+  // the provider's and one is the application's, or they will read them as the
+  // duplicate this deliberately is not.
+  audit.audit({
+    action: 'session.start',
+    actor: username,
+    protocol: 'OAuth 2.0 / OIDC',
+    channel: 'http',
+    target: sessionId,
+    summary: username + ' signed in to the ' + (spec.label || spec.surface) +
+             ' with an ID Token from this service; session ' + sessionId +
+             ' was created',
+    detail: {
+      sessionId: sessionId,
+      sub: session.user.sub,
+      client_id: session.rpClientId,
+      derivedFrom: session.derivedFrom,
+      surface: session.rpSurface,
+      amr: (session.amr || []).join(', '),
+      acr: session.acr || '',
+      authTime: session.authTime,
+      expiresAt: new Date(session.expires).toISOString(),
+      note: 'A RELYING PARTY session, established from a verified ID Token ' +
+            'rather than from a credential. Nobody authenticated here: the ' +
+            'authentication is the session.start row for ' +
+            (session.derivedFrom || 'the sign-on session') + '.'
+    }
+  });
+  session.firstPresentationIsTheSignIn = true;
+  notifySession('established', session,
+                { via: 'OAuth 2.0 / OIDC', req: (spec.res && spec.res.req) || null });
+  log.info('authn: ' + username + ' holds a ' + (spec.label || spec.surface) +
+           ' session (' + sessionId + '), derived from sign-on session ' +
+           (spec.parent || '(none)') + '. No authentication was recorded here ' +
+           '— the authorization endpoint already counted it.');
+  log.debug("Leaving startRelyingPartySession(). " + sessionId);
   return session;
 }
 
@@ -771,9 +1233,25 @@ function startSession(res, username, amr, acr, via, detail) {
   // cookie — ends nothing, which is correct: there is no previous session of
   // THIS browser to end, and guessing one from the username would sign people
   // out of other devices.
+  // ---------------------------------------------------------------------
+  // THE ARRIVAL SESSION IS READ BEFORE THE PREVIOUS ONE IS ENDED, and the
+  // order is the whole of it.
+  //
+  // The block below ends whatever session the browser was on, because a
+  // sign-in is a privilege change and leaving the old one usable would be a
+  // second live session for the same browser. An ARRIVAL session is on that
+  // cookie too — so with the lookup after this block it found nothing, every
+  // sign-in minted a fresh id, and the arrival row was left behind as a
+  // stray anonymous session that nobody would ever present again. It looked
+  // like the upgrade simply did not work, which is what it was.
+  // ---------------------------------------------------------------------
+  const arrived = extra.request ? arrivalSessionOf(extra.request) : null;
   if (extra.request) {
     const previous = cookiesOf(extra.request)[SESSION_COOKIE];
-    if (previous && sessions.get(previous)) {
+    // AN ARRIVAL SESSION IS NOT ENDED, it is upgraded — ending it would write
+    // a sign-out audit row and a CAEP `session-revoked` for a session nobody
+    // was ever in, every time anybody signed in.
+    if (previous && sessions.get(previous) && !(arrived && arrived.id === previous)) {
       log.info('authn: ending the session this browser was already on (' +
                previous + ') because a new sign-in is replacing it. Every ' +
                'sign-in is a privilege change and the old session must not ' +
@@ -886,7 +1364,22 @@ function startSession(res, username, amr, acr, via, detail) {
       return found;
     }
   }
-  const sessionId = randomId(24);
+  // ---------------------------------------------------------------------
+  // A TRACKING ROW IS UPGRADED IN PLACE RATHER THAN REPLACED (2026-09-07).
+  //
+  // The browser was given a cookie when it arrived at the protocol's front
+  // door — see startTrackingSession(). Minting a NEW id here would mean the
+  // cookie it is already holding names a row that is about to be abandoned,
+  // and the sign-in would have to re-issue one. Keeping the id means the
+  // identity a flow was correlated by from its first request is the identity
+  // it ends up signed in as, which is the whole point of setting it early.
+  //
+  // Everything else about the row is overwritten below, so an upgraded session
+  // differs from a freshly minted one in its ID and its `startedAt` alone —
+  // and `startedAt` deliberately does not move, for the reason the
+  // credential-fingerprint branch above gives about the creation instant.
+  // ---------------------------------------------------------------------
+  const sessionId = arrived ? arrived.id : randomId(24);
   const session = {
     // The id is on the session as well as being the map key, because everything that
     // is handed a session gets the object and not the key — the authorization
@@ -912,6 +1405,17 @@ function startSession(res, username, amr, acr, via, detail) {
     // is `true` — the absence of this field means the service that made the
     // session had no way to be anything but authenticated.
     authenticated: extra.authenticated !== false,
+    // NOT A TRACKING ROW ANY MORE, said explicitly rather than by omission:
+    // this object REPLACES the one in the map, and a `chosen` left false here
+    // would make sessionOf() go on refusing to hand out a session somebody has
+    // just signed in to — which is a sign-in that silently does not take.
+    // CHOSEN NOW, whether by signing in or by pressing the button — both come
+    // through here. An upgraded row that left this false would be a sign-in
+    // that sessionOf() went on hiding, which is a sign-in that does not take.
+    chosen: true,
+    // Preserved across an upgrade so that "when did this browser arrive" and
+    // "when did they authenticate" stay two different facts.
+    startedAt: arrived ? arrived.startedAt : Date.now(),
     // Stated rather than omitted: a relying party that asked for a second factor
     // needs to be able to see that it did not get one.
     amr: amr, acr: acr,
@@ -1079,6 +1583,40 @@ function dropSession(id, via, cookiePresented, req) {
   log.debug("Entering dropSession(). id=" + (id || '(none)'));
   const session = id ? sessions.get(id) : null;
   if (id) sessions.delete(id);
+  // -------------------------------------------------------------------------
+  // AND EVERY SESSION DERIVED FROM IT (2026-09-06).
+  //
+  // `/admin` and `/portal` hold RELYING PARTY sessions of their own, issued
+  // against this one — see startRelyingPartySession() above. A sign-out that
+  // ended the provider session and left them alive would be a sign-out that
+  // visibly did nothing on the two surfaces an operator or a person is
+  // actually looking at, which is the shape of defect `/admin/users`'s "Revoke
+  // everything" button already cost this repository once.
+  //
+  // **HERE RATHER THAN AT THE FOUR SIGN-OUT DOORS**, for the reason the whole
+  // of this function is here: `/oauth2/logout`, `wsignout1.0`, SAML Single
+  // Logout, `/logout` and the console's own Revoke are five words for one act,
+  // and a cascade at each is four that remember and a fifth added later that
+  // does not.
+  //
+  // The recursion is one level deep in practice — a derived session is never
+  // itself a parent — and is written as a loop over one generation rather than
+  // a recursive walk for exactly that reason: a second level would mean a
+  // relying party of a relying party, which this service has no way to create,
+  // and code for it would be code nothing exercises.
+  //
+  // `false` for `cookiePresented`: the browser presented the PROVIDER's cookie,
+  // not this one, so nothing here should try to clear a cookie it was not
+  // shown. The reader refuses the orphan anyway, and clears it then.
+  if (id && session) {
+    derivedFrom(id).forEach(function (child) {
+      log.info('authn: ending the ' + (child.session.rpSurface || 'relying party') +
+               ' session ' + child.id + ' with the sign-on session it was ' +
+               'derived from (' + id + ').');
+      dropSession(child.id, 'the sign-on session it was derived from ended (' +
+                  (via || 'unknown door') + ')', false, req);
+    });
+  }
   // RFC 9700 section 2.2.2: an authorization server MAY revoke refresh tokens
   // after a security event, and the section names LOGOUT as one. In RFC 9700
   // mode it does — every refresh token issued ON this session, through the same
@@ -1215,9 +1753,34 @@ function endSessionById(id, via) {
 // a browser matches an expiry against the cookie it holds, and one that
 // disagrees about Secure can leave the original in place — a sign-out that
 // reports success and ends nothing.
-function clearSessionCookie(res) {
-  setCookieHeader(res, SESSION_COOKIE + '=; Path=/; Max-Age=0' +
-                       (config.value('global.https') ? '; Secure' : ''));
+//
+// **IT TAKES A COOKIE NAME SINCE 2026-09-06, AND IT WAS ALREADY BEING CALLED
+// WITH ONE.** `oidc_rp.js`'s `endSessionFor()` has passed `surface.cookie` from
+// the day it was written and this function ignored it — so a hosted surface
+// signing somebody out cleared the SIGN-ON cookie and left its own in place.
+// The symptom was mild and misleading, which is why it lasted: the reader
+// refuses a cookie naming a session that no longer exists, so the surface
+// looked signed out while the browser went on presenting a dead id and the
+// provider's cookie went away instead of the application's.
+//
+// **AND IT APPENDS RATHER THAN SETS.** A sign-out on a hosted surface clears
+// TWO cookies on one response — the surface's own and the sign-on session's —
+// and `res.set('Set-Cookie', …)` REPLACES the header, so the second clear
+// silently threw the first away. `setCookieHeader()` above is left alone
+// deliberately: a SET is one cookie per response and making it append would
+// mean a rotated session id going out beside the one it replaced, with the
+// browser free to keep either.
+function clearSessionCookie(res, cookieName) {
+  const value = String(cookieName || SESSION_COOKIE) + '=; Path=/; Max-Age=0' +
+                (config.value('global.https') ? '; Secure' : '');
+  if (typeof res.append === 'function') {
+    res.append('Set-Cookie', value);
+    return;
+  }
+  // Not an express response — the same case `setCookieHeader()` guards, and
+  // handled the same way rather than thrown, because a sign-out that failed to
+  // clear a cookie has still ended the session.
+  setCookieHeader(res, value);
 }
 
 // Ends the session the request carries, and returns it — the caller needs what it
@@ -3336,6 +3899,7 @@ audit.setActorResolver(auditActorOf);
 module.exports = {
   LOGIN_PATH: LOGIN_PATH,
   SESSION_COOKIE: SESSION_COOKIE,
+  startArrivalSession: startArrivalSession,
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,
   cookiesOf: cookiesOf,
@@ -3347,6 +3911,17 @@ module.exports = {
   // module keeps calling sessionOf() and keeps seeing its own realm only.
   consoleSession: consoleSession,
   startSession: startSession,
+  // THE RELYING-PARTY HALF (2026-09-06), for `common/oidc_rp.js` and for the
+  // two surfaces that read what it makes. Three functions and no more: a
+  // caller that wanted to create one of these without going through the code
+  // flow would be a caller inventing a session out of nothing, which is the
+  // thing moving these surfaces onto OIDC was for.
+  startRelyingPartySession: startRelyingPartySession,
+  relyingPartySessionOf: relyingPartySessionOf,
+  // Exported for `logout/logout.js`, which lists what is live and has to be
+  // able to say which rows hang off which. It is a walk rather than an index;
+  // see its header.
+  derivedFrom: derivedFrom,
   endSession: endSession,
   // The inverted hook `ssf/ssf.js` fills, and the one call site that spends
   // it from outside this module. See setSessionObserver()'s header for why a

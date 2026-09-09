@@ -88,10 +88,13 @@
 // Trust realms make that mostly unnecessary. A realm is a whole logical copy of
 // this service under a path prefix, with its own directory subtree, its own
 // applications registry, its own federation register, its own claim sets, its
-// own tokens and its own configuration overrides. So this job creates one,
+// own tokens and its own configuration overrides. So this job creates one and
 // performs every destructive thing inside it — `forget`, `revoke-all`,
-// `reset-all`, `delete` — and removes it at the end, which takes the whole
-// subtree with it. What is left to restore by hand is only what is genuinely
+// `reset-all`, `delete` — where none of it reaches anything else. **It does
+// NOT remove the realm afterwards** (2026-09-06): a realm a test run created
+// stays, because it is the record a person reads when the run went red. See
+// theThrowawayRealmIsLeftBehind(). What is left to restore by hand is only
+// what is genuinely
 // process-wide, and that list is short and is named where it is touched: the
 // two admin roles (groups in the DEFAULT realm, by design), the SPIFFE signing
 // authority, and one process-wide setting.
@@ -376,7 +379,8 @@ async function theRealmRegistryWorks() {
   const created = await ok("/realms/create", {
     id: REALM,
     name: "Management API operations test",
-    description: "Created by tests/sts_admin_api_operations.js; removed at the end.",
+    description: "Created by tests/sts_admin_api_operations.js; LEFT IN " +
+                 "PLACE on purpose, so a failed run can be read afterwards.",
     overrides: { "saml2.entityId": "urn:test:" + REALM + ":idp" }
   }, "created the throwaway realm", true);
   assert.strictEqual(created.realm, REALM,
@@ -836,12 +840,15 @@ async function everyReadAnswersAboutThisRealm(doc) {
 
   let withContainer = 0;
   for (const path of paths) {
-    // The two documentation routes answer HTML and JavaScript rather than
-    // JSON, on purpose — they are the explorer. They are asserted by
-    // tests/admin_api.js, which owns the CSP half of them.
-    if (path === "/docs" || path === "/docs/explorer.js") {
-      continue;
-    }
+    // THIS EXEMPTION IS GONE AND THE COMMENT IS KEPT AS THE RECORD. It read:
+    // "The two documentation routes answer HTML and JavaScript rather than
+    // JSON, on purpose — they are the explorer", and skipped `/docs` and
+    // `/docs/explorer.js`. Those operations moved to the console on
+    // 2026-09-09 — `/admin/api-explorer` — because this API began requiring
+    // an access token a browser has no way to carry. Every remaining
+    // operation here answers JSON, which is what this walk was always really
+    // asserting, so it now has no exception at all. `tests/admin_api.js`
+    // still owns the CSP half, at the page's new address.
     const reply = await get(path);
     assert.strictEqual(reply.status, 200,
       "GET " + api + path + " should answer 200; it answered " + reply.status +
@@ -3418,11 +3425,29 @@ async function theConfigurationChangeReachesTheStore(candidate) {
 
   assert.strictEqual(before.healthy, true,
     "the store is enabled and reports itself unhealthy: " + before.lastError);
-  assert.strictEqual(before.coordinates, false,
-    "and it must still say it does not COORDINATE. Two processes pointed at " +
-    "one database each hold their own directory in memory and never see " +
-    "each other's writes; a status that claimed otherwise would be the one " +
-    "sentence somebody deployed against.");
+  // WHAT THE STATUS SAYS MUST BE WHAT THIS PROCESS IS CONFIGURED TO DO, and
+  // this asserted a constant `false` until 2026-09-07. That was right when it
+  // was written — two processes against one database genuinely could not see
+  // each other's writes — and it stopped being right on 2026-09-06, when the
+  // change log landed and `persistence.coordinate` began turning it on. The
+  // constant had quietly become a claim about the CONFIGURATION rather than
+  // about the service, and it failed in every mode that switches it on.
+  //
+  // Read from the settings table rather than assumed either way: the status and
+  // the setting are two reports of one fact, and the only assertion that cannot
+  // go stale again is that they agree.
+  const coordinateSetting = settingValue((await get("/config")).body,
+                                         "persistence.coordinate");
+  const shouldCoordinate = coordinateSetting === true ||
+                           String(coordinateSetting) === "true";
+  assert.strictEqual(before.coordinates, shouldCoordinate,
+    "the persistence status and persistence.coordinate must agree about " +
+    "whether this process coordinates. The setting says " +
+    JSON.stringify(coordinateSetting) + " and the status says " +
+    before.coordinates + ". Two processes pointed at one database that do NOT " +
+    "coordinate each hold their own directory in memory and never see each " +
+    "other's writes, so a status wrong in either direction is the one sentence " +
+    "somebody deploys against.");
 
   // A process-wide override, then a realm one. They take different branches
   // and land in different places.
@@ -3517,9 +3542,16 @@ async function settleThenStatus(previous) {
 // ---------------------------------------------------------------------------
 // THE LEDGER, ASKED. Both checks read the document and this run's own call
 // list, and neither of them drives anything — so they go last, after every
-// section above has had its turn, and before the teardown (which drives
-// `removeRealm` for real; the refusal of it is driven up in
-// theRealmRegistryWorks()).
+// section above has had its turn.
+//
+// **`removeRealm` IS THE ONE OPERATION DRIVEN ONLY BY ITS REFUSAL SINCE
+// 2026-09-06**, and it needs no exemption row because `post()` records a
+// refusal as DRIVEN and not ACCEPTED — theRealmRegistryWorks() asks it to
+// remove the realm the call arrived in and it says no. What used to drive it
+// for real was the teardown, and there is no teardown: a realm a test run
+// created stays, because it is what a person reads when the run went red. So
+// the ledger stays honest without a row, and this paragraph is the record that
+// the coverage of that one operation is a refusal rather than a removal.
 // ---------------------------------------------------------------------------
 
 // The operations this file does not drive, and why. It is a TABLE rather than
@@ -3527,18 +3559,21 @@ async function settleThenStatus(previous) {
 // with no sentence beside it is indistinguishable from an operation somebody
 // forgot, which is the whole condition this check exists to end.
 //
-// Both rows are the explorer, which answers HTML and JavaScript rather than
-// JSON. tests/admin_api.js drives them, and owns the harder half besides — the
-// Content Security Policy that makes /admin-api/docs the fourth scripted page
-// in a service whose default is `script-src 'none'`.
-const NOT_DRIVEN_HERE = {
-  "GET /docs":
-    "the explorer PAGE: HTML, not JSON. Driven by tests/admin_api.js, which " +
-    "also owns its CSP — this API's document is what it is drawn from, and " +
-    "the document is driven here.",
-  "GET /docs/explorer.js":
-    "the explorer's script, driven and CSP-checked by tests/admin_api.js."
-};
+// **IT IS EMPTY SINCE 2026-09-09, AND THAT IS THE POINT WORTH RECORDING.** It
+// held two rows, both the explorer — `GET /docs` and `GET /docs/explorer.js` —
+// which answered HTML and JavaScript rather than JSON and were therefore the
+// only operations on this API a JSON walk could not drive.
+//
+// They are not exempt now because they are not here: the explorer moved to the
+// admin console (`/admin/api-explorer`) when this API began requiring an
+// access token a browser has no way to carry. So every operation this API
+// documents answers JSON and every one of them is driven, which is the state
+// this table was always an apology for.
+//
+// The table stays rather than the constant being deleted, because the next
+// operation that cannot be driven here needs somewhere to say why — and an
+// empty object is a much better prompt for that than no object at all.
+const NOT_DRIVEN_HERE = {};
 
 function everyDocumentedOperationWasDriven(doc) {
   log.debug("Entering everyDocumentedOperationWasDriven().");
@@ -3660,41 +3695,30 @@ function everyAcceptedWriteWasReadBack() {
 }
 
 // ---------------------------------------------------------------------------
-// TEARDOWN. Removing the realm takes its directory subtree, its applications
-// registry, its federation register, its claim sets, its SPIFFE registry, its
-// tokens and its configuration overrides with it — which is the whole reason
-// the work happened inside one.
+// THERE IS NO TEARDOWN, AND THAT IS THE POINT (2026-09-06).
 //
-// It runs in a `finally`, and it runs whether or not the assertions passed: a
-// realm left behind is a realm every later job's `GET /realms` can see, and one
-// left behind per failing run accumulates.
+// This file used to remove the realm here, and the argument was that a realm
+// left behind is one every later job's `GET /realms` can see and that one per
+// failing run accumulates. **The operator requirement is the other way round:
+// a realm a test run created STAYS, because it is what a person reads when the
+// run went red.** Its directory subtree, its applications registry, its
+// federation register, its claim sets, its SPIFFE registry, its tokens and its
+// overrides are the record of what a hundred and thirty operations actually
+// did — and removing it destroyed that record at exactly the moment it was
+// worth something.
+//
+// The accumulation is real and is paid for elsewhere: the id carries
+// `names.runStamp()`, so runs never collide, and nothing outside the realm is
+// touched, so a service holding ten of these behaves exactly as it did with
+// none. They go when the process does — a realm is not persisted unless a
+// store is configured — and a person who wants them gone removes them by hand
+// or restarts the mock.
 // ---------------------------------------------------------------------------
-async function removeTheThrowawayRealm() {
-  log.debug("Entering removeTheThrowawayRealm().");
-  try {
-    // Called at the ROOT, because `remove` refuses the realm the call arrived
-    // in — which is the one refusal this registry has that is about the caller
-    // rather than about the request.
-    const reply = await post("/realms/remove", { id: REALM }, true);
-    if (reply.status !== 200) {
-      log.warn("Could not remove the throwaway realm " + REALM + ": " +
-               JSON.stringify(reply.body).slice(0, 300) + ". It will show up " +
-               "in GET /realms until this service restarts.");
-      log.debug("Leaving removeTheThrowawayRealm(). It refused.");
-      return;
-    }
-    const left = ((await get("/realms", true)).body.realms || [])
-        .filter(function (r) { return r.id === REALM; });
-    assert.deepStrictEqual(left, [],
-      "the realm should be gone from the registry after `remove`.");
-    log.info("[teardown] Removed the throwaway realm " + REALM +
-             ", and with it everything this job created inside it.");
-  } catch (e) {
-    // Reported and not rethrown: a teardown that threw would replace the
-    // failure that actually matters with the failure to tidy up after it.
-    log.warn("Teardown could not finish: " + e.message);
-  }
-  log.debug("Leaving removeTheThrowawayRealm().");
+function theThrowawayRealmIsLeftBehind() {
+  log.info("[teardown] The throwaway realm " + REALM + " is LEFT IN PLACE on " +
+           "purpose, with everything this job created inside it. Read it at " +
+           base + "/realm/" + REALM + "/admin, or remove it by hand when you " +
+           "are done with it.");
 }
 
 async function test() {
@@ -3732,7 +3756,7 @@ async function test() {
     everyDocumentedOperationWasDriven(doc);
     everyAcceptedWriteWasReadBack();
   } finally {
-    await removeTheThrowawayRealm();
+    theThrowawayRealmIsLeftBehind();
   }
   log.info("Test completed successfully. The store was in `" +
            persistenceMode + "` mode for this run.");

@@ -145,31 +145,48 @@ function storable() {
 // but the password is wrong" is the account-enumeration answer, and every door
 // here already answers with its own protocol's single failure.
 // ---------------------------------------------------------------------------
-function verify(username, password, opts) {
+// ---------------------------------------------------------------------------
+// VERIFICATION IS TWO FUNCTIONS AND A DERIVATION BETWEEN THEM, and the split
+// is what lets `verify()` and `verifyAsync()` be one policy with two doors.
+//
+// EVERYTHING that can be decided without computing scrypt is decided in
+// `verifyPrepare()` — the reserved refusal, development mode, a missing name,
+// a missing store, a store that threw, nobody by that name, a stored form this
+// service did not write. Those are the overwhelming majority of refusals and
+// none of them costs 68ms. What comes back is either a finished answer or the
+// stored value to compare against, and the two doors differ only in which
+// process runs the comparison.
+//
+// The alternative — an async door with its own copy of those seven refusals —
+// is the shape this file exists to avoid: `verify()` is the one place a
+// presented password is checked, and two copies of "when do we say no" would
+// eventually say it in two different sets of circumstances.
+// ---------------------------------------------------------------------------
+function verifyPrepare(username, password, opts) {
   const name = String(username == null ? '' : username).trim();
-  log.debug('Entering verify(). username=' + name);
+  log.debug('Entering verifyPrepare(). username=' + name);
   const via = (opts && opts.via) || 'unstated';
 
   // BOTH MODES. A mock that cannot be made to say no is not a test fixture.
   if (String(password) === RESERVED_REFUSAL) {
-    log.debug('Leaving verify(). The reserved refusal password was presented.');
-    return { ok: false, reason: 'reserved-refusal',
+    log.debug('Leaving verifyPrepare(). The reserved refusal password was presented.');
+    return { done: { ok: false, reason: 'reserved-refusal',
              detail: 'the password "' + RESERVED_REFUSAL + '" is reserved and ' +
                      'is refused in every mode, so that a client can be tested ' +
-                     'against a refusal without anything being configured' };
+                     'against a refusal without anything being configured' } };
   }
 
   if (!mode.verifiesCredentials()) {
-    log.debug('Leaving verify(). Development mode: nothing is checked.');
-    return { ok: true, reason: 'development-mode',
+    log.debug('Leaving verifyPrepare(). Development mode: nothing is checked.');
+    return { done: { ok: true, reason: 'development-mode',
              detail: 'development mode checks no password in any protocol; ' +
-                     'what was proved is that somebody typed a name' };
+                     'what was proved is that somebody typed a name' } };
   }
 
   if (!name) {
-    log.debug('Leaving verify(). No username.');
-    return { ok: false, reason: 'no-username',
-             detail: 'no username was presented' };
+    log.debug('Leaving verifyPrepare(). No username.');
+    return { done: { ok: false, reason: 'no-username',
+             detail: 'no username was presented' } };
   }
   if (!directory) {
     // FAIL CLOSED, and this is the one place in this file where that matters.
@@ -180,10 +197,10 @@ function verify(username, password, opts) {
               'is installed, so every verification is REFUSED. ldap_server.js ' +
               'fills setDirectory() at require time; a process without it ' +
               'cannot verify anybody.');
-    log.debug('Leaving verify(). No store.');
-    return { ok: false, reason: 'no-store',
+    log.debug('Leaving verifyPrepare(). No store.');
+    return { done: { ok: false, reason: 'no-store',
              detail: 'product mode is in force and no credential store is ' +
-                     'installed, so nothing can be verified' };
+                     'installed, so nothing can be verified' } };
   }
 
   let stored = '';
@@ -194,19 +211,19 @@ function verify(username, password, opts) {
     // and logged because it is a fault rather than a wrong password.
     log.error('credentials: reading the stored password for ' + name +
               ' threw and the verification is being REFUSED: ' + e.message);
-    log.debug('Leaving verify(). The store threw.');
-    return { ok: false, reason: 'store-error',
-             detail: 'the credential store could not be read' };
+    log.debug('Leaving verifyPrepare(). The store threw.');
+    return { done: { ok: false, reason: 'store-error',
+             detail: 'the credential store could not be read' } };
   }
 
   if (!stored) {
-    log.debug('Leaving verify(). Nobody by that name holds a password.');
-    return { ok: false, reason: 'no-credential',
+    log.debug('Leaving verifyPrepare(). Nobody by that name holds a password.');
+    return { done: { ok: false, reason: 'no-credential',
              detail: 'no ' + PASSWORD_ATTRIBUTE + ' is set for "' + name +
                      '". In product mode a person with no stored credential ' +
                      'cannot sign in — set one from /admin/users, ' +
                      'POST /admin-api/users/set-password, SCIM, or an LDAP ' +
-                     'modify' };
+                     'modify' } };
   }
 
   if (!crypto.isHashedSecret(stored)) {
@@ -218,26 +235,90 @@ function verify(username, password, opts) {
     log.warn('credentials: ' + name + ' holds a ' + PASSWORD_ATTRIBUTE +
              ' that this service did not write and cannot read. It is being ' +
              'REFUSED rather than compared as plaintext.');
-    log.debug('Leaving verify(). Unreadable stored form.');
-    return { ok: false, reason: 'unreadable-credential',
+    log.debug('Leaving verifyPrepare(). Unreadable stored form.');
+    return { done: { ok: false, reason: 'unreadable-credential',
              detail: 'the stored ' + PASSWORD_ATTRIBUTE + ' is not in the ' +
-                     'form this service writes, so it cannot be verified' };
+                     'form this service writes, so it cannot be verified' } };
   }
 
-  const ok = crypto.verifySecret(password, stored);
-  log.debug('Leaving verify(). ' + (ok ? 'It matches.' : 'It does not.'));
+  log.debug('Leaving verifyPrepare(). A comparison is needed.');
+  return { stored: stored, name: name, via: via };
+}
+
+// The answer, once the comparison has been made in whichever process made it.
+function verifyFinish(ok, name, via) {
+  log.debug('Entering verifyFinish(). ' + (ok ? 'It matches.' : 'It does not.'));
   if (!ok) {
     // At INFO rather than WARN: a wrong password is an ordinary event and a
     // log that treats it as a fault is a log nobody reads.
     log.info('credentials: ' + name + ' presented a password that does not ' +
              'match (via ' + via + ').');
   }
+  log.debug('Leaving verifyFinish().');
   return ok
     ? { ok: true, reason: 'verified',
         detail: 'the presented password matched the stored ' +
                 PASSWORD_ATTRIBUTE }
     : { ok: false, reason: 'wrong-password',
         detail: 'the presented password does not match' };
+}
+
+function verify(username, password, opts) {
+  log.debug('Entering verify().');
+  const ready = verifyPrepare(username, password, opts);
+  if (ready.done) {
+    log.debug('Leaving verify(). Decided without a derivation.');
+    return ready.done;
+  }
+  const ok = crypto.verifySecret(password, ready.stored);
+  log.debug('Leaving verify().');
+  return verifyFinish(ok, ready.name, ready.via);
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME VERIFICATION WITHOUT HOLDING THE EVENT LOOP, and it is the door
+// every protocol surface here should be reaching for.
+//
+// scrypt at N=2^15 measured 68ms, and this process runs six listener families
+// on one thread — so a password check on the sign-in screen is 68ms in which
+// the KDC does not answer, the LDAP socket does not answer and every other
+// request waits. It is a smaller number than an SLH-DSA signature's 14.6
+// seconds and it is paid FAR more often: once per authentication, in five
+// protocols. See common/worker.js.
+//
+// `opts.session` is the pool's routing hint and is passed straight through.
+// ---------------------------------------------------------------------------
+function verifyAsync(username, password, opts) {
+  log.debug('Entering verifyAsync().');
+  const ready = verifyPrepare(username, password, opts);
+  if (ready.done) {
+    log.debug('Leaving verifyAsync(). Decided without a derivation.');
+    return Promise.resolve(ready.done);
+  }
+  log.debug('Leaving verifyAsync(). Handed to the pool.');
+  return crypto.verifySecretAsync(password, ready.stored, opts)
+    .then(function (ok) {
+      return verifyFinish(ok, ready.name, ready.via);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// MAKING ONE UP. The one place this service invents a password, which is the
+// same rule the header above states about hashing one.
+//
+// **32 BYTES OF `randomBytes`, base64url.** Not derived from the username, not
+// a word list, and not shortened for typing: this is handed to somebody once
+// and then pasted, and a generated credential that is guessable from anything
+// on the screen it was shown on is worse than no generator at all.
+//
+// It has two callers and they are the same act at two moments —
+// `bootstrap()` below, which gives a fresh product-mode service a way in, and
+// the `generate` option on /admin/users/new, which gives a person one. Both
+// SHOW IT ONCE and never again, because what is stored is a scrypt hash: this
+// service cannot produce the value a second time, only replace it.
+// ---------------------------------------------------------------------------
+function generatePassword() {
+  return require('crypto').randomBytes(32).toString('base64url');
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +481,7 @@ function bootstrap(opts) {
                 'not be created: ' + e.message);
     }
   }
-  const password = require('crypto').randomBytes(32).toString('base64url');
+  const password = generatePassword();
   const written = setPassword(username, password);
   if (!written.ok) {
     log.error('credentials: PRODUCT MODE AND NOBODY CAN SIGN IN. A bootstrap ' +
@@ -773,6 +854,8 @@ module.exports = {
   setDirectory: setDirectory,
   storable: storable,
   verify: verify,
+  verifyAsync: verifyAsync,
   setPassword: setPassword,
+  generatePassword: generatePassword,
   hasPassword: hasPassword
 };

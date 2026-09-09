@@ -109,6 +109,10 @@ const config = require('../common/config');
 const mode = require('../common/mode');
 const audit = require('../common/audit');
 const stats = require('../common/admin_stats');
+// PER PROCESS AND NOT PER REALM — see the store below. Required only for
+// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
+// move a route or join a cycle.
+const realms = require('../common/realms');
 const spiffeId = require('./spiffe_id');
 const ca = require('./spiffe_ca');
 const registry = require('./spiffe_registry');
@@ -772,7 +776,14 @@ function authorize(caller, method) {
 // is a map that grows for the life of the process.
 // ---------------------------------------------------------------------------
 const MAX_RECORDED_CONNECTIONS = 512;
-const recordedConnections = new Map();
+// -------------------------------------------------------------------------
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
+// is a plain Map that reports its writes so product mode can write them down;
+// `scope: 'shared'` is what says the store deliberately has no realm in it,
+// which is the discriminator `tests/realm_isolation.js` checks against.
+// -------------------------------------------------------------------------
+const recordedConnections = realms.sharedMap({
+  persist: 'spiffe.recordedConnections', scope: 'shared' });
 
 function alreadyRecorded(key) {
   if (!key) return false;

@@ -319,7 +319,7 @@ const REQUEST_TTL_MS = 10 * 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingFlows = realms.map();
+const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows' });
 
 // Artifact -> the ASSERTION it stands for (decision 3), and the context needed
 // to build a Response around it later. Resolving one deletes it, so this map is
@@ -329,7 +329,7 @@ const pendingFlows = realms.map();
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const artifacts = realms.map();
+const artifacts = realms.map({ persist: 'saml11_sso.artifacts' });
 
 // AssertionID -> the assertion, for <samlp:AssertionIDReference>. It is a
 // SEPARATE map from the artifacts above and outlives them on purpose: an
@@ -346,7 +346,7 @@ const ASSERTION_CACHE_MAX = 500;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const assertionsById = realms.map();
+const assertionsById = realms.map({ persist: 'saml11_sso.assertionsById' });
 
 // ---------------------------------------------------------------------------
 // WHICH RELYING PARTY A REQUEST NAMES, which is decision 1's hardest

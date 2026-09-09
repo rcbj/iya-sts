@@ -317,8 +317,16 @@ async function start(opts) {
     if (answered) {
       log.info('the throwaway mock STS is answering on ' + url);
       log.debug('Leaving start(). Up.');
+      // THE PORTS, BY THE NAME THE SERVICE READS THEM UNDER, and not just the
+      // base (2026-09-06). A caller that needed the directory's socket was
+      // otherwise obliged to do `base + 5` — index arithmetic over PORT_VARS,
+      // in another file, silently wrong the moment a listener is added to that
+      // list in the middle. `tests/vendored/sts_directory_bulk_load_ldap.js`
+      // is the caller that needed it and run-report.js is what hands it over.
+      const ports = {};
+      PORT_VARS.forEach(function (name, i) { ports[name] = base + i; });
       return { base: base, url: url, child: child, pid: child.pid,
-               logFile: opts.logFile };
+               ports: ports, logFile: opts.logFile };
     }
     await new Promise(function (r) { setTimeout(r, 200); });
   }

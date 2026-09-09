@@ -97,7 +97,9 @@ function checkTemplates(t) {
       return;
     }
     t.check(true, 'the ' + row.id + ' template type-checks',
-            parsed.rules.length + ' rule(s)');
+            parsed.kind === 'PolicySet'
+              ? (parsed.children || []).length + ' child policy(ies)'
+              : (parsed.rules || []).length + ' rule(s)');
     t.equal(validate.problemsIn(parsed).length, 0,
             'and reports no static problems');
   });
@@ -136,6 +138,115 @@ function checkTemplates(t) {
   t.check(!nonesuch.ok && /rbac/.test(nonesuch.why),
           'an unknown template is refused and the refusal NAMES the ones ' +
           'that exist', nonesuch.why);
+}
+
+// ---------------------------------------------------------------------------
+// THE BLANK TEMPLATE, WHICH IS THE ONE THAT MAKES A CLAIM ON THE PAGE.
+//
+// The loop above already proves it builds, type-checks and reports no static
+// problems, because it proves that of every row. What it cannot see is the
+// two sentences `/admin/xacml/policies` prints beside it, and both would be
+// wrong silently:
+//
+//   1. "the only way to create a PolicySet here without importing ALFA" — a
+//      claim about the `kind` parameter, which is the only parameter in this
+//      file whose answer changes the ELEMENT rather than its contents. The
+//      trap it has to avoid is the combining algorithm: rule-combining and
+//      policy-combining are different URIs that are spelt almost the same,
+//      and a PolicySet carrying the rule-combining spelling names an
+//      algorithm that does not exist for it.
+//
+//   2. "IT DENIES EVERYTHING until you add a rule" — which is the sentence
+//      somebody acts on when they decide whether it is safe to make a blank
+//      document the root. If an empty deny-unless-permit policy ever answered
+//      NotApplicable instead, the page would be telling people the opposite
+//      of what the engine does, and the person it misleads is the one who
+//      pressed Create ten seconds earlier.
+// ---------------------------------------------------------------------------
+function checkBlankTemplate(t) {
+  const pdp = require('../xacml/xacml_pdp');
+
+  const asPolicy = templates.build('blank', {}, { name: 'blank-probe' });
+  t.equal(asPolicy.ok && asPolicy.policy.kind, 'Policy',
+          'the blank template builds a Policy by default');
+  t.equal((asPolicy.policy.rules || []).length, 0,
+          'with no rules at all — which is the whole point of it');
+  t.equal(asPolicy.policy.target, null,
+          'and NO Target, so it applies to every request rather than to ' +
+          'nothing: a target that is there and matches nothing looks exactly ' +
+          'like a policy that is working');
+
+  const asSet = templates.build('blank', { kind: 'policyset' },
+                                { name: 'blank-set' });
+  t.equal(asSet.ok && asSet.policy.kind, 'PolicySet',
+          'and a PolicySet on kind=policyset — the only way to create one ' +
+          'from this console without importing ALFA');
+  t.equal((asSet.policy.children || []).length, 0,
+          'holding no policies');
+  t.equal(asSet.policy.combiningAlgId, model.POLICY_ALG.DENY_UNLESS_PERMIT,
+          'and carrying the POLICY-combining spelling. The two lists are ' +
+          'different URIs that differ by one word, so a PolicySet built with ' +
+          'the rule-combining one names an algorithm that does not exist ' +
+          'for it');
+  t.equal(asPolicy.policy.combiningAlgId, model.RULE_ALG.DENY_UNLESS_PERMIT,
+          'while the Policy carries the rule-combining one');
+
+  // ANYTHING BUT `policyset` IS A POLICY, which is the reading `yes` and `no`
+  // get everywhere else on these forms. A template parameter is a text field,
+  // so a typo has to mean something rather than throw.
+  const typo = templates.build('blank', { kind: 'policyseat' },
+                               { name: 'typo' });
+  t.equal(typo.ok && typo.policy.kind, 'Policy',
+          'a kind that is neither spelling means a Policy rather than an ' +
+          'error, and the Kind column on the page says which was made');
+
+  // BOTH DENY, and this is the assertion the page's wording depends on.
+  const request = { returnPolicyIdList: false, combinedDecision: false,
+                    categories: [
+                      { category: model.CATEGORY.ACCESS_SUBJECT, id: null,
+                        content: null,
+                        attributes: [{ attributeId: model.ATTRIBUTE.SUBJECT_ID,
+                                       issuer: null, includeInResult: true,
+                                       values: [{ type: model.TYPE.STRING,
+                                                  lexical: 'alice' }] }] },
+                      { category: model.CATEGORY.ACTION, id: null,
+                        content: null, attributes: [] },
+                      { category: model.CATEGORY.ENVIRONMENT, id: null,
+                        content: null, attributes: [] }
+                    ] };
+  [asPolicy, asSet].forEach(function (built) {
+    const parsed = xml.parsePolicy(xml.writePolicy(built.policy));
+    t.equal(pdp.evaluate(parsed, request, {}).decision, model.DECISION.DENY,
+            'an empty ' + built.policy.kind + ' DENIES rather than answering ' +
+            'NotApplicable — deny-unless-permit over nothing at all is a ' +
+            'Deny, which is what the Policies page tells the person who is ' +
+            'about to make one the root');
+  });
+
+  // AND THE EDITOR TAKES IT FROM THERE, which is the other half of what the
+  // blank template is for: an empty document that the editor could not add
+  // anything to would be a starting point that is also a dead end.
+  const setTree = editor.tree(xml.parsePolicy(xml.writePolicy(asSet.policy)));
+  const setAdds = editor.optionsAt(
+    xml.parsePolicy(xml.writePolicy(asSet.policy)),
+    setTree[0].path).additions.map(function (one) {
+      return one.action;
+    });
+  t.check(setAdds.indexOf('add-policy') >= 0 &&
+          setAdds.indexOf('add-policy-reference') >= 0,
+          'the editor offers a blank PolicySet the PolicySet menu — a nested ' +
+          'policy and a PolicyIdReference', setAdds.join(', '));
+  const policyTree = editor.tree(
+    xml.parsePolicy(xml.writePolicy(asPolicy.policy)));
+  const policyAdds = editor.optionsAt(
+    xml.parsePolicy(xml.writePolicy(asPolicy.policy)),
+    policyTree[0].path).additions.map(function (one) {
+      return one.action;
+    });
+  t.check(policyAdds.indexOf('add-rule') >= 0 &&
+          policyAdds.indexOf('add-policy') < 0,
+          'and a blank Policy the Policy menu — a rule, and NOT a policy',
+          policyAdds.join(', '));
 }
 
 // ---------------------------------------------------------------------------
@@ -795,6 +906,7 @@ function checkCombinerParameters(t) {
 function run(t) {
   checkWriter(t);
   checkTemplates(t);
+  checkBlankTemplate(t);
   checkMatchMenu(t);
   checkContextualOptions(t);
   checkMenuAndApiAgree(t);

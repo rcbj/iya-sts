@@ -103,6 +103,19 @@ const websecurity = require('../common/websecurity');
 const accessGate = require('../common/access_gate');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 const mode = require('../common/mode');
+// THE VERSION, M.N.O, drawn at the foot of every page in this console. A LEAF
+// (rule 3) that requires nothing from this repository, so it can neither move a
+// route nor join a cycle — which matters here, because this module is at 18 and
+// four other modules spread across the require order read the same file.
+//
+// **READ ONCE, AT REQUIRE TIME, AND NOT PER PAGE.** The version cannot change
+// while the process runs: it is stamped into the artifact at build time or
+// computed once at startup, and reading a file on every page render to learn
+// something that is fixed for the life of the process is work in the one place
+// this console does the most of it.
+const version = require('../common/version');
+const APP_VERSION = version.load();
+const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 // What this service writes down, and whether it is working. A PLAIN REQUIRE in
 // the ordinary direction: that module is a library — it registers no route, so
 // this line moves nothing in the router — and it requires only `config.js` and
@@ -164,8 +177,22 @@ const stats = require('../common/admin_stats');
 // which realm decides, and they do. `authn.js`'s header above `consoleSession()`
 // argues it at length, including why this ALSO ends the switcher loop rather
 // than merely surviving it.
-const { sessions, consoleSession, beginAuthentication, LOGIN_PATH } =
-  require('../authn/authn');
+// THE RELYING PARTY (2026-09-06). This console authenticates through the
+// AUTHORIZATION CODE FLOW against this service's own authorization server now,
+// rather than by redirecting to the sign-in screen and reading the session that
+// screen minted. `common/oidc_rp.js` runs the flow and argues the whole of it;
+// what this file keeps is the GATE, which is a question about roles rather than
+// about authentication.
+//
+// `consoleSession` is still imported and still has exactly one caller — see
+// consoleSignOn() below, where the sign-on session is what the console REPORTS
+// about rather than what it lets somebody in on.
+const oidcRp = require('../common/oidc_rp');
+// `endSessionById` is here for the Sign out button and for nothing else — see
+// SIGNOUT_PATH below, where the console ends the SIGN-ON session behind its own
+// as well as the console session itself, and argues why it must.
+const { sessions, consoleSession, beginAuthentication, endSessionById,
+        clearSessionCookie, LOGIN_PATH } = require('../authn/authn');
 // WHO MAY USE THIS CONSOLE. A library (rule 3): it registers no route, so
 // requiring it here moves nothing in the router, and it requires only config.js,
 // helpers.js and audit.js — none of which requires it back. The two roles it
@@ -818,12 +845,23 @@ const SECTIONS = [
                    'configuration — this service wrote all of it when the ' +
                    'agent attested — which is why nothing on an agent is ' +
                    'editable and the ban is the only control.' } ] },
-      // A GROUP OF FOUR, and the heading names more than any one page does —
+      // A GROUP OF FIVE, and the heading names more than any one page does —
       // which is the test the SAML group set and the one SCIM fails, so SCIM
       // is ungrouped one row below and this is not. XACML here is a decision
-      // point, a repository, an editor and a way to try the thing; a reader
-      // looking for "why was that request refused" wants the last of those and
-      // would not find it filed under a settings page.
+      // point, a repository, an editor, the enforcement points elsewhere that
+      // pull it, and a way to try the thing — five ways of saying what
+      // authorization is CONFIGURED to do.
+      //
+      // IT WAS A GROUP OF SIX UNTIL 2026-09-06 and the page that left is the
+      // one worth recording: `/admin/xacml/monitor` is about TRAFFIC rather
+      // than configuration, so it belongs in Monitoring with every other page
+      // that answers "what has this service done", and it is there now. It is
+      // still drawn by `xacml/xacml_admin.js` and still lives under
+      // `/admin/xacml/` — a console page is a `path` and a `label` in this
+      // table whoever builds the body, which is the same arrangement the eight
+      // `/admin/ldap/*` pages have with the Directory section. The rule read
+      // off it: WHERE A PAGE IS FILED IS DECIDED BY THE QUESTION IT ANSWERS,
+      // not by the module that draws it or the path space it sits in.
       { title: 'XACML',
         what: 'Authorization: what this service DECIDES, the policies it ' +
               'decides with, and how to write one.',
@@ -1047,8 +1085,60 @@ const SECTIONS = [
                'issued to them. It also lists the subjects that were never ' +
                'here at all — an exchanged token names one, so does a ' +
                'WS-Trust <code>OnBehalfOf</code> and a Kerberos S4U request ' +
-               '— and says so on the row. A person can be created here ' +
-               'ahead of their first sign-in; nobody is ever removed.' },
+               '— and says so on the row. <strong>A person can be created ' +
+               'here ahead of their first sign-in</strong>: the Create box on ' +
+               'this page opens <em>New user</em>, where every attribute a ' +
+               'person in this directory may carry is a field, only the ' +
+               'username is required, a box left empty records NO VALUE, and ' +
+               'somebody is given a way IN — a password you type, one ' +
+               'generated and shown once, or a single-use activation link ' +
+               'shown once at which they choose a password or a security key ' +
+               'for themselves. The invented person this console used to ' +
+               'create without asking is a button there rather than the ' +
+               'default. Nobody is ever removed.' },
+      // -------------------------------------------------------------------
+      // `/admin/users/new` HAS NO ROW HERE, AND THAT IS A PLACEMENT RATHER
+      // THAN AN OMISSION (2026-09-06).
+      //
+      // It had one for a day, between Users and Groups, and what that row
+      // said in the sidebar was that creating a person is a PLACE in this
+      // console rather than something you do to the list you are looking at.
+      // It is the second: the page is reached from the Create box on
+      // `/admin/users` — the box carries the typed name to it — and from the
+      // *Create another* link on its own success page. Nothing else links to
+      // it and nothing needs to.
+      //
+      // **THE RULE IT FOLLOWS IS THE ONE `sectionPages()` ALREADY IMPLIED**:
+      // a row here is a DESTINATION, and a page that only ever makes sense
+      // as the next step from another page is a DRILL-DOWN. Seven pages were
+      // already in that position before this one — the two pictures, the
+      // delegation chain, the SPIFFE and XACML drill-downs — and none of them
+      // has a row either. Neighbouring sections make the same distinction
+      // without needing it said: Groups and Roles both create from a form on
+      // the list page and neither has a *New group* tab.
+      //
+      // Three things follow and each is done rather than assumed:
+      //
+      //   * **It is drawn with `active` = `/admin/users` and an `up`**, so
+      //     the Users tab is marked (as a LINK, which is what `up` means to
+      //     `navItem()`) and the trail reads
+      //     `Admin console › Users › New user`. All seven `respond()` calls
+      //     in that handler pass it, including the two refusals and the
+      //     success page — a page that lost its trail on the one response
+      //     that says "here is a password, once" would be the worst one to
+      //     lose it on.
+      //   * **`/admin` stops listing it.** `consoleGuide()` is derived from
+      //     this table, so a page with no row here is absent from the
+      //     Overview list as well as from the sidebar. That is why the Users
+      //     blurb above now carries what this row used to say: the front door
+      //     still describes the create flow, on the page it belongs to.
+      //   * **`GET /admin-api/users/new` STAYS.** Rule 7 requires an
+      //     operation for every console PAGE and says nothing against one for
+      //     a drill-down; the catalogue it publishes is what a script builds
+      //     a create from, and `tests/vendored/bulk_load.js` reads it.
+      //     Deleting a working operation to tidy a table would be a
+      //     regression dressed as consistency.
+      // -------------------------------------------------------------------
       { path: '/admin/groups', label: 'Groups',
         blurb: 'Every group in the embedded LDAP directory, with how many of ' +
                'its members name an entry that is actually there. Click one ' +
@@ -1086,20 +1176,39 @@ const SECTIONS = [
                'judge a client against its own redirect URIs rather than ' +
                'against a setting. A hand-made entry records that it was ' +
                'made by hand, so it cannot be mistaken for one that turned ' +
-               'up once and never came back.' },
-      { path: '/admin/applications/new', label: 'New application',
-        blurb: 'The form for the sentence above, on a page of its own: name a '
-               + '<code>client_id</code>, <code>wtrealm</code>, entityID or '
-               + 'SPN that has never connected and put an entry in this '
-               + 'realm\'s directory for it, with the PROTOCOL FAMILIES it is '
-               + 'declared for ticked from a closed list. The declaration is a '
-               + 'RECORD OF INTENT and nothing reads it &mdash; an application '
-               + 'declared for SAML 2.0 alone is still issued an access token, '
-               + 'because refusing would remove a test case rather than add '
-               + 'one. What DOES take effect is the configuration underneath: '
-               + 'give the entry its redirect URIs and its secret from '
-               + '<a href="/admin/applications">Applications</a> and RFC 9700 '
-               + 'mode judges the next request against them.' },
+               'up once and never came back. <strong>There are TWO ways to ' +
+               'add one and both are at the foot of this page</strong>: the ' +
+               'short row, which takes an identifier and a name and nothing ' +
+               'else, and the <em>New application</em> button beside it, ' +
+               'where the PROTOCOL FAMILIES the entry is declared for are ' +
+               'ticked from a closed list and its per-protocol identifiers ' +
+               'and redirect URIs are typed. The declaration is a RECORD OF ' +
+               'INTENT and nothing reads it — an application declared for ' +
+               'SAML 2.0 alone is still issued an access token, because ' +
+               'refusing would remove a test case rather than add one — but ' +
+               'the redirect URIs and the secret beside it are what RFC 9700 ' +
+               'mode judges the next request against.' },
+      // -------------------------------------------------------------------
+      // `/admin/applications/new` HAS NO ROW HERE EITHER, and it is the
+      // second page to leave this table on 2026-09-06. The rule and the three
+      // consequences are written out beside the Users row above and are not
+      // repeated; `admin-ui/CLAUDE.md` carries the argument.
+      //
+      // **IT IS A WEAKER CASE THAN `/admin/users/new`'s ONLY IN THAT IT IS
+      // EVEN CLEARER.** That page is the ONLY way to create a person, so a
+      // reader could at least argue the row was a destination. This one is
+      // not even that: `/admin/applications` has carried a short *Add an
+      // application* row since it grew its six actions, and both it and this
+      // page POST to `/admin/applications` with `action=create` and reach one
+      // `createApplication()`. So the sidebar was offering a tab for the
+      // LONGER of two forms on one page — which is a fact about that page's
+      // layout, not a place in this console.
+      //
+      // Its `respond()` count is ONE rather than seven, and that difference
+      // is the same fact read again: this page posts to the list rather than
+      // to itself, so a refusal and a success are the list page's 303 and
+      // never a redraw here.
+      // -------------------------------------------------------------------
       // -------------------------------------------------------------------
       // THE SECOND GROUP IN THIS CONSOLE, AND THE FIRST OUTSIDE PROTOCOLS.
       //
@@ -1359,6 +1468,74 @@ const SECTIONS = [
                'OVERRIDE — <code>oauthGlobalConsent</code> on an application\'s ' +
                'entry, which skips the prompt for everybody and writes nothing ' +
                'about anybody, so taking one away asks everybody again.' },
+      // AFTER CONSENT AND BEFORE SIGN-OUT, and the pair either side is the
+      // argument. Consent is what a person AGREED an application may ask for;
+      // this is what the policy DECIDED when something asked. Both are records
+      // of a permission question already answered, which is what this
+      // section's heading says and what kept it out of the XACML group under
+      // Protocols: every other page in that group is CONFIGURATION — the
+      // settings, the repository, the editor, the registered enforcement
+      // points, the what-if — and this one is the only one about TRAFFIC.
+      // A reader asking "why was that request refused" is asking a monitoring
+      // question, and the durable half of the answer is the Audit log two rows
+      // down. It is drawn by `xacml/xacml_admin.js` and still lives under
+      // `/admin/xacml/`; a console page is a `path` and a `label` in this
+      // table whoever builds the body.
+      { path: '/admin/xacml/monitor', label: 'XACML decisions',
+        blurb: 'What authorization is actually DOING rather than how it is ' +
+               'configured: how many decisions are being made, by which ' +
+               'enforcement point, and how many of them are refusals. Every ' +
+               'PEP is on it &mdash; the three EMBEDDED in this process and ' +
+               'every REMOTE one that has registered &mdash; with its own ' +
+               'figures. Two things it keeps apart on purpose: <strong>a ' +
+               'decision is not an enforcement</strong>, because a ' +
+               'deny-biased PEP refuses a NotApplicable that a permit-biased ' +
+               'one allows and an undischargeable obligation turns a Permit ' +
+               'into a refusal; and <strong>a remote PEP\'s numbers are ' +
+               'reported by it</strong> rather than seen here, so the totals ' +
+               'are given as here, remote and the sum. The counters are in ' +
+               'memory and start with the process; the durable record of a ' +
+               'refusal is the <a href="/admin/audit">audit log</a>, and the ' +
+               'policies these decisions are made with are under ' +
+               '<a href="/admin/xacml">Protocols</a>.' },
+      // AFTER THE XACML MONITOR AND BEFORE SIGN-OUT, and the pair either
+      // side is the argument again: the page above it counts authorization
+      // DECISIONS and this one counts PROVISIONING CALLS, and both are the
+      // same kind of thing — traffic, in memory, since the process started,
+      // with the audit log two rows down as the durable half. It is drawn by
+      // `admin.js` itself and lives under `/admin/scim/`; a console page is a
+      // `path` and a `label` in this table whoever builds the body and
+      // whatever path space it sits in, which is the rule
+      // `/admin/xacml/monitor` established and `/admin/sts-metadata` has had
+      // since 2026-08-24.
+      //
+      // IT IS NOT UNDER PROTOCOLS WITH `/admin/scim`, for that page's own
+      // reason: where a page is filed is decided by the QUESTION IT ANSWERS.
+      // `/admin/scim` answers "what is this surface" — the schemes, the
+      // endpoints, the attribute mapping, the eighteen settings. This one
+      // answers "how much traffic is there, from whom, and how much of it is
+      // failing", which is what somebody asks when a provisioning client is
+      // misbehaving rather than when it is being set up.
+      { path: '/admin/scim/monitor', label: 'SCIM metrics',
+        blurb: 'What the provisioning surface has actually been asked to do: ' +
+               'how many calls, how many worked, how many failed, and ' +
+               '<strong>who is calling</strong> &mdash; one row per ' +
+               'authenticated principal, with what it used and what it ' +
+               'touched. Broken down by API call type with the latency and ' +
+               'the bytes each returned, by resource type, by authentication ' +
+               'scheme (including the ones at zero, because a scheme that is ' +
+               'OFF is the most useful row for somebody asking why a client ' +
+               'cannot get in), and by what went back &mdash; status class, ' +
+               'status and <code>scimType</code>. Two things it is careful ' +
+               'about: <strong>a client is an authenticated principal, not a ' +
+               'connection</strong>, because SCIM is stateless HTTP and has ' +
+               'nothing to be connected; and <strong>a caller the gate ' +
+               'refused is not a client</strong> and appears in no row, even ' +
+               'when the credential carried a name. The counters are in ' +
+               'memory, per trust realm, and start with the process; the ' +
+               'durable record is the <a href="/admin/audit">audit log</a>, ' +
+               'and what the surface IS lives on ' +
+               '<a href="/admin/scim">Protocols &rarr; SCIM</a>.' },
       // Beside the tokens page rather than under Protocols, and for the same
       // reason delegation is: signing somebody out is deliberately NOT a
       // protocol family. It reaches nine stores across six families and the
@@ -1456,6 +1633,31 @@ const SECTIONS = [
       // shell, and fills setCryptoReporter() below so that `/admin-api/crypto`
       // can mirror it. Nothing about the nav knows any of that — a page here
       // is a `path` and a `label` whoever builds it.
+      // THE THIRD PAGE IN THIS CONSOLE THIS FILE DOES NOT DRAW, and the
+      // newest. `admin-ui/api_explorer.js` builds it at 19a, after the
+      // management API whose route table its document is built from. It is
+      // filed HERE, beside Service metadata, because the question it answers
+      // is the same one at a different scale: that page is every endpoint this
+      // process registered, and this is every operation of the one API that
+      // can change them, with a form that calls it.
+      { path: '/admin/api-explorer', label: 'API explorer',
+        blurb: 'Every operation of the management API at ' +
+               '<code>/admin-api</code>, read from the same OpenAPI document ' +
+               'that API publishes — which is generated from the table that ' +
+               'registers the routes, so an operation cannot be undocumented ' +
+               'nor documented and absent — with a form that calls it and the ' +
+               'equivalent <code>curl</code> line beside each one. <strong>It ' +
+               'was <code>/admin-api/docs</code> until 2026-09-09</strong>, ' +
+               'when that API began requiring an OAuth 2.0 access token: a ' +
+               'browser navigating to a URL carries none, so the one page ' +
+               'here written to be opened in a browser had become the one ' +
+               'page a browser could not open. Calls from this page use a ' +
+               'token minted for YOU, carrying exactly the scopes your ' +
+               'console roles grant — <code>admin:read</code> for Admin ' +
+               'Read, <code>admin:write</code> for Admin Write — so an ' +
+               'operation you may not perform is refused here by the same ' +
+               'policy that would refuse it anywhere else. It is the only ' +
+               'page in this console with a script on it.' },
       { path: '/admin/keys', label: 'Key pairs',
         blurb: 'Every key pair this process generated at start, what each one ' +
                'is used for, and <strong>a way to take it away</strong>. It is ' +
@@ -1595,6 +1797,22 @@ const SETTING_HOMES = [
   { group: 'Trust realms', pages: ['/admin/realms'] },
   { group: 'OAuth 2.0 / OIDC', pages: ['/admin/oauth2'] },
   { group: 'Admin console', pages: ['/admin/rbac'] },
+  // THE MANAGEMENT API'S THREE SETTINGS SIT BESIDE THE CONSOLE'S, and that is
+  // an argument rather than a convenience. /admin/rbac is the page that
+  // answers "who may reach the administrative surfaces of this service"; the
+  // console's half of that answer has always been drawn there, and since
+  // 2026-09-08 /admin-api has a half of its own — whether it demands a token
+  // at all, which audience that token must carry, and the secret its client
+  // authenticates with. A page of its own would have split one question across
+  // two screens, and /admin/config was wrong for the reason its own comment
+  // gives: these are not facts about the PROCESS, they are the access policy
+  // of one named surface.
+  //
+  // `adminApi.clientSecret` is drawn here as a SECRET, so the page shows
+  // whether one is set and never the value. That matters more here than
+  // anywhere else in this table: it is the credential that mints the token
+  // this very console's gate would otherwise be the only way to obtain.
+  { group: 'Management API', pages: ['/admin/rbac'] },
   { group: 'Applications', pages: ['/admin/applications'] },
   { group: 'Federation', pages: ['/admin/federation'] },
   { group: 'XACML', pages: ['/admin/xacml'] },
@@ -2313,6 +2531,15 @@ function gateBanner(gate) {
 // ---------------------------------------------------------------------------
 const REALM_SWITCH_PATH = '/admin/realm-switch';
 
+// WHERE THE SIGN OUT BUTTON POSTS. Written once and read in three places — the
+// control in the shell, the exemption in the gate, and the route itself — for
+// the reason `/admin/callback` is not: that path is a REGISTERED redirect URI
+// and is written down in `oidc_rp.js` as well, so it is one string in two
+// modules whether anybody likes it or not. This one belongs to this file alone,
+// and a gate exemption naming a path the route no longer serves would be a
+// sign-out that required the write role again, silently.
+const SIGNOUT_PATH = '/admin/signout';
+
 // The base URL with the CURRENT realm's prefix taken back off, so that what is
 // built from it starts at the root. baseUrlOf() adds the ambient prefix by
 // design — this and the switch route below are the two callers in this service
@@ -2389,6 +2616,40 @@ function refreshLink(req) {
   return '<a class="btn secondary" href="' + esc(refreshHref(req)) +
     '" title="Load this page again. Everything in this console is live state ' +
     'held in memory.">Refresh</a>';
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGN OUT BUTTON, at the top of every page in this console (2026-09-06).
+//
+// **A FORM AND NOT A LINK, WHICH IS THE OPPOSITE OF refreshLink() ABOVE**, and
+// the two are worth reading together because the reasons are opposite too. A
+// refresh is a GET of the page you are on: safe, repeatable, and a browser or a
+// scanner following it costs nothing. A sign-out CHANGES STATE, and a GET that
+// ends somebody's session is one a link prefetcher, a mail scanner or a
+// `<link rel=prefetch>` can fire without anybody clicking anything — so it is a
+// POST, it carries this session's CSRF token (`withCsrf()` puts it there, and
+// the gate checks it), and it cannot be triggered by navigation.
+//
+// **IT IS DRAWN ONLY WHEN SOMEBODY IS SIGNED IN.** With the gate off there may
+// be no session at all, and a Sign out button that signs nobody out is a
+// control whose only possible outcome is a refusal — the same test that keeps
+// `/admin/applications/new`'s conditional fields off a form that cannot use
+// them, and `newUserPage()`'s whole form off a process with no directory.
+// ---------------------------------------------------------------------------
+function signOutControl(gate) {
+  log.debug("Entering signOutControl().");
+  if (!gate || !gate.session) {
+    log.debug("Leaving signOutControl(). Nobody is signed in.");
+    return '';
+  }
+  log.debug("Leaving signOutControl(). Drawn for " + gate.username + ".");
+  return '<form class="signout" method="post" action="' + esc(SIGNOUT_PATH) + '">' +
+    '<button class="secondary" title="' +
+    esc('End this console session and the sign-on session behind it. You are ' +
+        'signed in as ' + gate.username + '. Signing out of the console alone ' +
+        'would not sign you out: the next page would run the sign-in flow, ' +
+        'meet the sign-on session that is still live and let you straight ' +
+        'back in.') + '">Sign out</button></form>';
 }
 
 function realmChooser(req) {
@@ -2588,6 +2849,11 @@ function page(title, active, inner, up, gate, req) {
     '.pagehead{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;' +
     'justify-content:space-between;margin:0 0 14px}' +
     '.pagehead h1{margin:0}' +
+    // The controls at the right-hand end of that row. `align-items:baseline`
+    // again, because a <button> and an <a class=btn> are different boxes and
+    // centring them against each other leaves the text half a pixel apart.
+    '.pagehead .pagetools{display:flex;gap:8px;align-items:baseline}' +
+    '.pagehead form.signout{display:inline;margin:0}' +
     'h2{font-size:1.05em;margin:1.8em 0 .5em;color:#12107c;border-bottom:1px solid #eee;padding-bottom:.2em}' +
     'h3{font-size:.92em;margin:1.2em 0 .4em}' +
     'p.sub{color:#666;font-size:.85em;margin:0 0 14px}' +
@@ -2686,6 +2952,17 @@ function page(title, active, inner, up, gate, req) {
     'font-size:.85em;margin:0 0 14px}' +
     '.err{background:#fdecea;border:1px solid #f5c6c2;color:#b00020;padding:8px 11px;border-radius:5px;' +
     'font-size:.85em;margin:0 0 14px}' +
+    // A VALUE THAT EXISTS ONCE. It is drawn big, monospaced and wrapping —
+    // `word-break:break-all` rather than a scroll box — because the two things
+    // that land in it are a base64url password and an activation URL, and both
+    // are copied by selecting them. A block a reader has to scroll sideways to
+    // select the end of is how half a credential gets pasted into a message.
+    // `user-select:all` makes one click take the whole value; it is a
+    // convenience, and selecting by hand still works where a browser ignores
+    // it.
+    '.secret{background:#f4f6ff;border:2px solid #12107c;border-radius:6px;padding:12px 14px;' +
+    'margin:0 0 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1em;' +
+    'word-break:break-all;user-select:all}' +
     '.tiles{display:flex;flex-wrap:wrap;gap:10px;margin:.6em 0 1em}' +
     '.tile{border:1px solid #e2e2ea;border-radius:8px;padding:10px 14px;min-width:9rem;background:#fbfbfd}' +
     '.tile .n{font-size:1.5em;font-weight:700;color:#12107c;line-height:1.1}' +
@@ -3115,7 +3392,12 @@ function page(title, active, inner, up, gate, req) {
     '</aside><div class="main"><div class="card">' +
     // THE HEAD ROW: the page's title, and the one control that is on every
     // page of this console. See refreshLink() for why it is a link.
-    '<div class="pagehead"><h1>' + esc(title) + '</h1>' + refreshLink(req) + '</div>' +
+    // Two controls now rather than one, so they are grouped: `.pagehead` is a
+    // space-between row and a bare second child would push the first away from
+    // the heading rather than sitting beside it.
+    '<div class="pagehead"><h1>' + esc(title) + '</h1>' +
+      '<div class="pagetools">' + refreshLink(req) + signOutControl(gate) +
+      '</div></div>' +
     trailBar(active, up, title) + gateBanner(gate) + withDerivedTips(inner) +
     '<div class="meta">' +
     // The one sentence drawn at the foot of EVERY page in this console, which
@@ -3137,6 +3419,21 @@ function page(title, active, inner, up, gate, req) {
         '<a href="/admin/persistence">Persistence</a> and is off by default.') + '</div>' +
     '<div>Every page here also answers <code>?format=json</code>, and every form also accepts a ' +
     'JSON body, so a test can drive this console without a browser.</div>' +
+    // WHICH BUILD OF THIS SERVICE YOU ARE LOOKING AT, on every page of the
+    // console for the reason the sentence above it is here: this is the surface
+    // that CHANGES what every protocol endpoint does, so "was that fixed in the
+    // build I am on" is a question asked in front of it constantly, and an
+    // answer that is one page away is an answer somebody guesses instead.
+    //
+    // The number is what gets quoted; the tooltip carries the provenance —
+    // the build instant, the commit where there is one, and whether this is a
+    // stamped artifact or a checkout being run. That last distinction is the
+    // one worth a tooltip rather than a footnote: two instances reporting
+    // different build numbers mean nothing if neither was ever built.
+    '<div title="' + esc(APP_BUILD_INFO) + '">mock-sts version <code>' +
+    esc(APP_VERSION.version) + '</code>' +
+    (APP_VERSION.stamped ? '' : ' (not a stamped build — this process is a ' +
+     'checkout, and the build number is when it started)') + '</div>' +
     // FOUR closing divs now, not two: the .meta block, the .card it is inside,
     // the .main column that holds the card and the .shell that holds the two
     // columns. Getting this wrong leaves a document that renders and does not
@@ -3196,8 +3493,49 @@ const FORM_FURNITURE = {
   from: true
 };
 
+// ---------------------------------------------------------------------------
+// THE SESSION THIS CONSOLE READS (2026-09-06), AND IT IS NO LONGER THE SIGN-ON
+// SESSION.
+//
+// This console is a RELYING PARTY of this service's own authorization server:
+// it holds a session of its own, established from an ID Token, in its own
+// cookie. `authn.js`'s `consoleSession()` reads the SIGN-ON session — what a
+// person has with the identity provider — and the two are different facts with
+// different lifetimes, which is the whole reason this move was worth making.
+//
+// **THE RETURN SHAPE IS `consoleSession()`'s ON PURPOSE.** Every caller in this
+// file wants `{ session, realm, foreign }` and none of them cares which of the
+// two it is looking at; keeping the shape is what made this a change to one
+// function rather than to seventy pages. `foreign` is now always false — a
+// relying-party session belongs to the surface that minted it and there is no
+// realm to be foreign to — and the member is kept because the banner reads it.
+//
+// The realm is the DEFAULT one whatever realm is being read, which is the rule
+// this console has had since realms existed and is unchanged: the roster is the
+// default realm's `ou=groups`, so a session minted in `acme` must not open this
+// console. `oidc_rp.js` runs the console's whole flow in that realm for exactly
+// that reason.
+// ---------------------------------------------------------------------------
+function consoleRpSession(req) {
+  log.debug("Entering consoleRpSession().");
+  const session = oidcRp.sessionFor(req, 'admin');
+  log.debug("Leaving consoleRpSession(). " +
+            (session ? "Signed in as " + session.user.username + "." : "None."));
+  return session
+    ? { session: session, realm: realms.DEFAULT_REALM, foreign: false }
+    : null;
+}
+
+// THE SIGN-ON SESSION BEHIND IT, for reporting only. The gate does not read
+// this and must not: what lets somebody into this console is the console's own
+// session, and a page that fell back to the provider's would be a relying party
+// reading the provider's cookie — which is the arrangement this replaced.
+function consoleSignOn(req) {
+  return consoleSession(req);
+}
+
 function withCsrf(req, html) {
-  const session = consoleSession(req);
+  const session = consoleRpSession(req);
   const field = session ? websecurity.field(session.session.id) : '';
   if (!field) {
     return html;
@@ -3338,7 +3676,7 @@ function gateStateFor(req) {
   // THE DEFAULT REALM'S SESSION, whichever realm is being read, and only here —
   // see the require at the top of this file for why the console asks the
   // question that way and why no other module may.
-  const found = consoleSession(req);
+  const found = consoleRpSession(req);
   const session = found ? found.session : null;
   const username = session ? session.user.username : '';
   const held = rbac.rolesOf(username);
@@ -3422,12 +3760,27 @@ function refuse(req, res, status, code, title, message, detail) {
   log.debug("Leaving refuse(). Answered HTML.");
 }
 
-// The default realm's sign-in screen as an ABSOLUTE URL. See the note at its
-// one caller for why absolute: a root-relative href in an HTML body is rewritten
-// by app.js to carry the realm being read, and this link must not be.
+// The default realm's CONSOLE as an ABSOLUTE URL. See the note at its one caller
+// for why absolute: a root-relative href in an HTML body is rewritten by app.js
+// to carry the realm being read, and this link must not be.
+//
+// **IT WAS `LOGIN_PATH` UNTIL 2026-09-06 AND THAT LINK COULD NOT WORK.**
+// `/authn/login` draws a form for a PENDING AUTHENTICATION RECORD and answers
+// `There is no sign-in waiting under that id` to a request naming none — so the
+// one link this console offers somebody whose session expired mid-form went to
+// an OAuth error page. The gate below is what mints a record, through
+// `sendToConsoleSignIn()`, so the way to the sign-in screen is the CONSOLE: an
+// unauthenticated GET of `/admin` in the default realm is answered with a 302 to
+// a screen that has a record behind it and comes back here afterwards.
+//
+// **The record is minted when the link is PRESSED**, which is the property that
+// decides this rather than calling `beginAuthentication()` here: a pending
+// record has a lifetime, and this page is drawn precisely for somebody who has
+// been sitting on a form for longer than one. `portal/portal.js` fixed the same
+// mistake the same way on the same day and its comment carries the rest.
 function defaultRealmSignInUrl(req) {
   return realms.run(realms.DEFAULT_REALM, function () {
-    return baseUrlOf(req) + LOGIN_PATH;
+    return baseUrlOf(req) + '/admin';
   });
 }
 
@@ -3459,37 +3812,86 @@ function defaultRealmSignInUrl(req) {
 // the whole shape of this feature in one line: sign in once, in one realm, read
 // every realm.
 // ---------------------------------------------------------------------------
+// **IT IS AN AUTHORIZATION CODE FLOW SINCE 2026-09-06 AND WAS A REDIRECT TO THE
+// SIGN-IN SCREEN BEFORE IT.** Everything the paragraphs above say about WHICH
+// realm still holds and is in fact why `oidc_rp.js` runs this surface's flow in
+// the default realm; what changed is that this console no longer reaches into
+// the authentication service for a session. It sends the browser to
+// `/oauth2/authorize` as `sts-admin-console`, and the sign-in screen is reached
+// — if it is reached at all — by the AUTHORIZATION ENDPOINT deciding it needs
+// one. Single sign-on falls out of that for free: a person who already has a
+// sign-on session from any other family here is sent straight back with a code.
+//
+// **WHAT THE MOVE COST, said here rather than discovered later.** This function
+// used to hand `beginAuthentication()` four `details` that the sign-in screen
+// then showed somebody about to type a name into this console: what they were
+// signing in to, the page they had asked for, that membership of one of two
+// groups is what decides access, and that it is the DEFAULT realm's `ou=groups`
+// that decides it. An authorization request carries no such field — the screen
+// is drawn by the authorization endpoint about the CLIENT, so what a person now
+// sees is `Admin console` and the scopes it asked for, which is what every
+// other application in this registry gets and is the point of the move.
+//
+// The two sentences that were load-bearing are not lost: the 403 for somebody
+// holding no role names both groups and the realm, which is the page they
+// actually reach, and it is the page where that sentence is ACTIONABLE. The two
+// that were context are gone on purpose.
 function sendToConsoleSignIn(req, res) {
   log.debug("Entering sendToConsoleSignIn().");
-  realms.run(realms.DEFAULT_REALM, function () {
-    const where = beginAuthentication({
-      returnTo: String(req.originalUrl || '/admin'),
-      protocol: 'Admin console',
-      details: [
-        { label: 'Signing in to', value: 'the mock STS admin console' },
-        { label: 'Page you asked for', value: String(req.originalUrl || '/admin') },
-        // Said on the screen rather than only here, because the person about
-        // to type a username is exactly the one who needs to know that the
-        // username decides whether the console lets them in.
-        { label: 'What decides access',
-          value: 'membership of ' + config.value('admin.readGroup') + ' or ' +
-                 config.value('admin.writeGroup') + ' in the directory' },
-        // And WHICH directory, because there are several now and only one of
-        // them decides this. A reader who has just created a realm and put
-        // themselves in its admin group would otherwise be refused with no way
-        // to tell why.
-        { label: 'Which directory', value: 'the DEFAULT realm\'s ou=groups. A ' +
-          'trust realm has its own directory and its own groups, and neither ' +
-          'grants this console.' }
-      ]
-    });
-    res.set('Cache-Control', 'no-store').redirect(302, where);
+  const started = oidcRp.beginSignIn(req, res, 'admin', {
+    returnTo: String(req.originalUrl || '/admin'),
+    fallback: '/admin'
   });
-  log.debug("Leaving sendToConsoleSignIn().");
+  if (!started.ok) {
+    // The client entry is gone or has no secret — `oidc_rp.js` says which. It
+    // is a refusal with a reason rather than a redirect to a flow that cannot
+    // complete, and it names `/admin-api`, which is not gated and is the way
+    // back in when this console cannot be reached.
+    refuse(req, res, 503, 'temporarily_unavailable',
+           'This console cannot sign anybody in.',
+           started.why + ' Until it is fixed, /admin-api is not gated and can ' +
+           'do everything this console can.',
+           { needed: 'client', signIn: '', signInRealm: realms.DEFAULT_ID });
+  }
+  log.debug("Leaving sendToConsoleSignIn(). " +
+            (started.ok ? "Sent to the authorization endpoint." : "Refused."));
 }
+
 
 app.use('/admin', function (req, res, next) {
   log.debug("Entering the admin console gate. " + req.method + " " + req.originalUrl);
+  // -------------------------------------------------------------------------
+  // THE ONE PATH UNDER /admin THAT THIS GATE MUST NOT GUARD (2026-09-06).
+  //
+  // `/admin/callback` is where the authorization endpoint sends the browser
+  // back with a code, and a person arriving there has BY DEFINITION no console
+  // session yet — that is what they are about to get. Guarded, it would send
+  // them to `/oauth2/authorize` again, which would send them back here, which
+  // would send them again: a redirect loop that looks exactly like a broken
+  // sign-in and is the single most likely way to get this move wrong.
+  //
+  // **IT IS AN EXEMPTION IN THE GATE AND NOT A ROUTE REGISTERED ABOVE IT**, and
+  // that is deliberate. The gate's whole mechanism is that it is registered
+  // above every route in this file, so that a console page added tomorrow is
+  // guarded by construction (rule 1); a route above the gate would break that
+  // invariant for every reader who came after, and the next person to add one
+  // would have no way to know which side of the line they were on. One named
+  // path, checked here, keeps "everything below is guarded" true.
+  //
+  // **IT IS NOT A HOLE.** What that route does with an unauthenticated request
+  // is redeem a code against a state THIS SERVICE minted, with a client secret,
+  // and refuse everything else — see `oidc_rp.js`'s callback, where every
+  // refusal is reported rather than redirected. It grants nothing on its own.
+  //
+  // `req.path` and not `originalUrl`: the realm prefix is already stripped by
+  // `app.js`'s first middleware, and the query string must not be part of the
+  // comparison — `/admin/callback?code=…` is this path.
+  if (req.path === '/callback') {
+    log.debug("Leaving the admin console gate. The OIDC callback is exempt: " +
+              "somebody arriving there has no session yet, by definition.");
+    next();
+    return;
+  }
   if (!mode.gatesConsole()) {
     log.debug("Leaving the admin console gate. admin.authRequired is off; everything is allowed.");
     next();
@@ -3531,18 +3933,76 @@ app.use('/admin', function (req, res, next) {
            { needed: 'session', signIn: LOGIN_PATH, signInRealm: realms.DEFAULT_ID,
              // AN ABSOLUTE URL, and that is not decoration. `app.js` rewrites
              // every root-relative href in an HTML response to carry the realm
-             // being read, so `href="/authn/login"` would send this reader to
-             // THIS realm's sign-in screen — where they would sign in
-             // successfully and still be refused, because the gate accepts the
-             // default realm's session only. An absolute URL is not matched by
-             // that rewrite, which is what makes it the right shape here rather
-             // than a way around it.
-             html: note('<a href="' + esc(defaultRealmSignInUrl(req)) +
-                   '">Sign in to the default realm</a>, then post ' +
-                   'the form again. It is not resubmitted for you: a redirect after a POST ' +
+             // being read, so `href="/admin"` would send this reader to THIS
+             // realm's console — where they would sign in successfully and
+             // still be refused, because the gate accepts the default realm's
+             // session only. An absolute URL is not matched by that rewrite,
+             // which is what makes it the right shape here rather than a way
+             // around it.
+             //
+             // **AND THE LINK IS OUTSIDE THE `note()`, WHICH IT WAS NOT UNTIL
+             // 2026-09-06.** A note longer than about a line folds itself and
+             // its `<summary>` is the opening sentence rendered as PLAIN TEXT
+             // — so a note that OPENS with an anchor has that anchor stripped
+             // into the summary, and the only way off this page was a piece of
+             // text that looked like a link and was not. That is exactly the
+             // rule `bullet()` already enforces for a list item ("a row whose
+             // POINT is the link is never folded"), and `note()` has no such
+             // rule because folding is decided on the rendered text rather
+             // than on what is in it. The rule to take from it: **prose that
+             // carries the only control on the page does not go inside a
+             // fold.** The explanation still does, which is what a fold is
+             // for.
+             html: '<p><a href="' + esc(defaultRealmSignInUrl(req)) +
+                   '">Sign in to the default realm</a>, then post the form ' +
+                   'again.</p>' +
+                   note('It is not resubmitted for you: a redirect after a POST ' +
                    'becomes a GET and the fields would be lost, so a control you did not ' +
                    'press twice would not fire twice.') });
     log.debug("Leaving the admin console gate. Refused 401 to a form POST.");
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // SIGNING YOURSELF OUT NEEDS A SESSION AND NOTHING ELSE (2026-09-06).
+  //
+  // The Sign out button is on every page of this console, which means it is on
+  // the pages of everybody who can reach one — including a person who holds
+  // **Admin Read** and not Write, and including the one the roles refuse
+  // entirely, who still gets a refusal page drawn in this shell with the button
+  // on it. Under the rule below every one of them would be refused: it is a
+  // POST, so it would need Write.
+  //
+  // **A SIGN-OUT IS NOT A WRITE TO THIS SERVICE.** It changes no configuration,
+  // no registry and nobody else's state; it ends the session of the person
+  // pressing it, which is the one act on this console that needs no permission
+  // because the alternative is a console somebody can enter and cannot leave.
+  //
+  // WHAT IS NOT SKIPPED IS THE CSRF TOKEN. A sign-out fired from another site
+  // is a real nuisance — it is the classic example of a "harmless" CSRF that is
+  // not — so the check below runs here too, in front of the exemption rather
+  // than after it. What is skipped is the ROLE and the POLICY, and only those.
+  //
+  // It is an exemption IN the gate, like `/callback` above and for the same
+  // reason: a route registered above the gate would break "everything below is
+  // guarded" for every reader who came after.
+  // -------------------------------------------------------------------------
+  if (req.path === SIGNOUT_PATH.replace(/^\/admin/, '')) {
+    const token = websecurity.checkCsrf(state.session.id, parseBody(req));
+    if (!token.ok) {
+      log.warn('admin console: a sign-out was refused on CSRF (' +
+               token.reason + '), signed in as ' + state.username + '.');
+      refuse(req, res, 403, 'csrf', 'That form did not come from this console.',
+             token.detail,
+             { html: note('The ordinary cause is a page left open across a ' +
+               'sign-out and then submitted — you are probably signed out ' +
+               'already. <a href="/admin">Open the console</a> to find out.') });
+      log.debug("Leaving the admin console gate. The sign-out was refused on CSRF.");
+      return;
+    }
+    log.debug("Leaving the admin console gate. The sign-out is exempt from " +
+              "the role check: ending your own session needs no permission.");
+    next();
     return;
   }
 
@@ -5176,6 +5636,169 @@ app.use('/admin', function (req, res, next) {
   }
   log.debug("Leaving the console query check. Accepted.");
   return next();
+});
+
+// ===========================================================================
+// THE REDIRECT URI. WHERE THE AUTHORIZATION ENDPOINT SENDS THE BROWSER BACK.
+//
+// It is the first route in this file so that it sits directly under the
+// exemption in the gate above that names it — the two are one arrangement and
+// a reader meeting one has to be able to find the other.
+//
+// **THIS ROUTE IS THE CONSOLE ACTING AS AN ORDINARY CLIENT.** Everything it
+// does is in `common/oidc_rp.js`: spend the state, redeem the code with the
+// client secret, verify the ID Token against the published JWKS, and establish
+// this console's own session. What is HERE is only what belongs to this
+// console — where to go afterwards, and what a refusal looks like in this
+// console's shell.
+//
+// A refusal is DRAWN and never redirected, which is `federation_sp.js`'s
+// decision 6 and holds for its reason: the person's sign-in has already
+// succeeded at the authorization endpoint, so the only interesting question is
+// what this side disliked about the answer, and a redirect throws that away.
+// It is drawn through `page()` with NO gate state, because there is no session
+// — `gateStateFor()` answers that honestly and the banner says so.
+// ===========================================================================
+app.get('/admin/callback', function (req, res) {
+  log.debug("Entering the admin console's OIDC callback.");
+  oidcRp.handleCallback(req, res, 'admin').then(function (answer) {
+    if (!answer.ok) {
+      log.info('admin: a console sign-in did not complete. ' + answer.why);
+      const inner = '<div class="err"><strong>Signing in did not complete.</strong> ' +
+        esc(answer.why) + '</div>' +
+        note('This console signs people in through this service\'s own ' +
+             'authorization server, as the registered client ' +
+             '<code>sts-admin-console</code> — the same authorization code ' +
+             'flow any other application would use. What failed above is one ' +
+             'step of that flow, named exactly rather than reported as ' +
+             '&ldquo;sign-in failed&rdquo;. ' +
+             '<a href="/admin">Start again</a>, and if it keeps happening, ' +
+             '<code>/admin-api</code> is not gated and can do everything this ' +
+             'console can.') +
+        note('The client this console signs in as is an ORDINARY entry in the ' +
+             'registry: <a href="/admin/applications?application=sts-admin-console">' +
+             'sts-admin-console</a> under <code>ou=applications</code>. If it ' +
+             'has been deleted or edited — its redirect URI, its secret — this ' +
+             'is where that shows up.');
+      res.status(400).type('text/html').set('Cache-Control', 'no-store')
+         .send(page('Signing in did not complete', '', inner, null,
+                    gateStateFor(req), req));
+      log.debug("Leaving the admin console's OIDC callback. Refused.");
+      return;
+    }
+    // 303 so the reload after it is a GET, and to the page they asked for
+    // BEFORE any of this started — which `oidc_rp.js` has been holding
+    // server-side since the flow began, precisely so that no return address
+    // ever rides in a parameter a caller could write.
+    res.status(303).set('Cache-Control', 'no-store')
+       .set('Location', answer.returnTo || '/admin').end();
+    log.debug("Leaving the admin console's OIDC callback. Signed in as " +
+              answer.username + ".");
+  }).catch(function (e) {
+    // A rejection here is a bug in this repository rather than anything a
+    // request can cause — `handleCallback()` resolves its refusals — so it is
+    // reported as one rather than swallowed into a generic failure.
+    log.error("The admin console's OIDC callback threw: " + (e.stack || e.message));
+    res.status(500).type('text/html').set('Cache-Control', 'no-store')
+       .send(page('Signing in did not complete', '',
+                  '<div class="err"><strong>Signing in did not complete.</strong> ' +
+                  esc(e.message) + '</div>', null, gateStateFor(req), req));
+  });
+});
+
+// ===========================================================================
+// SIGNING OUT. THE OTHER END OF THE ROUTE ABOVE (2026-09-06).
+//
+// Registered beside the callback deliberately: those two routes are a session's
+// beginning and its end, and a reader who has just understood how somebody gets
+// in should not have to search for how they get out.
+//
+// **IT ENDS TWO SESSIONS AND THAT IS THE WHOLE DESIGN DECISION.** This console
+// holds a relying-party session of its own (`oidc_rp.js`), derived from the
+// SIGN-ON session the person has with this service's authorization server.
+// Ending only the console's would be a Sign out button that does not sign
+// anybody out: the next request to `/admin` runs the authorization code flow,
+// meets the sign-on session that is still live, gets an ID Token back without
+// prompting for anything, and draws the console again. The person pressing the
+// button would see the console they just left and conclude the button is
+// broken — and they would be right.
+//
+// So the console session goes first (which clears this surface's cookie) and
+// then the sign-on session behind it. `authn.js`'s `dropSession()` cascades to
+// every session derived from that one, so a person who is also signed in to
+// `/portal` is signed out there too. **THE PAGE BELOW SAYS SO**: a sign-out
+// that quietly reaches further than the button's label is the same defect as
+// one that does not reach far enough.
+//
+// **WHAT IT IS NOT is `/logout`.** That endpoint ends everything an identity
+// holds in every protocol — tokens, tickets, artifacts, LDAP binds — and it is
+// linked from this console in half a dozen places for exactly that. This one is
+// the browser's sign-out, which is what a Sign out button in the corner of a
+// page means everywhere else, and the page below points at the other for
+// somebody who wants it. `/logout` also refuses when there is no SIGN-ON
+// session to act on, which would leave somebody holding a live console session
+// looking at a 401 that says there is nobody to sign out.
+//
+// **AND IT MIRRORS NO `/admin-api` OPERATION**, which is the one place this
+// console departs from rule 7 rather than paying it. That rule exists so that
+// every control here can be driven by a program; this control ends the session
+// of the browser that pressed it, and `/admin-api` is ungated and sessionless —
+// an operation there would have nothing to end. `tests/vendored/sts_admin_console.js`
+// carries the exemption with that sentence in it, so the check that reads the
+// API's index for "every console POST reaches a mirrored route" does not go
+// quietly amber.
+// ===========================================================================
+app.post(SIGNOUT_PATH, function (req, res) {
+  log.debug("Entering the admin console sign-out.");
+  // The gate above has already established that there IS a console session and
+  // that the form carried this session's CSRF token, so what is left here is
+  // the ending itself.
+  const rp = oidcRp.sessionFor(req, 'admin');
+  const parent = rp ? String(rp.derivedFrom || '') : '';
+  const username = rp ? rp.user.username : '';
+  oidcRp.endSessionFor(req, res, 'admin', 'the Sign out button on the admin console');
+  const signOnEnded = parent
+    ? !!endSessionById(parent, 'the Sign out button on the admin console')
+    : false;
+  // AND THE SIGN-ON COOKIE, because `endSessionById()` has no response to clear
+  // one on — it is the door /logout uses to end sessions that are not the
+  // caller's. Leaving it would have the browser presenting a cookie naming a
+  // session this service no longer holds: refused everywhere, and confusing
+  // wherever anybody looks at what the browser is carrying.
+  if (signOnEnded) {
+    clearSessionCookie(res);
+  }
+  log.info('admin console: ' + (username || 'somebody') + ' signed out. The ' +
+           'console session is gone' +
+           (signOnEnded ? ' and so is the sign-on session behind it (' +
+                          parent + '), with every session derived from it.'
+                        : '; there was no sign-on session left to end.'));
+  const inner =
+    '<div class="ok"><strong>You are signed out' +
+    (username ? ', ' + esc(username) : '') + '.</strong> This console session ' +
+    'has ended' + (signOnEnded
+      ? ', and so has the sign-on session it was built on — so anything else ' +
+        'that was signed in through it, the user portal included, is signed ' +
+        'out too.'
+      : '. There was no sign-on session left behind it to end.') + '</div>' +
+    note('<strong>Signing out of the console alone would not have signed you ' +
+    'out.</strong> This console is an ordinary OpenID Connect client of this ' +
+    'service — <code>sts-admin-console</code> in the registry — so the next ' +
+    'page would have run the code flow again, met the sign-on session, and let ' +
+    'you back in with nothing to type. That is why both ended.') +
+    note('What is NOT ended here is everything else this identity holds in ' +
+    'every other protocol: access and refresh tokens, Kerberos tickets, ' +
+    'credential offers, LDAP binds. <a href="/logout">/logout</a> is the ' +
+    'protocol-independent sign-out that lists all of it and ends what you ' +
+    'choose.') +
+    '<p><a class="btn" href="/admin">Sign in again</a></p>';
+  // DRAWN THROUGH page() WITH THE GATE STATE READ AGAIN, which now reports
+  // nobody signed in — so the shell draws its "not signed in" banner and the
+  // Sign out button is gone from the corner. That is the page telling the
+  // truth about the state it is in rather than this handler asserting it.
+  res.status(200).type('text/html').set('Cache-Control', 'no-store')
+     .send(page('Signed out', '', inner, null, gateStateFor(req), req));
+  log.debug("Leaving the admin console sign-out.");
 });
 
 app.get('/admin', function (req, res) {
@@ -13904,7 +14527,7 @@ function setLogoutReader(reader) {
 // disagree.
 // ---------------------------------------------------------------------------
 const XACML_PAGE_PARTS = ['overview', 'policies', 'editor', 'peps', 'decide',
-                          'action'];
+                          'monitor', 'action'];
 
 let xacmlPages = null;
 
@@ -13914,7 +14537,7 @@ function setXacmlPages(parts) {
   });
   if (!complete) {
     log.warn('admin: a set of XACML page views was offered that does not ' +
-             'carry all six of ' + XACML_PAGE_PARTS.join(', ') + '. It is ' +
+             'carry all seven of ' + XACML_PAGE_PARTS.join(', ') + '. It is ' +
              'refused whole — a partial set would leave /admin-api able to ' +
              'read the policy repository and unable to change it, which ' +
              'reads as a management API that is working and is not.');
@@ -13965,6 +14588,17 @@ function xacmlDecideView(req) {
   log.debug('Entering xacmlDecideView().');
   const json = xacmlPages ? xacmlPages.decide(req.query || {}) : noXacml();
   log.debug('Leaving xacmlDecideView().');
+  return json;
+}
+
+// THE SEVENTH, and the only one of them that reports TRAFFIC rather than
+// configuration. It takes no argument at all — there is nothing to filter and
+// nothing to name — which is why it is the shortest of the seven and not a
+// sign that something was left out.
+function xacmlMonitorView(req) {
+  log.debug('Entering xacmlMonitorView().');
+  const json = xacmlPages ? xacmlPages.monitor() : noXacml();
+  log.debug('Leaving xacmlMonitorView().');
   return json;
 }
 
@@ -14085,6 +14719,64 @@ function setDirectoryWriter(fn) {
   directoryWriter = fn;
   log.debug("A directory writer was installed; /admin/users can now create a " +
             "person in the directory.");
+}
+
+// ---------------------------------------------------------------------------
+// AND THE GROUP HALF (2026-09-06) — THE TWELFTH SLOT ON THIS FILE.
+//
+// It exists because /admin/groups was a READ and nothing else. This console
+// could report a dangling member, a claimed membership and the two groups that
+// decide who may use it, and could not create the group any of that is about:
+// the only two doors onto a group in this directory were an `ldapadd` on the
+// raw socket and `POST /scim/v2/Groups`. Rule 7 then owed the management API
+// nothing, because there was no control to mirror — which is how a hole stays
+// open in a repository that checks console/API parity on every run.
+//
+// SAME DIRECTION AND SAME REASON AS THE THREE ABOVE: this file must not require
+// ldap_server.js. It passes rule 3e's test both ways round — a require from
+// here would close a cycle (that module requires this one for the page shell
+// and the gate), and a require from mgmt-api/admin_api.js (19) to it would MOVE
+// ROUTES, since ldap_server.js sits at 21 precisely so the management API's own
+// are registered first.
+//
+// IT CARRIES BOTH FUNCTIONS AND IS VALIDATED WHOLE. A filler that installed
+// `createGroup` alone would leave the Add member button answering "no directory
+// is loaded" on a service whose directory plainly is — which is
+// `setLogoutReader()`'s argument, and the reason that slot refuses a partial
+// object rather than half-installing one.
+//
+// AND IT HOLDS NEITHER A DELETE NOR A REMOVE, deliberately. Taking a member out
+// of a group is `admin_rbac.js`'s revoke() for the two console roles and an
+// `ldapmodify` or a SCIM PATCH for every other group; deleting a group is a
+// SCIM DELETE or an `ldapdelete`. Those doors exist and work. What did not
+// exist anywhere but SCIM and the socket was CREATION, and a slot that grew the
+// operations nobody asked for would be four more things for the two doors onto
+// it to disagree about.
+// ---------------------------------------------------------------------------
+const GROUP_WRITER_MEMBERS = ['createGroup', 'addGroupMember'];
+let groupWriter = null;
+
+function setGroupWriter(fns) {
+  log.debug("Entering setGroupWriter().");
+  const given = fns || {};
+  const missing = GROUP_WRITER_MEMBERS.filter(function (name) {
+    return typeof given[name] !== 'function';
+  });
+  if (missing.length) {
+    // REFUSED RATHER THAN HALF-INSTALLED, and the warning names what was
+    // missing: "the groups page cannot create a group" with no further detail
+    // is the kind of message that costs an hour.
+    log.error("admin: the group writer slot was offered an object missing " +
+              missing.join(', ') + ". It is NOT installed — /admin/groups and " +
+              "POST /admin-api/groups will report that no directory is " +
+              "loaded, which is true of the writes and not of the reads " +
+              "beside them.");
+    log.debug("Leaving setGroupWriter(). Refused.");
+    return;
+  }
+  groupWriter = given;
+  log.debug("Leaving setGroupWriter(). /admin/groups can now create a group " +
+            "and add a member to one.");
 }
 
 // The whole section, as HTML and as the object that goes into ?format=json. Both
@@ -14803,21 +15495,47 @@ function usersListPage(req) {
       (wantedText || wantedProtocol ? ' <a href="/admin/users">clear</a>' : '') +
     '</div></form>' +
 
-    // The one control on this page. It writes to the DIRECTORY and not to the
-    // table below it, which the note says outright — see usersAction() for why
-    // that sentence is not optional. The `back` field carries the filter and
-    // page so that creating somebody does not throw the reader back to the top
-    // of an unfiltered list; the handler rebuilds it through the whitelist
-    // rather than echoing it.
-    '<form method="post" action="/admin/users">' +
-      '<input type="hidden" name="action" value="create">' +
-      '<input type="hidden" name="back" value="' + esc(queryWith(listView, {})) + '">' +
+    // ---------------------------------------------------------------------
+    // THE ONE CONTROL ON THIS PAGE, AND SINCE 2026-09-06 IT IS A DOOR RATHER
+    // THAN A DEED.
+    //
+    // It used to be a POST: type a name, press Create, and a person appeared —
+    // with a full name, an email address, a date of birth, a street, a
+    // locality, a region, a postal code and a nationality, all INVENTED. That
+    // was the original design and it had a real justification (an entry has to
+    // have values or an issued credential asserts nothing), but it meant the
+    // console could create exactly one kind of person: a fictional one, whose
+    // every detail then had to be corrected from outside this console.
+    //
+    // So the button now takes the reader to `/admin/users/new`, where every
+    // field a person here has is a box, only the username is required, an
+    // empty box records NO VALUE, the invented person is a button rather than
+    // the default, and the person can be given a password or an activation
+    // link at the moment they are created — none of which fits in a
+    // `.formrow` under a table of everybody this service has ever seen.
+    //
+    // **IT IS A GET FORM AND NOT A POST**, which is what makes it a link with
+    // a text box in front of it: nothing is written by pressing it, and the
+    // typed name arrives as `?user=` on the page that does the writing. The
+    // POST handler on this path is UNCHANGED and still creates — it is what
+    // `POST /admin-api/users/create` mirrors (rule 7), and what a test drives.
+    // ---------------------------------------------------------------------
+    '<form method="get" action="/admin/users/new">' +
       '<div class="formrow">' +
         '<label for="new-username">Create a user</label>' +
-        '<input type="text" id="new-username" name="username" size="20" ' +
-               'placeholder="username" required>' +
-        '<button>Create</button>' +
+        '<input type="text" id="new-username" name="user" size="20" ' +
+               'placeholder="username">' +
+        '<button>Create &rsaquo;</button>' +
       '</div>' +
+      note('<strong>Takes you to <a href="/admin/users/new">New user</a></strong>, ' +
+      'carrying whatever name you type here, and creates nobody by itself. There you fill in ' +
+      'as few or as many of the ' + vcClaims.personFields().length + ' attributes a person in ' +
+      'this directory can carry as you like — only the username is required, and ' +
+      '<strong>a box left empty records no value</strong> — and choose how they first get in: ' +
+      'a password you type, one generated and shown once, a single-use activation link shown ' +
+      'once, or nothing at all. There is a button there that fills the form in with the ' +
+      'invented person this service would have made up, which is what this button used to do ' +
+      'without asking.') +
       note('Puts an entry in the embedded LDAP directory at ' +
       // THE REALM'S OWN CONTAINER, ASKED FOR RATHER THAN BUILT HERE. This read
       // `ou=users,` + config.value('ldap.baseDn') until 2026-08-25, which is
@@ -14828,15 +15546,13 @@ function usersListPage(req) {
       // ambient realm, and the fallback is the old string for the build with no
       // directory loaded, where the slot is empty and there is no realm to ask
       // about anyway.
-      '<code>uid=&lt;name&gt;,' + esc(newUserContainer()) + '</code>, with the invented person ' +
-      'behind that name written onto it, so an issued credential and an ' +
-      '<code>ldapsearch</code> agree from the start. <strong>One entry per person:</strong> a ' +
+      '<code>uid=&lt;name&gt;,' + esc(newUserContainer()) + '</code>. ' +
+      '<strong>One entry per person:</strong> a ' +
       'name that is already here is refused, whichever protocol brought them and whatever ' +
-      'attribute their entry is named by — the same refusal an <code>ldapadd</code> and ' +
-      '<code>POST /admin-api/users/create</code> get, because all three call one function. ' +
-      'The new user will not appear in the table below until they authenticate somewhere: that ' +
-      'is who this service has SEEN, and this is what the directory HOLDS. No password is set, ' +
-      'because none is ever checked.') +
+      'attribute their entry is named by — the same refusal an <code>ldapadd</code>, a SCIM ' +
+      'create and <code>POST /admin-api/users/create</code> get, because all of them call one ' +
+      'function. The new user will not appear in the table below until they authenticate ' +
+      'somewhere: that is who this service has SEEN, and this is what the directory HOLDS.') +
     '</form>' +
     nav.head +
     '<table><tr><th>User</th><th>Kind</th><th>Authenticated</th><th>Protocols</th><th>Realms</th>' +
@@ -14870,6 +15586,67 @@ function usersListPage(req) {
       users: shown
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTES A CREATE CARRIES, IN THE TWO SPELLINGS THIS ACTION IS REACHED
+// IN. The same shape `applicationFieldsFrom()` has one section down, and the
+// same argument: the console's form posts one flat `field.<attribute>` per box
+// and a JSON caller of `POST /admin-api/users/create` sends one `attributes`
+// object, and two doors onto one action must not be two readings of what was
+// sent.
+//
+// **IT VALIDATES NOTHING AND THAT IS THE POINT.** Which names are a person's
+// attributes is `ldap_server.js`'s `personAttributesFrom()`, over
+// `vc_claims.js`'s catalogue — the same place an `ldapadd` and a SCIM create
+// are answered from. A check here would be a second opinion, and the one that
+// said yes would be the one that produced the entry nothing else expects.
+//
+// **NO SPLIT ON NEWLINES**, which is where this differs from the applications
+// version beside it and is worth saying rather than leaving as an apparent
+// omission: every one of these attributes is a single-valued fact about a
+// person — a given name, a postal code, a date of birth — so the whole value
+// is the value, and a `postalAddress` legitimately containing a `$` separator
+// would be cut into pieces by anything cleverer.
+// ---------------------------------------------------------------------------
+const USER_FIELD_PREFIX = 'field.';
+
+function userFieldsFrom(body) {
+  log.debug("Entering userFieldsFrom().");
+  const fields = {};
+  // A JSON body's own `attributes` object first, so a caller sending both gets
+  // the flat fields merged OVER it rather than one of the two silently winning.
+  const given = (body && typeof body.attributes === 'object' && body.attributes) || {};
+  Object.keys(given).forEach(function (name) { fields[name] = given[name]; });
+  Object.keys(body || {}).forEach(function (key) {
+    if (key.indexOf(USER_FIELD_PREFIX) !== 0) {
+      return;
+    }
+    const name = key.slice(USER_FIELD_PREFIX.length);
+    if (!name) {
+      return;
+    }
+    const value = String(body[key] === undefined ? '' : body[key]).trim();
+    // AN EMPTY BOX IS NOT A VALUE. Every field on that form is drawn whether or
+    // not it was filled in, so a create posts twenty-five of them and typically
+    // means four — and "no value is recorded" is the promise the page makes.
+    if (value !== '') {
+      fields[name] = value;
+    }
+  });
+  log.debug("Leaving userFieldsFrom(). " + Object.keys(fields).length + " field(s).");
+  return fields;
+}
+
+// A form's yes. Checkboxes post `on`, this console's own hidden fields post
+// `yes` or `no`, and a JSON caller sends a real boolean — so all three are read
+// here rather than at the three call sites. Anything else is false, including
+// the empty string an unfilled hidden field posts.
+function truthy(value) {
+  if (value === true) return true;
+  const text = String(value === undefined || value === null ? '' : value)
+                 .trim().toLowerCase();
+  return text === 'true' || text === 'yes' || text === 'on' || text === '1';
 }
 
 // ---------------------------------------------------------------------------
@@ -14945,6 +15722,71 @@ function usersAction(body) {
   }
 
 
+  // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).
+  //
+  // **IT EXISTED IN PROSE BEFORE IT EXISTED IN CODE**, which is the reason it
+  // is here rather than only inside `create` below: `credentials.js` names
+  // `POST /admin-api/users/set-password` twice — in the sentence a refused
+  // sign-in gets, and in the product-mode bootstrap banner that tells an
+  // operator to change the generated password — and no such operation was ever
+  // written. Somebody following either instruction got a 404 naming an
+  // endpoint this service documents.
+  //
+  // It is `credentials.setPassword()` and nothing else: hashed there, never
+  // here, and never written as an attribute — which is also why `userPassword`
+  // is refused by the attribute door on `create`.
+  if (action === 'set-password') {
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving usersAction(). No user was named.");
+      return { ok: false, errors: ['Name the person whose password to set.'] };
+    }
+    const wanted = String(body.password || '');
+    const generate = truthy(body.generate);
+    if (!wanted && !generate) {
+      log.debug("Leaving usersAction(). No password.");
+      return { ok: false, errors: ['Send `password` with the password to set, ' +
+                                   'or `generate` to have one made up and ' +
+                                   'returned once.'] };
+    }
+    // A CONFIRMATION IS CHECKED WHERE ONE WAS SENT AND NOT REQUIRED. The
+    // console's form always sends it, because a mistyped password nobody can
+    // read back is a locked-out person; an API caller sending one value has
+    // nothing to mistype against.
+    if (!generate && body.passwordConfirm !== undefined &&
+        String(body.passwordConfirm) !== wanted) {
+      log.debug("Leaving usersAction(). The two passwords differ.");
+      return { ok: false, errors: ['The two passwords do not match. Nothing ' +
+                                   'was changed.'] };
+    }
+    const password = generate ? credentials.generatePassword() : wanted;
+    const set = credentials.setPassword(who, password);
+    if (!set.ok) {
+      log.debug("Leaving usersAction(). The password was refused.");
+      return set;
+    }
+    auditLog.record({
+      category: 'authentication', action: 'password.set',
+      actor: (body.actor || ''), target: who, outcome: 'success',
+      summary: 'a password was set for ' + who + ' by an administrator',
+      // NO PASSWORD AND NO HASH IN THE AUDIT ROW, generated or typed. The row
+      // records that it happened and by which door; the value existed in one
+      // response and in one log line's absence.
+      detail: { generated: generate }
+    });
+    return { ok: true, username: who, generated: generate,
+             // ONLY WHERE IT WAS GENERATED. Echoing a password the caller
+             // already holds back to them buys nothing and puts it in a second
+             // place — a proxy log, a browser history, a test fixture.
+             password: generate ? password : undefined,
+             message: generate
+               ? 'A password for ' + who + ' has been generated and set. IT IS ' +
+                 'SHOWN ONCE — this service stores a scrypt hash and cannot ' +
+                 'produce it again, only replace it.'
+               : 'The password for ' + who + ' is set. It is stored as a hash ' +
+                 'and cannot be shown again.' };
+  }
+
   if (action === 'create') {
     if (!directoryWriter) {
       log.debug("Leaving usersAction(). No directory is loaded.");
@@ -14954,30 +15796,134 @@ function usersAction(body) {
                                    'does not come from the directory.'] };
     }
     const username = String(body.username || body.user || '').trim();
+    // WHAT THE OPERATOR TYPED, AND WHETHER TO MAKE UP THE REST.
+    //
+    // **`invent` DEFAULTS TO TRUE AND THAT IS BACKWARDS COMPATIBILITY RATHER
+    // THAN A PREFERENCE.** Every caller that predates /admin/users/new — the
+    // list page's own row, `POST /admin-api/users/create`, a test — asked for
+    // a person and got the invented one, and the API's published description
+    // still promises it. The new page sends `invent=no` explicitly, which is
+    // the whole of how "no value is recorded" is expressed.
+    const typed = userFieldsFrom(body);
+    const invent = body.invent === undefined ? true : truthy(body.invent);
     const result = directoryWriter(username, {
       origin: 'console',
       note: String(body.note || '').trim() ||
             'created by hand on the admin console rather than by authenticating',
-      channel: 'console'
+      channel: 'console',
+      attributes: typed,
+      invent: invent
     });
     if (!result.ok) {
       log.debug("Leaving usersAction(). create refused.");
       return result;
     }
+    // ------------------------------------------------------------------
+    // AND THE CREDENTIAL, WHICH IS A SECOND ACT ON A PERSON WHO NOW EXISTS.
+    //
+    // **THE ORDER IS LOAD-BEARING AND SO IS THE FAILURE MODE.** A password can
+    // only be written onto an entry, so the entry has to be there first — and
+    // that means a create whose credential step fails has ALREADY put somebody
+    // in the directory. It is reported as a SUCCESS carrying a loud failure
+    // rather than as a failure, because answering `ok: false` would send an
+    // operator to press Create again and meet "that username is taken", which
+    // is the least informative true sentence available.
+    //
+    // Four modes and `none` is the default, because that is what this door did
+    // before there were any: this service checks no password in development,
+    // so a person with none is an ordinary and useful thing to create.
+    // ------------------------------------------------------------------
+    const credential = String(body.credential || 'none').trim() || 'none';
+    const answer = { ok: true, dn: result.dn, username: result.username,
+                     entry: result.entry, typed: result.typed || [],
+                     invented: !!result.invented, credential: credential };
+    let credentialSaid = '';
+    if (credential === 'password' || credential === 'generate') {
+      const generated = credential === 'generate';
+      if (!generated && String(body.password || '') === '') {
+        answer.credentialError = 'No password was sent, so none was set.';
+      } else if (!generated && body.passwordConfirm !== undefined &&
+                 String(body.passwordConfirm) !== String(body.password || '')) {
+        answer.credentialError = 'The two passwords do not match, so none was set.';
+      } else {
+        const password = generated ? credentials.generatePassword()
+                                   : String(body.password || '');
+        const set = credentials.setPassword(result.username, password);
+        if (!set.ok) {
+          answer.credentialError = (set.errors || []).join(' ');
+        } else {
+          auditLog.record({
+            category: 'authentication', action: 'password.set',
+            actor: (body.actor || ''), target: result.username, outcome: 'success',
+            summary: 'a password was set for ' + result.username +
+                     ' as they were created',
+            detail: { generated: generated }
+          });
+          answer.passwordSet = true;
+          answer.generated = generated;
+          if (generated) {
+            // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE HASH.
+            answer.password = password;
+            credentialSaid = ' A password has been GENERATED for them and is ' +
+              'shown once: this service stores a scrypt hash and cannot ' +
+              'produce it again, only replace it.';
+          } else {
+            credentialSaid = ' The password you typed is set, stored as a ' +
+              'scrypt hash, and cannot be shown again by anybody including ' +
+              'this console.';
+          }
+        }
+      }
+    } else if (credential === 'activation') {
+      const issued = credentials.issueActivation(result.username);
+      if (!issued.ok) {
+        answer.credentialError = (issued.errors || []).join(' ');
+      } else {
+        auditLog.record({
+          category: 'authentication', action: 'activation.issued',
+          actor: (body.actor || ''), target: result.username, outcome: 'success',
+          summary: 'an activation link was issued for ' + result.username +
+                   ' as they were created',
+          detail: { expiresAt: issued.expiresAt }
+        });
+        answer.activationUrl = '/portal/activate?user=' +
+                               encodeURIComponent(result.username) + '&token=' +
+                               encodeURIComponent(issued.token);
+        answer.expiresAt = issued.expiresAt;
+        credentialSaid = ' They have NO credential and an activation link ' +
+          'instead, valid until ' + issued.expiresAt + ' and shown once. They ' +
+          'choose a password, a security key or both at it; nothing about ' +
+          'this account is decided until they do.';
+      }
+    } else if (credential !== 'none') {
+      answer.credentialError = 'Unknown credential option "' + credential +
+        '". The four are: none, password, generate, activation. Nothing was set.';
+    }
+    if (answer.credentialError) {
+      credentialSaid = ' THE PERSON EXISTS AND HAS NO CREDENTIAL: ' +
+        answer.credentialError + ' Set one from their row on Users rather ' +
+        'than creating them again — the name is taken now, by this entry.';
+    }
     log.debug("Leaving usersAction(). Created " + result.dn + ".");
-    return { ok: true, dn: result.dn, username: result.username, entry: result.entry,
-             message: result.dn + ' now exists in the directory, with the invented person ' +
-                      'behind that name written onto it — so a credential issued for ' +
-                      result.username + ' and an ldapsearch for that entry say the same ' +
-                      'thing. They will NOT appear in the table on this page until they ' +
-                      'authenticate somewhere: this list is who this service has seen, and ' +
-                      'the entry is what the directory holds. Nothing here checks a ' +
-                      'password, so there is none to set.' };
+    answer.message = result.dn + ' now exists in the directory' +
+      (result.invented
+        ? ', with the invented person behind that name written onto it — so a ' +
+          'credential issued for ' + result.username + ' and an ldapsearch for ' +
+          'that entry say the same thing.'
+        : ', carrying ' + (answer.typed.length
+            ? 'the ' + answer.typed.length + ' attribute(s) you typed and nothing else'
+            : 'no attributes at all beyond its object classes and its uid') +
+          '. Nothing was invented for it.') +
+      credentialSaid +
+      ' They will NOT appear in the table on the Users page until they ' +
+      'authenticate somewhere: that list is who this service has seen, and ' +
+      'the entry is what the directory HOLDS.';
+    return answer;
   }
 
   log.debug("Leaving usersAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The two ' +
-                               'are: create, issue-activation.'] };
+  return { ok: false, errors: ['Unknown action "' + action + '". The three ' +
+                               'are: create, set-password, issue-activation.'] };
 }
 
 // One route, three answers, and the choice between them is here rather than in
@@ -15050,6 +15996,705 @@ app.post('/admin/users', function (req, res) {
   const back = '/admin/users' + queryWith(listViewFromBack('/admin/users', body.back), {});
   respondToAction(req, res, back, result);
   log.debug("Leaving the admin users action endpoint.");
+});
+
+// ---------------------------------------------------------------------------
+// GET /admin/users/new, POST /admin/users/new — CREATE A PERSON, ON A PAGE OF
+// ITS OWN (2026-09-06).
+//
+// **WHAT THIS REPLACED IS THE POINT OF IT.** The Users list carried a single
+// box and a Create button, and pressing it created somebody whose every
+// attribute was INVENTED — a name, an email address, a date of birth, a street,
+// a nationality, none of which anybody had asked for. That was a deliberate and
+// defensible design while the only thing a directory entry had to do was give an
+// issued credential something to assert: `vc_claims.js` invents a consistent
+// person per username, so the entry and the credential agreed, and nobody had
+// to type twenty-five fields to get a usable test subject.
+//
+// It stopped being enough for two reasons. An operator who wants a person with
+// a PARTICULAR email address or employee number had no way to say so at
+// creation — the entry appeared with fictions on it and had to be corrected
+// afterwards, one `ldapmodify` at a time, from outside this console. And a
+// person created here had no way IN: `credentials.js` has been able to set a
+// password and issue a one-time activation link since it was written, and
+// neither was reachable from any screen. The second was a gap rather than a
+// decision — `POST /admin-api/users/issue-activation` existed and nothing
+// pressed it.
+//
+// So this page does three things the box could not:
+//
+//   * **EVERY FIELD A PERSON HERE HAS, TYPED.** Twenty-five of them, drawn from
+//     `vc_claims.js`'s catalogue — the same list `createUser()` checks a
+//     caller's attribute names against, so this form cannot offer a field the
+//     writer would drop. Only the username is required. **A box left empty
+//     records NO VALUE**; it does not fall back to an invented one.
+//   * **THE INVENTED PERSON IS A BUTTON RATHER THAN THE DEFAULT.** *Fill with
+//     example data* writes exactly what this service WOULD have made up for
+//     that username into the empty boxes, and leaves anything already typed
+//     alone. It is development-mode only, argued below.
+//   * **A CREDENTIAL, CHOSEN AT CREATION.** A typed password, a generated one
+//     shown once, an activation link shown once, or none at all.
+//
+// **IT IS NOT A SECOND DOOR ONTO THE DIRECTORY.** The form posts here and this
+// handler calls `usersAction()` — the same function `POST /admin/users` and
+// `POST /admin-api/users/create` call, reaching `ldap_server.js`'s
+// `createUser()`, which is also where an `ldapadd` and a SCIM create are
+// answered. Two forms over one function are two doors; what would break the
+// one-store rule is a second place the value lives, and there is none. That is
+// the same arrangement `/admin/applications/new` argues at length beside its
+// list page's inline row.
+//
+// **WHY IT POSTS TO ITSELF RATHER THAN TO `/admin/users`, WHICH IS WHERE THE
+// APPLICATIONS PAGE POSTS.** Two reasons, and both are about what a create here
+// ANSWERS WITH.
+//
+//   * A generated password and an activation link EXIST ONCE. Every other form
+//     on this console answers with a 303 back to a list and the message in a
+//     query parameter, sliced to 500 characters — which is right for "four
+//     tokens revoked" and catastrophic for a credential: the value would be in
+//     the browser's history, in any proxy log between here and the browser, and
+//     possibly truncated in half. So a create answers with a PAGE, and the
+//     secret is in the body of a response marked `no-store`.
+//   * A refusal has to come back with the twenty-five boxes still filled in.
+//     A redirect loses them, and losing a form somebody has just typed because
+//     the username had a comma in it is the kind of thing that teaches people
+//     not to use a screen.
+//
+// **NOTHING ON THIS PAGE IS A SECOND OPINION ABOUT WHAT A USERNAME MAY BE.**
+// The DN-syntax rule, the refusal of a name already taken, the DID and SPIFFE
+// shapes that are identities rather than usernames — all of it is in
+// `createUser()`, and this form draws whatever it says. The `required` on the
+// username box is a convenience for a browser and not the check.
+// ---------------------------------------------------------------------------
+
+// The invented person as form values: what `createUser()` WOULD have written
+// for this username, keyed by the catalogue's own spelling.
+//
+// **IT IS THE SAME PERSONA AND NOT A SECOND RANDOM ONE**, which is the whole
+// value of the button: `vc_claims.js` seeds from the username, so pressing Fill
+// shows an operator exactly what accepting the invented person would have got
+// them — and they can then edit it rather than accept or refuse it whole. A
+// generator of its own here would have produced a plausible-looking person that
+// matched nothing, and the difference would have shown up only in an
+// `ldapsearch` weeks later.
+//
+// The rows with no `from` produce nothing, and there is exactly one:
+// `description`, which this service writes itself to say why the entry exists.
+function inventedFieldValues(username) {
+  log.debug("Entering inventedFieldValues(). username=" + username);
+  const persona = vcClaims.personaFor(String(username || '').trim());
+  const out = {};
+  vcClaims.personFields().forEach(function (row) {
+    if (!row.from) {
+      return;
+    }
+    const value = persona[row.from];
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+    out[row.ldap] = String(value);
+  });
+  log.debug("Leaving inventedFieldValues(). " + Object.keys(out).length + " value(s).");
+  return out;
+}
+
+// One attribute as a row of the form's table. `values` is what to put in the
+// box — a prefill after a refusal, or what Fill wrote — and empty is the
+// ordinary case.
+//
+// **THE FIELD NAME IS `field.<attribute>` AND THE ATTRIBUTE IS THE SCHEMA'S OWN
+// NAME**, which is `declarationFieldRow()`'s rule applied to people. Two
+// reasons, and the second is the load-bearing one: an `ldapsearch` on this
+// entry shows exactly the name that was on the form, and `POST
+// /admin-api/users/create` takes the same names in its `attributes` object — so
+// the console and the management API are one vocabulary and somebody who learns
+// this page can drive the API.
+//
+// The schema reference is drawn beside each one because this directory has NO
+// SCHEMA: nothing here would refuse `schacDateOfBirth` on a group or `l` on an
+// application, so where the name comes from is the only thing that makes it
+// more than a string somebody chose. Three of them are this service's own or
+// SCHAC's rather than an RFC's, and those say so rather than being left to look
+// like the others.
+function personFieldRow(row, values) {
+  const id = 'field-' + row.ldap;
+  const value = (values || {})[row.ldap];
+  const hint = tip(row.label + ' — ' + row.schema + '. It reaches a credential as ' +
+                   row.claim.join('.') + '.');
+  return '<tr><td><label for="' + esc(id) + '"' + hint + '><code>' +
+    esc(row.ldap) + '</code></label></td>' +
+    '<td>' + esc(row.label) + '</td>' +
+    '<td><input type="text" id="' + esc(id) + '" name="field.' + esc(row.ldap) + '"' +
+    hint + ' size="36" maxlength="512" placeholder="no value" value="' +
+    esc(value === undefined ? '' : value) + '"></td>' +
+    '<td><code>' + esc(row.claim.join('.')) + '</code></td>' +
+    '<td class="sub">' + esc(row.schema) + '</td></tr>';
+}
+
+// The credential choice, as four radios. A RADIO GROUP rather than a select for
+// once, because each option needs a paragraph beside it: what an operator is
+// choosing between here is not four values of one thing but four different
+// stories about how this person first gets in, and three of them have a
+// consequence that cannot be undone from this console.
+const CREDENTIAL_CHOICES = [
+  { id: 'none', label: 'No credential at all',
+    what: 'The entry exists and nothing is set on it. <strong>In development ' +
+          'mode this is enough to sign in</strong> — no password is checked ' +
+          'anywhere in this service — so it is the right choice for a test ' +
+          'subject and the default. In PRODUCT mode a person with no ' +
+          'credential cannot sign in at all, and the way to give them one ' +
+          'afterwards is an activation link.' },
+  { id: 'password', label: 'A password I type',
+    what: 'Hashed with scrypt by <code>credentials.js</code> and written to ' +
+          '<code>userPassword</code> on the entry. <strong>It is never shown ' +
+          'again by anything</strong>, including this console and an ' +
+          '<code>ldapsearch</code>, because what is stored is the hash. Typed ' +
+          'twice, because a mistyped password that nobody can read back is a ' +
+          'person who cannot sign in and nobody who can say why.' },
+  { id: 'generate', label: 'A password generated for me',
+    what: '32 bytes of <code>randomBytes</code>, base64url, set the same way ' +
+          'and <strong>shown to you exactly once</strong> on the page that ' +
+          'comes back. This service cannot produce it a second time — only ' +
+          'replace it. It is the same generator the product-mode bootstrap ' +
+          'account uses.' },
+  { id: 'activation', label: 'No credential, and an activation link',
+    what: 'The person holds nothing, and you are given a single-use, ' +
+          'time-limited URL <strong>once</strong> to send them by whatever ' +
+          'channel you already use. At it they choose a password, a security ' +
+          'key, or both. <strong>Anybody holding that link can complete this ' +
+          'account</strong>, so it is a credential and is treated as one: ' +
+          'this service stores only a hash of it, issuing another invalidates ' +
+          'the first, and it is spent when the setup FINISHES rather than when ' +
+          'the link is opened — a link burned by a mail scanner would strand ' +
+          'the person it was for.' }
+];
+
+function credentialChoiceRow(choice, chosen) {
+  const id = 'cred-' + choice.id;
+  return '<tr><td><input type="radio" id="' + esc(id) + '" name="credential" value="' +
+    esc(choice.id) + '"' + (chosen === choice.id ? ' checked' : '') + '></td>' +
+    '<td><label for="' + esc(id) + '"><strong>' + esc(choice.label) + '</strong></label></td>' +
+    '<td class="why">' + note(choice.what) + '</td></tr>';
+}
+
+// THE PAGE. `prefill` is what to put back in the boxes — absent on a first
+// visit, and on a refusal it is what was posted, so nobody retypes twenty-five
+// fields because of one bad username.
+function newUserPage(req, prefill) {
+  log.debug("Entering newUserPage().");
+  const given = prefill || {};
+  const values = given.fields || {};
+  const username = String(given.username === undefined
+    ? (req.query.user || '') : given.username).trim();
+  const credential = String(given.credential || 'none');
+  const realm = realms.current();
+  const container = directoryReader ? newUserContainer() : null;
+  const fields = vcClaims.personFields();
+  const development = mode.isDevelopment();
+
+  // NO DIRECTORY IN THIS PROCESS. The form is left OUT rather than drawn and
+  // refused, which is `newApplicationPage()`'s shape and is right for the same
+  // reason: `createUser()` would answer with exactly this sentence, and a form
+  // whose only possible outcome is that message is a control that lies about
+  // what it does.
+  if (!directoryWriter || !container) {
+    log.debug("Leaving newUserPage(). There is no directory.");
+    return {
+      inner: messagesOf(req) +
+        warn('<strong>There is no embedded LDAP directory loaded in this ' +
+        'process</strong>, so there is no <code>ou=users</code> container to ' +
+        'put a person in and this form is not drawn. That is a build of this ' +
+        'service without <code>ldap/ldap_server.js</code> rather than a ' +
+        'fault — every other page is unaffected, and <a href="/admin/users">' +
+        'Users</a> still reports what this service has SEEN, which does not ' +
+        'come from the directory.'),
+      json: { directory: false, container: null,
+              realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+              fields: [], credentials: CREDENTIAL_CHOICES.map(function (one) {
+                return { id: one.id, label: one.label };
+              }) }
+    };
+  }
+
+  const inner = messagesOf(req) +
+    '<div class="tiles">' +
+      tile(fields.length, 'fields you may fill') +
+      tile(1, 'that is required') +
+      tile(CREDENTIAL_CHOICES.length, 'ways in to choose from') +
+      tile(development ? 'yes' : 'no', 'example data offered') +
+    '</div>' +
+
+    note('<strong>The entry lands in this realm\'s directory, at <code>uid=&lt;name&gt;,' +
+    esc(container) + '</code>.</strong> The console shows one trust realm at a time and this ' +
+    'form writes the one it is showing — <strong>' + esc(realm ? realm.name : 'Default') +
+    '</strong> — because the realm is taken from the path this request arrived on. People are ' +
+    'NOT shared between realms: an <code>ldapsearch</code> with that base DN sees exactly what ' +
+    'this creates, and another realm has never heard of them.') +
+
+    note('<strong>This is not a second store.</strong> The form posts ' +
+    '<code>action=create</code> to this page, which calls the same function ' +
+    '<code>POST /admin-api/users/create</code>, a SCIM create and an <code>ldapadd</code> ' +
+    'under <code>ou=users</code> all reach — so what a username may be, and the refusal of one ' +
+    'that is already here, mean the same thing at every door. <strong>One entry per person</strong> ' +
+    'is the rule it keeps, whichever protocol brought them and whatever attribute their entry ' +
+    'happens to be named by.') +
+
+    warn('<strong>An empty box records NO VALUE. It does not fall back to an ' +
+    'invented one.</strong> That is the difference between this page and the single Create box ' +
+    'that used to be on <a href="/admin/users">Users</a>: that button invented a whole person — ' +
+    'a name, an email address, a date of birth, a street, a nationality — behind whatever ' +
+    'username was typed. Here nothing is made up unless you press the button that makes it up. ' +
+    'What that costs is that an issued credential asserting <code>birthdate</code> for somebody ' +
+    'with no <code>schacDateOfBirth</code> falls back to the invented value at ISSUANCE time ' +
+    '(<code>vc_claims.js</code> does that so a credential is never empty), so the credential and ' +
+    'the directory will disagree until somebody fills the attribute in. ' +
+    '<a href="/admin/vc">Credential claims</a> is where that fallback is described.') +
+
+    '<form method="post" action="/admin/users/new" class="newapp">' +
+    '<input type="hidden" name="action" value="create">' +
+
+    '<h2>Who they are</h2>' +
+    '<div class="formrow">' +
+      '<label for="new-username">Username</label>' +
+      '<input type="text" id="new-username" name="username" size="28" maxlength="256" ' +
+      'required value="' + esc(username) + '" placeholder="the name they sign in as">' +
+    '</div>' +
+    note('<strong>The only required field.</strong> It is the string they will type at a ' +
+    'sign-in screen, the <code>sub</code> of every token issued for them, the ' +
+    '<code>uid</code> on the entry and the name of the entry itself. It may not be a DN, a ' +
+    '<code>did:</code>, a SPIFFE identity or carry a character RFC 4514 reserves in a DN ' +
+    '(<code>, = + &lt; &gt; # ; " \\</code>) — those name entries that reach this directory by ' +
+    'being PRESENTED rather than created, and the refusal names which one you sent. Case is ' +
+    'never collapsed: nothing in this service treats <code>Alice</code> and <code>alice</code> ' +
+    'as one person.') +
+
+    '<h2>How they get in</h2>' +
+    '<table><tr><th>Choose</th><th>Option</th><th>What it means</th></tr>' +
+    CREDENTIAL_CHOICES.map(function (choice) {
+      return credentialChoiceRow(choice, credential);
+    }).join('') +
+    '</table>' +
+    '<div class="formrow">' +
+      '<label for="new-password">Password</label>' +
+      '<input type="password" id="new-password" name="password" size="28" ' +
+             'maxlength="1024" autocomplete="new-password">' +
+      '<label for="new-password-confirm">Again</label>' +
+      '<input type="password" id="new-password-confirm" name="passwordConfirm" size="28" ' +
+             'maxlength="1024" autocomplete="new-password">' +
+    '</div>' +
+    note('Read ONLY when <em>A password I type</em> is chosen above; ignored otherwise, ' +
+    'so a value left in these boxes cannot become a credential nobody meant to set. The two ' +
+    'must match. <strong>There is no strength rule and that is deliberate</strong> — this ' +
+    'service checks no password in development mode, so a rule here would refuse a value that ' +
+    'is about to be accepted by every door in the service, which is a worse lie than no rule.') +
+
+    '<h2>What is known about them</h2>' +
+    note('Every attribute a person in this directory can carry, which is the same ' +
+    'catalogue <a href="/admin/vc">Credential claims</a> chooses from — so an attribute filled ' +
+    'in here is the value an issued credential asserts, rather than a value that agrees with ' +
+    'one by coincidence. <strong>Fill in as few or as many as you like.</strong> The claim ' +
+    'column is where each one lands in a token or a credential; the last column is where the ' +
+    'attribute name comes from, which matters because <strong>this directory has no ' +
+    'schema</strong> and would not refuse any of these on any entry.') +
+    (development
+      ? note('<strong><code>uid</code> is not on this list and that is not an ' +
+        'omission.</strong> It is the username, asked for once at the top; a second box for it ' +
+        'would let one form create <code>uid=alice</code> whose uid says <code>bob</code>.')
+      : '') +
+    '<table><tr><th>Attribute</th><th>What it is</th><th>Value</th>' +
+    '<th>Reaches a credential as</th><th>Defined by</th></tr>' +
+    fields.map(function (row) { return personFieldRow(row, values); }).join('') +
+    '</table>' +
+
+    // TWO SUBMITS, AND ONLY ONE OF THEM CARRIES A NAME. `action=create` is a
+    // HIDDEN FIELD, the way every other form on this console spells its
+    // action, and Create is an ordinary unnamed button; Fill carries
+    // `fill=yes` of its own and the handler reads that FIRST, so a press of it
+    // cannot be mistaken for a create even though `action` still says create.
+    //
+    // **THE ALTERNATIVE — TWO BUTTONS BOTH NAMED `action` — LOOKS TIDIER AND
+    // BREAKS TWO THINGS.** A form with two controls of one name has a
+    // `RadioNodeList` at `form.elements.action` rather than an element, and
+    // `.value` on one of those is empty unless they are radios: so anything
+    // that finds a form by the action it posts — which is how this console's
+    // own browser suite finds every form it presses — stops finding this one.
+    // And a browser that submitted BOTH values (a hidden field plus a named
+    // button) would post `action` twice, which is precisely the ambiguity
+    // `common/validation.js` refuses everywhere else rather than resolving.
+    '<div class="formrow">' +
+      '<button type="submit">Create the user</button>' +
+      (development
+        ? ' <button type="submit" name="fill" value="yes" class="secondary">' +
+          'Fill with example data</button>'
+        : '') +
+    '</div>' +
+
+    (development
+      ? note('<strong>Fill with example data</strong> puts the invented person for ' +
+        'the username you typed into the boxes you have left EMPTY, and touches nothing you ' +
+        'have already filled in. It creates nobody — you land back on this form with the values ' +
+        'in it, to edit or clear before pressing Create. <strong>It is the same invented ' +
+        'person</strong> this service would have made up on its own, seeded from the username, ' +
+        'so it shows you what you would have got rather than a second fiction. Type the ' +
+        'username first: change it afterwards and the example person is somebody else. ' +
+        '<code>description</code> stays empty because this service writes that one itself.')
+      : warn('<strong>There is no <em>Fill with example data</em> button because this ' +
+        'service is in PRODUCT mode</strong> (<code>global.mode=product</code>). Inventing a ' +
+        'person\'s date of birth, address and nationality is a development convenience; on a ' +
+        'service running as a product it would put fictions into a directory somebody else ' +
+        'reads as fact, and there would be nothing on the entry afterwards to say which values ' +
+        'were made up. Type what you know and leave the rest empty. ' +
+        '<code>global.mode</code> is on ' +
+        '<a href="/admin/config">Configuration</a>, with the rest of the ' +
+        'settings that belong to no one protocol.')) +
+
+    // THE INVENTION SWITCH, AND IT IS A HIDDEN FIELD RATHER THAN A CHOICE.
+    // This page's whole promise is that nothing is made up unless the button
+    // that makes it up was pressed, so `invent=no` is what it always sends;
+    // the invented person is reachable from here through Fill, where it is
+    // visible and editable, and through the API for a caller that wants the
+    // old behaviour.
+    '<input type="hidden" name="invent" value="no">' +
+    '</form>' +
+
+    note('<strong>Nothing about this create is persisted unless this service is ' +
+    'persisting the directory.</strong> A person here IS a directory entry, so they survive a ' +
+    'restart exactly when it does — see <a href="/admin/persistence">Persistence</a>, which is ' +
+    'off by default. That is a property of the whole service rather than of this page.' +
+    (persistence.status().persistsDirectory
+      ? ' This process is running with <code>persistence.mode=' +
+        esc(persistence.status().mode) + '</code>, so this entry WILL survive.'
+      : ' This process is not persisting anything, so it will not.')) +
+
+    warn('<strong>A person created here is not on the Users table until they ' +
+    'authenticate.</strong> That table is who this service has SEEN; this writes what the ' +
+    'directory HOLDS, and the two are different questions on purpose. They are counted under ' +
+    '&ldquo;seen only as a subject&rdquo; the moment they exist, and <a href="/admin/ldap/directory">' +
+    'the directory</a> shows the entry immediately.') +
+
+    note('<strong>Leaving a field empty is not a promise it stays empty.</strong> ' +
+    'The Populate button on <a href="/admin/vc">Credential claims</a> — and the sweep that runs ' +
+    'when a trust realm is created — fills every MISSING selected attribute on every person ' +
+    'under <code>ou=users</code>, and it does not know which of them were typed by hand. That ' +
+    'is the right behaviour for the sweep, whose whole job is that the directory and an issued ' +
+    'credential agree; it means &ldquo;no value recorded&rdquo; is a statement about this ' +
+    'create rather than a permanent property of the entry.') +
+
+    note('<a href="/admin/users">Users</a> &middot; ' +
+    '<a href="/admin/ldap/directory">Every entry in the directory</a> &middot; ' +
+    '<a href="/admin/vc">Credential claims</a> &middot; ' +
+    '<a href="/admin-api/docs#operation/createUser">The same act over /admin-api</a>.');
+
+  log.debug("Leaving newUserPage(). " + fields.length + " field(s) offered.");
+  return {
+    inner: inner,
+    json: {
+      directory: true,
+      container: container,
+      realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+      mode: mode.current(),
+      // WHETHER THE BUTTON IS THERE, published rather than left to be inferred
+      // from `mode`: a caller of GET /admin-api/users/new reading this document
+      // to find out what the console offers should not have to know which
+      // predicate in mode.js decides it.
+      offersExampleData: development,
+      // THE FIELDS THIS FORM DRAWS, in the order it draws them, each with the
+      // attribute name a create takes and the claim it reaches. A caller reads
+      // this to learn what may go in `attributes` on a create — the same
+      // catalogue `createUser()` checks against, so the document cannot offer a
+      // field the writer has never heard of, nor the other way round.
+      fields: fields.map(function (row) {
+        return { attribute: row.ldap, label: row.label, schema: row.schema,
+                 claim: row.claim.slice(0), invented: !!row.from };
+      }),
+      credentials: CREDENTIAL_CHOICES.map(function (one) {
+        return { id: one.id, label: one.label };
+      })
+    }
+  };
+}
+
+function newUserView(req) {
+  log.debug("Entering newUserView().");
+  const built = newUserPage(req);
+  log.debug("Leaving newUserView().");
+  return { json: built.json, inner: built.inner, title: 'New user' };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A SUCCESSFUL CREATE ANSWERS WITH, and the reason it is a page rather
+// than the 303-with-a-message every other control on this console answers with.
+//
+// **A SECRET THAT EXISTS ONCE MUST NOT TRAVEL IN A URL.** A generated password
+// and an activation link are both produced here and stored only as a hash, so
+// this is the single moment either value exists outside somebody's head. Put
+// in a query parameter it would be in the browser's history, in the referrer
+// of anything clicked next, in every proxy log on the way — and sliced to 500
+// characters by `respondToAction()`, which for an activation URL is a link
+// that silently does not work.
+//
+// So it is in the BODY of a response this console already marks `no-store`, in
+// a block that says outright that it will not be shown again.
+// ---------------------------------------------------------------------------
+function createdUserPage(req, result) {
+  log.debug("Entering createdUserPage(). ok=" + result.ok);
+  const base = baseUrlOf(req);
+  const secret = [];
+  if (result.password) {
+    secret.push('<h2>The generated password, shown once</h2>' +
+      '<div class="secret">' + esc(result.password) + '</div>' +
+      warn('<strong>This is the only time this value exists anywhere but in ' +
+      'the hash on the entry.</strong> Copy it now and send it to ' +
+      esc(result.username) + ' by whatever channel you already use. Nothing ' +
+      'in this service can show it again — not this console, not ' +
+      '<code>/admin-api</code>, not an <code>ldapsearch</code>, which sees a ' +
+      'scrypt hash. If it is lost, set a new one; there is no recovery ' +
+      'because there is nothing to recover.'));
+  }
+  if (result.activationUrl) {
+    // ABSOLUTE, and built from the request rather than from a setting: this is
+    // a link somebody is about to paste into a message, and a root-relative
+    // path is not one. `baseUrlOf()` is what every other outbound URL in this
+    // service is built from, so it carries the scheme, host and port this
+    // request actually arrived on.
+    const absolute = base + result.activationUrl;
+    secret.push('<h2>The activation link, shown once</h2>' +
+      '<div class="secret">' + esc(absolute) + '</div>' +
+      warn('<strong>Valid until ' + esc(result.expiresAt || 'it expires') +
+      ', and shown once.</strong> This service stores only a hash of the ' +
+      'token in it and cannot produce the link again — issuing another ' +
+      'invalidates this one, which is also how a link that never arrived is ' +
+      'replaced. <strong>Treat it as the credential it is</strong>: anybody ' +
+      'holding it can finish setting up this account, choosing a password or ' +
+      'enrolling a security key. It is spent when that setup FINISHES rather ' +
+      'than when the link is opened, so a mail scanner or a browser prefetch ' +
+      'cannot burn it. There is deliberately no self-service version of this ' +
+      'link: with no mail channel here, a form that issued one would hand any ' +
+      'visitor an activation link for any unactivated account.'));
+  }
+  const inner =
+    (result.credentialError
+      ? warn('<strong>The person was created and the credential was NOT set.</strong> ' +
+        esc(result.credentialError) + ' The name is taken now, by this entry — so set a ' +
+        'credential on it rather than creating them again.')
+      : '<div class="ok"><strong>' + esc(result.dn) + '</strong> now exists.</div>') +
+    secret.join('') +
+    '<h2>What was written</h2>' +
+    note(esc(result.message)) +
+    '<table><tr><th>Attribute</th><th>Value</th></tr>' +
+    Object.keys((result.entry && result.entry.attributes) || {}).sort()
+      .map(function (name) {
+        // THE TWO VERIFIERS ARE NAMED AND NOT PRINTED. What sits in
+        // `userPassword` and `stsActivationToken` is a scrypt hash rather than
+        // the value — so this is not a leak of the password or the link — but
+        // it is the thing a sign-in and an activation are CHECKED against, and
+        // there is no reason for it to be on a page whose subject is what an
+        // operator just typed. Saying the attribute is there is the useful
+        // half; the hash itself is noise beside the one-time value printed
+        // above it, and a reader who saw both would reasonably wonder which
+        // one to copy.
+        //
+        // /admin/ldap/directory still shows every attribute of every entry,
+        // deliberately and behind this console's gate — that page's whole
+        // subject is what the store holds, and hiding a row there would make
+        // it lie about the directory. This page's subject is a create.
+        if (name === 'userpassword' || name === 'stsactivationtoken') {
+          return '<tr><td><code>' + esc(name) + '</code></td>' +
+            '<td class="state-none">set — a scrypt hash, not shown here</td></tr>';
+        }
+        return '<tr><td><code>' + esc(name) + '</code></td><td>' +
+          esc((result.entry.attributes[name] || []).join(', ')) + '</td></tr>';
+      }).join('') +
+    '</table>' +
+    note('The entry exactly as the store holds it, which is what an ' +
+    '<code>ldapsearch</code> under this realm\'s base DN returns. Attribute names are ' +
+    'lower-cased because LDAP attribute descriptions are case-insensitive and this store ' +
+    'normalises them on the way in; the catalogue\'s own spelling is what the form and ' +
+    '<code>/admin-api</code> use. <strong>The two attributes that hold a verifier are named ' +
+    'rather than printed</strong> — <code>userPassword</code> and ' +
+    '<code>stsActivationToken</code> carry a scrypt hash rather than the value, and the value ' +
+    'itself is above, once. <a href="/admin/ldap/directory">The directory page</a> shows both ' +
+    'in full, because what that page is FOR is exactly what the store holds.') +
+    '<div class="formrow">' +
+    '<a href="' + esc('/admin/users' + queryWith({ user: result.username }, {})) +
+    '">Their row on Users &rsaquo;</a></div>' +
+    note('<a href="/admin/users/new">Create another</a> &middot; ' +
+    '<a href="/admin/ldap/directory">Every entry in the directory</a> &middot; ' +
+    '<a href="/admin/users">Back to Users</a>. Remember that they will not appear in the ' +
+    'Users TABLE until they authenticate: that list is who this service has SEEN.');
+  log.debug("Leaving createdUserPage().");
+  return inner;
+}
+
+// ---------------------------------------------------------------------------
+// WHERE THIS PAGE SITS IN THE SHELL, AND WHY IT IS ONE FUNCTION RATHER THAN
+// SEVEN LITERALS.
+//
+// This page has no row in `SECTIONS` — the argument is beside the Users row up
+// there — so it is a DRILL-DOWN of `/admin/users`, and every `respond()` below
+// says so twice: `active` is the SECTION's path, which is what marks the Users
+// tab, and `up` is what turns that tab into a link and gives the trail its
+// third crumb (`Admin console › Users › New user`).
+//
+// **THERE ARE SEVEN RESPONSES ON THIS PATH AND EVERY ONE OF THEM NEEDS BOTH.**
+// Two of them are refusals that redraw the form, one is Fill, one is the form
+// itself, and one is the page that shows a generated password ONCE — which is
+// precisely the response a reader must not be stranded on. Writing `upTo()` out
+// seven times is how the seventh comes to be the one that was missed, and the
+// symptom would not be an error: it would be a page drawn with no way back and
+// the Users tab looking as though the reader were somewhere else entirely.
+//
+// The leaf is a parameter because one of the seven is not called `New user`:
+// the success page is `User created`, and the crumb has to agree with the `h1`
+// under it (see `trailBar()`).
+//
+// It carries NO LIST VIEW, deliberately. The Create box on `/admin/users` is a
+// GET form with one field and does not forward the list's filter, so there is
+// nothing to carry — and `upTo()` handed an empty view reports `filtered:false`,
+// which is what makes the crumb's tooltip say `Back to Users` rather than
+// promising a filter that was never here.
+function newUserUp(leaf) {
+  return upTo('/admin/users', leaf || 'New user');
+}
+
+app.get('/admin/users/new', function (req, res) {
+  log.debug("Entering the admin new-user page.");
+  const view = newUserView(req);
+  respond(req, res, view.json, view.title, '/admin/users', view.inner,
+          newUserUp(view.title));
+  log.debug("Leaving the admin new-user page.");
+});
+
+app.post('/admin/users/new', function (req, res) {
+  log.debug("Entering the admin new-user action endpoint.");
+  const body = parseBody(req);
+  // FILL IS READ FIRST AND NOT AS A VALUE OF `action`. See the two buttons in
+  // the form above: `action` is a hidden field that always says `create`, and
+  // the Fill button carries a name of its own — so a press of it arrives with
+  // both, and reading `fill` first is what decides between them. The other
+  // way round would create somebody every time that button was pressed.
+  const action = truthy(body.fill) ? 'fill' : String(body.action || 'create');
+  const posted = { username: String(body.username || ''),
+                   credential: String(body.credential || 'none'),
+                   fields: userFieldsFrom(body) };
+
+  // A JSON caller gets JSON, exactly as every other action on this console
+  // does. It is /admin-api that a script should be driving, and this branch is
+  // here so that a script pointed at the page does not get a wall of HTML back
+  // with the secret buried in it.
+  const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+
+  // ------------------------------------------------------------------
+  // FILL. It creates nothing and answers with this same form, filled in.
+  //
+  // **ON THE SERVER BECAUSE THIS CONSOLE HAS NO JAVASCRIPT.** `app.js` sets
+  // `script-src 'none'` for the whole service and six pages are the only
+  // exceptions, each of which CANNOT work without a script; this one plainly
+  // can, at the cost of a round trip. It is the same answer the XACML guided
+  // editor gives to the same question, and CLAUDE.md's rule is that a new
+  // scripted page needs its argument made from scratch — "a field could be
+  // filled in without a reload" is not one.
+  // ------------------------------------------------------------------
+  if (action === 'fill') {
+    if (!mode.isDevelopment()) {
+      // REFUSED AS WELL AS UNDRAWN. The button is not on the page in product
+      // mode, and a POST that arrives anyway is answered rather than obeyed —
+      // a control that is only hidden is not a control that is off.
+      const refusal = { ok: false,
+                        errors: ['Example data is a development-mode ' +
+                                 'convenience and this service is running as ' +
+                                 'a product (global.mode=product), so nothing ' +
+                                 'was filled in. Type what you know.'] };
+      if (wantsJson) {
+        respondToAction(req, res, '/admin/users/new', refusal);
+        log.debug("Leaving the admin new-user action endpoint. Fill refused.");
+        return;
+      }
+      const view = newUserPage(req, posted);
+      respond(req, res, Object.assign({ filled: false }, view.json), 'New user',
+              '/admin/users',
+              warn(esc(refusal.errors[0])) + view.inner, newUserUp());
+      log.debug("Leaving the admin new-user action endpoint. Fill refused.");
+      return;
+    }
+    if (!posted.username.trim()) {
+      const view = newUserPage(req, posted);
+      respond(req, res, Object.assign({ filled: false }, view.json), 'New user',
+              '/admin/users',
+              warn('<strong>Type a username first.</strong> The example person ' +
+              'is seeded FROM the username — that is what makes it the same ' +
+              'person this service would have invented — so there is nothing ' +
+              'to invent until there is a name to invent it from.') + view.inner,
+              newUserUp());
+      log.debug("Leaving the admin new-user action endpoint. Fill needs a name.");
+      return;
+    }
+    // ABSENT-ONLY, which is `applyVcAttributes()`'s first rule applied to a
+    // form: what somebody has already typed is never overwritten by an
+    // invention, so pressing Fill twice, or after editing, cannot lose work.
+    const invented = inventedFieldValues(posted.username);
+    const merged = {};
+    Object.keys(invented).forEach(function (name) { merged[name] = invented[name]; });
+    Object.keys(posted.fields).forEach(function (name) { merged[name] = posted.fields[name]; });
+    const filled = Object.assign({}, posted, { fields: merged });
+    const view = newUserPage(req, filled);
+    respond(req, res, Object.assign({ filled: true, values: merged }, view.json),
+            'New user', '/admin/users',
+            '<div class="ok"><strong>Filled in with the invented person for ' +
+            esc(posted.username.trim()) + '.</strong> Nobody has been created. ' +
+            'Edit or clear anything you like and press Create the user.</div>' +
+            view.inner, newUserUp());
+    log.debug("Leaving the admin new-user action endpoint. Filled.");
+    return;
+  }
+
+  if (action !== 'create') {
+    const refusal = { ok: false,
+                      errors: ['Unknown action "' + String(action).slice(0, 64) +
+                               '". This page does two: create, fill.'] };
+    if (wantsJson) {
+      respondToAction(req, res, '/admin/users/new', refusal);
+    } else {
+      const view = newUserPage(req, posted);
+      respond(req, res, view.json, 'New user', '/admin/users',
+              warn(esc(refusal.errors[0])) + view.inner, newUserUp());
+    }
+    log.debug("Leaving the admin new-user action endpoint. Unknown action.");
+    return;
+  }
+
+  // WHO IS DOING IT, off the gate's own state rather than out of the body: the
+  // audit row for a create and for a password set names the administrator, and
+  // a value taken from the form would be whatever the poster typed. The same
+  // way `/admin/delegation` and `/admin/sessions` name their actor.
+  const state = gateStateFor(req);
+  const result = usersAction(Object.assign({}, body, {
+    action: 'create',
+    actor: (state && state.username) || ''
+  }));
+  if (wantsJson) {
+    respondToAction(req, res, '/admin/users/new', result);
+    log.debug("Leaving the admin new-user action endpoint. Answered JSON.");
+    return;
+  }
+  if (!result.ok) {
+    // BACK ONTO THE FORM WITH EVERYTHING STILL IN IT. A redirect would lose
+    // twenty-five boxes because a username had a comma in it, which is how a
+    // screen teaches people not to use it.
+    const view = newUserPage(req, posted);
+    respond(req, res, Object.assign({ created: false, errors: result.errors || [] },
+                                    view.json),
+            'New user', '/admin/users',
+            warn('<strong>Nobody was created.</strong> ' +
+                 esc((result.errors || []).join(' ') || String(result.why || ''))) +
+            view.inner, newUserUp());
+    log.debug("Leaving the admin new-user action endpoint. Refused.");
+    return;
+  }
+  respond(req, res, Object.assign({ created: true }, result),
+          'User created', '/admin/users', createdUserPage(req, result),
+          newUserUp('User created'));
+  log.debug("Leaving the admin new-user action endpoint. Created " + result.dn + ".");
 });
 
 // ---------------------------------------------------------------------------
@@ -15320,6 +16965,53 @@ function groupsListPage(req) {
     // somebody while they are looking at the membership table above, and
     // because what the claim NAMES is a directory group, which is what this
     // page is about.
+    // ---------------------------------------------------------------------
+    // THE ONE CONTROL ON THIS LIST, AND IT ARRIVED ON 2026-09-06 (rule 7's
+    // mirror is POST /admin-api/groups/create). Below the table rather than
+    // above it, because the question this page is usually open to answer is
+    // "what is in this directory" and a create form at the top would answer a
+    // different one first.
+    //
+    // A REAL BUTTON AND NO SCRIPT, like every other form on this console:
+    // `script-src 'none'` is the service-wide policy and this page is not one
+    // of the six exceptions.
+    // ---------------------------------------------------------------------
+    (groupWriter
+      ? '<h2>Create a group</h2>' +
+        '<form method="post" action="/admin/groups">' +
+        '<input type="hidden" name="action" value="create">' +
+        '<input type="hidden" name="back" value="' +
+        esc(queryWith(listView, {})) + '">' +
+        '<div class="formrow">' +
+        '<label for="newgroup">cn</label>' +
+        '<input type="text" id="newgroup" name="group" size="28" required ' +
+        'placeholder="developers">' +
+        '<label for="newnote">Description</label>' +
+        '<input type="text" id="newnote" name="note" size="40" ' +
+        'placeholder="what this group is for">' +
+        '</div><div class="formrow">' +
+        '<label for="newmembers">Members</label>' +
+        '<textarea id="newmembers" name="members" rows="3" cols="60" ' +
+        'placeholder="alice&#10;bob&#10;cn=another-group,' +
+        esc(info.groupsDn) + '"></textarea>' +
+        '<button type="submit">Create</button>' +
+        '</div></form>' +
+        note('It goes to <code>cn=&lt;what you typed&gt;,' +
+        esc(info.groupsDn) + '</code> as a <code>groupOfNames</code>, so it is ' +
+        'counted here by <em>both</em> rules. <strong>Members are one per line ' +
+        'or comma-separated</strong>, and each may be a user name or any DN — a ' +
+        'group can hold another group, and no user name names one. A name with ' +
+        'no entry behind it is written as a <strong>dangling</strong> member ' +
+        'rather than refused: this directory does no referential integrity in ' +
+        'either direction, and refusing here would make the state the Dangling ' +
+        'column reports impossible to produce from this page. Leaving the box ' +
+        'empty creates a group with no members, which RFC 4519 says a real ' +
+        'directory would refuse and this schemaless one does not.')
+      : note('<strong>No group can be created from here.</strong> The list ' +
+        'above is read through one slot and the writes through another, and ' +
+        'this process has only the first — a build without ' +
+        '<code>ldap_server.js</code>\'s group writer. An <code>ldapadd</code> ' +
+        'and <code>POST /scim/v2/Groups</code> are unaffected.')) +
     configFormsFor('/admin/groups') +
     GROUPS_CAVEAT + GROUPS_LINKS;
 
@@ -15329,6 +17021,11 @@ function groupsListPage(req) {
     inner: inner,
     json: {
       groupCount: info.groupCount, matched: filtered.length, shown: shown.length,
+      // WHETHER THE TWO CONTROLS ARE THERE, on the JSON as well as on the page.
+      // A caller of /admin-api/groups that got a 400 saying "no directory is
+      // loaded" from the create beside it would otherwise have no way to tell
+      // that from a create it had got wrong.
+      canWrite: !!groupWriter,
       membershipValues: totalMembers, dangling: totalDangling,
       settings: configSettingsJson('/admin/groups'),
       filter: { q: wantedText || null },
@@ -15497,6 +17194,41 @@ function groupDetailPage(req, wantedDn) {
     'answer it is.') +
     claimedSection +
 
+    // ---------------------------------------------------------------------
+    // ADD SOMEBODY (2026-09-06). On the drill-down rather than on the list,
+    // because it needs a group in hand and this is the page that has one.
+    // `back` carries the list AS IT IS BEING VIEWED, which is the rule every
+    // form on a drill-down here follows — rebuilt through listViewOf()'s
+    // whitelist on the way back rather than echoed, so a hand-written `back`
+    // cannot become a redirect this file did not write.
+    // ---------------------------------------------------------------------
+    (groupWriter
+      ? '<h2>Add a member</h2>' +
+        '<form method="post" action="/admin/groups">' +
+        '<input type="hidden" name="action" value="add-member">' +
+        '<input type="hidden" name="group" value="' + esc(group.dn) + '">' +
+        '<input type="hidden" name="back" value="' +
+        esc(queryWith(listViewOf('/admin/groups', req.query), {})) + '">' +
+        '<div class="formrow">' +
+        '<label for="newmember">User or DN</label>' +
+        '<input type="text" id="newmember" name="member" size="44" required ' +
+        'placeholder="alice, or cn=another-group,' + esc(info.groupsDn) + '">' +
+        '<button type="submit">Add</button>' +
+        '</div></form>' +
+        note('The value written is that person&rsquo;s OWN entry wherever it ' +
+        'is &mdash; somebody whose entry was seeded by a client certificate is ' +
+        'at <code>cn=&lt;name&gt;,' + esc(info.usersDn) + '</code> and not at ' +
+        '<code>uid=</code>, and a membership written in the wrong form would ' +
+        'dangle beside the entry it was meant to name. With nobody there yet, ' +
+        'the <code>uid=</code> form is written, so the value resolves the ' +
+        'moment they authenticate. It goes onto <code>member</code> whatever ' +
+        'else this entry carries, and adding somebody already listed changes ' +
+        'nothing and says so. <strong>Taking one out is not here</strong>: it ' +
+        'is an <code>ldapmodify</code> or a SCIM <code>PATCH</code>, and ' +
+        '<a href="/admin/rbac">Admin roles</a> for the two groups that grant ' +
+        'this console.')
+      : '') +
+
     '<h2>Every attribute this group has</h2>' +
     attributeTable(group) +
     note('The whole object, operational attributes included &mdash; a search returns ' +
@@ -15523,6 +17255,7 @@ function groupDetailPage(req, wantedDn) {
   return {
     inner: inner,
     json: Object.assign({ found: true }, info, {
+      canWrite: !!groupWriter,
       group: pagedGroup,
       membersPaging: pagingJson(memberPage.paging),
       claimedPaging: pagingJson(claimedPage.paging)
@@ -15533,6 +17266,122 @@ function groupDetailPage(req, wantedDn) {
 // Three answers again, and the first of them — no directory in this process —
 // is the one an API caller is most likely to meet and least likely to expect,
 // because it answers 200 with `directory: false` rather than failing.
+// ---------------------------------------------------------------------------
+// THE TWO THINGS THIS PAGE CAN CHANGE (2026-09-06).
+//
+// Everything else on /admin/groups is a report, exactly as everything else on
+// /admin/users was until `create` arrived there. These two are here for the
+// same reason that one is on that page: this is the page a reader is on when
+// they discover that a group is missing, or that somebody is not in one.
+//
+// **IT DECIDES NOTHING.** Every rule about what a group may be called, the
+// refusal of one that is already there, what a membership value points at and
+// the choice to write a dangling one rather than refuse it, are in
+// ldap_server.js's createGroup() and addGroupMember() — reached through the slot
+// above. This function reads the form and phrases the answer, which is the same
+// split usersAction() keeps with createUser() and the reason
+// POST /admin-api/groups/{action} can call straight into it without a second
+// reading of any of it.
+//
+// **WHAT IT DOES NOT DO is make the new group grant anything.** GROUPS_CAVEAT
+// says it on both halves of this page and it is worth repeating at the one
+// moment somebody has just made one: a group here changes what a directory
+// client sees and what a token SAYS, and changes nothing about what that token
+// can DO — with the two console roles as the only exceptions, and those are
+// granted on /admin/rbac rather than here.
+// ---------------------------------------------------------------------------
+function groupsAction(body) {
+  log.debug("Entering groupsAction(). action=" + (body.action || '(none)'));
+  const action = String(body.action || '');
+
+  if (!groupWriter) {
+    // ONE REFUSAL FOR BOTH ACTIONS, and it says which half of the page is
+    // affected: the reads above it are answered by a different slot, so a
+    // reader whose table is plainly full of groups needs telling that it is the
+    // WRITES that are absent rather than the directory.
+    log.debug("Leaving groupsAction(). No directory writer is installed.");
+    return { ok: false, errors: ['No LDAP directory is loaded in this process, ' +
+                                 'so there is nowhere to put a group. The rest ' +
+                                 'of this page is unaffected — if it is showing ' +
+                                 'you groups, they are being read through a ' +
+                                 'different slot and only the writes are ' +
+                                 'missing.'] };
+  }
+
+  if (action === 'create') {
+    const name = String(body.group || body.displayName || body.cn || '').trim();
+    // THE MEMBERS BOX IS SPLIT ON NEWLINES AND COMMAS, which is where this
+    // differs from userFieldsFrom() one section up and is worth saying rather
+    // than leaving as an apparent inconsistency: a person's attributes are
+    // single-valued facts and the whole value is the value, while `member` is
+    // multi-valued by definition and a textarea is how a form offers a list.
+    // A JSON caller sends a real array and it is taken as it stands.
+    const listed = Array.isArray(body.members)
+      ? body.members
+      : String(body.members === undefined ? '' : body.members)
+          .split(/[\r\n,]+/);
+    const members = listed.map(function (one) {
+      return String(one == null ? '' : one).trim();
+    }).filter(function (one) { return one !== ''; });
+    const result = groupWriter.createGroup(name, {
+      origin: 'console',
+      note: String(body.note || '').trim() ||
+            'created by hand on the admin console rather than by a directory client',
+      channel: 'console',
+      actor: String(body.actor || ''),
+      members: members
+    });
+    if (!result.ok) {
+      log.debug("Leaving groupsAction(). create refused.");
+      return result;
+    }
+    log.debug("Leaving groupsAction(). Created " + result.dn + ".");
+    return Object.assign({}, result, {
+      message: result.dn + ' now exists' +
+        (result.members.length
+          ? ', listing ' + result.members.length + ' member(s)'
+          : ' with no members at all — an empty groupOfNames is something a ' +
+            'real directory refuses (RFC 4519 makes `member` MUST) and this ' +
+            'one has no schema, so it is here because you asked for it') + '.' +
+        (result.dangling.length
+          ? ' ' + result.dangling.length + ' of those member value(s) name ' +
+            'nothing this directory holds and are written anyway: nothing here ' +
+            'does referential integrity, and the Dangling column above is ' +
+            'where they show up.'
+          : '') +
+        ' IT GRANTS NOTHING. No endpoint in this service checks a group, and ' +
+        'the only two that decide anything are the console roles on ' +
+        '/admin/rbac. What it does change is what a directory client sees and ' +
+        'what the groups claim in an issued token says.'
+    });
+  }
+
+  if (action === 'add-member') {
+    const group = String(body.group || '').trim();
+    const member = String(body.member || body.user || body.username || '').trim();
+    const result = groupWriter.addGroupMember(group, member, {
+      origin: 'console',
+      channel: 'console',
+      actor: String(body.actor || '')
+    });
+    if (!result.ok) {
+      log.debug("Leaving groupsAction(). add-member refused.");
+      return result;
+    }
+    log.debug("Leaving groupsAction(). " +
+              (result.changed ? "Added." : "Already a member."));
+    return result;
+  }
+
+  log.debug("Leaving groupsAction(). Unknown action.");
+  return { ok: false, errors: ['Unknown action "' + action + '". The two are: ' +
+                               'create, add-member. Removing a member is ' +
+                               '/admin/rbac for the two console roles, and an ' +
+                               'ldapmodify or a SCIM PATCH for every other ' +
+                               'group; deleting one is an ldapdelete or a SCIM ' +
+                               'DELETE.'] };
+}
+
 function groupsView(req) {
   log.debug("Entering groupsView().");
   if (!groupReader) {
@@ -16120,10 +17969,30 @@ function applicationsListPage(req) {
     '</table>' +
     nav.foot +
     '<h2>Add an application</h2>' +
-    '<p class="sub"><a href="/admin/applications/new">The fuller form is on New ' +
-    'application</a> &mdash; the same action, with the PROTOCOL FAMILIES this application ' +
-    'is declared for and a sentence about each. This row is the short way in for somebody ' +
-    'already looking at the list; both post to this page and reach one function.</p>' +
+    // ---------------------------------------------------------------------
+    // THE DOOR TO THE FULLER FORM IS A BUTTON, AND SINCE 2026-09-06 IT IS THE
+    // ONLY WAY TO IT.
+    //
+    // `/admin/applications/new` had a row in the sidebar and lost it (see
+    // SECTIONS): it is the longer of two forms on this page rather than a place
+    // in this console. What that leaves is this control, so it cannot go on
+    // being a link inside a sentence — a `<p class="sub">` is what a reader
+    // skims past, and skipping it now means not finding the protocol families,
+    // the per-protocol identifiers or the redirect URIs at all.
+    //
+    // `a.btn` rather than a form with a submit in it, because nothing is
+    // written by pressing it: it is a link that looks like the next action,
+    // which is exactly what it is. `/admin/users/new`'s door is a GET FORM
+    // instead, and the difference is a real one rather than an inconsistency —
+    // that box carries the typed username onward and this page has no field to
+    // carry, since the short row below is where a bare identifier goes.
+    // ---------------------------------------------------------------------
+    '<p><a class="btn" href="/admin/applications/new">New application &rsaquo;</a></p>' +
+    note('<strong>The button opens the fuller form</strong> &mdash; the same action, with ' +
+    'the PROTOCOL FAMILIES this application is declared for and a sentence about each, its ' +
+    'per-protocol identifiers and its redirect URIs. It has no tab of its own in the sidebar ' +
+    'because it is not a place in this console: it is the long way in from this page, and the ' +
+    'row below is the short one. Both post here and reach one function.') +
     note('For a relying party that has not connected yet. An entry usually appears ' +
     'because an identifier was ACCEPTED — a client_id at the token endpoint, a wtrealm on a ' +
     'sign-in response — and this is how to get one in ahead of that, which is what RFC 9700 ' +
@@ -17628,10 +19497,27 @@ function newApplicationView(req) {
   return { json: built.json, inner: built.inner, title: 'New application' };
 }
 
+// This page has no row in `SECTIONS` — the argument is beside the Applications
+// row up there — so it is a DRILL-DOWN of `/admin/applications`: `active` is
+// the SECTION's path, which marks that tab, and `up` turns it into a link and
+// gives the trail its third crumb (`Admin console › Applications › New
+// application`).
+//
+// **ONE `respond()` RATHER THAN `/admin/users/new`'s SEVEN**, and no helper,
+// because there is exactly one response on this path. The form POSTs to
+// `/admin/applications` and that handler answers with the list page's 303 and a
+// message, so a refusal and a success are drawn over there — which is why this
+// page never needed the "every response keeps the trail" care that one did.
+//
+// It carries NO LIST VIEW. The button that opens it is on the list page and
+// does not forward the filter (there is nothing typed here to come back to), so
+// `upTo()` reports `filtered:false` and the crumb's tooltip says `Back to
+// Applications` rather than promising a filter that was never here.
 app.get('/admin/applications/new', function (req, res) {
   log.debug("Entering the admin new-application page.");
   const view = newApplicationView(req);
-  respond(req, res, view.json, view.title, '/admin/applications/new', view.inner);
+  respond(req, res, view.json, view.title, '/admin/applications', view.inner,
+          upTo('/admin/applications', view.title));
   log.debug("Leaving the admin new-application page.");
 });
 
@@ -18863,6 +20749,31 @@ app.get('/admin/groups', function (req, res) {
   const view = groupsView(req);
   respond(req, res, view.json, view.title, '/admin/groups', view.inner, view.up);
   log.debug("Leaving the admin groups page. " + view.title + ".");
+});
+
+// ONE ROUTE FOR BOTH CONTROLS, and the action switch is in groupsAction() rather
+// than here so that POST /admin-api/groups/{action} makes the same choice. The
+// two forms live on different pages — Create on the list, Add member on the
+// drill-down — and both post here, which is why the redirect below has to work
+// out which of the two to go back to.
+app.post('/admin/groups', function (req, res) {
+  log.debug("Entering the admin groups action endpoint.");
+  const body = parseBody(req);
+  const result = groupsAction(body);
+  // WHERE THE READER GOES AFTERWARDS. A create lands on the group it just made,
+  // because the next thing anybody does with a new group is put somebody in it
+  // and that control is on the drill-down; an add-member stays where it was, on
+  // the group it was adding to. A refusal goes back to the page that asked, so
+  // the message is next to the form that produced it.
+  const listView = listViewFromBack('/admin/groups', body.back);
+  const landOn = result.ok !== false
+    ? String(result.dn || '')
+    : String(body.group && /,/.test(String(body.group)) ? body.group : '');
+  const back = landOn
+    ? '/admin/groups' + queryWith(listView, { group: landOn })
+    : '/admin/groups' + queryWith(listView, {});
+  respondToAction(req, res, back, result);
+  log.debug("Leaving the admin groups action endpoint.");
 });
 
 // ---------------------------------------------------------------------------
@@ -24888,11 +26799,21 @@ function authenticationSection(auth, counters) {
 // carried through because several of them are the whole reason the row is not
 // obvious — `groups` being read-only, `active` deactivating nobody, `manager`
 // being passed through rather than resolved.
+// ONE PROJECTION, AND IT IS scim_map.js's SINCE 2026-09-06.
+//
+// This function used to build the row itself, and `scim.js`'s `description()`
+// built a DIFFERENT one for `GET /scim` — the same table, published by one
+// service at two endpoints, describing itself with different members. Nothing
+// failed, because nothing read either of them; that changed when a job started
+// building SCIM resources out of the published mapping rather than out of a
+// copy, and needed `type` and `parent` that neither projection carried.
+//
+// It is kept as a named function rather than passing `scimMap.describeRow`
+// straight to `.map()`: `Array.prototype.map` hands the callback an INDEX as
+// its second argument, and a projection that later grew a second parameter
+// would start receiving row numbers.
 function scimMappingRow(row) {
-  return { scim: row.scim, ldap: row.ldap, kind: row.kind,
-           readOnly: !!row.readOnly, required: !!row.required,
-           extension: !!row.extension, schema: row.schema || '',
-           note: row.note || '' };
+  return scimMap.describeRow(row);
 }
 
 app.get('/admin/scim', function (req, res) {
@@ -24967,6 +26888,21 @@ app.get('/admin/scim', function (req, res) {
         'The module registers no routes here, so there is nothing to report. ' +
         'Everything else on this console is unaffected.</div>'
       : '') +
+
+    // WHERE THE TRAFFIC QUESTION IS ANSWERED. This page keeps the headline
+    // counts — a page about a surface with no evidence anything ever called it
+    // is a page about a hypothesis — and everything past them is over there:
+    // who is calling, how long it took, what came back, and the last fifty
+    // requests individually. Both are drawn from ONE set of counters in
+    // `admin_stats.js` through two functions, so there is no second tally to
+    // disagree with this one.
+    note('The counters below are the headline. <strong><a ' +
+    'href="/admin/scim/monitor">Monitoring &rarr; SCIM metrics</a></strong> ' +
+    'is the traffic in full: who is calling &mdash; one row per authenticated ' +
+    'principal &mdash; how long each kind of call took, how many bytes went ' +
+    'back, what the failures were, and the last fifty requests one by one. ' +
+    'Both pages read one set of numbers, so they cannot disagree; this page ' +
+    'is about what the surface IS, and that one about what it is DOING.') +
     (json.installed && !json.enabled
       ? warn('<strong>SCIM is turned off</strong> ' +
         '(<code>scim.enabled</code>). The routes are still registered and answer ' +
@@ -25080,12 +27016,439 @@ app.get('/admin/scim', function (req, res) {
     '<a href="/admin/groups">Groups</a>.') +
 
     note('<a href="/scim">What this is, for a person</a> &middot; ' +
-    '<a href="/admin/scim?format=json">this page as JSON</a> &middot; ' +
+    '<a href="/admin/scim/monitor">what it has actually been asked to do</a> ' +
+    '&middot; <a href="/admin/scim?format=json">this page as JSON</a> &middot; ' +
     '<a href="/admin-api/scim">the same over the management API</a> &middot; ' +
     '<a href="/admin/ldap/service">the directory it writes into</a>');
 
   respond(req, res, json, 'SCIM 2.0', '/admin/scim', inner);
   log.debug("Leaving the admin SCIM page.");
+});
+
+// ---------------------------------------------------------------------------
+// /admin/scim/monitor — WHAT THE PROVISIONING SURFACE IS ACTUALLY DOING.
+//
+// **IT IS UNDER MONITORING AND NOT UNDER PROTOCOLS**, which is the same filing
+// decision `/admin/xacml/monitor` records and is made on the same test: where a
+// page goes is decided by the QUESTION IT ANSWERS and never by the module that
+// draws it or the path space it sits in. `/admin/scim` answers "what is this
+// surface, and what will it do" — the schemes, the endpoints, the attribute
+// mapping, the eighteen settings. This one answers "how much traffic is there,
+// from whom, and how much of it is failing", which is the question somebody has
+// when a provisioning client is misbehaving, and it is a monitoring question.
+// It shares a path prefix with the protocol page because the path is where the
+// module's other page is; `SECTIONS` is the only place placement is stated.
+//
+// ---------------------------------------------------------------------------
+// ONE STORE, TWO VIEWS, AND THAT IS WHY THE TWO PAGES CANNOT DISAGREE.
+//
+// `/admin/scim` carries the headline counts already and goes on carrying them:
+// a page about a surface with no evidence anything ever called it is a page
+// about a hypothesis. What it does NOT carry is anything on this page below the
+// tiles, and the division is deliberate rather than incidental — those two
+// pages read `stats.scimSnapshot()` and `stats.scimMonitorSnapshot()`, which
+// are two functions over ONE set of counters in `common/admin_stats.js`. There
+// is no second tally anywhere and there must never be one: a second tally is a
+// second answer to "how many SCIM calls have there been", and this repository
+// has the same rule about that as it has about everything else it counts once.
+//
+// ---------------------------------------------------------------------------
+// FOUR THINGS ON THIS PAGE ARE EASY TO MISREAD AND EACH IS SAID ON IT.
+//
+//   * **A CLIENT IS AN AUTHENTICATED PRINCIPAL, NOT A CONNECTION.** SCIM is
+//     stateless HTTP — no session, no registration, nothing to be connected —
+//     so the only honest reading of "how many clients" is how many distinct
+//     names have successfully authenticated since this process started. The
+//     figure never goes down, because a provisioning client that has stopped
+//     calling looks exactly like one that is between calls.
+//   * **A REFUSED CALLER IS NOT A CLIENT.** Basic and Digest both put a name on
+//     the wire and the gate can still turn it away; those calls are counted
+//     under `refused` and appear in no client row. Attributing traffic to an
+//     identity this service declined to believe is the one mistake this page
+//     could make that would matter.
+//   * **THE OPERATION COLUMN DOES NOT TALLY WITH THE CALL TOTAL.** One
+//     `POST /scim/v2/Bulk` carrying five creates is one `bulk` row AND five
+//     `create` rows, because each of the five really is performed. `/admin/scim`
+//     already says this about its own table and it is said again here rather
+//     than cross-referenced, because a reader adding a column up is not going
+//     to another page first.
+//   * **A LATENCY IS ABSENT AND NOT ZERO WHERE NOTHING WAS MEASURED.** An
+//     operation nothing has called shows `—`, never `0.0ms`, which would read
+//     as a service answering instantly.
+//
+// ---------------------------------------------------------------------------
+// NO RESET BUTTON, AND IT WAS REFUSED RATHER THAN FORGOTTEN.
+//
+// `admin_stats.js` exports `resetScimForTests()` and nothing on this console
+// calls it. A console that could zero its own monitoring would make every
+// number on this page a number somebody might have zeroed — and the durable
+// record of what SCIM was asked to do is the audit log, which cannot be reset
+// either. Same argument as `/admin/xacml/monitor`'s, made again rather than
+// cited, because the second refusal is not cheaper than the first.
+// ---------------------------------------------------------------------------
+function scimMonitorJson(req) {
+  log.debug("Entering scimMonitorJson().");
+  const counters = stats.scimMonitorSnapshot();
+  const surface = scimReader ? scimReader(req) : null;
+  const out = {
+    // Distinguished from `enabled` deliberately, exactly as scimJson() does it:
+    // a process whose scim.js never loaded has no /scim routes at all, where
+    // one with scim.enabled false has routes answering 501. Reporting both as
+    // "off" would send a reader to the wrong setting — and on THIS page it
+    // would also make a call total of zero mean two different things.
+    installed: !!surface,
+    enabled: surface ? surface.enabled : false,
+    baseUrl: surface ? surface.baseUrl : null,
+    // THE SCHEME VOCABULARY, so that the by-scheme table can draw the ones at
+    // zero. It is scim_auth.js's own table by way of scim.js's description(),
+    // for the reason admin_stats.js's comment on `byAuthScheme` gives: the
+    // counters are a plain tally and this module cannot require the module
+    // that owns the list, so the ZEROES are supplied by the reader. A scheme
+    // that is turned off and has never been used is the most interesting row
+    // on that table for somebody asking why a client cannot get in.
+    schemes: surface && surface.authentication
+      ? surface.authentication.schemes : [],
+    authRequired: !!(surface && surface.authentication &&
+                     surface.authentication.required),
+    // What SCIM wrote, which is the other half of "is provisioning working".
+    // It is not a counter — it is the directory counted now — and it is here
+    // because a page reporting 400 successful creates beside a directory
+    // holding three people is reporting something worth knowing.
+    store: surface ? surface.store : null,
+    counters: counters
+  };
+  log.debug("Leaving scimMonitorJson(). " + counters.calls + " request(s), " +
+            counters.authentication.distinct + " client(s).");
+  return out;
+}
+
+// One row of the by-scheme table. Not folded into the page body because the
+// same rows are wanted in two orders — the schemes the surface declares, then
+// anything counted under a name it does not declare — and a second copy of the
+// markup is how the two come to be formatted differently.
+function scimSchemeRow(id, name, enabled, count, note) {
+  return '<tr><td><code>' + esc(id) + '</code>' +
+    (name ? ' ' + esc(name) : '') + '</td>' +
+    '<td>' + (enabled === null ? '<span class="sub">—</span>'
+      : (enabled ? '<span class="state-valid">on</span>'
+                 : '<span class="state-none">off</span>')) + '</td>' +
+    '<td class="num">' + count + '</td>' +
+    '<td class="sub">' + (note || '') + '</td></tr>';
+}
+
+app.get('/admin/scim/monitor', function (req, res) {
+  log.debug("Entering the admin SCIM monitor page.");
+  const json = scimMonitorJson(req);
+  const c = json.counters;
+
+  const tiles = '<div class="tiles">' +
+    tile(c.calls, 'API calls') +
+    tile(c.ok, 'successful') +
+    tile(c.failed, 'failed') +
+    tile(c.successRate === null ? '—' : c.successRate + '%', 'success rate') +
+    tile(c.authentication.distinct, 'clients') +
+    tile(c.latency.averageMs === null ? '—' : c.latency.averageMs + ' ms',
+         'average') +
+    '</div>';
+
+  // THE BREAKDOWN BY CALL TYPE, which is the table this page exists for. Every
+  // operation the server implements is drawn INCLUDING the ones at zero — the
+  // vocabulary is admin_stats.js's SCIM_OPERATIONS, so an operation cannot be
+  // performed and go unreported nor be reported and never occur.
+  const operationRows = c.operations.map(function (row) {
+    return '<tr><td>' + (row.method ? '<code>' + esc(row.method) + '</code> ' : '') +
+      esc(row.label) + '</td>' +
+      '<td class="num">' + row.count + '</td>' +
+      '<td class="num">' + row.ok + '</td>' +
+      '<td class="num">' + row.failed + '</td>' +
+      '<td class="num">' + (row.averageMs === null ? '—' : row.averageMs) + '</td>' +
+      '<td class="num">' + (row.maxMs === null ? '—' : row.maxMs) + '</td>' +
+      '<td class="num">' + row.bytes + '</td>' +
+      '<td class="sub">' + esc(row.what) + '</td></tr>';
+  }).join('');
+
+  const resourceRows = c.resourceTypes.map(function (row) {
+    return '<tr><td><code>' + esc(row.resourceType) + '</code></td>' +
+      '<td class="num">' + row.count + '</td></tr>';
+  }).join('');
+
+  // THE CLIENTS. Sorted busiest first by the snapshot, because that and "most
+  // recent" are the two orders somebody reading a traffic page wants and
+  // alphabetical is neither.
+  const clientRows = c.clients.map(function (row) {
+    return '<tr><td>' + shortened(row.principal, 40) + '</td>' +
+      '<td>' + (row.kind === 'application'
+        ? 'application <span class="sub">(a client_id)</span>'
+        : 'identity') + '</td>' +
+      '<td>' + row.schemes.map(function (s) {
+        return '<code>' + esc(s) + '</code>';
+      }).join(' ') + '</td>' +
+      '<td class="num">' + row.calls + '</td>' +
+      '<td class="num">' + row.ok + '</td>' +
+      '<td class="num">' + row.failed + '</td>' +
+      '<td>' + esc(row.lastOperation || '—') + ' <span class="sub">' +
+      esc(row.lastStatus || '') + '</span></td>' +
+      '<td class="sub">' + esc(whenText(row.firstAt)) + '</td>' +
+      '<td class="sub">' + esc(whenText(row.lastAt)) + '</td></tr>';
+  }).join('') || '<tr><td colspan="9">Nothing has authenticated yet. ' +
+    (json.authRequired
+      ? 'Every call to <code>/scim/v2</code> needs a credential, so this ' +
+        'table filling up is the first sign a provisioning client has been ' +
+        'configured at all. <strong>The gate being on is not the same as the ' +
+        'credential being checked</strong>: what <code>global.mode</code> ' +
+        'decides is whether the answer is VERIFIED, and the turnstile is ' +
+        'there in both modes.'
+      : '<strong>The SCIM gate is off in this build</strong> ' +
+        '(<code>mode.gatesScim()</code>), so callers are not asked for a ' +
+        'credential and are counted as anonymous rather than as clients. This ' +
+        'table stays empty however much traffic there is until it is on.') +
+    '</td></tr>';
+
+  // The scheme table, with the declared vocabulary first and anything counted
+  // under a name it does not declare after it.
+  const declared = {};
+  const schemeRows = json.schemes.map(function (row) {
+    declared[row.id] = true;
+    return scimSchemeRow(row.id, row.name, row.enabled,
+                         c.authentication.byScheme[row.id] || 0,
+                         esc(row.spec || ''));
+  }).join('') +
+  scimSchemeRow('anonymous', '', null, c.authentication.byScheme.anonymous || 0,
+    'Nothing authenticated the caller: a discovery endpoint, which is open ' +
+    'unless <code>scim.authDiscovery</code> says otherwise.') +
+  scimSchemeRow('refused', '', null, c.authentication.byScheme.refused || 0,
+    '<strong>The gate turned the caller away.</strong> These are counted here ' +
+    'and deliberately NOT attributed to a client, even when the credential ' +
+    'carried a name.') +
+  Object.keys(c.authentication.byScheme).sort().filter(function (id) {
+    return !declared[id] && id !== 'anonymous' && id !== 'refused';
+  }).map(function (id) {
+    return scimSchemeRow(id, '', null, c.authentication.byScheme[id],
+      'Counted under a name the surface does not declare. Shown rather than ' +
+      'dropped, so the column still adds up.');
+  }).join('');
+
+  const statusClassRows = Object.keys(c.byStatusClass).sort().map(function (k) {
+    return '<tr><td><code>' + esc(k) + '</code></td><td class="num">' +
+      c.byStatusClass[k] + '</td></tr>';
+  }).join('') || '<tr><td colspan="2">Nothing has been answered yet.</td></tr>';
+
+  const statusRows = Object.keys(c.byStatus).sort().map(function (code) {
+    return '<tr><td><code>' + esc(code) + '</code></td><td class="num">' +
+      c.byStatus[code] + '</td></tr>';
+  }).join('') || '<tr><td colspan="2">Nothing has been answered yet.</td></tr>';
+
+  const scimTypeRows = Object.keys(c.byScimType).sort().map(function (name) {
+    return '<tr><td><code>' + esc(name) + '</code></td><td class="num">' +
+      c.byScimType[name] + '</td></tr>';
+  }).join('') || '<tr><td colspan="2">Nothing has been refused yet.</td></tr>';
+
+  const recentRows = c.recent.map(function (row) {
+    return '<tr><td class="sub">' + esc(whenText(row.at)) + '</td>' +
+      '<td>' + (row.method ? '<code>' + esc(row.method) + '</code> ' : '') +
+      esc(row.operation) + '</td>' +
+      '<td><code>' + esc(row.resourceType) + '</code></td>' +
+      '<td>' + (row.ok ? '<span class="state-valid">' + esc(row.status) + '</span>'
+                       : '<span class="state-revoked">' + esc(row.status) + '</span>') +
+      (row.scimType ? ' <span class="sub">' + esc(row.scimType) + '</span>' : '') +
+      '</td>' +
+      '<td>' + (row.principal ? shortened(row.principal, 24)
+                              : '<span class="sub">' + esc(row.scheme) + '</span>') +
+      '</td>' +
+      '<td class="num">' + (row.ms === null ? '—' : row.ms) + '</td>' +
+      '<td class="num">' + row.bytes + '</td></tr>';
+  }).join('') || '<tr><td colspan="7">Nothing has been called yet.</td></tr>';
+
+  const inner = messagesOf(req) +
+    (!json.installed
+      ? '<div class="err"><strong>SCIM is not loaded in this process.</strong> ' +
+        'The module registers no routes here, so there is no traffic to ' +
+        'report and the zeroes below mean "no such endpoint" rather than "no ' +
+        'calls". Everything else on this console is unaffected.</div>'
+      : '') +
+    (json.installed && !json.enabled
+      ? warn('<strong>SCIM is turned off</strong> ' +
+        '(<code>scim.enabled</code>), so every call under <code>/scim/v2</code> ' +
+        'is answered <code>501</code> — and IS COUNTED HERE, because it is a ' +
+        'request this service answered. A page whose totals went flat while a ' +
+        'client kept calling would be hiding the very thing somebody came to ' +
+        'this page to find. Turn it back on at ' +
+        '<a href="/admin/scim">Protocols &rarr; SCIM</a>.')
+      : '') +
+
+    note('<strong>What the provisioning surface has actually been asked to ' +
+    'do</strong>, since this process started at <code>' +
+    esc(whenText(c.since)) + '</code>. Every request the SCIM implementation ' +
+    'had an opinion about is counted here — including the ones its own ' +
+    'authentication gate refused, because a <code>401</code> is a call this ' +
+    'service answered and a total that quietly omitted them would be smaller ' +
+    'than the access log for no stated reason. The counters are IN MEMORY and ' +
+    'per trust realm (this is <code>' + esc(c.realm.name || c.realm.id ||
+    'the default realm') + '</code>): they die with the process, because these ' +
+    'are observations and this service persists nothing it observes. The ' +
+    'durable record of what SCIM was ASKED to do is the ' +
+    '<a href="/admin/audit">audit log</a>, which has the actor and the target ' +
+    'as well as the count. What the surface IS — the schemes, the endpoints, ' +
+    'the attribute mapping and the eighteen settings — is ' +
+    '<a href="/admin/scim">Protocols &rarr; SCIM</a>; both pages read one set ' +
+    'of counters, so they cannot disagree.') +
+
+    tiles +
+
+    '<h2>By API call type</h2>' +
+    note('Every operation this server implements, <strong>including the ones ' +
+    'nothing has called</strong> — a table listing only what has happened ' +
+    'would answer &ldquo;does this support PATCH?&rdquo; by omission. ' +
+    '<strong>The count column does not tally with the call total, on ' +
+    'purpose</strong>: one <code>Bulk</code> carrying five creates is one ' +
+    '<code>bulk</code> AND five <code>create</code>s, because each of the five ' +
+    'really is performed. A duration is shown as <code>&mdash;</code> rather ' +
+    'than <code>0</code> where nothing was measured, because an average over ' +
+    'no samples is absent and not zero — a column of <code>0.0</code> would ' +
+    'read as a server answering instantly.') +
+    '<table><tr><th>Operation</th><th class="num">Calls</th>' +
+    '<th class="num">OK</th><th class="num">Failed</th>' +
+    '<th class="num">Avg ms</th><th class="num">Max ms</th>' +
+    '<th class="num">Bytes out</th><th>What it is</th></tr>' +
+    operationRows + '</table>' +
+
+    '<h2>By resource type</h2>' +
+    '<table><tr><th>Resource type</th><th class="num">Calls</th></tr>' +
+    resourceRows + '</table>' +
+
+    '<h2>Clients</h2>' +
+    note('<strong>A client here is an authenticated principal, not a ' +
+    'connection.</strong> SCIM is stateless HTTP — there is no session, no ' +
+    'registration and nothing to be connected — so the only honest reading of ' +
+    '&ldquo;how many clients&rdquo; is how many distinct names have ' +
+    'successfully authenticated since this process started. The figure never ' +
+    'goes down: a provisioning client that has stopped calling is ' +
+    'indistinguishable from one that is between calls. The name is whatever ' +
+    'the credential carried — a username for the five user-bearing schemes, a ' +
+    '<code>client_id</code> for a Bearer token minted for an application ' +
+    '(shown as <em>application</em>), and an RFC 4514 subject DN for a client ' +
+    'certificate. <strong>A caller the gate refused is not a client and is not ' +
+    'in this table</strong>, even when the credential carried a name: Basic ' +
+    'and Digest both put one on the wire, and attributing traffic to an ' +
+    'identity this service declined to believe is the one mistake this page ' +
+    'could make that would matter. Those are the <code>refused</code> row ' +
+    'below.') +
+    '<div class="tiles">' +
+    tile(c.authentication.distinct, 'distinct clients') +
+    tile(c.authentication.identities, 'people') +
+    tile(c.authentication.applications, 'applications') +
+    tile(c.authentication.anonymous, 'anonymous calls') +
+    tile(c.authentication.refused, 'refused at the gate') +
+    '</div>' +
+    (c.authentication.capped
+      ? warn('<strong>The client table stopped growing at ' +
+        c.authentication.cap + ' names.</strong> Every call is still counted ' +
+        'in every total above; it is only this breakdown that is capped, ' +
+        'because the principal is whatever the caller typed — Basic here ' +
+        'accepts any username — and an unbounded table is a store somebody ' +
+        'else decides the size of. The cap is said out loud rather than ' +
+        'letting the page under-report quietly.')
+      : '') +
+    '<table><tr><th>Principal</th><th>Kind</th><th>Schemes</th>' +
+    '<th class="num">Calls</th><th class="num">OK</th><th class="num">Failed</th>' +
+    '<th>Last</th><th>First seen</th><th>Last seen</th></tr>' +
+    clientRows + '</table>' +
+
+    '<h2>By authentication scheme</h2>' +
+    note('All six schemes RFC 7644 section 2 names, whether each is ' +
+    'switched on, and how many calls came in over it — the ones at zero ' +
+    'included, because a scheme that is OFF and unused is the most useful row ' +
+    'here for somebody asking why a client cannot get in. The list is ' +
+    '<code>scim_auth.js</code>\'s own, the same table the ' +
+    '<code>WWW-Authenticate</code> challenge and the ' +
+    '<code>ServiceProviderConfig</code> are built from, so this cannot name a ' +
+    'scheme a client would not be offered.') +
+    '<table><tr><th>Scheme</th><th>Enabled</th><th class="num">Calls</th>' +
+    '<th>Notes</th></tr>' + schemeRows + '</table>' +
+
+    '<h2>What went back</h2>' +
+    note('The status class, the exact status of every answer, and the ' +
+    '<code>scimType</code> of every refusal (RFC 7644 section 3.12). ' +
+    '<code>(none)</code> is a refusal that carried no such code — a ' +
+    '<code>404</code> has none — and is counted rather than dropped, so the ' +
+    'two failure tables agree with each other.') +
+    '<div class="tiles" style="align-items:flex-start">' +
+    '<div><table><tr><th>Class</th><th class="num">Count</th></tr>' +
+    statusClassRows + '</table></div>' +
+    '<div><table><tr><th>Status</th><th class="num">Count</th></tr>' +
+    statusRows + '</table></div>' +
+    '<div><table><tr><th>scimType</th><th class="num">Count</th></tr>' +
+    scimTypeRows + '</table></div></div>' +
+
+    '<h2>Volume</h2>' +
+    '<div class="tiles">' +
+    tile(c.bytesOut, 'bytes returned') +
+    tile(c.latency.maxMs, 'slowest call (ms)') +
+    tile(c.latency.totalMs, 'total time (ms)') +
+    '</div>' +
+    // THE TWO INSTANTS ARE A SENTENCE AND NOT TWO MORE TILES. A tile draws its
+    // value in the headline face, and a timestamp there is twenty-four
+    // characters set like a three-digit count — it reads as the most important
+    // figure on the page and is the least. Every other tile in this console
+    // holds a number for the same reason.
+    note('First call <code>' + esc(whenText(c.firstAt)) + '</code>, last call ' +
+    '<code>' + esc(whenText(c.lastAt)) + '</code>. ' +
+    '<code>Bytes returned</code> is the SCIM payload this service ' +
+    'wrote, headers excluded. It answers one question and it is a common ' +
+    'one: whether a client is listing the whole directory on every poll. The ' +
+    'time figures are a SUM and a maximum rather than a running mean, so any ' +
+    'other statistic can still be computed from them.') +
+
+    '<h2>The last ' + c.recentCap + ' calls</h2>' +
+    note('Newest first. Everything else on this page is an aggregate, and an ' +
+    'aggregate cannot answer &ldquo;what did the call that just failed ' +
+    'actually look like&rdquo; — which is the first thing anybody asks. It is ' +
+    'a ring of ' + c.recentCap + ', so anything older has been dropped; the ' +
+    'durable record is the <a href="/admin/audit">audit log</a>. Where no ' +
+    'principal authenticated, the scheme is shown instead.') +
+    '<table><tr><th>When</th><th>Operation</th><th>Resource</th><th>Status</th>' +
+    '<th>Who</th><th class="num">ms</th><th class="num">Bytes</th></tr>' +
+    recentRows + '</table>' +
+
+    (json.store
+      ? '<h2>What it wrote</h2>' +
+        // The opening sentence carries no HTML entity, deliberately: the
+        // console derives an h2 tooltip from it through plainTextOf() and
+        // esc(), which leaves an entity showing as its own source text. Every
+        // other note here happens to be cut before its first one; this was the
+        // first that was not, and rewording it was cheaper than teaching the
+        // tooltip pass to decode.
+        note('The directory as it is NOW, which is the other half of the ' +
+        'question and is not a counter: a page ' +
+        'reporting four hundred successful creates beside a directory holding ' +
+        'three people is reporting something worth knowing. There is no ' +
+        'second store — a SCIM <code>POST</code> and an <code>ldapadd</code> ' +
+        'write the same entry — so these are the same figures ' +
+        '<a href="/admin/users">Users</a> and <a href="/admin/groups">Groups</a> ' +
+        'are drawn from.') +
+        '<div class="tiles">' +
+        tile(json.store.userCount, 'people in the directory') +
+        tile(json.store.groupCount, 'groups') +
+        tile(json.store.entryCount + ' / ' + json.store.maxEntries,
+             'entries / max') +
+        '</div>'
+      : '') +
+
+    note('<strong>There is no reset button, and it was refused rather than ' +
+    'forgotten.</strong> A console that could zero its own monitoring would ' +
+    'make every number on this page a number somebody might have zeroed — and ' +
+    'the <a href="/admin/audit">audit log</a>, which is the durable record, ' +
+    'cannot be reset either. Restarting the process is the only way these go ' +
+    'back to zero, which is why the epoch is printed above.') +
+
+    note('<a href="/admin/scim">the surface these calls arrive at</a> &middot; ' +
+    '<a href="/admin/scim/monitor?format=json">this page as JSON</a> &middot; ' +
+    '<a href="/admin-api/scim/monitor">the same over the management API</a> ' +
+    '&middot; <a href="/admin/audit">the durable record</a> &middot; ' +
+    '<a href="/admin/metrics">every endpoint call, by route</a>');
+
+  respond(req, res, json, 'SCIM metrics', '/admin/scim/monitor', inner);
+  log.debug("Leaving the admin SCIM monitor page.");
 });
 
 // ---------------------------------------------------------------------------
@@ -27853,14 +30216,66 @@ function persistenceStatusBlock() {
     ['What is written', off ? 'nothing' : [
         info.persistsDirectory ? 'the embedded directory' : null,
         info.persistsRealms ? 'the trust realm registry' : null,
-        info.persistsAppconfig ? 'runtime setting changes' : null
+        info.persistsAppconfig ? 'runtime setting changes' : null,
+        info.minted && info.minted.persisting
+          ? '<strong>and everything this process mints</strong> — sessions, ' +
+            'tokens, codes, artifacts, Kerberos principals, the replay ' +
+            'caches, the counters and the audit log, across ' +
+            esc(String(info.minted.stores)) + ' stores, every row encrypted'
+          : null
       ].filter(Boolean).join(', ')],
-    ['What is NEVER written',
-      'sessions, access tokens, ID Tokens, refresh tokens, authorization ' +
-      'codes, pre-authorized codes, SAML artifacts, Kerberos tickets, the ' +
-      'replay caches, the statistics, the audit log — and the signing key, ' +
-      'which is regenerated on every start and is why none of the rest could ' +
-      'usefully be kept.'],
+    // -----------------------------------------------------------------------
+    // THE NEGATIVE ROW, AND IT IS NOW CONDITIONAL — which is the whole of what
+    // changed here on 2026-09-06. It used to be a constant, because the answer
+    // used to be the same in every configuration. Keeping it as a row rather
+    // than deleting it is deliberate: "what is never written" is the question
+    // an operator actually has, and a page that answered it only when the
+    // answer was long would be a page that stopped answering it exactly when
+    // the answer got interesting.
+    // -----------------------------------------------------------------------
+    ['What is NEVER written', off
+      ? 'everything — nothing at all is written in this mode'
+      : (info.minted && info.minted.persisting
+          ? 'nothing, beyond the two caches that are re-derivable ' +
+            '(the signed-metadata cache and the parsed-policy cache) and the ' +
+            'plaintext of the signing keys, which are held encrypted. ' +
+            '<strong>The private keys themselves are never written in the ' +
+            'clear</strong>, and neither is any minted row.'
+          : 'sessions, access tokens, ID Tokens, refresh tokens, ' +
+            'authorization codes, pre-authorized codes, SAML artifacts, ' +
+            'Kerberos tickets, the replay caches, the statistics and the ' +
+            'audit log' +
+            (info.minted && info.minted.unsupportedReason
+              ? ' — because ' + esc(info.minted.unsupportedReason)
+              : ' — because the signing key is regenerated on every start in ' +
+                'development mode, so a token that outlived it would verify ' +
+                'against nothing') + '.')],
+    // -----------------------------------------------------------------------
+    // AND WHETHER THIS PROCESS IS ALONE WITH ITS COPY. This row is the
+    // reversal of the sentence that used to be two paragraphs of prose above:
+    // "one process per database".
+    // -----------------------------------------------------------------------
+    ['Other processes', off || !info.replication
+      ? '—'
+      : info.replication.coordinating
+        ? '<strong>coordinating</strong> — applied up to change ' +
+          esc(String(info.replication.appliedSeq)) + ', ' +
+          esc(String(info.replication.rowsApplied)) + ' row(s) taken from ' +
+          esc(String(info.replication.otherProcesses)) + ' other process(es), ' +
+          'polling every ' + esc(String(info.replication.pollIntervalMs)) +
+          'ms with a LISTEN/NOTIFY nudge on top' +
+          (info.replication.lastError
+            ? '. <strong class="bad">THE LAST PULL FAILED</strong> — ' +
+              esc(info.replication.lastError) + '. This process is BEHIND ' +
+              'and is serving its own copy until it catches up.'
+            : '.')
+        : '<strong>not coordinating</strong> — this process holds its own ' +
+          'copy and will not see another\'s writes until it restarts. ' +
+          (info.replication.supported
+            ? 'Set <code>persistence.coordinate</code> to change that.'
+            : 'The ' + esc(info.mode) + ' store cannot coordinate: a change ' +
+              'log needs a transaction and a sequence, and that store writes ' +
+              'whole files.')],
     ['When', off ? '—'
       : info.writeDelayMs === 0
         ? 'immediately — every change made while handling one request commits ' +
@@ -28064,29 +30479,58 @@ const PROTOCOL_SETTINGS_PAGES = [
           'directory — which is also where applications, federation ' +
           'relationships and the SPIFFE registry live — the trust realm ' +
           'registry, and the runtime setting changes made on pages like this ' +
-          'one. <code>persistence.mode</code> decides: <code>memory</code> ' +
+          'one — and, in <strong>product mode</strong> on a Postgres store, ' +
+          'a fourth: everything this process MINTS. ' +
+          '<code>persistence.mode</code> decides where: <code>memory</code> ' +
           'writes nothing and is what this service did until 2026-08-27, ' +
           '<code>ldif</code> writes an RFC 2849 file per realm and needs no ' +
-          'database, <code>postgres</code> writes three tables.',
-    also: ['<strong>NOTHING THIS SERVICE MINTS IS EVER PERSISTED, in any ' +
-           'mode.</strong> Sessions, access tokens, ID Tokens, refresh ' +
-           'tokens, authorization codes, pre-authorized codes, SAML ' +
-           'artifacts, Kerberos tickets, the replay caches, ' +
-           '<a href="/admin/metrics">the statistics</a> and ' +
-           '<a href="/admin/audit">the audit log</a> are in memory and go ' +
-           'when the process does. That is not unfinished: <strong>the ' +
-           'signing key is regenerated on every start</strong>, so a token ' +
-           'that outlived it would verify against nothing and an assertion ' +
-           'restored from a disk would be a lie. What persists is what ' +
-           'somebody TYPED; what resets is what this process COUNTED.',
-           '<strong>Persistence is not coordination, and this is the ' +
-           'difference that will surprise somebody.</strong> Two processes ' +
-           'pointed at one Postgres database each hold their own copy of the ' +
-           'directory in memory: each writes its own changes down, and ' +
-           'neither sees the other\'s until it restarts. Running several ' +
-           'copies against one database is therefore NOT yet a way to scale ' +
-           'this service — it is a way to have several services quietly ' +
-           'overwrite each other. One process per database.',
+          'database, <code>postgres</code> writes six tables.',
+    also: ['<strong>WHAT THIS SERVICE MINTS IS PERSISTED IN PRODUCT MODE, ' +
+           'AND IN NO OTHER CONFIGURATION.</strong> Sessions, access tokens, ' +
+           'ID Tokens, refresh tokens, authorization codes, pre-authorized ' +
+           'codes, SAML artifacts, Kerberos principals and tickets, the ' +
+           'replay caches, <a href="/admin/metrics">the statistics</a> and ' +
+           '<a href="/admin/audit">the audit log</a> all survive a restart ' +
+           'when <code>global.mode</code> is <code>product</code> and the ' +
+           'store is <code>postgres</code>. Every row is encrypted with the ' +
+           'same key-encryption key that protects the signing keys, because ' +
+           'a session id is a cookie value and an authorization code is ' +
+           'redeemable — so a database dump is not a set of usable ' +
+           'credentials.',
+           '<strong>DEVELOPMENT MODE PERSISTS NONE OF IT, and that is not ' +
+           'unfinished either.</strong> <strong>The signing key is ' +
+           'regenerated on every start there</strong>, so a restored token ' +
+           'would verify against nothing and an assertion restored from a ' +
+           'disk would be a lie. Product mode keeps its keys — which is why ' +
+           'it requires a store — and that single fact is what makes ' +
+           'restoring the rest of it honest. The <code>ldif</code> store ' +
+           'does not hold minted state either, whatever the mode: it writes ' +
+           'WHOLE FILES per flush, which is right for a directory somebody ' +
+           'types into and wrong for a session table that changes on every ' +
+           'request. The service says so once at startup rather than letting ' +
+           'it be discovered one restart later.',
+           '<strong>SEVERAL PROCESSES AGAINST ONE STORE NOW AGREE, and this ' +
+           'paragraph said the opposite until 2026-09-06.</strong> It read ' +
+           '"persistence is not coordination… one process per database", and ' +
+           'that was the honest description of what existed. Every change is ' +
+           'now written to a monotonic log INSIDE the transaction that made ' +
+           'it, and each process applies what the others committed — the ' +
+           'directory, the realms, the settings and the minted rows alike. A ' +
+           '<code>LISTEN</code>/<code>NOTIFY</code> nudge only makes that ' +
+           'prompt: <strong>the log is the contract</strong>, so a missed ' +
+           'notification costs latency and never a change. ' +
+           '<code>persistence.coordinate</code> turns it off, which is what ' +
+           'this service did before.',
+           '<strong>It shares STATE and not SOCKETS, and the difference is ' +
+           'where the surprises are.</strong> The KDC, the two LDAP ' +
+           'listeners, the two TLS ports and SPIFFE\'s four are bound per ' +
+           'process and always will be. And the <strong>replay caches and ' +
+           'DPoP <code>jti</code> sets converge rather than ' +
+           'synchronise</strong>: between a write in one process and its ' +
+           'arrival in another there is a window the size of ' +
+           '<code>persistence.pollInterval</code> in which a proof one ' +
+           'process refused is accepted by another. Sticky sessions at the ' +
+           'load balancer close it; nothing here does.',
            '<strong>A restored person shows on ' +
            '<a href="/admin/users">Users</a> as restored rather than as ' +
            'having authenticated.</strong> They exist — an entry, searchable ' +
@@ -28100,9 +30544,12 @@ const PROTOCOL_SETTINGS_PAGES = [
            'write still succeeds, this service keeps answering out of memory, ' +
            'and the status below turns red with the reason. Nothing is lost ' +
            'by the failure: the next change recomputes the same difference ' +
-           'and writes it. A database outage taking down sixteen protocol ' +
+           'and writes it. A database outage taking down seventeen protocol ' +
            'families that do not need a database is the one failure mode a ' +
-           'mock must not have.'],
+           'mock must not have. <strong>The same is true of coordination</strong>: ' +
+           'a process that cannot read the change log keeps answering out of ' +
+           'its own copy, says so, and catches up when the database comes ' +
+           'back — it does not refuse anything in the meantime.'],
     status: persistenceStatusBlock,
     links: [['/admin/ldap/service', 'the directory, and this same status'],
             ['/admin/ldap/directory', 'every entry in it'],
@@ -30650,6 +33097,7 @@ module.exports = {
   xacmlEditorView: xacmlEditorView,
   xacmlPepsView: xacmlPepsView,
   xacmlDecideView: xacmlDecideView,
+  xacmlMonitorView: xacmlMonitorView,
   xacmlAction: xacmlAction,
   xacmlActionNames: xacmlActionNames,
   // The JSON counterpart of the block above, so that a page drawn
@@ -30710,6 +33158,7 @@ module.exports = {
   setScimReader: setScimReader,
   setGroupReader: setGroupReader,
   setDirectoryWriter: setDirectoryWriter,
+  setGroupWriter: setGroupWriter,
   // Filled by logout/logout.js at ITS require time — the sixth slot, and rule
   // 3e's test answers yes for the same two reasons at once. See the block above
   // setLogoutReader().
@@ -30895,7 +33344,18 @@ module.exports = {
   // header: a require in either direction fails rule 3e's test.
   setRolePreviewer: setRolePreviewer,
   usersView: usersView,
+  // The create page's own view, for GET /admin-api/users/new. Rule 7, and the
+  // same argument `newApplicationView` makes below: what it answers is the
+  // CATALOGUE the create takes — every attribute a person here may be given,
+  // with the claim each one reaches — so a caller of POST
+  // /admin-api/users/create learns what may go in `attributes` from the
+  // service rather than from a copy of the list in a document. There is no
+  // `newUserAction` beside it, on purpose: that page's form posts
+  // `action=create`, which `usersAction()` already answers, and a second
+  // operation would be a second door onto one function pretending to be two.
+  newUserView: newUserView,
   groupsView: groupsView,
+  groupsAction: groupsAction,
   applicationsView: applicationsView,
   // The create page's own view, for GET /admin-api/applications/new. Rule 7:
   // every page of this console has an operation, and this one is worth more
@@ -30970,6 +33430,11 @@ module.exports = {
   vcPreviewUser: vcPreviewUser,
   vpConfigJson: vpConfigJson,
   scimJson: scimJson,
+  // The TRAFFIC view, for GET /admin-api/scim/monitor. Rule 7: every page
+  // of this console has an operation that mirrors it, and this one has no
+  // POST beside it because the page has no control — the reset was
+  // refused rather than forgotten. See the header on scimMonitorJson().
+  scimMonitorJson: scimMonitorJson,
   configJson: configJson,
   // It takes the REQUEST, unlike most of the views here, and for a reason worth
   // the line: every URL it prints is built from the one the call arrived on —

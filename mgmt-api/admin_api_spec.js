@@ -619,7 +619,40 @@ const SCHEMAS = {
     'What this API is, where its document is, and every operation it offers.',
     {
       name: { type: 'string' },
-      version: { type: 'string' },
+      version: {
+        type: 'string',
+        description: 'M.N.O — the release from the repo-root VERSION file ' +
+                     'and the build number this artifact was stamped with.'
+      },
+      build: {
+        type: 'string',
+        description: 'The O of M.N.O on its own: the UTC build instant as ' +
+                     'YYYYMMDDHHMMSS, or whatever BUILD_NUMBER was set to at ' +
+                     'build time.'
+      },
+      commit: {
+        type: 'string',
+        description: 'The first twelve characters of the commit this was ' +
+                     'built from. Absent when the build could not know it — ' +
+                     'the container build context carries no .git, so this is ' +
+                     'present only when GIT_COMMIT was passed in.'
+      },
+      builtAt: {
+        type: 'string', format: 'date-time',
+        description: 'When the build number was fixed. Read it with ' +
+                     '`stamped`: this is when the ARTIFACT was built, or when ' +
+                     'this PROCESS started if there is no artifact.'
+      },
+      stamped: {
+        type: 'boolean',
+        description: 'True when this version came off a record written at ' +
+                     'image build time, which is what a container reports. ' +
+                     'False means the process computed its own number at ' +
+                     'startup because nothing was ever built — a checkout ' +
+                     'being run — so the build number is the moment it ' +
+                     'started and comparing it against another instance says ' +
+                     'nothing.'
+      },
       openapi: { type: 'string', description: 'Where the document is.' },
       docs: { type: 'string', description: 'Where the explorer is.' },
       console: { type: 'string',
@@ -1502,6 +1535,87 @@ const SCHEMAS = {
     }, PAGING_PROPERTIES, {
       matched: { type: 'integer', description: 'How many the filter matched.' }
     })),
+
+  // THE SAME IDEA FOR A PERSON, and the same argument for publishing it: what
+  // `POST /admin-api/users/create` accepts in `attributes` is a CLOSED
+  // catalogue — the attributes vc_claims.js says a person in this directory
+  // has — and a name that is not on it is refused rather than dropped. A
+  // caller that reads this cannot construct a create the service will refuse.
+  //
+  // It is the same list the console's /admin/users/new form is drawn from, and
+  // that is the point rather than a coincidence: one catalogue read through two
+  // doors, so a field on the form and a field this document offers cannot come
+  // apart.
+  NewUserForm: openObject(
+    'Every attribute a person may be created with, where the entry would land, ' +
+    'and the four ways they can be given a way in. Mirrors GET ' +
+    '/admin/users/new, which is the console page built from exactly this list. ' +
+    'It creates nobody itself: the create is POST /admin-api/users/create.',
+    {
+      directory: {
+        type: 'boolean',
+        description: 'FALSE when no directory is loaded in this process, in ' +
+                     'which case there is no ou=users container and a create ' +
+                     'would be refused. The call still answers 200: the ' +
+                     'operation exists and the store does not, and those are ' +
+                     'different facts.'
+      },
+      container: { type: 'string',
+                   description: 'The DN a new person would be created under, IN ' +
+                                'THE REALM THIS CALL ARRIVED IN. The directory ' +
+                                'is per realm, so /realm/acme/admin-api/... ' +
+                                'answers with acme\'s ou=users and a person ' +
+                                'created there is invisible to every other ' +
+                                'realm, including to an ldapsearch that does ' +
+                                'not use that realm\'s base DN.' },
+      realm: openObject('The trust realm this call arrived in: `id` and `name`.', {}),
+      mode: { type: 'string',
+              description: 'development or product, from global.mode. It ' +
+                           'decides only whether EXAMPLE DATA is offered; what ' +
+                           'a create may write is the same in both.' },
+      offersExampleData: {
+        type: 'boolean',
+        description: 'Whether the console draws its *Fill with example data* ' +
+                     'button, which is development mode only. Published rather ' +
+                     'than left to be inferred from `mode`, so a caller need ' +
+                     'not know which predicate decides it. THERE IS NO API ' +
+                     'EQUIVALENT OF THAT BUTTON and there should not be: it ' +
+                     'fills a FORM for a person to edit, and the same invented ' +
+                     'values are what `invent: true` on a create writes ' +
+                     'directly — which is this operation\'s default and has ' +
+                     'been since before the button existed.'
+      },
+      fields: {
+        type: 'array',
+        description: 'THE CLOSED ATTRIBUTE CATALOGUE, in the order the console ' +
+                     'draws it: one row per attribute a person here may be ' +
+                     'given, each `{attribute, label, schema, claim, invented}`. ' +
+                     '`attribute` is the name to send as a key of `attributes` ' +
+                     'on a create AND the name the entry carries, so an ' +
+                     'ldapsearch shows exactly what was sent. `claim` is where ' +
+                     'the value lands in an issued token or credential. ' +
+                     '`schema` is the document the attribute name comes from, ' +
+                     'which matters because THIS DIRECTORY HAS NO SCHEMA and ' +
+                     'would refuse none of them anywhere. `invented` says ' +
+                     'whether this service can make a value up for it — one row ' +
+                     'cannot (`description`, which this service writes itself ' +
+                     'to say why the entry exists), so `invent: true` leaves ' +
+                     'that one alone.\n\n`uid` IS DELIBERATELY NOT ON THIS ' +
+                     'LIST: it is the username, sent as `username`, and a ' +
+                     'second way to set it would allow uid=alice whose uid says ' +
+                     'bob. `userPassword` is not on it either — a password goes ' +
+                     'through `credential`, so that it is hashed rather than ' +
+                     'written down.',
+        items: openObject('One attribute a person may be created with.', {})
+      },
+      credentials: {
+        type: 'array',
+        description: 'The four ways a person can be given a way in, each ' +
+                     '`{id, label}`. `id` is what a create sends as ' +
+                     '`credential`: none, password, generate, activation.',
+        items: openObject('One credential option.', {})
+      }
+    }),
 
   // WHAT A CREATE MAY SAY, answered by the service rather than described in
   // this document. The two vocabularies below are the closed lists
@@ -2925,6 +3039,77 @@ const SCHEMAS = {
       })
     }),
 
+  // WHAT AUTHORIZATION IS DOING, as opposed to what it is configured to do.
+  // Every other XACML schema here describes the repository; this one describes
+  // TRAFFIC, and the two things it is careful about are the two things a
+  // caller would otherwise get wrong.
+  XacmlMonitor: openObject(
+    'How many decisions this service\'s authorization is making, by which ' +
+    'enforcement point, and how many are refusals. Mirrors ' +
+    '/admin/xacml/monitor.\n\nTWO DISTINCTIONS RUN THROUGH IT. A DECISION ' +
+    'IS NOT AN ENFORCEMENT — XACML has four decisions and a PEP has two ' +
+    'outcomes, and what maps between them is the PEP\'s bias, so a ' +
+    'deny-biased PEP refuses a NotApplicable that a permit-biased one ' +
+    'allows; an obligation a PEP cannot discharge also turns a Permit into a ' +
+    'refusal (section 7.2). And WHAT THIS SERVICE SAW IS NOT WHAT IT WAS ' +
+    'TOLD — the embedded figures are things this process did and counted, ' +
+    'the remote ones are what another process reports on a heartbeat.',
+    {
+      policies: openObject('`total`, `enabled`, and the name of the `root`.', {}),
+      peps: openObject(
+        'How many enforcement points: `embedded` (compiled into this ' +
+        'process, always three), `remote` (registered in ou=peps) and their ' +
+        '`total`. **The PDP endpoint is deliberately not in the total** — it ' +
+        'is not a PEP, and counting it would answer one too many on a ' +
+        'service with none.', {}),
+      decisions: openObject(
+        'THREE TOTALS AND NOT ONE. `here` is what this process decided and ' +
+        'enforced, counted as it happened. `remote` is what registered PEPs ' +
+        'REPORT having done, cumulative in their own memory — this service ' +
+        'saw none of it, and a PEP that restarts makes this half go down. ' +
+        '`combined` is the two added up: the figure a deployment wants, and ' +
+        'arithmetic over two different kinds of evidence rather than a ' +
+        'measurement. Each carries `decisions`, `allowed`, `refused` and ' +
+        '`undischargeable`.', {}),
+      since: { type: 'string',
+               description: 'When the counters started, which is when this ' +
+                            'process did. They are IN MEMORY and are not ' +
+                            'persisted: these are observations, and the ' +
+                            'durable record of a refusal is the audit log, ' +
+                            'which carries the reason as well as the count.' },
+      enabled: { type: 'boolean',
+                 description: 'xacml.enabled. When false nothing is ' +
+                              'evaluated and the embedded PEPs answer ' +
+                              'ALLOWED without asking — which is counted, ' +
+                              'because it is what happened.' },
+      remotePepsEnabled: { type: 'boolean', description: 'xacml.remotePeps.' },
+      realm: openObject(
+        'The trust realm these counters are for. They are PER REALM, like ' +
+        'ou=policies itself: a decision made under /realm/acme was made ' +
+        'against acme\'s policies.', {}),
+      rows: {
+        type: 'array',
+        description: 'The askers of the PDP IN THIS PROCESS, in the order the ' +
+                     'console draws them: the three embedded PEPs and the ' +
+                     '`pdp` row, which is `POST /xacml/pdp` and is NOT a PEP ' +
+                     '— somebody else\'s enforcement point asked, and this ' +
+                     'service never saw what was done with the answer. On ' +
+                     'that row `allowed` and `refused` are **null rather ' +
+                     'than 0**, because zero would say it refused nothing.',
+        items: openObject('One asker: what it guards, its bias, and its counts.', {})
+      },
+      remoteRows: {
+        type: 'array',
+        description: 'The registered remote PEPs, summarised. Their ' +
+                     '`decisions`, `allowed` and `refused` are REPORTED BY ' +
+                     'THEM; the four PDP decisions are null, because only ' +
+                     'the process that evaluated knows which of them each ' +
+                     'enforcement was. GET /admin-api/xacml/peps has the ' +
+                     'sync tokens, the notify URLs and the controls.',
+        items: openObject('One remote PEP.', {})
+      }
+    }),
+
   XacmlPeps: openObject(
     'The REMOTE Policy Enforcement Points that pull this repository and ' +
     'enforce it in another process. The question this answers is not ' +
@@ -2954,6 +3139,21 @@ const SCHEMAS = {
       current: { type: 'integer',
         description: 'How many registered PEPs hold the current token.' },
       stale: { type: 'integer' },
+      elsewhere: { type: 'array',
+        description: 'EVERY OTHER TRUST REALM THAT HOLDS A REGISTRATION, with ' +
+                     'how many. `ou=peps` is per realm, like the policy ' +
+                     'repository it serves, so an empty `peps` array above has ' +
+                     'TWO causes and this is what tells them apart: nothing ' +
+                     'anywhere, or nothing in the realm you asked. It is ' +
+                     'routinely the second — the suite that drives a real ' +
+                     'remote PEP does it in a throwaway realm, so a passing ' +
+                     'test run never leaves a registration in the default ' +
+                     'realm. Empty on a service with no realms defined.',
+        items: openObject('One realm that holds at least one registration.', {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          count: { type: 'integer' }
+        }) },
       notify: openObject('The nudge, and its four bounds.', {
         on: { type: 'boolean' },
         allowedHosts: { type: 'array', items: { type: 'string' },
@@ -3663,6 +3863,209 @@ const SCHEMAS = {
         })
     }),
 
+  // WHAT THE PROVISIONING SURFACE IS DOING, as opposed to what it is. `Scim`
+  // above describes the SURFACE and carries the headline counts; this one is
+  // the TRAFFIC, and the two are views over ONE set of counters rather than two
+  // tallies. Three things in here are easy to get wrong from the outside and
+  // each is written out rather than left open for that reason.
+  ScimMonitor: openObject(
+    'How much traffic the SCIM 2.0 endpoints have taken, from whom, of what ' +
+    'kind, and how much of it failed. Mirrors /admin/scim/monitor.\n\n**A ' +
+    'CLIENT IS AN AUTHENTICATED PRINCIPAL, NOT A CONNECTION.** SCIM is ' +
+    'stateless HTTP — no session, no registration, nothing to be connected — ' +
+    'so "how many clients" can only mean how many different names have ' +
+    'successfully authenticated since this process started. It never goes ' +
+    'down.\n\n**A REFUSED CALLER IS NOT A CLIENT.** Calls the gate turned ' +
+    'away are in `authentication.refused` and in no `clients` row, even when ' +
+    'the credential carried a name.\n\n**AN ABSENT MEASUREMENT IS NULL AND ' +
+    'NOT ZERO**, throughout: an average over no samples is absent, and a 100% ' +
+    'success rate on nothing is the most misleading number this reply could ' +
+    'carry.',
+    {
+      installed: {
+        type: 'boolean',
+        description: 'Whether the SCIM module is loaded in this process at ' +
+                     'all. A DIFFERENT question from `enabled`, and on this ' +
+                     'reply in particular it is what tells a zero call total ' +
+                     'meaning "no such endpoint" from one meaning "nobody has ' +
+                     'called".'
+      },
+      enabled: {
+        type: 'boolean',
+        description: 'The `scim.enabled` setting. When false every call under ' +
+                     '/scim/v2 is answered 501 — AND IS STILL COUNTED HERE, ' +
+                     'because it is a request this service answered. Totals ' +
+                     'that went flat while a client kept calling would hide ' +
+                     'the very thing somebody reads this for.'
+      },
+      baseUrl: { type: 'string' },
+      authRequired: { type: 'boolean',
+                      description: 'Whether the SCIM gate asks for a ' +
+                                   'credential at all — `mode.gatesScim()`, ' +
+                                   'which since 2026-09-06 is where ' +
+                                   '`scim.authRequired` went. When it is off, ' +
+                                   'callers are counted as anonymous rather ' +
+                                   'than as clients and `clients` stays empty ' +
+                                   'however much traffic there is. Note that ' +
+                                   'the gate being ON is not the same as the ' +
+                                   'credential being CHECKED: what ' +
+                                   '`global.mode` decides is ' +
+                                   '`verifiesCredentials()`, and the ' +
+                                   'turnstile is there in both modes.' },
+      schemes: {
+        type: 'array',
+        description: 'The authentication schemes the surface declares, from ' +
+                     'scim_auth.js\'s own table, so that the per-scheme ' +
+                     'counts can be read with the ones at ZERO included. A ' +
+                     'scheme that is off and unused is the most useful row ' +
+                     'there for somebody asking why a client cannot get in.',
+        items: openObject('One scheme.', {})
+      },
+      store: openObject(
+        'The embedded directory as it is NOW — not a counter. It is here ' +
+        'because a reply reporting four hundred successful creates beside a ' +
+        'directory holding three people is reporting something worth knowing. ' +
+        'The same figures GET /admin-api/users and /admin-api/groups are ' +
+        'drawn from; there is no second store.', {}),
+      counters: openObject(
+        'The traffic itself.',
+        {
+          calls: { type: 'integer',
+                   description: 'Every request the SCIM implementation had an ' +
+                                'opinion about, INCLUDING the ones its own ' +
+                                'gate refused: a 401 is a call this service ' +
+                                'answered, and a total that omitted them ' +
+                                'would be smaller than the access log for no ' +
+                                'stated reason.' },
+          ok: { type: 'integer' },
+          failed: { type: 'integer' },
+          successRate: { type: ['number', 'null'],
+                         description: 'Percent to one decimal, or NULL when ' +
+                                      'nothing has been called.' },
+          firstAt: { type: 'integer' },
+          lastAt: { type: 'integer' },
+          since: { type: 'integer',
+                   description: 'When the counting started, which is when ' +
+                                'this process did. The counters are in ' +
+                                'memory and are not persisted: these are ' +
+                                'observations, and the durable record of what ' +
+                                'SCIM was asked to do is the audit log.' },
+          latency: openObject(
+            '`totalMs` (a SUM, so any other statistic can still be computed ' +
+            'from it), `averageMs` (null when nothing has been called) and ' +
+            '`maxMs`.', {}),
+          bytesOut: { type: 'integer',
+                      description: 'The SCIM payload written back, headers ' +
+                                   'excluded. It answers one common question: ' +
+                                   'whether a client is listing the whole ' +
+                                   'directory on every poll.' },
+          authentication: openObject(
+            '`distinct` authenticated principals, split into `identities` and ' +
+            '`applications`; `anonymous`, calls nothing authenticated; ' +
+            '`refused`, calls the gate turned away and did NOT attribute to ' +
+            'anybody; `byScheme`, a plain tally keyed by scheme id; and ' +
+            '`capped`/`cap`, which say whether the per-client breakdown ' +
+            'stopped growing. Past the cap every total is still counted and ' +
+            'only the breakdown stops — said out loud rather than letting the ' +
+            'reply under-report quietly.', {}),
+          operations: {
+            type: 'array',
+            description: 'One row per operation THIS SERVER IMPLEMENTS, with ' +
+                         'the ones nothing has called at zero — a list of ' +
+                         'only what happened would answer "does this support ' +
+                         'PATCH" by omission. **These do not sum to `calls`**: ' +
+                         'one Bulk carrying five creates is one `bulk` AND ' +
+                         'five `create`s, because each of the five really is ' +
+                         'performed.',
+            items: openObject('One operation, with its outcome and cost.', {
+              operation: { type: 'string' },
+              label: { type: 'string' },
+              method: { type: 'string' },
+              what: { type: 'string' },
+              count: { type: 'integer' },
+              ok: { type: 'integer' },
+              failed: { type: 'integer' },
+              averageMs: { type: ['number', 'null'] },
+              maxMs: { type: ['number', 'null'] },
+              bytes: { type: 'integer' }
+            })
+          },
+          resourceTypes: {
+            type: 'array',
+            description: 'One row per SCIM resource type, zeroes included.',
+            items: openObject('One resource type, with its count.', {
+              resourceType: { type: 'string' },
+              count: { type: 'integer' }
+            })
+          },
+          byStatus: openObject('HTTP status code to count.', {}),
+          byStatusClass: openObject(
+            '`2xx`, `4xx`, `5xx` to count. Beside the exact codes because ' +
+            '"how much of this is failing" is the question somebody arrives ' +
+            'with, and summing eleven rows in their head is how they get it ' +
+            'wrong.', {}),
+          byScimType: openObject(
+            'RFC 7644 section 3.12 `scimType` to count. `(none)` is a ' +
+            'refusal that carried no such code — a 404 has none — counted ' +
+            'rather than dropped so that the failure tables agree.', {}),
+          clients: {
+            type: 'array',
+            description: 'One row per authenticated principal, busiest first ' +
+                         'and most recent as the tie-break. The name is ' +
+                         'whatever the credential carried: a username for the ' +
+                         'five user-bearing schemes, a `client_id` for a ' +
+                         'Bearer token minted for an application (`kind` is ' +
+                         'then `application`), an RFC 4514 subject DN for a ' +
+                         'client certificate.',
+            items: openObject('One client.', {
+              principal: { type: 'string' },
+              kind: { type: 'string', enum: ['identity', 'application'] },
+              calls: { type: 'integer' },
+              ok: { type: 'integer' },
+              failed: { type: 'integer' },
+              schemes: { type: 'array', items: { type: 'string' } },
+              resourceTypes: { type: 'array', items: { type: 'string' } },
+              firstAt: { type: 'integer' },
+              lastAt: { type: 'integer' },
+              lastOperation: { type: 'string' },
+              lastStatus: { type: 'string' }
+            })
+          },
+          recent: {
+            type: 'array',
+            description: 'The last few requests INDIVIDUALLY, newest first. ' +
+                         'Everything else here is an aggregate, and an ' +
+                         'aggregate cannot answer "what did the call that ' +
+                         'just failed look like". A ring of `recentCap`; ' +
+                         'anything older has been dropped and the durable ' +
+                         'record is the audit log. `principal` is empty where ' +
+                         'nothing authenticated, and `ms` is null where ' +
+                         'nothing was measured.',
+            items: openObject('One request, as it was answered.', {
+              at: { type: 'integer' },
+              operation: { type: 'string' },
+              resourceType: { type: 'string' },
+              status: { type: 'string' },
+              ok: { type: 'boolean' },
+              scimType: { type: 'string' },
+              scheme: { type: 'string' },
+              principal: { type: 'string' },
+              ms: { type: ['integer', 'null'] },
+              bytes: { type: 'integer' },
+              method: { type: 'string' },
+              path: { type: 'string' }
+            })
+          },
+          recentCap: { type: 'integer' },
+          realm: openObject(
+            'The trust realm these counters are for. They are PER REALM, like ' +
+            'the directory SCIM writes into: a client provisioning under ' +
+            '/realm/acme created entries in acme, and counting it in the ' +
+            'default realm would be one page reporting traffic that happened ' +
+            'in another.', {})
+        })
+    }),
+
   // ---------------------------------------------------------------------------
   // DELEGATION. Written out rather than left open for the reason AuditEvent is:
   // a caller filtering, alerting on or DRAWING this list needs a name for every
@@ -4203,12 +4606,20 @@ const DESCRIPTION = [
   'username typed at its sign-in screen simply becomes the identity in every ' +
   'token it issues — so a console or an API with a credential on it would be ' +
   'a surface a test would have to hold a secret for, in a service whose ' +
-  'premise is that it authenticates nobody. Two surfaces are the exception ' +
-  'and neither is this one: the SCIM endpoints, which create and delete ' +
-  'accounts, and the SPIRE Server API, whose callers present an X509-SVID ' +
-  'over mutual TLS. Both are turnstiles rather than locks — anybody can get ' +
-  'the credential — and both exist so that a client\'s refusal paths can be ' +
-  'exercised at all. What follows is worth stating plainly: anyone who can reach ' +
+  'premise is that it authenticates nobody. Several surfaces are the ' +
+  'exception and none of them is this one. THREE ARE TURNSTILES — anybody ' +
+  'can get the credential — and each exists so that a client\'s refusal ' +
+  'paths can be exercised at all: the SCIM endpoints, which create and ' +
+  'delete accounts; the SPIRE Server API, whose callers present an X509-SVID ' +
+  'over mutual TLS; and the admin console, which needs a sign-on session and ' +
+  'one of two directory-group roles. THE XACML SURFACE IS NOT A TURNSTILE ' +
+  'and is worth knowing about before driving it: all eight /xacml endpoints ' +
+  'require a client certificate this service VERIFIED against an anchor in ' +
+  'its own truststore, whose subject DN resolves to a directory entry ' +
+  'holding a role — XACML_USER for the four endpoints proper and REMOTE_PEPS ' +
+  'for the three a remote enforcement point uses plus POST /xacml/pip. ' +
+  'xacml.enforceAccess is the one way past it, and it is settable HERE. ' +
+  'What follows is worth stating plainly: anyone who can reach ' +
   'this port can revoke every token this service has issued and change ' +
   'what the next one contains. That is fine on a laptop or a compose ' +
   'network and is not fine on a public address, which was already true of ' +

@@ -1,0 +1,61 @@
+# tests/docker-compose-ldap.yml — THE DIRECTORY'S OWN SOCKET, PUBLISHED FOR THE
+# TEST STACK AND FOR NOTHING ELSE.
+#
+# ONE JOB NEEDS THIS AND IT IS `tests/vendored/sts_directory_bulk_load_ldap.js`,
+# which creates five thousand people, fifty groups and five thousand
+# memberships over RFC 4511 on the raw socket. Under `./docker-run-tests.sh` it
+# needs nothing: the runner is a container on the bridge with the service and
+# reaches `ldap://sts:389` with no port published anywhere. Under
+# `./local-run-tests.sh` the runner is a HOST PROCESS and the service is a
+# container, so the socket has to be reachable from the host — and
+# `docker-compose.yml` deliberately does not publish it.
+#
+# ---------------------------------------------------------------------------
+# WHY THAT FILE DOES NOT, AND WHY THIS IS AN OVERRIDE RATHER THAN AN EDIT TO IT.
+#
+# 389 and 636 are the assigned LDAP ports, and the host most likely to want a
+# mock directory is a host already running slapd. Publishing them in the file an
+# operator's `docker compose up` reads would fail that stack to start, with a
+# port binding error naming a service nobody was thinking about. That comment is
+# in `docker-compose.yml` beside the two lines it keeps commented out and the
+# decision is still right.
+#
+# A compose `ports:` entry cannot be made conditional — a list entry either is
+# there or is not — so the only two ways to give the test stack a published
+# socket are a second file layered over the first, or a change that every stack
+# inherits. This is the first. **The operator's stack is byte-for-byte
+# unaffected**, and that is the whole reason this file exists rather than two
+# uncommented lines over there.
+#
+# ---------------------------------------------------------------------------
+# THE HOST PORT IS PICKED AT RUN TIME AND IS NOT 389.
+#
+# `./local-run-tests.sh` chooses a free port above 11389 with the same
+# `freePort()` it uses for the service's own 8081 and the remote PEP's 9090, and
+# passes it in as `STS_LDAP_HOST_PORT`. Two runs on one machine therefore do not
+# collide with each other, and neither collides with a real directory on 389.
+# The CONTAINER side stays 389: the service runs as root in that image and binds
+# the assigned port directly, and `LDAP_PORT` is for a run outside a container.
+#
+# The default below is 11389 rather than 389 so that a hand-run
+# `docker compose -f docker-compose.yml -f tests/docker-compose-ldap.yml up`
+# does something useful without needing a variable AND still does not want a
+# privileged port.
+#
+# **636 IS NOT PUBLISHED HERE.** No job drives LDAPS, and a port published for
+# nothing is a port that can collide. Add it beside this one when something
+# needs it, rather than now on the argument that it is symmetrical.
+#
+# Compose format 2.4, matching the file it is layered over: a file with no
+# `version:` is the v1 format to docker-compose v1, and these two have to be
+# read the same way by whichever compose is on the machine.
+version: '2.4'
+
+services:
+  sts:
+    ports:
+      # APPENDED to `docker-compose.yml`'s own list rather than replacing it —
+      # compose merges the short `ports:` syntax by concatenation — so the
+      # service's 8081 mapping, which the launcher also chooses at run time, is
+      # untouched by this file.
+      - "${STS_LDAP_HOST_PORT:-11389}:389"

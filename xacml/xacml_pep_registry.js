@@ -18,11 +18,17 @@
 // It is a record that some other process is enforcing this service's policy,
 // what it last pulled, and how to reach it. **IT IS NOT A PERMISSION.** A PEP
 // that never registers can still pull `GET /xacml/pep/policies` and enforce
-// perfectly, because that endpoint authenticates nobody for the reason
-// `xacml.js` gives at length: a policy is a RULE, and a rule nobody can read
-// is a rule nobody can check. Registering buys two things and neither is
-// access — a row on the console saying this PEP exists and whether it is
-// current, and an address for the nudge.
+// perfectly — **as long as it holds `REMOTE_PEPS`**, which is a separate
+// thing and not this register. That endpoint asks for a verified certificate
+// resolving to a directory entry in the group `roles.remotePepGroup` names;
+// what it does NOT ask is whether the PEP has a row here. Registering buys two
+// things and neither is access — a row on the console saying this PEP exists
+// and whether it is current, and an address for the nudge.
+//
+// **THIS COMMENT SAID THAT ENDPOINT AUTHENTICATED NOBODY**, which was true
+// when it was written and stopped being true in the change that added the
+// gate. The claim worth keeping is the one about this register: membership
+// here is not a permission, and permission is not membership here.
 //
 // That is worth stating plainly because the shape looks like an authorization
 // register and is not one. If a future change makes registration a
@@ -82,6 +88,11 @@
 const crypto = require('crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// For elsewhere() below, which answers the one question a per-realm register
+// cannot answer about itself. A LEAF like `config` — it registers no route and
+// requiring it is what fills the realm slot every store here already depends
+// on, so it can neither move a route nor close a cycle.
+const realms = require('../common/realms');
 const store = require('./xacml_store');
 
 // ---------------------------------------------------------------------------
@@ -316,6 +327,69 @@ function one(value) {
 function number(value) {
   const n = parseInt(value, 10);
   return isNaN(n) ? 0 : n;
+}
+
+// ---------------------------------------------------------------------------
+// WHERE A REMOTE PEP IS, WHEN IT IS NOT HERE (2026-09-06).
+//
+// **`ou=peps` IS PER REALM, AND THIS PAGE SHOWS ONE REALM**, like every other
+// page in this console. So "no remote Policy Enforcement Point has registered"
+// was a sentence with two causes and it named neither: nothing anywhere, or
+// nothing IN THE REALM BEING READ while another realm holds one. That is
+// exactly the failure `/admin/realms`'s off-banner records having shipped —
+// **a predicate that is false for two reasons must not be rendered as a
+// message that names one of them** — and this is the same mistake in a
+// different file.
+//
+// It cost somebody real time, and the case is worth writing down because
+// nothing about it looks like a mistake from either end.
+// `tests/vendored/sts_xacml_remote_pep.js` drives the `xacml-pep/` container
+// against a THROWAWAY REALM (`XACML_PEP_REALM`, `pep-e2e` by default), so a
+// registration made by a passing suite has never been in the default realm and
+// never will be — while the default realm's page said, in effect, that nothing
+// had registered. **And that job REMOVES the realm at its teardown**, which
+// takes its `ou=peps` with it, so after a green run the honest answer really is
+// "none anywhere" — with a PEP container still running and still polling a
+// realm that is gone. Those are two different states and a reader has to be
+// able to tell them apart.
+//
+// THE WALK IS OVER `realms.list()` AND IS BOUNDED BY IT. A service with no
+// realms defined does nothing at all here, because that list is the default
+// realm alone and the default realm is the one being read. It is computed when
+// the page is drawn rather than kept, for `/admin/metrics`'s reason: what is
+// registered is a function of what has been written since.
+// ---------------------------------------------------------------------------
+function elsewhere() {
+  log.debug('Entering elsewhere().');
+  const here = realms.currentId();
+  const found = [];
+  realms.list().forEach(function (realm) {
+    if (!realm || realm.id === here) {
+      return;
+    }
+    // `realms.run()` because `all()` reaches the directory through the slot
+    // `ldap_server.js` fills, and that resolves the container from the AMBIENT
+    // realm. Reading another realm's register means being in it.
+    const rows = realms.run(realm, function () {
+      try {
+        return all();
+      } catch (e) {
+        // A realm whose directory subtree is mid-build answers nothing rather
+        // than taking the page down: this is a hint about where to look, and a
+        // hint that throws is worse than no hint.
+        log.warn('xacml: could not read the "' + realm.id + '" realm\'s ' +
+                 'remote PEP register: ' + e.message);
+        return [];
+      }
+    });
+    if (rows && rows.length) {
+      found.push({ id: realm.id, name: realm.name || realm.id,
+                   count: rows.length });
+    }
+  });
+  log.debug('Leaving elsewhere(). ' + found.length +
+            ' other realm(s) hold one.');
+  return found;
 }
 
 function all() {
@@ -643,6 +717,9 @@ module.exports = {
   staleAfterS: staleAfterS,
   nameFrom: nameFrom,
   all: all,
+  // Which OTHER realms hold a registration. See its header: an empty list in
+  // one realm is two different facts and this is what tells them apart.
+  elsewhere: elsewhere,
   read: read,
   register: register,
   heartbeat: heartbeat,

@@ -75,6 +75,7 @@ const alfa = require('./xacml_alfa');
 const pip = require('./xacml_pip');
 const peps = require('./xacml_pep_registry');
 const pepHttp = require('./xacml_pep_http');
+const monitor = require('./xacml_monitor');
 
 const esc = admin.esc;
 
@@ -501,6 +502,14 @@ app.get('/admin/xacml/policies', function (req, res) {
           '<p>A template is the first twenty clicks of the editor already ' +
           'made: a working, valid, evaluable policy in a shape people ' +
           'actually write. The editor takes it from there.</p>' +
+          '<p><strong><code>blank</code> is the exception and it is here on ' +
+          'purpose.</strong> It makes no argument and there is nothing in it ' +
+          'to read — an empty Policy, or an empty PolicySet, which is the ' +
+          'only way to create one of those here without importing ALFA. It ' +
+          '<em>denies every request</em> until you put a rule in it, because ' +
+          'deny-unless-permit over nothing at all is a Deny. That is the ' +
+          'direction a half-built policy should fail in, and it is why ' +
+          'building it before making it the root is the right order.</p>' +
           '<p>RBAC asks <em>what role do you hold</em>; ABAC asks <em>what ' +
           'is true about you, this resource and right now</em>. The first is ' +
           'what most deployments have and the second is what they wanted — ' +
@@ -561,6 +570,13 @@ function pepsJson() {
       timeoutMs: pepHttp.timeoutMs()
     },
     peps: rows,
+    // EVERY OTHER REALM THAT HOLDS ONE, and it is in the JSON rather than only
+    // in the markup so that `GET /admin-api/xacml/peps` answers the same
+    // question the page does (rule 7). A caller reading an empty `peps` array
+    // has exactly the ambiguity the page had: this says which of the two
+    // empties it is looking at. Empty on the ordinary service, where the
+    // default realm is the only realm.
+    elsewhere: peps.elsewhere(),
     current: rows.filter(function (row) {
       return row.current;
     }).length,
@@ -570,6 +586,48 @@ function pepsJson() {
   };
   log.debug('Leaving pepsJson(). ' + rows.length + ' registered PEP(s).');
   return json;
+}
+
+// ---------------------------------------------------------------------------
+// THE SENTENCE AN EMPTY REGISTER GETS, AND IT SAYS WHICH OF THE TWO EMPTIES IT
+// IS (2026-09-06).
+//
+// `ou=peps` is per realm and every page here draws ONE realm, so "no remote
+// Policy Enforcement Point has registered" was a sentence with two causes and
+// named neither: nothing anywhere, or nothing IN THE REALM BEING READ while
+// another realm holds one. That is `/admin/realms`'s own lesson — **a predicate
+// that is false for two reasons must not be rendered as a message that names
+// one of them** — made again in a different file.
+//
+// **THE WALK IS `peps.elsewhere()` AND LIVES IN THE REGISTRY**, not here: which
+// realms hold a registration is a fact about the REGISTER, and this module
+// renders and decides nothing, like every other page module in this console.
+// It is carried in the JSON as well, so `GET /admin-api/xacml/peps` answers the
+// same question the page does (rule 7) — a caller reading an empty `peps` array
+// has exactly the ambiguity the page had.
+//
+// `where` is that function's answer.
+function noPepsHere(where) {
+  log.debug('Entering noPepsHere().');
+  const shared = 'That does not mean none is running: registering is not what ' +
+    'lets a PEP enforce, and one that only ever pulls ' +
+    '<code>/xacml/pep/policies</code> works perfectly and never appears here.';
+  if (!where.length) {
+    log.debug('Leaving noPepsHere(). None anywhere.');
+    return 'No remote Policy Enforcement Point has registered, <strong>in ' +
+      'this realm or in any other</strong>. ' + shared;
+  }
+  const list = where.map(function (one) {
+    return '<a href="/realm/' + esc(one.id) + '/admin/xacml/peps"><code>' +
+      esc(one.id) + '</code></a> (' + one.count + ')';
+  }).join(', ');
+  log.debug('Leaving noPepsHere(). ' + where.length + ' elsewhere.');
+  return 'No remote Policy Enforcement Point has registered <strong>in this ' +
+    'realm</strong> &mdash; but ' + where.length + ' other realm' +
+    (where.length === 1 ? '' : 's') + ' hold' + (where.length === 1 ? 's' : '') +
+    ' one: ' + list + '. <strong>The register is per realm</strong>, like the ' +
+    'policy repository it serves, so a PEP that registered against ' +
+    '<code>/realm/&lt;id&gt;</code> is listed there and nowhere else. ' + shared;
 }
 
 app.get('/admin/xacml/peps', function (req, res) {
@@ -640,10 +698,7 @@ app.get('/admin/xacml/peps', function (req, res) {
         : '') +
       '</td><td>' + notify + '</td><td>' + actions + '</td></tr>';
   }).join('') ||
-    '<tr><td colspan="7">No remote Policy Enforcement Point has registered. ' +
-    'That does not mean none is running: registering is not what lets a PEP ' +
-    'enforce, and one that only ever pulls <code>/xacml/pep/policies</code> ' +
-    'works perfectly and never appears here.</td></tr>';
+    '<tr><td colspan="7">' + noPepsHere(json.elsewhere) + '</td></tr>';
 
   const body = admin.note(
     '<p>A <strong>remote</strong> Policy Enforcement Point runs in another ' +
@@ -702,6 +757,390 @@ app.get('/admin/xacml/peps', function (req, res) {
   admin.respond(req, res, json, 'Remote PEPs', '/admin/xacml/peps',
                 body, '/admin/xacml');
   log.debug('Leaving the admin XACML remote PEPs page.');
+});
+
+
+// ===========================================================================
+// /admin/xacml/monitor — WHAT AUTHORIZATION IS ACTUALLY DOING.
+//
+// Every other page in this family is about CONFIGURATION: what policies exist,
+// what one of them says, what the PDP would decide about a subject you type
+// in. This is the only one about TRAFFIC — how many decisions are being made,
+// by which enforcement point, and how many of them are refusals — which is the
+// question somebody has when authorization is misbehaving and the question
+// nothing here could answer.
+//
+// SO IT IS FILED UNDER **Monitoring** AND NOT UNDER Protocols > XACML, since
+// 2026-09-06. That is the sentence above read as a placement rather than as a
+// remark: this section's heading is "what this service has done", which is
+// exactly what this page reports, and the five configuration pages of this
+// family are somewhere else because they answer a different question. **The
+// path did not move and must not** — it is `/admin/xacml/monitor` still, drawn
+// by this module, because a console page is a `path` and a `label` in
+// `admin-ui/admin.js`'s `SECTIONS` whoever builds the body; the eight
+// `/admin/ldap/*` pages sit in the Directory section on the same terms. Two
+// things follow for anybody editing this route. Its `active` is its OWN path,
+// so the sidebar bolds Monitoring and the crumb takes the label from `NAV`
+// (`XACML decisions`) rather than from here; and it passes NO `up`, because it
+// is a page of a section rather than a drill-down of `/admin/xacml` — the five
+// pages that ARE in that group still pass one.
+//
+// TWO SECTIONS, and the split is the reader's rather than the code's:
+//
+//   1. **GLOBAL.** Policies, enforcement points, decisions, allows, declines.
+//      What you look at first and what tells you whether to look further.
+//   2. **PER ENFORCEMENT POINT.** Every PEP — the three EMBEDDED ones in this
+//      process and every REMOTE one that has registered — with its own
+//      figures, its bias, and what it guards.
+//
+// ---------------------------------------------------------------------------
+// THE NUMBERS COME FROM TWO KINDS OF EVIDENCE AND THE PAGE NEVER PRETENDS
+// OTHERWISE.
+//
+// The embedded rows are things this process DID and counted as it did them.
+// The remote rows are things another process says it did, on a heartbeat, in
+// its own memory. Those are not the same claim, and a page that added them
+// into one number and stopped there would be asserting this service watched
+// something it did not watch.
+//
+// So the totals are given three ways — here, remote, and the sum, labelled as
+// arithmetic — and every remote row says on its face that the figures are
+// reported. `xacml_monitor.js`'s header argues the whole distinction; this
+// page renders it.
+//
+// ---------------------------------------------------------------------------
+// WHY "DECISIONS" AND "ALLOWS" ARE TWO COLUMNS AND NOT ONE SUM.
+//
+// XACML has four decisions and a PEP has two outcomes, and the mapping between
+// them is the PEP's BIAS — so a deny-biased PEP refuses a NotApplicable and a
+// permit-biased one allows it, from one identical decision. On top of that, an
+// obligation the PEP cannot discharge turns a Permit into a refusal (section
+// 7.2), which is the one enforcement outcome that looks like a bug from the
+// client side and is the specification working.
+//
+// That means `allowed` is not `permit`, and a monitoring page that showed
+// either one alone would be wrong for whichever question the reader had. Both
+// are drawn, next to each other, with the four decisions broken out on every
+// row that has them.
+//
+// ---------------------------------------------------------------------------
+// THERE IS NO RESET BUTTON, AND ITS ABSENCE IS A DECISION.
+//
+// A console that could zero its own monitoring would make every number on this
+// page a number somebody might have reset — and the durable record of a
+// refusal is the AUDIT LOG, which cannot be reset either. The counters are
+// since this process started, the page says so with the timestamp, and a
+// restart is the only thing that clears them.
+// ===========================================================================
+function monitorJson() {
+  log.debug('Entering monitorJson().');
+  const rows = store.all();
+  const root = store.root();
+  const json = monitor.snapshot({
+    total: rows.length,
+    enabled: rows.filter(function (one) { return one.enabled; }).length,
+    root: root ? root.name : null
+  });
+  // WHERE THE REMOTE ROWS ARE, WHEN THERE ARE NONE HERE. Added beside the
+  // counters rather than inside `monitor.snapshot()` on purpose: that module is
+  // a LEAF that may never require the console or the registry — its header
+  // argues the route-order reason — and this is a question about the REGISTER
+  // rather than about the counts. `/admin-api/xacml/monitor` carries it for the
+  // reason the peps resource does: an empty remote list has two causes.
+  json.elsewhere = peps.elsewhere();
+  log.debug('Leaving monitorJson(). ' + json.elsewhere.length +
+            ' other realm(s) hold a remote PEP.');
+  return json;
+}
+
+// A count that is a proportion of another, as "n (p%)". Zero of zero is drawn
+// as a dash rather than as "0 (0%)" or NaN: nothing has happened yet, and a
+// percentage of nothing is not a fact about this service.
+function share(n, of) {
+  if (!of) {
+    return n ? String(n) : '&mdash;';
+  }
+  return String(n) + ' <span class="sub">(' +
+         Math.round((n / of) * 100) + '%)</span>';
+}
+
+// The four decisions on one row, or a dash where the row does not have them —
+// which is every REMOTE row, because a remote PEP reports what it ENFORCED and
+// the breakdown by PDP decision is known only to the process that evaluated.
+function decisionCells(row) {
+  if (row.permit === null || row.permit === undefined) {
+    return '<td colspan="4" class="sub">not reported &mdash; a remote PEP ' +
+           'sends what it enforced, and only the process that EVALUATED knows ' +
+           'which of the four decisions each was</td>';
+  }
+  return '<td class="num state-valid">' + row.permit + '</td>' +
+    '<td class="num state-revoked">' + row.deny + '</td>' +
+    '<td class="num">' + row.notApplicable + '</td>' +
+    '<td class="num state-expired">' + row.indeterminate + '</td>';
+}
+
+// The allowed/refused pair, or the EMPTY cell that says this asker never
+// enforced anything. `/xacml/pdp` is the one row that gets it, and the
+// distinction is the point: a zero would read as "it refused nothing".
+function enforcementCells(row) {
+  if (!row.enforces || row.allowed === null || row.allowed === undefined) {
+    return '<td colspan="2" class="sub">nothing was enforced here &mdash; ' +
+           'this service produced the decision and somebody else\'s PEP acted ' +
+           'on it, in their process</td>';
+  }
+  return '<td class="num state-valid">' + share(row.allowed, row.decisions) +
+    '</td><td class="num state-revoked">' + share(row.refused, row.decisions) +
+    '</td>';
+}
+
+function monitorRow(row) {
+  const state = [];
+  if (row.kind === 'remote') {
+    state.push(row.remote.current
+      ? '<span title="This PEP reported holding the repository digest this ' +
+        'service has now.">current</span>'
+      : '<strong title="The sync token this PEP last reported is not the one ' +
+        'the repository has now. It converges on its next poll.">not ' +
+        'current</strong>');
+    state.push(row.remote.stale ? '<strong>stale</strong>' : 'live');
+    if (!row.remote.authenticated) {
+      state.push('<strong>unauthenticated</strong>');
+    }
+  } else {
+    // AN EMBEDDED PEP IS ALWAYS LIVE AND THAT IS NOT A REASSURANCE, it is a
+    // tautology worth stating: it is compiled into this process, so it is
+    // running exactly when this page is being drawn. There is nothing to be
+    // stale about and no registration to have failed.
+    state.push('<span title="Compiled into this process. It is running ' +
+               'because this page is.">in this process</span>');
+  }
+  const counts = row.decisions
+    ? esc(row.lastDecision || '') +
+      (row.lastAllowed === null || row.lastAllowed === undefined
+        ? ''
+        : ', ' + (row.lastAllowed ? 'allowed' : 'refused')) +
+      '<div class="sub">' + esc(row.lastAt || '') + '</div>'
+    : '<span class="sub">nothing yet</span>';
+  return '<tr><td><strong>' + esc(row.label) + '</strong>' +
+    '<div class="sub">' + esc(row.kind) + ' &middot; <code>' +
+    esc(row.where) + '</code></div>' +
+    '<div class="sub">' + esc(row.guards) + '</div></td>' +
+    '<td>' + state.join('<br>') +
+    (row.kind === 'remote' && row.remote.policyCount !== null
+      ? '<div class="sub">holds ' + row.remote.policyCount + ' policy/policies</div>'
+      : '') +
+    '</td>' +
+    '<td>' + (row.bias ? esc(row.bias) : '<span class="sub">n/a</span>') +
+    (row.kind === 'remote'
+      ? '<div class="sub">reported by it</div>'
+      : (row.id === 'protected'
+          ? '<div class="sub"><code>xacml.pepBias</code></div>'
+          : '')) +
+    '</td>' +
+    '<td class="num">' + row.decisions + '</td>' +
+    enforcementCells(row) +
+    decisionCells(row) +
+    '<td>' + counts + '</td></tr>';
+}
+
+app.get('/admin/xacml/monitor', function (req, res) {
+  log.debug('Entering the admin XACML monitor page.');
+  const json = monitorJson();
+  const here = json.decisions.here;
+  const there = json.decisions.remote;
+  const combined = json.decisions.combined;
+
+  // ---------------------------------------------------------------------
+  // SECTION ONE: THE GLOBAL FIGURES.
+  //
+  // The tiles carry the COMBINED decisions, allows and declines, because that
+  // is the deployment-wide number somebody came for — and the table under
+  // them splits it into the two kinds of evidence, because that is the number
+  // that is actually true about this process. Putting the split first and the
+  // total second was the other option and it is the wrong way round: a reader
+  // who wants the caveat will read on, and a reader who wants the figure
+  // should not have to add two numbers up in their head.
+  // ---------------------------------------------------------------------
+  const tiles = '<div class="tiles">' +
+    admin.tile(json.policies.total, 'policies') +
+    admin.tile(json.policies.enabled, 'enabled') +
+    admin.tile(json.peps.total, 'enforcement points') +
+    admin.tile(combined.decisions, 'decisions') +
+    admin.tile(combined.allowed, 'allows') +
+    admin.tile(combined.refused, 'declines') +
+    '</div>';
+
+  // THE FOUR COLUMNS ADD UP, AND THE FOURTH IS WHY. `allowed + refused` is
+  // LESS than `decisions` on any service that has answered `POST /xacml/pdp`,
+  // because those decisions were enforced by somebody else's PEP in somebody
+  // else's process. Leaving the gap unexplained was the first draft and it
+  // made the row look like an arithmetic error, which is the kind of thing
+  // that makes a reader distrust every other number beside it.
+  const evidenceRow = function (label, figures, what) {
+    return '<tr><td><strong>' + label + '</strong></td>' +
+      '<td class="num">' + figures.decisions + '</td>' +
+      '<td class="num state-valid">' + figures.allowed + '</td>' +
+      '<td class="num state-revoked">' + figures.refused + '</td>' +
+      '<td class="num">' + figures.unenforced + '</td>' +
+      '<td class="num">' + figures.undischargeable + '</td>' +
+      '<td class="sub">' + what + '</td></tr>';
+  };
+  const evidence =
+    '<h2>Where those figures come from</h2>' +
+    '<table><tr><th>Counted</th><th class="num">Decisions</th>' +
+    '<th class="num">Allowed</th><th class="num">Refused</th>' +
+    '<th class="num">Not enforced here</th>' +
+    '<th class="num">Refused on an obligation</th><th>What it is</th></tr>' +
+    evidenceRow('Here', here,
+      'Decisions THIS process made, counted as it happened. Since ' +
+      esc(json.since) + '.') +
+    evidenceRow('Remote', there,
+      'What registered Policy Enforcement Points in OTHER processes REPORT ' +
+      'having done, on their heartbeats, cumulative in their own memory. ' +
+      'This service saw none of it &mdash; that is what a remote PEP is ' +
+      '&mdash; and a PEP that restarts makes this half go down.') +
+    evidenceRow('Combined', combined,
+      'The two rows added up. It is the figure a deployment wants and it is ' +
+      '<em>arithmetic over two different kinds of evidence</em> rather than ' +
+      'a measurement, which is why it is a row here and not the only number ' +
+      'on the page.') +
+    '</table>' +
+    admin.note(
+      '<p><strong>Allowed + refused + not-enforced = decisions</strong>, on ' +
+      'every row. The third column is the one that is easy to be surprised ' +
+      'by and it is not a failure: it counts the decisions ' +
+      '<code>POST /xacml/pdp</code> produced for somebody ELSE&rsquo;s ' +
+      'enforcement point. This service evaluated them and never saw what was ' +
+      'done with the answers, so counting them as allowed or refused would ' +
+      'be reporting an enforcement it was not present for.</p>',
+      'Why the three do not add to the total on their own');
+
+  const what = admin.note(
+    '<p>This is the only page in this family about <strong>traffic</strong>. ' +
+    'The others are about configuration &mdash; what policies exist, what one ' +
+    'of them says, what the PDP would decide about a subject you type in. ' +
+    'This one answers the question you have when authorization is ' +
+    'misbehaving: how many decisions are being made, by which enforcement ' +
+    'point, and how many of them are refusals.</p>' +
+    '<p><strong>&ldquo;Decisions&rdquo; and &ldquo;allows&rdquo; are not two ' +
+    'views of one tally.</strong> XACML has FOUR decisions &mdash; Permit, ' +
+    'Deny, NotApplicable, Indeterminate &mdash; and a PEP has TWO outcomes. ' +
+    'What maps between them is the PEP&rsquo;s <em>bias</em>: a deny-biased ' +
+    'PEP refuses a NotApplicable and a permit-biased one allows it, from the ' +
+    'same decision on the same request. And an obligation a PEP cannot ' +
+    'discharge turns a Permit into a refusal (section 7.2) &mdash; the one ' +
+    'enforcement outcome that looks like a bug from the client side and is ' +
+    'the specification working. So <code>allowed</code> is not ' +
+    '<code>permit</code>, and both are drawn.</p>' +
+    '<p><strong>The counters are in memory and start when this process ' +
+    'does.</strong> They are observations, and this service persists nothing ' +
+    'it observes; the durable record of a refusal is the ' +
+    '<a href="/admin/audit">audit log</a>, which holds the reason as well as ' +
+    'the count. They are also <strong>per trust realm</strong>, like ' +
+    '<code>ou=policies</code> itself &mdash; this page is showing <strong>' +
+    esc(json.realm.name || json.realm.id) + '</strong>, and a decision made ' +
+    'under another realm was made against another realm&rsquo;s policies.</p>' +
+    '<p><strong>There is no reset button</strong>, deliberately: a console ' +
+    'that could zero its own monitoring would make every number here a number ' +
+    'somebody might have zeroed. A restart is what clears them.</p>',
+    'What this page is');
+
+  const off = json.enabled ? '' : admin.warn(
+    '<strong>The XACML family is switched off</strong> ' +
+    '(<code>xacml.enabled</code>), so nothing is being evaluated and every ' +
+    'figure below has stopped moving. The embedded PEPs answer ALLOWED without ' +
+    'asking the PDP &mdash; which is what keeps a service with the family off ' +
+    'a smaller service rather than a broken one &mdash; and those allows are ' +
+    'counted, because they are what happened.',
+    'Nothing is being decided');
+
+  // ---------------------------------------------------------------------
+  // SECTION TWO: EVERY ENFORCEMENT POINT.
+  //
+  // ONE TABLE FOR BOTH KINDS rather than two, and that is the decision worth
+  // recording. Embedded and remote PEPs differ in where they run and in how
+  // this service learns their figures, and they do NOT differ in what a
+  // reader wants from the row — who it is, what it guards, its bias, and how
+  // many it allowed and refused. Two tables would have meant two renderers
+  // that could drift into disagreeing about how a decision is displayed, and
+  // a reader comparing an embedded PEP against a remote one would have had to
+  // do it across a page break.
+  //
+  // The `pdp` row is in it as well and is NOT a PEP: it is the endpoint
+  // somebody else's PEP asked. It earns its place here because a reader
+  // counting decisions has to be able to see all of them, and it is marked as
+  // an endpoint on the row with an empty enforcement cell rather than a zero.
+  // ---------------------------------------------------------------------
+  const allRows = json.rows.concat(json.remoteRows);
+  const table = '<h2>Every enforcement point</h2>' +
+    '<table><tr><th>Point</th><th>State</th><th>Bias</th>' +
+    '<th class="num">Decisions</th><th class="num">Allowed</th>' +
+    '<th class="num">Refused</th><th class="num">Permit</th>' +
+    '<th class="num">Deny</th><th class="num">NotApplicable</th>' +
+    '<th class="num">Indeterminate</th><th>Last</th></tr>' +
+    allRows.map(monitorRow).join('') + '</table>' +
+    admin.note(
+      '<p><strong>An embedded PEP is not &ldquo;registered&rdquo; and cannot ' +
+      'be.</strong> It is compiled into this process, so its existence is a ' +
+      'fact about the build rather than something it told this service; there ' +
+      'are exactly three and they are the catalogue in ' +
+      '<code>xacml_monitor.js</code>. A <em>remote</em> PEP registers because ' +
+      'it has no other way to be known about &mdash; and even that is not a ' +
+      'permission: an unregistered PEP can pull ' +
+      '<code>/xacml/pep/policies</code> and enforce perfectly, and never ' +
+      'appears here. So <strong>this list is every enforcement point this ' +
+      'service KNOWS ABOUT</strong>, which is a smaller claim than every one ' +
+      'that exists, and the difference cannot be closed from this end.</p>' +
+      '<p><strong>Only the demonstration PEP&rsquo;s bias is settable.</strong> ' +
+      '<code>xacml.pepBias</code> governs that one. The issuance and access ' +
+      'PEPs are deny-biased by construction &mdash; an issuance or an access ' +
+      'that was not permitted does not happen &mdash; and a remote ' +
+      'PEP&rsquo;s bias is <em>reported by it</em>, because a control here ' +
+      'that appeared to set another process&rsquo;s bias would silently do ' +
+      'nothing.</p>' +
+      '<p>The remote rows are a summary. ' +
+      '<a href="/admin/xacml/peps">Remote PEPs</a> has the sync tokens, the ' +
+      'notify URLs, what happened to the last nudge, and the controls.</p>' +
+      // WHERE THE REMOTE ROWS WOULD BE IF THEY ARE NOT HERE (2026-09-06). The
+      // register is per realm and this page draws one realm, so a table with
+      // no remote row in it has two causes; `noPepsHere()` on the Remote PEPs
+      // page argues the whole of it, and this is the same sentence on the page
+      // a reader is more likely to be standing on when the question occurs to
+      // them. It is drawn ONLY when there are no remote rows here — a page
+      // that already lists one does not need telling where to look.
+      (json.remoteRows.length
+        ? ''
+        : '<p>' + noPepsHere(json.elsewhere) + '</p>'),
+      'What this list is, and what it is not') +
+    admin.note(
+      '<p>A refusal here is a policy decision and the reason is in the ' +
+      '<a href="/admin/audit">audit log</a>, not in this table: ' +
+      '<code>xacml.issuance.refused</code> for the issuance PEP, ' +
+      '<code>xacml.access.refused</code> for the access PEP and ' +
+      '<code>xacml.enforcement</code> for the demonstration one. This page ' +
+      'says how many; that log says who, what and why.</p>' +
+      '<p>To make a decision happen on purpose and watch it land here, use ' +
+      '<a href="/admin/xacml/decide">Try a decision</a> &mdash; but note that ' +
+      'the enforcement preview on that page is deliberately <em>not</em> ' +
+      'counted. It is a what-if rather than a request anybody guarded, and ' +
+      'counting it would make this page&rsquo;s numbers grow every time ' +
+      'somebody looked at it. <code>GET /xacml/protected</code> is the ' +
+      'endpoint that really enforces.</p>' +
+      '<p><strong>Drawing THIS page adds one to the access PEP\'s count, ' +
+      'and that is right rather than a measurement artefact.</strong> ' +
+      '<code>/admin</code> is one of the five gated surfaces, so reading it ' +
+      'is a real request that the access policy really decided &mdash; the ' +
+      'number would be wrong if it did not move. It is the opposite case ' +
+      'from the preview above, and the two are worth telling apart: one is ' +
+      'an access that happened, the other is a question somebody typed.</p>',
+      'Where a refusal is explained');
+
+  // The title is the nav label rather than the bare word `Monitor`: this page
+  // is drawn among Metrics, Sessions and Tokens now, where `Monitor` alone
+  // would name the section it is in instead of the thing it is about.
+  admin.respond(req, res, json, 'XACML decisions', '/admin/xacml/monitor',
+                tiles + off + what + evidence + table);
+  log.debug('Leaving the admin XACML monitor page.');
 });
 
 // ---------------------------------------------------------------------------
@@ -1353,9 +1792,17 @@ app.get('/admin/xacml/editor', function (req, res) {
     // wrong conclusion is easiest to draw.
     admin.respond(req, res, json, 'Policy editor', '/admin/xacml/editor',
                   admin.warn('The repository is empty, so there is nothing ' +
-                             'to edit. Create a policy from a template on ' +
+                             'to edit. <strong>Creating a policy happens on ' +
                              'the <a href="/admin/xacml/policies">Policies' +
-                             '</a> page.', 'Nothing to edit') +
+                             '</a> page</strong>, in one of three ways: from ' +
+                             'a template, by importing ALFA, or from the ' +
+                             '<code>blank</code> template — an empty ' +
+                             'document with nothing in it, which is the ' +
+                             'starting point for writing one here rather ' +
+                             'than editing one somebody else shaped. Come ' +
+                             'back to this page with it and every element ' +
+                             'goes in from the menus below.',
+                             'Nothing to edit') +
                   serviceOwnEditorNote(json.serviceOwn),
                   '/admin/xacml');
     log.debug('Leaving the admin XACML editor page. Nothing to edit.');
@@ -1376,6 +1823,37 @@ app.get('/admin/xacml/editor', function (req, res) {
     }), json.policy.name) +
     ' <button type="submit">Open</button></form>' +
     serviceOwnEditorNote(json.serviceOwn);
+
+  // WHY THERE IS NO "NEW POLICY" BUTTON ON THIS PAGE, said on the page rather
+  // than left to be wondered at. This editor applies ONE structural edit to a
+  // STORED document — every control on it posts a policy name and a path into
+  // that document — so there is nowhere for a policy that has not been
+  // written yet to live. The chooser above offers what the repository holds
+  // and cannot offer what it does not.
+  //
+  // The note is here as well as on the empty-repository branch above because
+  // the two readers are different people: that one has no policies at all and
+  // this one has some, has opened one, and is looking for the button that
+  // makes another. Sending them to the same page for the same reason is the
+  // whole of what this says.
+  const whereToCreate = admin.note(
+    '<p>This editor changes a policy that <em>already exists</em>, and the ' +
+    'chooser above is every policy in the repository. <strong>Creating one ' +
+    'happens on the <a href="/admin/xacml/policies">Policies</a> page' +
+    '</strong> — there is no New button here, because every control on this ' +
+    'page names a stored document and a path inside it, and a policy nobody ' +
+    'has written yet has neither.</p>' +
+    '<p>Three doors on that page: <strong>a template</strong> (a working ' +
+    'policy in a shape people actually write, which is the first twenty ' +
+    'clicks of this editor already made), <strong>Import ALFA</strong> ' +
+    '(paste the readable syntax and it is stored as XACML XML), and the ' +
+    '<strong><code>blank</code></strong> template — a Policy with no rules ' +
+    'or a PolicySet with no policies, for writing one here from nothing. ' +
+    'A blank document <em>denies every request</em> until you put something ' +
+    'in it, because deny-unless-permit over no rules at all is a Deny; that ' +
+    'is the safe direction for a half-built policy to fail in, but it is ' +
+    'worth knowing before making one the root.</p>',
+    'Where a new policy comes from');
 
   const liveWarning = json.policy.enabled && json.policy.isRoot
     ? admin.warn(
@@ -1504,7 +1982,8 @@ app.get('/admin/xacml/editor', function (req, res) {
     'so a document carrying one loses it here.</p>',
     'How this editor works');
 
-  const body = chooser + liveWarning + problems + xpathGap + explain +
+  const body = chooser + whereToCreate + liveWarning + problems + xpathGap +
+    explain +
     '<table><tr><th>Element</th><th>Kind</th><th>Add / remove</th></tr>' +
     rows + '</table>' +
     '<details><summary>The same policy as ALFA</summary>' +
@@ -1822,18 +2301,31 @@ if (typeof admin.setXacmlPages === 'function') {
     decide: function (query) {
       return decideJson(query);
     },
+    // THE SEVENTH, and it takes nothing: the monitor has no filter, no name
+    // to look up and no page to be on. It is also the only one of the seven
+    // with no `action` beside it, because that page has no control — see its
+    // header for why a reset button was refused rather than forgotten.
+    monitor: function () {
+      return monitorJson();
+    },
     action: combinedAction,
     actionNames: actionNames
   });
 } else {
   log.warn('xacml: the admin console offers no setXacmlPages(), so ' +
-           '/admin-api cannot mirror the five /admin/xacml pages. The pages ' +
+           '/admin-api cannot mirror the six /admin/xacml pages. The pages ' +
            'themselves are unaffected.');
 }
 
 module.exports = {
   overviewJson: overviewJson,
   pepsJson: pepsJson,
+  // The monitor's view, for GET /admin-api/xacml/monitor. Rule 7: every page
+  // of this console has an operation. There is no action beside it because
+  // that page HAS no control — it reports and changes nothing, deliberately
+  // (see the header: a console that could zero its own monitoring would make
+  // every number on it a number somebody might have zeroed).
+  monitorJson: monitorJson,
   pepAction: pepAction,
   PEP_ACTIONS: PEP_ACTIONS,
   combinedAction: combinedAction,

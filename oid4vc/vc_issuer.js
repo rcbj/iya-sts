@@ -75,7 +75,7 @@ const { deferredIntervalS, deferredReadyMs, OFFER_TTL_MS, deferredAccessTokens,
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vciNonces = realms.map();
+const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces' });
 
 const VCI_NONCE_TTL_MS = 5 * 60 * 1000;
 
@@ -931,7 +931,7 @@ function grantedIdentifiers(accessToken) {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const notificationIds = realms.map();   // id -> { accessToken, expires, event }
+const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });  // id -> { accessToken, expires, event }
 
 function newNotificationId(accessToken) {
   log.debug("Entering newNotificationId().");
@@ -987,7 +987,25 @@ function vciRequestEncryptionRequired() {
 }
 
 const VCI_REQUEST_ENC_KEY = (function () {
-  const pair = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  // ONE KEY ACROSS EVERY PROCESS IN THIS SERVICE (2026-09-07).
+  //
+  // This is real key material made at MODULE LOAD, so before the request worker
+  // pool existed there was exactly one of it. There are now four — the front
+  // process and three workers — and a client that read the public JWK from one
+  // and encrypted its request to it had the request decrypted by whichever
+  // worker answered, which was usually a different one.
+  //
+  // It arrives the way the TLS server certificate does and for the same reason
+  // request_worker.js gives there: over the fork's IPC channel and into the
+  // environment before this module is loaded, because a private key placed in
+  // the environment AFTER start is not in /proc/<pid>/environ. Absent — a
+  // service with no pool, which is every ordinary run — one is generated here
+  // exactly as it always was.
+  const handedDown = process.env.STS_VCI_REQUEST_ENC_KEY_PEM || '';
+  const pair = handedDown
+    ? { privateKey: crypto.createPrivateKey(handedDown),
+        publicKey: crypto.createPublicKey(handedDown) }
+    : crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   const publicJwk = pair.publicKey.export({ format: 'jwk' });
   // RFC 7638 thumbprint. This was the THIRD hand-written copy in the service —
   // `dpop.js` and `spiffe_ca.js` had the others — and this one and SPIFFE's
@@ -1474,6 +1492,10 @@ app.post('/oid4vci/notification', function (req, res) {
   record.event = event;
   record.description = body.event_description || '';
   record.notifiedAt = new Date().toISOString();
+  // THROUGH THE STORE, so the notification is not a fact only this process
+  // knows: `notificationIds` is `realms.map({persist})` and its journal sees
+  // `set()` rather than a field stamped on the object it handed out.
+  notificationIds.set(id, record);
   logArtifact('OID4VCI Notification', 'as received', {
     notification_id: id, event: event, event_description: record.description
   });

@@ -74,6 +74,11 @@ const { log } = require('./helpers');
 // no route, so its position is not a position at all.
 const realms = require('./realms');
 const config = require('./config');
+// THE FAN-IN FOR OTHER PROCESSES' EVENTS. A LIBRARY (rule 3) that registers no
+// route and requires only `config` and `realms`, so it can be required from
+// here without closing a cycle or moving anything. With one process it answers
+// an empty array and this file behaves exactly as it always has.
+const replication = require('../persistence/persistence_replication');
 
 // ---------------------------------------------------------------------------
 // The cap, read WHERE IT IS USED rather than captured at require time.
@@ -233,6 +238,14 @@ const ACTIONS = [
     label: 'A password change was refused' },
   { action: 'portal.password.csrf', category: 'authentication',
     label: 'A portal form was refused for a bad CSRF token' },
+  // THE SIGN OUT BUTTON (2026-09-06), and its refusal beside it for the reason
+  // the paragraph above gives. It is ONE ROW for the act, in the portal's own
+  // vocabulary; the sessions it ends each write their own `session.end` through
+  // `dropSession()`, so this does not count them again — rule 3c.
+  { action: 'portal.signout', category: 'authentication',
+    label: 'Somebody signed out of the user portal' },
+  { action: 'portal.signout.csrf', category: 'authentication',
+    label: 'A portal sign-out was refused for a bad CSRF token' },
   { action: 'portal.key.enrolled', category: 'authentication',
     label: 'Somebody enrolled a security key on their own account' },
   { action: 'portal.key.removed', category: 'authentication',
@@ -427,6 +440,37 @@ const ACTIONS = [
     label: 'The PDP reached a decision' },
   { action: 'xacml.enforcement', category: 'authorization',
     label: 'The embedded PEP enforced a decision' },
+  // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
+  //
+  // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since
+  // that module was written and had no row here, so every one of them landed
+  // in the `protocol` category — findable by name and invisible to anybody
+  // filtering the audit log for AUTHORIZATION, which is the one filter
+  // somebody investigating a refusal would reach for. `xacml.access.refused`
+  // is new beside it: the access PEP logged its refusals at info level and
+  // audited nothing at all, which `/admin/xacml/monitor` made worth fixing
+  // rather than worth noting — that page counts these refusals and says the
+  // reason is in this log, and for one of the two PEPs that sentence was
+  // false.
+  { action: 'xacml.issuance.refused', category: 'authorization',
+    label: 'The issuance PEP refused to let this service mint something' },
+  { action: 'xacml.access.refused', category: 'authorization',
+    label: 'The access PEP refused a request to a gated surface' },
+  // AND TWO MORE OF THE SAME KIND. `xacml.pep.register` has been written by
+  // `xacml/xacml.js` since phase five and had no row here either, so every
+  // remote PEP registration landed in `protocol` — the exact failure the
+  // paragraph above describes, one endpoint along, and it survived the change
+  // that fixed the other two because nothing reads these strings.
+  //
+  // `xacml.pip.query` is new with the HTTP Policy Information Point. It is
+  // AUTHORIZATION rather than `directory`, and that is the interesting choice:
+  // what it records is a read of somebody's directory entry, but the reason
+  // for the read is an authorization decision happening in another process,
+  // and the person who wants to find it is investigating that decision.
+  { action: 'xacml.pep.register', category: 'authorization',
+    label: 'A remote Policy Enforcement Point registered' },
+  { action: 'xacml.pip.query', category: 'authorization',
+    label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 
   { action: 'ssf.stream.create', category: 'signals',
     label: 'A Shared Signals stream was created' },
@@ -513,7 +557,7 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain array it replaced. See common/realms.js.
-const events = realms.arr();
+const events = realms.arr({ persist: 'audit.events', merge: 'own' });
 
 // ---------------------------------------------------------------------
 // PER TRUST REALM, like the ring above it. A sequence number shared between
@@ -523,9 +567,14 @@ const events = realms.arr();
 // `realms.obj(factory)` is a plain object per realm, so `nums.seq++` works
 // exactly as the bindings it replaced did.
 // ---------------------------------------------------------------------
+// PERSISTED WITH THE RING, and it has to be the two together. `seq` is
+// promised to be monotonic and never reused, which is what makes the number on
+// a row a stable name — "I have read up to 4,102" has to keep meaning the same
+// event across a restart. A restored ring beside a `seq` that went back to 0
+// would renumber every event written afterwards on top of ones already read.
 const nums = realms.obj(function () {
   return { seq: 0, recorded: 0 };
-});
+}, { persist: 'audit.nums', merge: 'own' });
 
 
 let dropped = 0;
@@ -931,9 +980,65 @@ function recordDirectory(event) {
 // ---------------------------------------------------------------------------
 function list() {
   log.debug("Entering list(). " + events.length + " event(s) held.");
-  const out = events.slice(0).reverse();
+  const out = merged().reverse();
   log.debug("Leaving list(). " + out.length + " event(s) returned, newest first.");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THIS PROCESS'S EVENTS, AND EVERY OTHER PROCESS'S, IN ONE LIST.
+//
+// The ring is declared `merge: 'own'`, which means each process writes only
+// its OWN events to the store and never adopts another's into its memory. That
+// is not a limitation to work around, it is the only correct arrangement: an
+// audit log is a sequence of things that happened rather than a value, so a
+// process that merged another's events into its own ring would then flush the
+// combined list back as its own contribution — and every restart would
+// multiply the log.
+//
+// So the merge happens HERE, on the way out, and it is the only place a reader
+// ever sees more than this process's own events. Two consequences worth
+// knowing:
+//
+//   * **`seq` IS ONLY MONOTONIC WITHIN ONE PROCESS.** It always was — it is a
+//     per-realm counter — and with several processes it is per process as
+//     well. The rows carry `origin` so that "I have read up to 4,102" can
+//     still mean something, and the sort below is by TIME rather than by
+//     sequence, because time is the only ordering two processes share.
+//   * **THE CAP IS PER PROCESS**, so a two-process deployment holds up to
+//     twice `audit.maxEvents` between them. That is the honest behaviour
+//     rather than a bug: each process bounds its own memory, and trimming
+//     another process's contribution here would throw away rows that process
+//     still holds and would report.
+// ---------------------------------------------------------------------------
+function merged() {
+  const mine = events.slice(0);
+  const others = replication.remoteRows('audit.events', undefined, '');
+  if (!others.length) {
+    // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
+    // copy and a length check rather than a sort of everything.
+    return mine;
+  }
+  let all = mine;
+  others.forEach(function (rows) {
+    if (Array.isArray(rows)) {
+      all = all.concat(rows);
+    }
+  });
+  // BY TIME, and stably by origin and sequence within one millisecond so that
+  // two events a process recorded in one tick keep the order it recorded them
+  // in. Without the tie-break the sort is unstable across engines and a page
+  // refresh could reorder two rows for no reason a reader could see.
+  all.sort(function (a, b) {
+    if ((a.at || 0) !== (b.at || 0)) {
+      return (a.at || 0) - (b.at || 0);
+    }
+    if ((a.origin || '') !== (b.origin || '')) {
+      return String(a.origin || '') < String(b.origin || '') ? -1 : 1;
+    }
+    return (a.seq || 0) - (b.seq || 0);
+  });
+  return all;
 }
 
 // The counts the page's tiles and the API's summary need, taken in one pass
@@ -945,23 +1050,43 @@ function summary() {
   const byOutcome = {};
   CATEGORIES.forEach(function (entry) { byCategory[entry.category] = 0; });
   OUTCOMES.forEach(function (name) { byOutcome[name] = 0; });
-  events.forEach(function (row) {
+  // EVERY PROCESS'S EVENTS, like list() — a summary that counted only this
+  // process's while the page below it listed everybody's would be two numbers
+  // for one thing, which is the shape of disagreement this repository spends
+  // most of its design on avoiding.
+  const all = merged();
+  // THE OTHER PROCESSES' TALLIES TOO. `recorded` is "everything ever
+  // recorded", which is what says whether the cap has bitten, and it is a
+  // counter rather than a length — so it comes from the counter store's own
+  // fan-in rather than from the list.
+  let recorded = nums.recorded;
+  replication.remoteRows('audit.nums', undefined, '').forEach(function (theirs) {
+    recorded += Number((theirs || {}).recorded || 0);
+  });
+  all.forEach(function (row) {
     byCategory[row.category] = (byCategory[row.category] || 0) + 1;
     byAction[row.action] = (byAction[row.action] || 0) + 1;
     byOutcome[row.outcome] = (byOutcome[row.outcome] || 0) + 1;
   });
   const out = {
-    held: events.length,
+    held: all.length,
     // Everything ever recorded, which is the number that says whether the cap
     // has bitten. `held` alone would read as "this is all there was".
-    recorded: nums.recorded,
+    recorded: recorded,
+    // WHAT THIS PROCESS ITSELF HOLDS, beside the total. With one process the
+    // two are equal and the second is noise; with several, the difference is
+    // the whole of what coordination is doing, and an operator looking at a
+    // number that does not match `wc -l` on one container's log needs to be
+    // able to see why.
+    heldHere: events.length,
+    processes: 1 + replication.remoteRows('audit.events', undefined, '').length,
     dropped: dropped,
     maxEvents: maxEvents(),
     protocolCalls: protocolCallsRecorded(),
-    oldestAt: events.length ? events[0].at : 0,
-    newestAt: events.length ? events[events.length - 1].at : 0,
-    oldestSeq: events.length ? events[0].seq : 0,
-    newestSeq: events.length ? events[events.length - 1].seq : 0,
+    oldestAt: all.length ? all[0].at : 0,
+    newestAt: all.length ? all[all.length - 1].at : 0,
+    oldestSeq: all.length ? all[0].seq : 0,
+    newestSeq: all.length ? all[all.length - 1].seq : 0,
     byCategory: byCategory,
     byAction: byAction,
     byOutcome: byOutcome

@@ -45,6 +45,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
+const consoleSignIn = require("./console_signin.js");
 var appconfig = require(process.env.CONFIG_FILE);
 
 var bunyan = require("bunyan");
@@ -79,43 +80,17 @@ const CONSOLE_USER = "sts-metadata-test";
 // pass: no redirect means no session is needed and everything below works as it
 // did before the page moved.
 // ---------------------------------------------------------------------------
+// **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06.** The console
+// became a relying party of this service's own authorization server on that
+// date, so reaching it is five hops and two cookies rather than three fetches
+// and one — and `admin_api.js` needs the same walk. That file argues every hop.
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
-  const gated = await fetch(issuerBase + "/admin/sts-metadata",
-                            { redirect: "manual" });
-  if (gated.status !== 302) {
-    log.info("[console] admin.authRequired is off (GET /admin/sts-metadata " +
-             "answered " + gated.status + " with no redirect), so the reads " +
-             "below need no session.");
-    log.debug("Leaving signInToTheConsole(). The gate is off.");
-    return null;
-  }
-  const where = gated.headers.get("location") || "";
-  const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
-  assert.ok(authn,
-    "a console GET with no session should be sent to the sign-in screen " +
-    "carrying the id of the request waiting there, and it went to \"" +
-    where + "\". Without that id the screen has nothing to sign in FOR and " +
-    "refuses the POST.");
-  const signedIn = await fetch(issuerBase + "/authn/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "authn_id=" + encodeURIComponent(authn) +
-          "&username=" + encodeURIComponent(CONSOLE_USER) +
-          "&password=" + encodeURIComponent(CONSOLE_USER),
-    redirect: "manual",
-  });
-  const setCookie = signedIn.headers.get("set-cookie") || "";
-  const session = (setCookie.match(/(sts_mock_session=[^;]+)/) || [])[1];
-  assert.ok(session,
-    "signing in at /authn/login should set the session cookie; the reply was " +
-    signedIn.status + " and its Set-Cookie is \"" + setCookie + "\". This " +
-    "service checks no password, so a refusal here is about the request " +
-    "rather than the credential.");
-  log.info("[console] signed in as " + CONSOLE_USER + ". " +
-           "admin.authRequired is on.");
-  log.debug("Leaving signInToTheConsole(). Holding a session.");
-  return session;
+  const cookie = await consoleSignIn.signInToTheConsole(issuerBase,
+                                                        CONSOLE_USER, log);
+  log.debug("Leaving signInToTheConsole(). " +
+            (cookie ? "Holding a session." : "The gate is off."));
+  return cookie;
 }
 
 // One read of the page, carrying the session when there is one.
@@ -477,9 +452,41 @@ async function theMethodsShownActuallyAnswer(doc) {
       ":state": "no-such-state",
                           "*": "probe" };
   let checked = 0;
+  let skipped = 0;
   for (const e of doc.endpoints) {
     let path = e.path;
     if (path === "*") continue;              // the CORS preflight answers every path
+    // ---------------------------------------------------------------------
+    // AND THE ONE ENDPOINT THAT IS UNGATED AND DESTRUCTIVE (2026-09-06).
+    //
+    // The block above says no session is carried here so that a bodyless POST
+    // to a console form is refused 401 rather than being a real action against
+    // a mock every other job is reading. **That argument holds for everything
+    // BEHIND A GATE and for nothing in front of one**, and
+    // `POST /tls/trust/clear` is in front of one: it needs no credential, it
+    // succeeds, and it empties the client truststore.
+    //
+    // **THAT BROKE EVERY LATER JOB THAT NEEDS A CLIENT CERTIFICATE TO VERIFY,
+    // AND IT WAS INVISIBLE UNTIL 2026-09-06.** Before that date nothing did:
+    // a certificate was a turnstile, and `/xacml/pep/policies` needed none. It
+    // is load-bearing now — the remote PEP container's pull, its heartbeat and
+    // its PIP queries all resolve a VERIFIED chain to a directory entry — so a
+    // run where this job happened to come first left that container
+    // authenticating as nobody for the rest of the run, reporting
+    // UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor the launcher had
+    // posted correctly before anything started.
+    //
+    // **IT IS A LIST OF ONE AND SHOULD STAY THAT WAY.** The test for adding a
+    // second is not "this changes something" — every POST here changes
+    // something, which is why the walk asserts only that a handler ANSWERED.
+    // It is: *this endpoint needs no credential AND destroys state another job
+    // depends on.* Anything gated is already refused 401, which is a handler
+    // answering and is the whole of what this check asks.
+    // ---------------------------------------------------------------------
+    if (path === "/tls/trust/clear") {
+      skipped++;
+      continue;
+    }
     Object.keys(substitutions).forEach(function (token) {
       path = path.replace(token, substitutions[token]);
     });
@@ -520,7 +527,9 @@ async function theMethodsShownActuallyAnswer(doc) {
     }
   }
   log.info("[methods] OK — " + checked +
-           " method/path pairs reached a handler.");
+           " method/path pairs reached a handler" +
+           (skipped ? ", and " + skipped + " ungated destructive one(s) were " +
+                      "deliberately not called" : "") + ".");
   log.debug("Leaving theMethodsShownActuallyAnswer().");
 }
 

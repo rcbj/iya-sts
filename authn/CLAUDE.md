@@ -292,6 +292,71 @@ would be several events for one act.
 
 ## It checks no password
 
+## TWO KINDS OF BROWSER SESSION, ONE STORE (2026-09-06)
+
+`/admin` and `/portal` are OpenID Connect relying parties of this service's own
+authorization server now, so this module holds two kinds of browser row:
+
+| | Created by | Cookie | Read by |
+|---|---|---|---|
+| SIGN-ON | `startSession()`, at the screen or any other credential | `sts_mock_session` | `/oauth2/authorize`, `/wsfed`, both SAML profiles — every protocol family |
+| RELYING PARTY | `startRelyingPartySession()`, from a verified ID Token | `sts_mock_admin`, `sts_mock_portal` | the surface that minted it, and nothing else |
+
+**They are one store because rule 3m says so** — `logout.js` reads this map,
+`/admin/sessions` draws it, CAEP observes it, and a second register would be a
+second answer to "is somebody signed in" with the wrong half being whichever
+surface a reader happened to open. It is the same arrangement the KEYED API
+sessions already have: told apart by a FIELD (`rpSurface`) rather than by a
+store of their own.
+
+Four things about a relying-party session:
+
+* **IT IS NOT AN AUTHENTICATION AND NOTHING RECORDS ONE.** The person
+  authenticated at the authorization endpoint and `startSession()` counted it
+  there. A second `recordAuthentication()` would double every console sign-in
+  on `/admin/users` — the defect `federation_sp.js` shipped once and the reason
+  `startSession()` has a sixth argument.
+* **IT NAMES THE SIGN-ON SESSION IT CAME FROM AND DIES WITH IT.** The cascade
+  is in `dropSession()`, the one place a session ends, so every door that ends
+  one ends the sessions derived from it. `relyingPartySessionOf()` also checks
+  the parent on every read, because a cascade reaches only the store it walks
+  and "the person signed out" is exactly the case that matters.
+* **IT IS NOT EXTENDED BY USE** and expires when its parent would.
+* **ENDING ONE DOES NOT END THE PARENT.** That is the direction a real relying
+  party has: sign out of the application and the identity provider still knows
+  you, so the next visit is silent. `/logout` is what ends everything for an
+  identity — **and it is why each surface's own Sign out button ends BOTH**
+  (2026-09-06): `POST /admin/signout` and `POST /portal/signout` end the
+  relying-party session and then call `endSessionById()` on the parent, because
+  a button that ended only the first would be a sign-out whose next click signs
+  the person straight back in through the code flow with nothing typed. Those
+  two handlers are the only callers that end a parent on purpose;
+  `admin-ui/CLAUDE.md` and `portal/CLAUDE.md` argue them.
+
+## `clearSessionCookie()` TAKES A NAME AND APPENDS (2026-09-06)
+
+Two changes to four lines, and the first was a live bug found by writing the
+Sign out buttons rather than by reading anything:
+
+* **IT IGNORED THE COOKIE NAME IT WAS ALREADY BEING PASSED.**
+  `oidc_rp.js`'s `endSessionFor()` has called
+  `authn.clearSessionCookie(res, surface.cookie)` since the day it was written,
+  and this function took one argument — so a hosted surface signing somebody
+  out cleared the SIGN-ON cookie and left its own in place. The symptom was
+  mild and misleading, which is why it survived: `relyingPartySessionOf()`
+  refuses a cookie naming a session that is gone, so the surface looked signed
+  out while the browser went on presenting a dead id and the provider's cookie
+  disappeared instead of the application's.
+* **IT APPENDS RATHER THAN SETS.** A sign-out on a hosted surface clears TWO
+  cookies on one response — the surface's own and the sign-on session's — and
+  `res.set('Set-Cookie', …)` REPLACES the header, so the second clear threw the
+  first away. `setCookieHeader()` is deliberately left as a SET: a set is one
+  cookie per response, and making it append would put a rotated session id on
+  the wire beside the one it replaced with the browser free to keep either.
+
+`consoleSession()` still exists and still has one caller — the console REPORTS
+the sign-on session behind its own; it is no longer what lets anybody in.
+
 * **It checks no password.** The username typed at `/authn/login` becomes the
   identity in every token and every assertion — for every protocol, since
   2026-08-26, when WS-Federation gave up the screen of its own that used to post

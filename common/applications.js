@@ -4254,14 +4254,26 @@ function maxApplications() {
 // are drivable by the thing this service exists for rather than merely
 // visible.
 //
-// NOTHING SERVES /admin/callback, and it is said here because somebody will
-// look for it. The console's gate is a sign-on session and two directory
-// groups (`admin_rbac.js`), not an OAuth flow, so the redirect URI below is
-// what the console WOULD use if that gate ever moved onto OIDC. It is ON THE
-// ENTRY rather than in a comment because this container IS the registry: an
-// `ldapmodify`, a form on /admin/applications or a PUT to
+// **`/admin/callback` IS SERVED SINCE 2026-09-06, AND THIS PARAGRAPH USED TO
+// SAY NOTHING SERVED IT.** It read: *the console's gate is a sign-on session
+// and two directory groups, not an OAuth flow, so the redirect URI below is
+// what the console WOULD use if that gate ever moved onto OIDC.* That gate has
+// moved. `/admin` and `/portal` are RELYING PARTIES of this service's own
+// authorization server now: an unauthenticated request is sent to
+// `/oauth2/authorize` with the client_id below, comes back to the redirect URI
+// below with a code, and the code is redeemed with the secret below at
+// `/oauth2/token`. `common/oidc_rp.js` is the client and argues the whole of
+// it. **These rows stopped being descriptions and became load-bearing**, which
+// is what the paragraph above was already reaching for when it said a
+// registration is a CLIENT rather than a row on a page.
+//
+// It is ON THE ENTRY rather than in a comment because this container IS the
+// registry: an `ldapmodify`, a form on /admin/applications or a PUT to
 // /oauth2/register/{id} changes it, and the change is what the checks then
-// read. The same goes for the two scopes on the API's registration, which are
+// read. **That now has teeth: deleting one of these entries takes the surface
+// it names offline until a restart**, which is the behaviour the seeding rule
+// two paragraphs down ("an operator who deleted one of these meant it") always
+// promised and could not previously demonstrate. The same goes for the two scopes on the API's registration, which are
 // named after the console's two roles and GRANT NOTHING — nothing under
 // /admin-api is gated at all, and a scope that looked like a permission
 // without being one would be worse than no scope.
@@ -4315,8 +4327,14 @@ function internalApplications() {
       name: 'Admin console',
       kinds: ['oauth2-client', 'oidc-relying-party'],
       protocols: ['OAuth 2.0 / OIDC'],
+      // THE DEFAULT REALM AND NOWHERE ELSE. See the portal's row below, where
+      // the difference between the two is argued; the console's gate reads the
+      // default realm's session in every realm, so one entry is the whole of
+      // what it needs and one per realm would be a client nothing signs in to.
+      realmScope: 'default',
       description: 'seeded at startup: this service\'s own admin console at ' +
                    '/admin (applications.seedInternal)',
+      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email'] },
       registration: {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
@@ -4334,21 +4352,77 @@ function internalApplications() {
         scope: 'openid profile email',
         token_endpoint_auth_method: 'client_secret_basic'
       } },
+    // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
+    // is the admin console's row with one difference that is not cosmetic:
+    // `realmScope: 'every'`. The console is reachable in every realm and its
+    // GATE accepts the DEFAULT realm's session only — `admin_rbac.js` pins the
+    // roster there, and a per-realm console administrator would mean anybody
+    // who can create a realm can administer the service — so ONE client entry
+    // in the default realm is the whole of what it needs. The portal is the
+    // opposite: `/portal` reads the AMBIENT realm's session, a person in
+    // `acme` is a different person from the one in the default realm, and a
+    // realm whose portal had no client could not sign anybody in at all.
+    { identifier: 'sts-user-portal',
+      name: 'User portal',
+      kinds: ['oauth2-client', 'oidc-relying-party'],
+      protocols: ['OAuth 2.0 / OIDC'],
+      realmScope: 'every',
+      description: 'seeded at startup: this service\'s own user portal at ' +
+                   '/portal (applications.seedInternal)',
+      // GLOBAL CONSENT, SEEDED, AND IT IS THE ONE DECISION ON THIS ROW WORTH
+      // ARGUING. `oauth2.consentRequired` is ON by default and is the only
+      // policy here that is, so without this a person signing in to look at
+      // their own account would first be asked whether they consent to this
+      // service reading their own profile — a question with one sensible
+      // answer, asked in front of every sign-in, whose Deny button makes the
+      // portal unreachable. It is an ATTRIBUTE rather than an exemption in
+      // `consent.js`: the entry is the register, so an operator who wants the
+      // screen removes the values and gets it, which is what makes this a
+      // default rather than a special case.
+      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email'] },
+      registration: {
+        client_id: 'sts-user-portal',
+        client_name: 'User portal',
+        client_id_issued_at: issued,
+        client_secret: randomId(24),
+        client_secret_expires_at: 0,
+        registration_access_token: randomId(24),
+        registration_client_uri: base + '/oauth2/register/sts-user-portal',
+        client_uri: base + '/portal',
+        application_type: 'web',
+        redirect_uris: [base + '/portal/callback'],
+        post_logout_redirect_uris: [base + '/portal'],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: 'openid profile email',
+        token_endpoint_auth_method: 'client_secret_basic'
+      } },
     { identifier: 'sts-management-api',
       name: 'Management API',
       kinds: ['oauth2-client'],
       protocols: ['OAuth 2.0'],
+      // The default realm only, and for a third reason again: `/admin-api` is
+      // not gated at all, so this row is a DESCRIPTION of a caller rather than
+      // a client anything signs in as. One copy of a description is enough.
+      realmScope: 'default',
       description: 'seeded at startup: this service\'s own management API at ' +
                    '/admin-api (applications.seedInternal)',
       registration: {
         client_id: 'sts-management-api',
         client_name: 'Management API',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
+        // CONFIGURED WHERE THERE IS ONE, and minted otherwise. Since
+        // `/admin-api` began requiring an access token, a secret that is
+        // regenerated on every start is a bootstrap hole rather than a
+        // convenience: it is readable only THROUGH the API it unlocks, so a
+        // restart would leave nobody able to get a token. `adminApi.clientSecret`
+        // is how a deployment — and every test launcher — pins it.
+        client_secret: String(config.value('adminApi.clientSecret') || '') ||
+                       randomId(24),
         client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: base + '/oauth2/register/sts-management-api',
-        client_uri: base + '/admin-api/docs',
+        client_uri: base + '/admin/api-explorer',
         application_type: 'web',
         // NO redirect URI and no response type: this one is a back-channel
         // client on client_credentials, and a redirect URI on it would be a
@@ -4391,6 +4465,15 @@ function seedInternalApplication(spec) {
   });
   addTo(record.descriptions, spec.description);
   applyRegistrationFields(record, spec.registration);
+  // ANYTHING THAT IS NOT AN RFC 7591 MEMBER, and today that is one attribute:
+  // `oauthGlobalConsent`. It goes through `setField()` like every other write
+  // here, so a name that is not in the schema is REFUSED with a warning rather
+  // than written as an attribute nothing publishes — which is the check that
+  // makes a typo here visible instead of quietly producing a client that
+  // prompts for consent forever.
+  Object.keys(spec.attributes || {}).forEach(function (name) {
+    setField(record, name, spec.attributes[name]);
+  });
   if (!save(record)) {
     log.warn('applications: "' + spec.identifier + '" was not seeded — the ' +
              'ou=applications container is full (applications.max) or the ' +
@@ -4418,8 +4501,9 @@ function seedInternalApplication(spec) {
 // Called by `ldap_server.js` the moment it has filled setDirectory() — which is
 // the earliest point at which there is a container to write into, and the
 // latest at which the entries are there before anything can ask for them.
-function seedInternalApplications() {
-  log.debug("Entering seedInternalApplications().");
+function seedInternalApplications(options) {
+  log.debug("Entering seedInternalApplications(). scope=" +
+            String((options || {}).scope || 'default'));
   if (!config.value('applications.seedInternal')) {
     log.info('applications: the console and the management API were not ' +
              'seeded as applications; applications.seedInternal is off.');
@@ -4433,14 +4517,24 @@ function seedInternalApplications() {
     log.debug("Leaving seedInternalApplications(). There is no directory.");
     return 0;
   }
-  const rows = internalApplications();
+  // WHICH OF THEM BELONG IN THE REALM BEING SEEDED. `scope` is 'default' when
+  // this is the process starting up and 'every' when a trust realm is being
+  // built, and each row says which realms it belongs in — see the rows
+  // themselves, where the three answers are argued separately rather than
+  // together. A realm gets the portal's client and nothing else.
+  const wanted = String((options || {}).scope || 'default');
+  const rows = internalApplications().filter(function (one) {
+    return wanted === 'default' || one.realmScope === 'every';
+  });
   let made = 0;
   rows.forEach(function (one) {
     if (seedInternalApplication(one)) made++;
   });
   log.info('applications: ' + made + ' of this service\'s own ' + rows.length +
-           ' application(s) were seeded. They are ORDINARY entries — edit ' +
-           'one, or delete it, and it stays that way until a restart.');
+           ' application(s) were seeded' +
+           (wanted === 'default' ? '' : ' into this realm') +
+           '. They are ORDINARY entries — edit one, or delete it, and it ' +
+           'stays that way until a restart.');
   log.debug("Leaving seedInternalApplications(). " + made + " created.");
   return made;
 }

@@ -84,6 +84,15 @@ Dockerfile
 # host's directory over the top of it.
 tests/report
 
+# THE BUILD STAMP FROM A HOST RUN. `common/version.js --stamp .` writes
+# version.json at the package root, and the Dockerfile runs it INSIDE the image
+# after the source is copied — so a copy of the host's is at best redundant and
+# at worst a lie: it would be the build number of whatever a developer stamped
+# on their laptop, baked into the tests image (which does not stamp) and sitting
+# in `docker history` for the service image. Anchored, so it names the package
+# root's file only.
+/version.json
+
 # The persistent store — see .gitignore. A local `data/` directory from a host
 # run must not be baked into the image: the container mounts a VOLUME at
 # /usr/src/sts/data, and a copy inside the image would be shadowed by it on

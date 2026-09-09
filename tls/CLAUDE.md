@@ -17,6 +17,39 @@ in `server.js` (rule 6); the main-port half needs no require order at all, becau
 crosses a module boundary and no network one: it is generated per start, held in
 memory, and `GET /tls/server-certificate` publishes the certificate alone.
 
+## The truststore reaches the MAIN listener too, since 2026-09-06
+
+`POST /tls/trust` filled the client truststore for 8443 and 9443. It now fills
+it for the main HTTPS port as well, and that is one function
+(`trustClientCertificatesOn()`) plus one registration in `server.js`.
+
+**WHY IT DID NOT BEFORE, AND WHY THAT STOPPED BEING RIGHT.** The main port has
+always been `requestCert: true, rejectUnauthorized: false` — asked for, never
+required — because RFC 8705 certificate-bound tokens need a certificate to be
+ASKED for there, and section 3 binds to the certificate rather than to anybody's
+opinion of it. With no `ca` passed, `socket.authorized` was false for every
+client certificate ever presented on that port, and reading it would have been
+reading a constant. That cost nothing while token binding was the only reader.
+
+It stopped being right when the remote XACML PEP arrived. That caller has to be
+RECOGNISED — its DN resolved to a directory entry, a group and a role — and
+recognition is precisely what an unverified certificate cannot support: a DN
+read off a certificate that chains to nothing is a name the caller chose for
+itself.
+
+**THE POSTURE ON THAT PORT IS UNCHANGED.** A certificate that chains to nothing
+still completes the handshake and still binds a token. What the truststore adds
+is that a certificate which DOES chain is now known to, and
+`oauth-oidc/mtls.js`'s `peerVerified()` is where the two are told apart —
+carrying node's own `authorizationError` out whole, because that string is what
+tells somebody which of a dozen things went wrong.
+
+Three listeners share one anchor list, so a single `POST /tls/trust` covers all
+of them and `clearAnchors()` empties all of them. A listener created outside
+this module registers rather than being required, for the ordinary reason:
+`server.js` requires this module, so this module cannot require it back.
+
+
 ## The serial number is random, and a constant one was a browser-only bug
 
 The self-signed certificate this module mints is regenerated at every start,

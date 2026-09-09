@@ -292,7 +292,7 @@ function makeStsKeys() {
     // do — but changing it would change every JWKS this service has ever
     // published, and a verifier matching a cached kid would report "the
     // signature does not verify" rather than "the key was renamed".
-    kid: 'sts-mock-' + forge.md.sha256.create().update(keys.certB64).digest().toHex().slice(0, 12)
+    kid: kidOf(keys.certB64)
   };
 }
 
@@ -354,6 +354,49 @@ function makeStsKeys() {
 // a getter is a property read. That is the whole reason the proxy was worth
 // having, and this change is the second thing it has paid for.
 // ---------------------------------------------------------------------------
+// THE `kid` DERIVATION, IN ONE PLACE. It was written out three times once
+// `plainKeySet()` joined makeStsKeys() and lazyKeySet(), and the comment in
+// makeStsKeys() explains exactly why a third copy is the wrong direction: the
+// kid is DERIVED and never stored, so the only thing keeping the copies equal
+// was that nobody had edited one of them yet. Changing it changes every JWKS
+// this service has ever published, so it changes here or nowhere.
+function kidOf(certB64) {
+  return 'sts-mock-' +
+    forge.md.sha256.create().update(certB64).digest().toHex().slice(0, 12);
+}
+
+// A key set this process can use directly, built from what a SIBLING PROCESS
+// generated and sent over. It is `lazyKeySet()`'s twin and differs in exactly
+// one way, which is the whole reason it exists: the private keys are HERE,
+// already parsed, rather than fetched per use from the product-mode keystore.
+// Shared material arrives in the clear over the fork's IPC channel and there is
+// no key-encryption key in development mode to fetch it back through — routing
+// it through the lazy view produced "the realm's signing key is held encrypted
+// and could not be decrypted" on the first signature.
+function plainKeySet(realmId, stored) {
+  log.debug("Entering plainKeySet(). realm=" + realmId);
+  const set = {
+    realm: realmId,
+    createdAt: stored.createdAt || 0,
+    privateKeyPem: stored.privateKeyPem,
+    certPem: stored.certPem,
+    certB64: stored.certB64,
+    // Already KeyObjects — `keystore.deserialise()` parsed them on the way in.
+    extraKeys: stored.extraKeys || [],
+    kid: kidOf(stored.certB64)
+  };
+  // The parsed RSA key, for makeStsKeys()'s measured reason: parsing the PEM
+  // per signature was 21% of non-idle CPU.
+  set.privateKey = crypto.createPrivateKey(set.privateKeyPem);
+  // The post-quantum half, where the sibling had already made it. Absent means
+  // "not warmed yet"; this process will make and republish them.
+  if (stored.pqKeys) {
+    set.pqKeys = stored.pqKeys;
+  }
+  log.debug("Leaving plainKeySet(). kid=" + set.kid);
+  return set;
+}
+
 function lazyKeySet(realmId, stored) {
   log.debug("Entering lazyKeySet(). realm=" + realmId);
   const set = {
@@ -365,8 +408,7 @@ function lazyKeySet(realmId, stored) {
     // recomputed here from the certificate exactly as it was computed the first
     // time. Storing it would be storing a derived value, which is how a store
     // comes to disagree with itself after a change to the derivation.
-    kid: 'sts-mock-' +
-      forge.md.sha256.create().update(stored.certB64).digest().toHex().slice(0, 12),
+    kid: kidOf(stored.certB64),
     extraKeys: (stored.extraKeys || []).map(function (one) {
       const kid = one.publicJwk && one.publicJwk.kid;
       const entry = { alg: one.alg, publicJwk: one.publicJwk };
@@ -415,6 +457,16 @@ function lazyKeySet(realmId, stored) {
   return set;
 }
 
+// THE OTHER HALF OF keystore.adoptShared(): when another process's keys win,
+// the set this one built has to be dropped so the next read rebuilds from the
+// blob that won. Registered here because this file owns the cache.
+keystore.onAdopt(function (realmId) {
+  const held = stsKeysFor.existing();
+  if (held && typeof held.delete === 'function') {
+    held.delete(String(realmId || ''));
+  }
+});
+
 const stsKeysFor = realms.keyed(function (realm) {
   // ---------------------------------------------------------------------
   // THE STORED KEYS FIRST, WHERE THERE ARE ANY (2026-09-06).
@@ -450,6 +502,52 @@ const stsKeysFor = realms.keyed(function (realm) {
              'verifies. ' + keystore.retentionSentence() + '.');
     return restored;
   }
+  // ---------------------------------------------------------------------
+  // AND THEN WHAT A SIBLING PROCESS ALREADY GENERATED (2026-09-07).
+  //
+  // Nothing is stored — this is development mode, or a realm made at runtime —
+  // but this process may not be the only one running the stack. When
+  // `workers.requestCount` is set, the front process and every request worker
+  // load this file, and each one's realm watcher calls warmPqKeys() the moment
+  // a realm appears: four processes, four independently generated key sets,
+  // four different `kid`s advertised from one port. A token minted by one
+  // worker then failed to verify at another, which is most of what a dispatched
+  // run measured as broken.
+  //
+  // `keystore.sharedFor()` is the answer to "has a sibling already done this".
+  //
+  // **IT IS ASKED IN PRODUCT MODE TOO SINCE 2026-09-09, AND THE ORDER OF THESE
+  // THREE LOOKUPS IS NOW LOAD-BEARING.** It used to answer null whenever the
+  // keystore persisted, on the argument that a store IS the channel — true on
+  // every start except the one where the store is empty, which is the first
+  // start of every product deployment. Four processes then generated four key
+  // sets and each kept its own: `/oauth2/jwks` answered differently per worker
+  // and tokens did not verify across them. `keystore.js`'s `sharedFor()`
+  // carries the measurement.
+  //
+  // So: STORED first, then a SIBLING'S, then generate. The stored set still
+  // wins wherever there is one, which is what keeps `remember()` reachable —
+  // the regression that early return was written for was this map being
+  // consulted BEFORE the store. Do not reorder them.
+  // ---------------------------------------------------------------------
+  const fromSibling = keystore.sharedFor(realm.id);
+  if (fromSibling) {
+    const adopted = plainKeySet(realm.id, fromSibling);
+    log.info('The "' + realm.id + '" realm\'s signing keys came from another ' +
+             'process in this service: kid=' + adopted.kid + '. Every process ' +
+             'here presents one key set, exactly as they all present one TLS ' +
+             'certificate.');
+    // AND WRITTEN DOWN, WHERE THIS SERVICE PERSISTS. A no-op in development.
+    // The process that GENERATED this set has already called `remember()`, so
+    // this is usually a second write of identical bytes — and it is here for
+    // the case where that write failed or had not landed: without it, a start
+    // in which every worker adopted one worker's keys could end with nothing
+    // in `sts_keys` at all, and the next restart would generate a new set and
+    // invalidate everything issued under this one. A duplicate write is much
+    // the cheaper side of that trade.
+    keystore.remember(realm.id, adopted);
+    return adopted;
+  }
   const keys = makeStsKeys();
   keys.createdAt = Date.now();
   // ---------------------------------------------------------------------
@@ -483,6 +581,11 @@ const stsKeysFor = realms.keyed(function (realm) {
   // read — so a failure is logged loudly by keystore.js rather than thrown out
   // of whichever request happened to be first.
   keystore.remember(realm.id, keys);
+  // AND OFFERED TO EVERY OTHER PROCESS IN THIS SERVICE, which is the other half
+  // of the sharedFor() lookup above. In a service with no request pool there is
+  // no publisher and this records the set locally and returns. See the block
+  // above keystore.js's storedFor().
+  keystore.publishShared(realm.id, keys);
   // ---------------------------------------------------------------------
   // AND WHERE IT WAS WRITTEN DOWN, HAND BACK THE LAZY VIEW OF IT RATHER THAN
   // THE RESIDENT ONE (2026-09-06).
@@ -608,9 +711,59 @@ function randomId(bytes) { return b64u(crypto.randomBytes(bytes || 24)); }
 // generation is async and the module loads synchronously.
 let bbsKeys = null;
 
+// ---------------------------------------------------------------------------
+// ONE BBS PAIR ACROSS EVERY PROCESS IN THIS SERVICE (2026-09-07).
+//
+// This is the key a Data Integrity proof is signed with and the key the did:web
+// document PUBLISHES as its verification method. One per process was invisible
+// until the request worker pool existed; with four processes, the document
+// served by one names a key another signed with, and the proof does not verify
+// — which is exactly what `ldp_vc_issuance`, `ldp_vc_refresh` and `vc_did`
+// measured.
+//
+// It travels the way the TLS certificate and the signing keys do: generated
+// once in the front process and handed down the fork's IPC channel, into the
+// environment before this module is loaded. Absent — a service with no pool,
+// which is every ordinary run — one is generated here exactly as before.
+//
+// **IT IS NOT ON `keystore`'s SHARED CHANNEL**, which carries a REALM's key set
+// and is keyed by realm. This pair is one per service and not one per realm, so
+// putting it there would have meant inventing a realm for it.
+// ---------------------------------------------------------------------------
 async function bbsKeyPair() {
-  if (!bbsKeys) bbsKeys = await bbs2023.generateKeyPair();
+  if (bbsKeys) {
+    return bbsKeys;
+  }
+  const handed = process.env.STS_BBS_KEYPAIR || '';
+  if (handed) {
+    try {
+      const held = JSON.parse(Buffer.from(handed, 'base64').toString('utf8'));
+      bbsKeys = {
+        secretKey: Uint8Array.from(Buffer.from(held.secret, 'base64')),
+        publicKey: Uint8Array.from(Buffer.from(held.public, 'base64'))
+      };
+      log.info('The BBS key pair came from another process in this service, ' +
+               'so every process signs and publishes the same one.');
+      return bbsKeys;
+    } catch (e) {
+      log.error('The handed-down BBS key pair could not be read (' + e.message +
+                '); generating one, which means this process publishes a ' +
+                'different verification method from its siblings.');
+    }
+  }
+  bbsKeys = await bbs2023.generateKeyPair();
   return bbsKeys;
+}
+
+// The pair as a string the fork's IPC channel can carry. Generates it if this
+// process has not needed one yet, which is the front process's ordinary case:
+// nothing has issued a credential when the pool starts.
+async function bbsKeyPairForSharing() {
+  const pair = await bbsKeyPair();
+  return Buffer.from(JSON.stringify({
+    secret: Buffer.from(pair.secretKey).toString('base64'),
+    public: Buffer.from(pair.publicKey).toString('base64')
+  }), 'utf8').toString('base64');
 }
 
 // Request bodies arrive as raw text (the SOAP parser takes every content type),
@@ -839,6 +992,15 @@ function pqKeysForAsync(keys) {
   })).then(function (made) {
     if (!keys.pqKeys) {
       keys.pqKeys = made;
+      // AND OFFERED TO EVERY OTHER PROCESS. The set was published when it was
+      // GENERATED, before these existed — so without this the shared blob keeps
+      // the RSA and EC halves and every worker makes its own post-quantum keys,
+      // which is what it did until 2026-09-07. `publishShared()` takes a richer
+      // blob for a realm it already holds when the certificate matches; see the
+      // enrichment branch there.
+      if (keys.realm) {
+        keystore.publishShared(keys.realm, keys);
+      }
       log.info('The post-quantum signing keys were generated for the "' +
                keys.realm + '" realm: ' + made.length + ' key(s) in ' +
                (Date.now() - started) + 'ms, in worker processes, so this ' +
@@ -1508,6 +1670,7 @@ module.exports = {
   jsonFromB64u: jsonFromB64u,
   nowSec: nowSec,
   randomId: randomId,
+  bbsKeyPairForSharing: bbsKeyPairForSharing,
   bbsKeyPair: bbsKeyPair,
   walletBaseUrl: walletBaseUrl,
   parseBody: parseBody,

@@ -34,6 +34,18 @@
 //      shared (`pep.js` argues why), and the only way to know they agree is to
 //      run both over the same decisions in one process.
 //
+// **WHAT IS NOT HERE, SINCE 2026-09-06, AND WAS NOT HERE BEFORE EITHER.** This
+// file starts no PEP, registers nothing and makes NO HTTP REQUEST — it loads
+// the container's modules and calls their functions. So `xacml-pep/sync.js`,
+// the registrar and the poller, is not loaded by it, and neither is `start()`.
+// That half is `tests/vendored/sts_xacml_remote_pep.js`, which spawns
+// `pep.js` for real against a running mock and asserts that a policy deployed
+// through `/admin-api/xacml` changes what that process allows. The two are
+// complements rather than overlaps and the split is worth keeping: this file
+// can see the engine growing a dependency on the identity service, which no
+// running PEP could show; that one can see the client half being wrong, which
+// nothing here loads.
+//
 // The sync token's three properties are here too, and they are the one thing
 // on this list that is genuinely borderline — they could be driven over HTTP.
 // They are here because each of them is a claim about what the token is
@@ -294,6 +306,228 @@ async function run(t) {
   t.check(/^COPY\s+xacml-pep\/common\//m.test(dockerfile),
           'and the helpers shim is copied too — without it every engine ' +
           'module fails to resolve ../common/helpers in the image');
+
+  // -------------------------------------------------------------------------
+  // AND EVERY MODULE OF THIS CONTAINER'S OWN, which was NOT checked and is the
+  // same defect one directory along.
+  //
+  // The block above holds the ENGINE's copy set to `engine.js`'s list, so a
+  // module added over in `xacml/` cannot be forgotten. Nothing held the
+  // container's OWN files to anything: `pep.js`, `sync.js` and — since
+  // 2026-09-06 — `pip.js` are each named by a COPY line written by hand, and a
+  // fourth added tomorrow would build an image that dies at load with
+  // MODULE_NOT_FOUND naming a file that is plainly in the tree. That is the
+  // exact failure this section exists to prevent, and it was guarded in one
+  // direction only.
+  //
+  // The list comes from the DIRECTORY rather than from a table, because a
+  // table here would be the third place the same set is written down and the
+  // one nobody updates.
+  // -------------------------------------------------------------------------
+  const ownModules = fs.readdirSync(PEP_DIR).filter(function (name) {
+    return /\.js$/.test(name);
+  }).sort();
+  ownModules.forEach(function (name) {
+    t.check(dockerfile.indexOf('COPY xacml-pep/' + name + ' ') >= 0,
+            'the Dockerfile copies xacml-pep/' + name,
+            'every .js at the top of xacml-pep/ needs a COPY line; without ' +
+            'one the image builds and the container dies at load');
+  });
+
+  // -------------------------------------------------------------------------
+  // 3a. THE VERSION: COPIED, STAMPED, AND NOT PUT IN THE SHIM (2026-09-06).
+  //
+  // This container reports a build number now — `options.version` rides on the
+  // registration and on every heartbeat, and `/admin/xacml/peps` draws it in a
+  // column headed Version. **It was the hand-written string `'mock-sts
+  // xacml-pep, phase five'` until that day**, which is the failure worth
+  // naming: a console column that answered "which build is that enforcement
+  // point running" with the name of a development phase, unchanged since it was
+  // typed and incapable of changing, because nothing computed it.
+  //
+  // Three things have to hold and none of them can be seen from a running PEP.
+  // -------------------------------------------------------------------------
+  t.log.info('--- The version this container reports ---');
+
+  // THE TWO FILES ARE COPIED. Without them `loadVersion()` finds neither
+  // candidate and the PEP registers as `unknown` — which it is written to
+  // survive, deliberately, so nothing at runtime goes red. That is exactly why
+  // it needs a check here.
+  t.check(/^COPY\s+VERSION\s+\.\/VERSION\s*$/m.test(dockerfile),
+          'the Dockerfile copies the repo-root VERSION file',
+          'without it the image has no M.N and reports 0.0');
+  t.check(/^COPY\s+common\/version\.js\s+\.\/version\.js\s*$/m
+            .test(dockerfile),
+          'and copies common/version.js to the container ROOT as version.js',
+          'one copy of the module in this tree, the way the engine is copied ' +
+          'rather than checked in');
+
+  // AND IT IS STAMPED, which is the whole reason the build number means
+  // anything: an unstamped container computes its number when the process
+  // starts, so it renumbers itself on every restart and comparing it against
+  // the PDP says nothing.
+  t.check(/node\s+version\.js\s+--stamp\s+\./.test(dockerfile),
+          'and stamps the build number into the image',
+          'without --stamp this container renumbers itself on every restart');
+
+  // -----------------------------------------------------------------------
+  // AND `./common/` IN THE IMAGE IS STILL THE SHIM AND NOTHING ELSE.
+  //
+  // **THIS IS THE ASSERTION FOR A DECISION RATHER THAN FOR A DEFECT**, and it
+  // is here because the obvious place to put `version.js` was beside
+  // `helpers.js` — one line, `COPY common/version.js ./common/`, and it would
+  // have worked. What it would have cost is the only thing that makes the shim
+  // worth having: an engine module that grew a dependency on the mock's config
+  // table, crypto module or realm registry throws at load BECAUSE THERE IS
+  // NOTHING ELSE IN THAT DIRECTORY TO RESOLVE. `version.js` reads files and
+  // shells out to git. A second file there turns "the shim is the evidence"
+  // into "the shim plus whatever else we put there", which is not evidence.
+  //
+  // So the version lives at the container root, and this pins it — a future
+  // reader tidying two version files into the directory that already has a
+  // `common/` gets a failure that says why rather than a silently weaker
+  // claim.
+  // -----------------------------------------------------------------------
+  const intoShim = dockerfile.split('\n').filter(function (line) {
+    return /^COPY\s+\S+\s+\.\/common\//.test(line.trim());
+  });
+  t.equal(intoShim.length, 1,
+          'exactly one COPY writes into the image\'s ./common/, and it is ' +
+          'the shim directory itself — nothing else may be put beside ' +
+          'helpers.js, because an empty directory is what makes "the engine ' +
+          'does no I/O" a checked claim');
+
+  // AND pep.js REPORTS M.N.O RATHER THAN A LABEL. Read out of the source
+  // because starting this container is what the vendored job does; what is
+  // checkable here is that the constant is COMPUTED at all. The regex is
+  // deliberately about the SHAPE of the assignment: `const VERSION =
+  // APP_VERSION.version`, never a string literal.
+  const pepSource = fs.readFileSync(path.join(PEP_DIR, 'pep.js'), 'utf8');
+  t.check(/const\s+VERSION\s*=\s*APP_VERSION\.version\s*;/.test(pepSource),
+          'pep.js takes its version from the loaded record',
+          'it was a hand-written phase label until 2026-09-06');
+  t.check(!/const\s+VERSION\s*=\s*['"]/.test(pepSource),
+          'and no string literal is assigned to VERSION anywhere in it',
+          'a literal here is a version that cannot change and a console ' +
+          'column that cannot be trusted');
+  t.check(/loadVersion\s*\(\)/.test(pepSource) &&
+          pepSource.indexOf("'../common/version'") >= 0 &&
+          pepSource.indexOf("'./version'") >= 0,
+          'and it resolves the module across BOTH layouts — ./version in the ' +
+          'image, ../common/version in a checkout',
+          'neither layout has both, so a single hard-coded path is broken in ' +
+          'one of the two places this file is read');
+
+  // -------------------------------------------------------------------------
+  // 3b. THE PIP CLIENT'S WALK, WHICH IS THE HALF OF IT THAT NEEDS NO NETWORK.
+  //
+  // `xacml-pep/pip.js` has two halves and only one of them can be driven from
+  // here: the HTTP exchange needs a PDP and belongs to
+  // `tests/vendored/sts_xacml_remote_pep.js`, and the WALK is a pure function
+  // over a parsed policy. The walk is also the half most likely to go quietly
+  // wrong, because **a designator it misses is an empty bag and an empty bag
+  // is a legal answer** — so a policy element added to `xacml_xml.js` tomorrow
+  // that this walk does not know about would make the PEP decide on less
+  // information than the PDP, with nothing anywhere reporting it.
+  //
+  // Every branch of the walk is exercised on ONE document, because a separate
+  // document per branch is how a walk comes to be tested only for the elements
+  // somebody remembered.
+  //
+  // **THE FIXTURES ARE BUILT HERE AND PASSED IN AS JSON**, not written into
+  // the child's source as a quoted literal. The first attempt did that and the
+  // child would not parse: this XML is full of double quotes, it goes through
+  // a JavaScript string in this file and then through `node -e`, and three
+  // levels of escaping is a fixture nobody can edit safely. `JSON.stringify`
+  // does the one level that is actually needed.
+  // -------------------------------------------------------------------------
+  t.log.info('--- The PIP client, in the container, with no network ---');
+  const OUTER_POLICY = "<PolicySet xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" PolicySetId=\"outer\" Version=\"1.0\" PolicyCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:policy-combining-algorithm:deny-unless-permit\"><Target><AnyOf><AllOf><Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">x</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inTarget\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Match></AllOf></AnyOf></Target><Policy PolicyId=\"inner\" Version=\"1.0\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\"><VariableDefinition VariableId=\"v\"><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inVariable\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></VariableDefinition><Rule RuleId=\"r\" Effect=\"Permit\"><Condition><Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\"><Function FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">y</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inCondition\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Apply></Condition><ObligationExpressions><ObligationExpression ObligationId=\"o\" FulfillOn=\"Permit\"><AttributeAssignmentExpression AttributeId=\"a\"><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inObligation\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></AttributeAssignmentExpression></ObligationExpression></ObligationExpressions></Rule></Policy><PolicyIdReference>referenced</PolicyIdReference></PolicySet>";
+  const REFERENCED_POLICY = "<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" PolicyId=\"referenced\" Version=\"1.0\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\"><Target><AnyOf><AllOf><Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:anyURI-equal\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\">r</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:resource\" AttributeId=\"inResource\" DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\" MustBePresent=\"false\"/></Match></AllOf></AnyOf></Target><Rule RuleId=\"r2\" Effect=\"Permit\"><Condition><Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\"><Function FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">z</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inReference\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Apply></Condition></Rule></Policy>";
+  const PIP_REPLY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><PIPResponse xmlns=\"urn:sts-mock:xacml:pip:1.0\"><Attributes xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\"><Attribute AttributeId=\"employeeType\" IncludeInResult=\"false\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">admin</AttributeValue><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">staff</AttributeValue></Attribute></Attributes><Unresolved><Designator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"departmentNumber\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"><Reason>the entry does not hold it</Reason></Designator></Unresolved></PIPResponse>";
+
+  const walk = askTheContainer(
+    'const pip = require("./pip");\n' +
+    'const engine = require("./engine");\n' +
+    'const root = engine.xml.parsePolicy(' + JSON.stringify(OUTER_POLICY) +
+      ');\n' +
+    'const other = engine.xml.parsePolicy(' +
+      JSON.stringify(REFERENCED_POLICY) + ');\n' +
+    'const found = pip.designatorsIn(root, { referenced: other });\n' +
+    'return { ids: found.map(function (one) { return one.attributeId; })' +
+      '.sort(),\n' +
+    '         query: pip.queryDocument("carol", found),\n' +
+    '         max: pip.MAX_DESIGNATORS };');
+
+  t.equal(walk.ids.join(','),
+          'inCondition,inObligation,inReference,inTarget,inVariable',
+          'the walk finds every access-subject designator — in a target, in ' +
+          'a condition, in a variable definition, in an obligation ' +
+          'assignment, and in a policy reached by PolicyIdReference',
+          walk.ids.join(','));
+
+  // THE RESOURCE ONE IS DELIBERATELY ABSENT, and this is the assertion that
+  // keeps the batch honest: the PDP's PIP resolves the access-subject category
+  // and nothing else, so a resource designator in the query would spend a slot
+  // on an answer that is always empty and would put a permanent entry in the
+  // <Unresolved> list of every reply.
+  t.check(walk.ids.indexOf('inResource') < 0,
+          'and does NOT ask about a RESOURCE designator, which that PIP never ' +
+          'resolves',
+          walk.ids.join(','));
+
+  t.check(walk.query.indexOf('<PIPRequest') >= 0 &&
+          walk.query.indexOf('urn:sts-mock:xacml:pip:1.0') > 0,
+          'the query it builds is a <PIPRequest> in the PDP\'s own namespace');
+  t.check(walk.query.indexOf('subject:subject-id') > 0 &&
+          walk.query.indexOf('>carol<') > 0,
+          'carrying the subject, because the PDP reads it out of the ' +
+          '<Request> exactly as its own PDP does — which is what makes the ' +
+          'answer the answer the embedded PIP would have given');
+  t.equal((walk.query.match(/<AttributeDesignator/g) || []).length, 5,
+          'and one <AttributeDesignator> per attribute wanted, in ONE ' +
+          'document — the batch is what makes a SYNCHRONOUS engine able to ' +
+          'use a remote PIP at all');
+
+  // -------------------------------------------------------------------------
+  // 3c. THE ANSWER IS READ WITH THE ENGINE'S OWN REQUEST READER.
+  //
+  // The claim the whole endpoint rests on is that its reply is a REQUEST
+  // FRAGMENT, so this feeds `pip.js` a reply built by hand and checks that
+  // what comes out is what a designator would find — including the two cases
+  // that are easy to get wrong: a MULTI-VALUED attribute, and one that is
+  // simply absent.
+  // -------------------------------------------------------------------------
+  const read = askTheContainer(
+    'const pip = require("./pip");\n' +
+    'const out = pip.readAnswer(' + JSON.stringify(PIP_REPLY) + ');\n' +
+    'const key = Object.keys(out.answers)[0] || "";\n' +
+    'return { keys: Object.keys(out.answers).sort(),\n' +
+    '         key: key,\n' +
+    '         values: out.answers[key] || [],\n' +
+    '         unresolved: out.unresolved };');
+
+  t.equal((read.values || []).join(','), 'admin,staff',
+          'a MULTI-VALUED attribute comes back as a bag of two rather than ' +
+          'the first value — a reader that took one would make a person in ' +
+          'two roles hold one, silently',
+          JSON.stringify(read.values));
+  t.check(read.key.indexOf('employeeType') > 0 &&
+          read.key.indexOf('XMLSchema#string') > 0,
+          'and it is keyed on the CATEGORY, the AttributeId AND the DATATYPE ' +
+          'together, because the resolver answers at the designator\'s ' +
+          'declared type — the same attribute wanted as a string and as an ' +
+          'integer is two different questions with two different answers',
+          read.key);
+  t.equal(read.keys.length, 1,
+          'an attribute the PDP could not resolve produces NO entry at all ' +
+          'rather than an empty one, which is what makes an unresolved ' +
+          'designator indistinguishable from one the request never carried — ' +
+          'the property that lets the PEP need no branch for it',
+          read.keys.join(','));
+  t.equal((read.unresolved[0] || {}).attributeId, 'departmentNumber',
+          'and the reason is still readable for a person, out of the payload ' +
+          'and in the PDP\'s own namespace');
 
   // -------------------------------------------------------------------------
   // 4. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE.

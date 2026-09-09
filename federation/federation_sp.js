@@ -182,7 +182,7 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // would have let one realm's flood evict another realm's in-flight sign-ins,
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
-const contexts = realms.map();
+const contexts = realms.map({ persist: 'federation_sp.contexts' });
 const MAX_CONTEXTS = 500;
 
 // The longest `application` a context will carry. A client_id has no length
@@ -1982,8 +1982,20 @@ app.get(BASE_PATH, function (req, res) {
       'metadata for that partner. Unsigned, deliberately.</td></tr></table>' +
     '<p class="note">The base URL this service sees itself at is <code>' + xmlEscape(base) +
     '</code>, so the URLs above are absolute from there.</p>' +
+    // **`/portal` AND NOT `/authn/login`, WHICH IS NOT A PAGE ANYBODY CAN BE
+    // SENT TO.** That endpoint draws a form for a PENDING AUTHENTICATION
+    // RECORD and answers `There is no sign-in waiting under that id` to a
+    // request naming none, so this link was an error page for as long as it
+    // existed. `/portal` has no session either, so `requireSignIn()` there
+    // calls `beginAuthentication()` and the browser arrives at the very screen
+    // this link promises — with the partner buttons on it, which is the whole
+    // point of the sentence around it — and lands on the reader's own account
+    // page once they have used one. The record is minted when the link is
+    // PRESSED rather than when this page is drawn, which is what keeps it from
+    // expiring on a page somebody left open. `portal/portal.js` carries the
+    // full argument; the same mistake was in two other files on 2026-09-06.
     '<p><a href="/admin/federation">Configure relationships in the console</a> · ' +
-    '<a href="/authn/login">The sign-in screen</a>' +
+    '<a href="/portal">The sign-in screen</a>' +
     (config.value('federation.loginButtons')
       ? ', which offers every usable partner as a button'
       : ' (federation.loginButtons is off, so no partner is offered there)') + '</p>';

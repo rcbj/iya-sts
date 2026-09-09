@@ -59,10 +59,11 @@ files did not change; the paths did.
 
 | Directory | What is in it |
 |---|---|
-| `common/` | Everything more than one family reads: `config.js`, `helpers.js`, **`crypto.js`**, `app.js`, `realms.js`, `admin_stats.js`, `audit.js`, `applications.js`, `delegation.js`, **`app_permissions.js`** (the CONFIGURED delegation register — who MAY reach what, in Entra ID's shape, against `delegation.js`'s record of what DID), `user_graph.js`, `claim_attributes.js`, `group_claims.js`, `config_file.js`, and — since 2026-08-30 — **`worker.js` and `worker_pool.js`, the child-process pool the post-quantum signing runs in** (see *One listener process, N stateless workers* below). **`crypto.js` is THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS since 2026-08-27** — before that it did all four in about twenty places, including six XML signers and four XML signature verifiers. `common/CLAUDE.md` argues it. **And since 2026-09-06 `mode.js`, `credentials.js`, `keystore.js` and `secrets.js` — the four files that make this service a PRODUCT as well as a mock.** `mode.js` is the one place `development` and `product` are told apart, and every surface that used to decide for itself whether a credential was required asks it instead; `credentials.js` is the one place a presented password is verified, over the hashed `userPassword` on the person's own entry; `keystore.js` holds the signing keys that survive a restart in product mode; `secrets.js` reads the key that encrypts them, from a mounted file or one of four cloud secret stores. **And since 2026-09-05 `roles.js` and `issuance_gate.js`, which are the two halves of the fourth register — the one a USER, a GROUP and an APPLICATION are all first-class members of.** `roles.js` holds who HOLDS a role (`ou=roles` is its store) and the six computed built-in ones; `issuance_gate.js` is the LEAF nine issuance sites ask before this service issues anything, whose decider `xacml/xacml_role_pep.js` fills at 23c. **An empty decider means ISSUE**, which is what keeps a process without the XACML family a smaller service rather than a broken one. And since 2026-09-01 `consent.js`, the register of what a PERSON agreed an application may ask for on their behalf — the third register in the `delegation.js` / `app_permissions.js` family and the first whose rows have a person in them, holding no store of its own because both halves are attributes in the directory (`oauthConsent` on a person, `oauthGlobalConsent` on an application). |
+| `common/` | Everything more than one family reads: `config.js`, `helpers.js`, **`crypto.js`**, `app.js`, `realms.js`, `admin_stats.js`, `audit.js`, `applications.js`, `delegation.js`, **`app_permissions.js`** (the CONFIGURED delegation register — who MAY reach what, in Entra ID's shape, against `delegation.js`'s record of what DID), `user_graph.js`, `claim_attributes.js`, `group_claims.js`, `config_file.js`, **`version.js`** (2026-09-06 — the one place M.N.O is read, a port of the parent project's `client/version.js`; see *Versioning* below), and — since 2026-08-30 — **`worker.js` and `worker_pool.js`, the child-process pool the post-quantum signing runs in** (see *One listener process, N stateless workers* below). **`crypto.js` is THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS since 2026-08-27** — before that it did all four in about twenty places, including six XML signers and four XML signature verifiers. `common/CLAUDE.md` argues it. **And since 2026-09-06 `mode.js`, `credentials.js`, `keystore.js` and `secrets.js` — the four files that make this service a PRODUCT as well as a mock.** `mode.js` is the one place `development` and `product` are told apart, and every surface that used to decide for itself whether a credential was required asks it instead; `credentials.js` is the one place a presented password is verified, over the hashed `userPassword` on the person's own entry; `keystore.js` holds the signing keys that survive a restart in product mode; `secrets.js` reads the key that encrypts them, from a mounted file or one of four cloud secret stores. **And since 2026-09-05 `roles.js` and `issuance_gate.js`, which are the two halves of the fourth register — the one a USER, a GROUP and an APPLICATION are all first-class members of.** `roles.js` holds who HOLDS a role (`ou=roles` is its store) and the six computed built-in ones; `issuance_gate.js` is the LEAF nine issuance sites ask before this service issues anything, whose decider `xacml/xacml_role_pep.js` fills at 23c. **An empty decider means ISSUE**, which is what keeps a process without the XACML family a smaller service rather than a broken one. And since 2026-09-01 `consent.js`, the register of what a PERSON agreed an application may ask for on their behalf — the third register in the `delegation.js` / `app_permissions.js` family and the first whose rows have a person in them, holding no store of its own because both halves are attributes in the directory (`oauthConsent` on a person, `oauthGlobalConsent` on an application). |
 | `common/vendored/` | Byte-identical copies of the parent project's files, plus the JSON-LD `contexts/`. **Do not edit them here.** Since 2026-08-27 that includes `xmldsig.js`, the parent's own XML Signature and XML Encryption module, which is now the signer behind every signed document this service emits — so both ends of a SAML exchange canonicalize with the same code. |
 | `home/` | The front door: `GET /` and the one image on it. |
 | `logout/` | The protocol-independent sign-out: `GET|POST /logout`, and the one model of what a live session IS across every family — for ONE identity (`inventoryFor()`, what `/admin/logout` draws) and, since 2026-09-04, for the whole service (`liveSessions()`, what **`/admin/sessions`** and `GET /admin-api/sessions` draw, with a Revoke on every row that goes through the same `terminate()`). |
+| `portal/` | **THE USER PORTAL: the pages that belong to the person looking at them**, and the one directory here whose whole rule is that no route takes an identity from the request. Four pages behind a navigation column of its own since 2026-09-06 — the Overview, **`/portal/applications`** (where this identity provider will sign that person in, decided by the SAME `common/issuance_gate.js` call the nine issuance sites make, so the page and the endpoints cannot disagree), the password form and the security keys — plus `/portal/activate`, the UNAUTHENTICATED half where somebody provisioned through SCIM or `/admin-api` spends a single-use link to set up a credential. **The column is not the console's**: two applications that look alike because one hand built them, rather than two paths on one. `portal/CLAUDE.md` argues all of it. |
 | `oauth-oidc/` | The authorization server, RFC 9700 mode, DPoP, mTLS, client authentication, the multi-AS profiles, **the CONSENT SCREEN at `/oauth2/consent`** (2026-09-01 — the one thing between a signed-in person and an issued credential, and the one policy in this service that is ON by default), and **the UserInfo endpoint's four layers** — a claim set of its own configured at `/admin/userinfo-claims`, the scope-driven set, OIDC Core 5.5's claims request, and `sub`. |
 | `authn/` | The authentication service and the WebAuthn relying party. Owns the SESSION. **One endpoint in its own path space lives elsewhere**: `/authn/spnego` is `kerberos/spnego_authn.js`, for a require-order reason both files argue. |
 | `saml/` | The two assertion builders, and A BROWSER-FACING IDENTITY PROVIDER FOR EACH: SAML 2.0's Web Browser SSO profile (all three bindings, Single Logout, metadata per service provider) and SAML 1.1's two browser profiles (Browser/POST, Browser/Artifact, a SOAP responder that is also an attribute authority, metadata per relying party). **They are separate implementations, not one with a version flag** — SAML 1.1 has no request message, no Single Logout, and a different spelling for almost every shared element; `saml/CLAUDE.md` has the table. |
@@ -71,18 +72,18 @@ files did not change; the paths did.
 | `federation/` | **Federation relationships, in either direction, in five protocols.** The register (`ou=federations` IS the store), the attribute mapping, the four endpoints, the graph the console's picture is drawn from — and the FIRST OF THREE OUTBOUND REQUESTS in this repository, in a module of its own that will not take a URL from anywhere but a relationship entry. It is the STRONGEST of the three and the other two each argue their own case rather than citing it — SSF's is `ssf/ssf_http.js` and XACML's nudge is `xacml/xacml_pep_http.js`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO in three layers — the negotiation, the page that explains it, and **the SIGN-IN that turns a ticket into this service's session** — and the eight codec modules they rest on, **all eight VENDORED from the parent project and not editable here**, despite not being under `common/vendored/`. See `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory. Also the STORE for people, groups, applications and the SPIFFE registry. **And, since 2026-09-01, the ADMIN CONSOLE PAGES that show that store — five then and EIGHT since 2026-09-05** — `/admin/ldap/directory` (every entry, every attribute, paged), `/admin/ldap/applications`, `/admin/ldap/federations`, `/admin/ldap/spiffe`, and — since 2026-09-05 — `/admin/ldap/roles`, `/admin/ldap/policies` and `/admin/ldap/peps` (each a container with the SCHEMA it uses, because this directory is schemaless) and `/admin/ldap/service` (the two raw sockets as they actually are, which nothing that walks the router can see). **The last three closed a gap rather than adding a feature**: `common/roles.js`, `xacml/xacml_store.js` and `xacml/xacml_pep_registry.js` each PUBLISHED a schema whose comment said it was drawn on a page under `/admin/ldap/*`, and for three of them no such page had ever been written — so `ou=roles` reported `0 user(s)` for a role somebody held and `ou=policies` drew a DISABLED policy as enabled, both because the store lower-cases an attribute name and none of the three schemas was merged into `learnName()`. They were `/ldap*`, in a shell of their own, outside the console and outside its gate; a console page is a `path` and a `label` in `admin-ui/admin.js`'s `SECTIONS` whoever builds the body, which is the arrangement `/admin/sts-metadata` has had since 2026-08-24. |
-| `persistence/` | **THE ONE PLACE THIS SERVICE WRITES ANYTHING DOWN, since 2026-08-27, and the first time it ever has.** Three modes — `memory` (the default, and what this service always did), `ldif` (an RFC 2849 file per realm, no database) and `postgres` — behind one driver interface. THREE THINGS PERSIST: the embedded directory, the trust realm registry, and the runtime appconfig overrides. **NOTHING THIS SERVICE MINTS EVER DOES**, in any mode, because the signing key is regenerated on every start. It is PERSISTENCE and not COORDINATION, and `persistence/CLAUDE.md` says what the second one still needs. |
-| `scim/` | `/scim/v2`, its authentication, and its attribute mapping. |
+| `persistence/` | **THE ONE PLACE THIS SERVICE WRITES ANYTHING DOWN, since 2026-08-27, and the first time it ever has.** Three modes — `memory` (the default, and what this service always did), `ldif` (an RFC 2849 file per realm, no database) and `postgres` — behind one driver interface. THREE THINGS PERSIST IN EVERY MODE WITH A STORE: the embedded directory, the trust realm registry, and the runtime appconfig overrides. **AND SINCE 2026-09-06 A FOURTH, IN PRODUCT MODE ON POSTGRES ONLY: EVERYTHING THIS PROCESS MINTS** — sessions, tokens, codes, artifacts, Kerberos principals, the replay caches, the counters and the audit log, each row sealed under the same key-encryption key as the signing keys. That reversed a rule which rested on ONE fact — the signing key was regenerated on every start — and the fact is still true in development mode, which is the default and is unchanged. `persistence_minted.js` argues it; `persistence_replication.js` is the other half of the same day. **IT IS COORDINATION AS WELL AS PERSISTENCE NOW**: `sts_changes` is a monotonic log written inside the transaction that made each change, every process applies what the others committed, and the LISTEN/NOTIFY nudge is only latency. It shares STATE and not SOCKETS. |
+| `scim/` | `/scim/v2`, its authentication, and its attribute mapping. **Two console pages since 2026-09-06 and the line between them is the filing rule**: `/admin/scim` under Protocols is what the surface IS — the six schemes, the endpoints, the mapping, the eighteen settings — and **`/admin/scim/monitor` under MONITORING is what it has DONE**: how many calls, from whom, of what kind, how much failed. Both are drawn by `admin-ui/admin.js` out of ONE set of counters in `common/admin_stats.js` through two functions, so there is no second tally to disagree. `scim/CLAUDE.md` argues it, including why a client is an authenticated PRINCIPAL rather than a connection and why a caller the gate refused is not one at all. |
 | `ssf/` | **The Shared Signals Framework (OpenID SSF 1.0, final September 2025), and the one family here that TALKS BACK** — every other answers a request, and this one agrees a STREAM and then delivers a Security Event Token at the moment something happens. Six modules: the routes, an RFC 9493 subject grammar written out here rather than vendored (a grammar is a READING, and one implementation read by both ends hides the misunderstandings they share), the RFC 8417 envelope, the streams and their queues per realm, the gate, and **the SECOND outbound request in this repository** — which is a weaker case than federation's and `ssf/CLAUDE.md` argues rather than cites, because RFC 8935 push IS the receiver telling the transmitter where to post. (The THIRD is XACML's change nudge, and it is weaker still and argued in its turn: no specification asks for it at all, and what pays for it is that it is never the mechanism — a PEP pulls and converges without it.) **SSF is the PIPE and not the vocabulary**: it defines two events of its own, both about the pipe, and CAEP (what happened to a SESSION, since 2026-09-03) and RISC (what happened to an ACCOUNT, since 2026-09-04) are the two vocabularies spoken over it. **Eight modules now**: the seventh is `caep.js`, the eighth `risc.js`, and they are siblings rather than one generalized register — a session begins, is used and ends and there are many per person, and an account IS the person and outlives every session on it. Two observers, on two different stores: CAEP watches `authn.js` and RISC watches `ldap/ldap_server.js`, which is the authentication layer and the provisioning layer, and the whole difference between the two profiles is which of them the sentence is about. |
 | `spiffe/` | Six libraries, one server module, and the vendored `protos/`. |
 | `tls/` | The 8443 and 9443 listeners, and the certificate three other sockets share. |
 | `oid4vc/` | OpenID4VCI, OpenID4VP, DID Core. |
 | `admin-ui/` | The console at `/admin`, the two roles that decide who may use it, **every setting drawn on the page for the protocol it configures** (2026-08-27 — `SETTING_HOMES` is the table, `/admin/config` keeps the rows belonging to no protocol and the index of the rest), and the TWO DRAWINGS in this service — `/admin/delegation/map` and `/admin/federation/map`, both laid out on the server. They share a palette, a hexagon and a text metric and NOTHING ELSE: one flattens a layered layout on purpose and the other is a layered layout, so each has its own renderer. `admin-ui/CLAUDE.md` argues why that is not duplication. **And since 2026-08-30 the CRYPTO REPORT** (`crypto_metadata.js`, `/admin/crypto-metadata`): what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises, with every algorithm table READ FROM THE MODULE THAT PERFORMS THE ALGORITHM — the same argument `sts_metadata.js` makes about the router, one layer down. |
 | `mgmt-api/` | `/admin-api`, its generated OpenAPI document, and the explorer. |
-| `tests/` | **THE ONLY TEST DIRECTORY HERE**, and since 2026-08-28 it holds BOTH halves of this service's coverage. `tests/*.js` is the in-process half — assertions about this repository's own module contracts, `npm test`, no port and no container and under a second. **`tests/vendored/` is the protocol half**: nineteen jobs driven over HTTP against a CONTAINER built from this tree by `docker-compose.yml` (a throwaway in-process copy under `--no-docker`, and under coverage), plus the wallet modules five of them verify against. NINE are byte-identical copies of the parent project's mock-only jobs and are NOT edited here; **TEN are this repository's own** — the ones that drive this service's `/admin` console and `/admin-api`, marked `local: true` since 2026-08-28, with no copy over there to sync from and the editing rule inverted for them. `tests/vendored/MANIFEST.js` says which is which and where each copy came from, and `--vendor-check` reports drift in the nine copies. See *Tests* below for what changed and `tests/CLAUDE.md` for the rules that are not optional there. **`tests/tools/` is not tests**: the report generator, the coverage renderer, the compose-stack helpers (`compose.sh`, shared by both launchers) and the throwaway-service launcher `./local-run-tests.sh`, `./docker-run-tests.sh` and `./run-coverage.sh` drive — in a subdirectory precisely so that `run.js`'s discovery rule needs no exclusion list. **`tests/Dockerfile`, its own `.dockerignore` and `tests/run-tests-in-container.sh` are not tests either**: they are the RUNNER as a container, which `docker-compose-run-tests.yml` brings up beside the service so that a host with docker and nothing else runs all forty-four jobs — `tests/CLAUDE.md` argues it. `federation-e2e/` sat beside it until trust realms made its three-container stack unnecessary; that test is `tests/federation_sso.js` in the parent project's suite now. |
-| `xacml/` | **XACML 3.0 and ALFA: the engine, the policy repository, the PIP, an embedded PEP and the PAP.** Fourteen DOM-free modules plus `xacml.js` and `xacml_admin.js`, the two that register routes — seven under `/xacml`, five console pages under `/admin/xacml`, seventeen operations under `/admin-api/xacml` — required at 23c. **`ou=policies` in the embedded directory IS the repository**, the way `ou=federations` is the federation register. **THE ONLY FAMILY HERE THAT ANSWERS A QUESTION ABOUT SOMEBODY ELSE'S BOUNDARY** — every other protocol authenticates or provisions somebody, and this one is handed a subject authenticated elsewhere and asked whether they may. Held to the VENDORED OASIS conformance suite (**454 of 455 mandatory cases**), which is **Apache-2.0 rather than this repository's MIT** and says so in `LICENSE.md`. **ONE MODEL, THREE RENDERINGS**: the core XML, the JSON Profile, and **ALFA** — which is a VIEW and never a second stored copy, and whose contract is that anything it writes it reads back *and the policy decides identically either way*, asserted on seven probes because a swapped comparison round-trips perfectly and decides the opposite. **The guided editor has NO JAVASCRIPT**: this console is `script-src 'none'`, so every "pick the next valid element" dropdown is computed on the server by the same code that validates the result. `xacml/CLAUDE.md` indexes the twelve defects the tests caught. **AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE**, which is the one thing in this directory that is not about somebody else's boundary: `xacml_role_pep.js` is an EMBEDDED PEP that turns a token, an assertion, a ticket or a session into a XACML request and fills `common/issuance_gate.js`'s decider. The policy it evaluates is BUILT IN — the `role-issuance` template, called rather than seeded, because `ou=policies` is per realm and a seed written once in the default realm left every later realm unable to use roles at all — and a repository entry named by `xacml.issuancePolicy` overrides it. **THE REMOTE PEP LANDED 2026-09-05 and its container is `xacml-pep/`, below** — what is in this directory is the PDP's side: `ou=peps`, three endpoints under `/xacml/pep`, a fifth console page, and the nudge, which is this repository's THIRD outbound request. |
-| `xacml-pep/` | **THE ONLY DIRECTORY HERE THAT IS NOT PART OF THE MOCK.** A second container: a remote XACML Policy Enforcement Point that holds its own copy of the engine, PULLS the policy repository from `/xacml/pep/policies` and decides in its own process. `server.js` does not require it and nothing here does; `docker compose --profile xacml up` starts it. **THE PULL IS THE CONTRACT** — the nudge this service sends on a change is an optimisation over the polling interval and never a replacement for it, which is what makes a third outbound requester affordable. The engine is copied out of `xacml/` AT BUILD TIME, so there is one copy of the evaluator in this tree; `tests/xacml_pep.js` asserts the Dockerfile's COPY set against the module list. **Its thirty-line `common/helpers.js` shim is the most valuable thing in phase five** — it is what makes "the engine is a library with no I/O" a checked claim rather than a comment at the top of seven files. `xacml-pep/CLAUDE.md` argues all of it. |
-| `postgres/` | **Two shell scripts the database container runs, and nothing else.** `generate-tls.sh` makes its server key pair on first start — the same decision every other key here follows, because a certificate committed to a repository is a private key committed to a repository — and `require-tls.sh` rewrites every `host` rule in `pg_hba.conf` to `hostssl` so that TLS is REQUIRED rather than merely available. Both are mounted into the image by `docker-compose.yml`; neither is run by this service. `persistence/CLAUDE.md` argues them. |
+| `tests/` | **THE ONLY TEST DIRECTORY HERE**, and since 2026-08-28 it holds BOTH halves of this service's coverage. `tests/*.js` is the in-process half — assertions about this repository's own module contracts, `npm test`, no port and no container and under a second. **`tests/vendored/` is the protocol half**: jobs driven over HTTP against a CONTAINER built from this tree by `docker-compose.yml` (a throwaway in-process copy under `--no-docker`, and under coverage), plus the wallet modules five of them verify against. **`tests/vendored/MANIFEST.js` IS THE COUNT AND THIS TABLE IS NOT** — a number written here as well went stale twice. Some are byte-identical copies of the parent project's mock-only jobs and are NOT edited here; the rest are **this repository's own** — the ones that drive this service's `/admin` console and `/admin-api`, marked `local: true` since 2026-08-28, with no copy over there to sync from and the editing rule inverted for them. **One of them drives a SECOND CONTAINER rather than this one**: `sts_xacml_remote_pep.js` asserts that a policy deployed through `/admin-api/xacml` changes what a remote XACML PEP — the `xacml-pep/` image, on the service's own docker network — allows. **BOTH LAUNCHERS BRING THAT CONTAINER UP** and hand the job `XACML_PEP_URL`, `XACML_PEP_NAME` and `XACML_PEP_REALM`, so the job shells out to nothing; that is what lets it run in `./docker-run-tests.sh`, where the suite is itself a container with no docker socket in it. With no launcher (a bare `run-report.js`, a coverage run) it builds the image and starts one itself, and where there is no daemon either it is reported SKIPPED with the reason rather than green. `tests/vendored/MANIFEST.js` says which is which and where each copy came from, and `--vendor-check` reports drift in the nine copies. See *Tests* below for what changed and `tests/CLAUDE.md` for the rules that are not optional there. **`tests/tools/` is not tests**: the report generator, the coverage renderer, the compose-stack helpers (`compose.sh`, shared by both launchers) and the throwaway-service launcher `./local-run-tests.sh`, `./docker-run-tests.sh` and `./run-coverage.sh` drive — in a subdirectory precisely so that `run.js`'s discovery rule needs no exclusion list. **`tests/Dockerfile`, its own `.dockerignore` and `tests/run-tests-in-container.sh` are not tests either**: they are the RUNNER as a container, which `docker-compose-run-tests.yml` brings up beside the service so that a host with docker and nothing else runs every job — `tests/CLAUDE.md` argues it. `federation-e2e/` sat beside it until trust realms made its three-container stack unnecessary; that test is `tests/federation_sso.js` in the parent project's suite now. |
+| `xacml/` | **XACML 3.0 and ALFA: the engine, the policy repository, the PIP, an embedded PEP and the PAP.** Fifteen DOM-free modules plus `xacml.js` and `xacml_admin.js`, the two that register routes — eight under `/xacml`, six console pages under `/admin/xacml` (five of them in the console's XACML group and the monitor under Monitoring), eighteen operations under `/admin-api/xacml` — required at 23c. **`ou=policies` in the embedded directory IS the repository**, the way `ou=federations` is the federation register. **THE ONLY FAMILY HERE THAT ANSWERS A QUESTION ABOUT SOMEBODY ELSE'S BOUNDARY** — every other protocol authenticates or provisions somebody, and this one is handed a subject authenticated elsewhere and asked whether they may. Held to the VENDORED OASIS conformance suite (**454 of 455 mandatory cases**), which is **Apache-2.0 rather than this repository's MIT** and says so in `LICENSE.md`. **ONE MODEL, THREE RENDERINGS**: the core XML, the JSON Profile, and **ALFA** — which is a VIEW and never a second stored copy, and whose contract is that anything it writes it reads back *and the policy decides identically either way*, asserted on seven probes because a swapped comparison round-trips perfectly and decides the opposite. **The guided editor has NO JAVASCRIPT**: every page of this console but one is `script-src 'none'` (the exception is `/admin/api-explorer`, which arrived on 2026-09-09 and argues itself), so every "pick the next valid element" dropdown is computed on the server by the same code that validates the result. `xacml/CLAUDE.md` indexes the twelve defects the tests caught. **AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE**, which is the one thing in this directory that is not about somebody else's boundary: `xacml_role_pep.js` is an EMBEDDED PEP that turns a token, an assertion, a ticket or a session into a XACML request and fills `common/issuance_gate.js`'s decider. The policy it evaluates is BUILT IN — the `role-issuance` template, called rather than seeded, because `ou=policies` is per realm and a seed written once in the default realm left every later realm unable to use roles at all — and a repository entry named by `xacml.issuancePolicy` overrides it. **THE REMOTE PEP LANDED 2026-09-05 and its container is `xacml-pep/`, below** — what is in this directory is the PDP's side: `ou=peps`, three endpoints under `/xacml/pep`, a fifth console page, and the nudge, which is this repository's THIRD outbound request. **A FOURTH ENDPOINT JOINED THEM ON 2026-09-06, `POST /xacml/pip`** — the Policy Information Point over HTTP, in XACML's own XML both ways, because a remote PEP holds the engine and NOT the directory and would otherwise decide the same policy differently; its answer is a REQUEST FRAGMENT the PEP splices into its own request rather than a vocabulary anybody has to translate. **AND THE WHOLE SURFACE IS GATED NOW**: the four endpoints proper require the built-in `XACML_USER` and the four a remote PEP uses require `REMOTE_PEPS`, two roles and two groups on purpose. **AND SINCE 2026-09-06 IT SAYS WHAT IT IS DOING**: `xacml_monitor.js` counts every decision at the PEP that asked for it and `/admin/xacml/monitor` is the sixth page — the only one in this family about TRAFFIC rather than configuration, listing every enforcement point embedded and remote. **It is the one page this directory registers that the console files under `Monitoring` rather than under Protocols > XACML**, because where a page is FILED is decided by the question it answers rather than by the module that draws it or the path space it sits in; the path is unchanged and `admin-ui/admin.js`'s `SECTIONS` is the only place that placement is stated. It keeps two things apart that a single number would lose: **a decision is not an enforcement** (four decisions, two outcomes, and the PEP's bias in between), and **what this service SAW is not what it was TOLD** (a remote PEP's counts are reported by it and go down when it restarts). The counters are a LEAF that may never require the console, for a route-order reason `xacml/CLAUDE.md` argues. |
+| `xacml-pep/` | **THE ONLY DIRECTORY HERE THAT IS NOT PART OF THE MOCK.** A second container: a remote XACML Policy Enforcement Point that holds its own copy of the engine, PULLS the policy repository from `/xacml/pep/policies` and decides in its own process. `server.js` does not require it and nothing here does; `docker compose --profile xacml up` starts it. **THE PULL IS THE CONTRACT** — the nudge this service sends on a change is an optimisation over the polling interval and never a replacement for it, which is what makes a third outbound requester affordable. The engine is copied out of `xacml/` AT BUILD TIME, so there is one copy of the evaluator in this tree; `tests/xacml_pep.js` asserts the Dockerfile's COPY set against the module list. **TWO tests guard it and they guard opposite halves**: that one holds the SHAPE and makes no HTTP request, and `tests/vendored/sts_xacml_remote_pep.js` (2026-09-06) drives this container on the mock's own docker network — in BOTH launchers' stacks — holding the DEPLOYMENT: a registration that succeeds only on a LATER attempt because its realm did not exist when it started, the pull, a policy deployed at the PAP changing what that container allows, **the nudge delivered across the bridge and recorded on the PDP's row**, and the PDP taken away underneath it — `xacml.remotePeps` off in its realm, which was a realm REMOVAL until 2026-09-06, when this suite stopped removing the realms it creates so that a failed run can be read afterwards — while it goes on deciding. It is the only thing anywhere that loads `xacml-pep/sync.js` or runs what that Dockerfile produces. **SINCE 2026-09-06 IT HAS A POLICY INFORMATION POINT AGAIN, over HTTP**: `xacml-pep/pip.js` walks the policy for every access-subject designator, asks the PDP's `POST /xacml/pip` for all of them in ONE query, and evaluates with a resolver over what came back — because the engine's resolver is SYNCHRONOUS and an HTTP request is not, which is what decided the endpoint's batched request shape rather than anything about efficiency. So a policy reading `employeeType` off a person's entry now decides the same way in both enforcement points, which it did not before. The degraded state is the OLD behaviour — a failed or refused query answers empty bags, `PEP_PIP=false` reaches it deliberately, and a container with no client certificate reaches it too. **Its thirty-line `common/helpers.js` shim is the most valuable thing in phase five** — it is what makes "the engine is a library with no I/O" a checked claim rather than a comment at the top of seven files. `xacml-pep/CLAUDE.md` argues all of it. |
+| `postgres/` | **Four files the database container runs, and nothing else** — two until 2026-09-06. `generate-tls.sh` makes its server key pair on first start — the same decision every other key here follows, because a certificate committed to a repository is a private key committed to a repository — and `require-tls.sh` rewrites every `host` rule in `pg_hba.conf` to `hostssl` so that TLS is REQUIRED rather than merely available. **`schema.sql` BUILDS THE SCHEMA AND THE ROLE THIS SERVICE DIALS WITH**, which is the change that stopped this service needing to be able to `CREATE TABLE` in its own store: an OWNER runs that file once, and `sts_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on the six tables and `USAGE` — not `CREATE` — on the schema. `apply-schema.sh` is what runs it inside the compose stack's database, on the start that creates the cluster. All four are mounted into the image by `docker-compose.yml`; none is run by this service. `postgres/CLAUDE.md` and `persistence/CLAUDE.md` argue them, and the second says why the driver had to start PROBING rather than trusting `IF NOT EXISTS` — that clause checks CREATE on the schema BEFORE it checks whether the table is there. |
 | `docs/` | The GitHub Pages site. See `docs/CLAUDE.md`. |
 | `env/` | The appconfig files. `CONFIG_FILE` selects one, and it is unioned on top of `defaults.js`, which is GENERATED by `generate_defaults.js` and is not selected by anything. |
 
@@ -142,9 +143,57 @@ turnstile rather than a lock, and the first three can be turned off.
 |---|---|---|---|
 | `/scim/v2` | a credential, in any of RFC 7644 section 2's six schemes; the OAuth ones need `scim:read` or `scim:write` | it creates and DELETES accounts | `scim/CLAUDE.md` |
 | the SPIRE Server API | an X509-SVID over mutual TLS, authorized against SPIRE's own per-method table | what comes out of it is a credential another service will believe | `spiffe/CLAUDE.md` |
-| `/admin` | a browser sign-on session and one of two roles — **Admin Read** and **Admin Write**, ordinary groups in the directory | it is the one surface that can change what every protocol endpoint does | `admin-ui/CLAUDE.md` |
+| `/admin` | **a session of its own, got through the OIDC authorization code flow** (2026-09-06), and one of two roles — **Admin Read** and **Admin Write**, ordinary groups in the directory | it is the one surface that can change what every protocol endpoint does | `admin-ui/CLAUDE.md` |
 | `/federation/acs/{id}` | a signature that verifies against the certificate configured on the relationship | **this one is NOT a turnstile and cannot be made permissive** | `federation/CLAUDE.md` |
 | `/authn/spnego` | a Kerberos ticket, verified against a real long-term key | **this one is not a refusal at all** | `kerberos/CLAUDE.md` |
+| `/xacml/pep/*` and `POST /xacml/pip` | a client certificate this service VERIFIED, whose subject DN resolves to a directory entry holding **`REMOTE_PEPS`** | the first three hand out the policy this service enforces and take reports from something that enforces it elsewhere; the fourth hands out a named person's directory attributes | `xacml/CLAUDE.md` |
+| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | the same chain, holding **`XACML_USER`** instead | a PDP is not an authorization boundary, but "not a boundary" is not "not worth guarding" — these publish the documents this service decides its own admissions with, and drive its engine | `xacml/CLAUDE.md` |
+| `/admin-api` | an **OAuth 2.0 access token** audienced to this API, carrying `admin:read` to read and `admin:write` to write | it is every control the console has, reachable by a machine — and it was the documented way to grant yourself both console roles | `mgmt-api/CLAUDE.md` |
+
+**THE SIXTH ARRIVED 2026-09-06 AND IT IS THE FIRST THAT IS NOT A TURNSTILE
+EITHER.** The three endpoints a remote XACML Policy Enforcement Point lives on
+are gated by a chain in which every link is a real check and none of them is
+permissive: a client certificate has to build a path to an anchor in this
+service's own truststore (`POST /tls/trust` — the main listener joined it that
+day), its subject DN has to resolve to a directory entry, that entry has to be
+a member of the group `roles.remotePepGroup` names, and the built-in
+`REMOTE_PEPS` role that grants is what the access policy requires. **The
+certificate says WHO and the group says WHETHER**, which is why a perfectly
+valid certificate for the wrong common name is refused while being fully
+authenticated. It is a policy decision like every other access decision here —
+the same embedded PEP, the same `access-control` document — so
+`xacml.enforceAccess` turns it off, and that is the one way past it.
+
+**AND THE SEVENTH IS THE SAME CHAIN WITH A DIFFERENT ROLE ON THE END: THE WHOLE
+XACML SURFACE ASKS NOW.** `GET /xacml`, `POST /xacml/pdp`, `GET
+/xacml/policies` and `GET /xacml/protected` require **`XACML_USER`**, held
+through the group `roles.xacmlUserGroup` names. Two roles and two groups rather
+than one of each, because **the `/xacml/pep/*` endpoints publish the documents
+this service enforces its own access with** and `POST /xacml/pip` publishes a
+named person's directory attributes — so admitting a caller to the
+demonstration surface must not silently admit it to those. `common/roles.js`
+argues the split at the role and `common/access_gate.js` at the resource
+(`xacml-api` and `xacml-pep-api` are two ids so that an operator narrowing one
+surface and not the other has two names to target).
+
+**WHAT DID NOT CHANGE IS THE ARGUMENT THAT USED TO BE READ AS A REASON NOT TO
+GUARD THEM.** A PDP is still not an authorization boundary — it answers a
+question about somebody ELSE'S — and the identity on the connection decides who
+may ASK while the identity the decision is ABOUT stays in the request, where
+nothing the gate learns can reach it. "Not a boundary" and "not worth guarding"
+are different sentences, and this service read the first as the second for as
+long as that surface existed.
+
+**`POST /xacml/pip` IS NEW WITH IT AND IS THE ONE ENDPOINT WHOSE ROLE DOES NOT
+FOLLOW ITS PATH.** It is the Policy Information Point over HTTP, and it exists
+because a remote PEP holds the engine and **not the directory** — this
+service's PIP *is* `ou=users`, so a policy designating an attribute the request
+did not carry resolves to an empty bag in another container and to a real value
+here, which is one policy deciding two ways in two enforcement points. XACML
+defines no PIP protocol, so it invents as little as possible: **XACML's own XML
+in both directions**, and the response is a REQUEST FRAGMENT the PEP splices
+into its own request — after which its engine finds the values where a
+designator looks for them, with no translation and no branch.
 
 The first three are a turnstile in the same sense: anybody can get a token with
 either SCIM scope, any password but one passes Basic, anybody can register a
@@ -153,7 +202,7 @@ checked at the console's sign-in screen either — what the gate proves is that
 somebody typed a name that holds a role. Each can be turned off
 (`scim.authRequired`, `spiffe.authRequired`, `admin.authRequired`).
 
-**The last two are different in KIND and both files say why at length.**
+**FEDERATION'S ROW AND SPNEGO'S ARE DIFFERENT IN KIND and both files say why at length.** (This sentence counted — "the last two" — until the table grew a sixth row, and a sentence that counts rows in a table somebody will add to is a sentence that goes quietly wrong.)
 Federation is the one feature here that must be CONFIGURED before it does
 anything, because there is no permissive answer available — "accept any SAML
 Response" means letting anybody who can reach this port get a browser sign-on
@@ -166,10 +215,31 @@ permissiveness moved into the KDC's ACCOUNT POLICY and left the verification
 real. **The verification is real and the account policy is not**, and those are
 two different sentences that this repository's prose has to keep apart.
 
-**`/admin-api` is NOT gated and that is deliberate** — it is what a test drives,
+**`/admin-api` TAKES AN OAUTH 2.0 ACCESS TOKEN SINCE 2026-09-09, AND THIS
+PARAGRAPH SAID THE OPPOSITE FOR AS LONG AS THIS FILE EXISTED.** It read
+"`/admin-api` is NOT gated and that is deliberate — it is what a test drives,
 and it is the way back in when nobody holds a role. Which means anybody who can
-reach this port can grant themselves both roles through it; see
-`mgmt-api/CLAUDE.md`, where that is argued rather than assumed.
+reach this port can grant themselves both roles through it." Every clause of
+that was true and the last one is what the change was for.
+
+It is the EIGHTH row on the table above, and it is not a turnstile: a token
+this service issued, audienced to `<base>/admin-api`,
+carrying `admin:read` for a read and `admin:write` for anything that changes
+state — which become the built-in `ADMIN_READ` and `ADMIN_WRITE` roles, so the
+requirement is stated in the same `access-control` document every other access
+decision here is stated in. One middleware on the base path covers all 232
+operations by construction.
+
+**The two things the old sentence was defending are both still true.** A test
+still drives it — the launchers mint a token before any job runs and hand it to
+every one of them, so no job holds a secret — and it is still the way back in,
+through `adminApi.authRequired`, which restores the open API exactly.
+**`adminApi.clientSecret` is the setting that makes the first of those possible
+at all**: the seeded client's secret is otherwise minted per start and readable
+only THROUGH the API it unlocks, so a deployment that does not pin it has an
+administrative surface nobody can obtain a token for. `mgmt-api/CLAUDE.md`
+argues all of it and keeps the three original reasons verbatim, because they
+are the argument for the off switch.
 
 **The Workload API is the opposite case and the distinction matters**: it
 authenticates nobody because its specification says it MUST NOT — a workload has
@@ -322,8 +392,33 @@ what each module is for is that directory's `CLAUDE.md`.
    directory plainly is. **What the move itself bought is a refusal**: a dump of
    every attribute of every entry prints `oauthClientSecret` and
    `fedClientSecret` in the clear, and those pages were the one surface here
-   handing them to anybody who could reach the port. `/admin-api` is still
-   ungated and mirrors all five, which is what a test drives.
+   handing them to anybody who could reach the port. `/admin-api` mirrors all
+   five and is what a test drives — it took an access token of its own from
+   2026-09-09, which is a second credential rather than the console's.
+
+   **`admin.js`'s TWELFTH SLOT IS `setGroupWriter()`, FILLED BY
+   `ldap/ldap_server.js`, AND IT IS THE SECOND WRITER FROM THAT MODULE.** It
+   carries `createGroup()` and `addGroupMember()` — what `createUser()` is to a
+   person, for a group — and it exists because until 2026-09-06 there was no
+   by-hand door onto a group at all: `/admin/groups` and `/admin-api/groups`
+   were both READS, so the only two ways to put a group in this directory were
+   an `ldapadd` on the raw socket and `POST /scim/v2/Groups`. **Rule 7 could
+   not have found that**, and the reason is worth keeping: a parity check
+   between the console and the management API is SATISFIED EXACTLY WHEN BOTH
+   SIDES ARE MISSING, so it reports drift and is silent about absence. What
+   found it was a test that could not be written —
+   `tests/vendored/sts_directory_bulk_load_api.js`, named "through the
+   management API", two of whose three sections would have had to reach for
+   SCIM.
+
+   It is a slot of its own rather than a third argument to
+   `setDirectoryWriter()`: that one carries ONE function and every caller of it
+   means "put a person in the directory". Same test both ways round — a require
+   from `admin.js` would close a cycle, one from `mgmt-api/admin_api.js` (19)
+   to `ldap_server.js` (21) would move every `/ldap` route. Validated whole,
+   for `setLogoutReader()`'s reason: a filler that installed `createGroup`
+   alone would leave the Add member control answering "no directory is loaded"
+   on a service whose directory plainly is.
 
    **`admin.js`'s ELEVENTH SLOT IS `setRolePreviewer()`, FILLED BY
    `xacml/xacml_role_pep.js`, AND IT IS THE SIXTH TO PASS THAT TEST BOTH WAYS
@@ -421,6 +516,77 @@ the rule, and the file named at the end of it is where the argument is:
    restart-only service-wide does not reach it; what a realm does NOT get is a
    scheme of its own. — `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md`
 
+## THIS SERVICE'S OWN TWO SURFACES ARE CLIENTS OF ITS OWN AUTHORIZATION SERVER
+
+Since 2026-09-06. `/admin` and `/portal` used to authenticate by REDIRECTING
+STRAIGHT TO THE SIGN-IN SCREEN and then reading the session that screen minted.
+They are **OpenID Connect relying parties** now: an unauthenticated request is
+sent to `/oauth2/authorize`, comes back to a registered redirect URI with a
+code, and the code is redeemed at `/oauth2/token` with a client secret and a
+PKCE verifier for an ID Token that establishes a session of that surface's own.
+
+**WHAT WAS WRONG WITH THE OLD ARRANGEMENT IS THE WHOLE ARGUMENT**: this
+service's own two applications were the only applications in the process that
+did not use the protocol this service exists to demonstrate. A real relying
+party has no access to the provider's session store; these two read it.
+
+`common/oidc_rp.js` is the client and carries the design at length. Six things
+reach outside it and this is the index of them:
+
+1. **THEY ARE ORDINARY ENTRIES IN THE REGISTRY.** `sts-admin-console` and
+   `sts-user-portal` under `ou=applications`, seeded at startup
+   (`applications.seedInternal`), each a confidential client with a secret
+   minted per start, `authorization_code` + `refresh_token`, `response_types:
+   ['code']` and `client_secret_basic`. **Deleting one takes its surface offline
+   until a restart**, with a refusal that names the entry — which is the seeding
+   rule finally having an observable consequence. — `common/CLAUDE.md`
+2. **THE BACK CHANNEL IS A REAL HTTP REQUEST AND IS THIS REPOSITORY'S FOURTH
+   OUTBOUND ONE.** It dials ITSELF, at a loopback address it computes, on a port
+   it is listening on, pinned to its own TLS certificate, carrying the BROWSER'S
+   Host header so the `iss` claim is the one the authorization endpoint
+   advertised. Redeeming the code in process would have been a client that skips
+   client authentication, skips PKCE verification and writes no audit row — the
+   half of the flow that only looks run. — `common/oidc_rp.js`
+3. **THERE ARE TWO KINDS OF BROWSER SESSION NOW AND ONE STORE.** The SIGN-ON
+   session is what a person has with the identity provider; a RELYING PARTY
+   session is what one application has with a person who signed in through it.
+   Both are rows in `authn.js`'s map, told apart by `rpSurface` exactly as an
+   API session is told apart by `credentialKey`, because a second register would
+   be a second answer to "is somebody signed in" (rule 3m). **A relying-party
+   session names the sign-on session it came from and dies with it**, in a
+   cascade inside `dropSession()` — the one place a session ends. —
+   `authn/CLAUDE.md`, `logout/CLAUDE.md`
+4. **`/admin/callback` IS THE ONE PATH UNDER `/admin` THE CONSOLE GATE DOES NOT
+   GUARD**, and it cannot be: somebody arriving there has no console session
+   yet. It is an exemption IN the gate rather than a route registered above it,
+   so "everything below the gate is guarded" stays true by construction. **The
+   SECOND exemption is `/admin/signout`** (2026-09-06), which is guarded — a
+   session and this session's CSRF token are both required — and is exempt from
+   the ROLE check only, because ending your own session is the one act on that
+   console needing no permission and the alternative is a console a reader can
+   enter and cannot leave. — `admin-ui/CLAUDE.md`
+5. **EACH SURFACE HAS A SIGN OUT BUTTON OF ITS OWN, AND IT ENDS TWO
+   SESSIONS.** `POST /admin/signout` (in the console's shell, on every page)
+   and `POST /portal/signout` (in the portal's own shell, on every page since
+   2026-09-06) end the
+   surface's relying-party session AND the sign-on session behind it. Ending
+   only the first would be a button that signs nobody out: the next request
+   runs the code flow, meets the live sign-on session, and comes back in with
+   nothing typed. Neither is `/logout`, which ends everything an identity
+   holds in every protocol and is still linked from both. — `admin-ui/CLAUDE.md`,
+   `portal/CLAUDE.md`
+6. **NEITHER SURFACE PROMPTS FOR CONSENT**, because both entries carry
+   `oauthGlobalConsent` — an attribute, so an operator who wants the screen
+   removes the values. `oauth2.consentRequired` is on by default and is the only
+   policy here that is; in front of a console it would be a question with one
+   sensible answer whose Deny button locks the operator out. — `common/CLAUDE.md`
+
+**THE REALM RULES ARE UNCHANGED AND ARE WHY THE TWO FLOWS DIFFER.** The
+console's runs in the DEFAULT realm wherever it was reached, because the role
+roster lives there; the portal's runs in the AMBIENT realm, because `/portal`
+is a person's own account in the realm they are in — which is why the portal's
+client is seeded in every realm and the console's in one.
+
 ## One listener process, N stateless workers
 
 **This service is one node process and it owns six listener families** — the
@@ -479,6 +645,132 @@ timeout that had been winning a race it was never allowed to run in.
 loop is free.
 
 ---
+
+## THE REQUIRE ORDER MOVED TO `common/protocol_stack.js` (2026-09-07)
+
+**The order is unchanged and the table below is still the index of it.** What
+changed is where the sequence LIVES, and it moved for one reason: it acquired a
+second reader.
+
+`server.js` loads that file and then binds the sockets. **`common/request_worker.js`
+loads the SAME file and binds none of them** — it is a child process that runs
+the service and answers HTTP on a unix socket the front process proxies to. A
+second copy of the require order would be a second answer to "which handler
+wins", and the two processes would disagree in exactly the cases hardest to see:
+a route registered before a middleware in one and after it in the other.
+
+The five modules that own listeners are returned rather than merely required,
+because `server.js` needs the handles for `listen()`. Requiring them still
+registers their HTTP views and starts nothing — which is a separation that
+predates this change by a fortnight, made for a different reason (binding can
+fail and a `require` that throws takes the process down), and is what makes a
+request worker possible at all.
+
+## THERE ARE TWO WORKER POOLS NOW, AND THEY ARE DIFFERENT KINDS OF WORKER
+
+| | `common/worker_pool.js` | `common/request_pool.js` |
+|---|---|---|
+| A worker runs | a JOB TABLE — four leaf computations | THE SERVICE — the whole protocol stack |
+| Handed | everything the job needs | an HTTP request |
+| Speaks | the IPC channel, structured clone | real HTTP over a unix socket |
+| Forked | LAZILY, on the first post-quantum job | EAGERLY, before the listener binds |
+| Setting | `workers.count` (5) | `workers.requestCount` (0) |
+| Off by default | no | **yes, and nothing is dispatched until `workers.dispatch` names a path** |
+
+**The goal of the second one is one sentence: the front process should be doing
+request/response I/O and nothing else.** The first moved four computations off
+that thread; every handler still ran on it.
+
+**ROUTING IS THE PART TO GET RIGHT AND THE CUT IS NOT THE OBVIOUS ONE.** It is
+**sessionless versus session-bearing**, not stateless versus stateful.
+`workers.fanout` names the exceptions and everything else dispatched holds
+affinity, which is the right way round: a protocol subsystem carries a browser
+flow across several requests and belongs on one worker, and the surfaces that do
+not are few enough to write down — `/scim`, `/xacml` and `/admin-api`, each
+carrying its own credential per call and naming its own target.
+
+**EVERYTHING UNDER `/admin` IS THE CONSOLE AND HOLDS AFFINITY, `/admin/ldap/*`
+INCLUDED.** Those pages are pages somebody reads while signed in; the fact that
+what they draw is the directory does not make them the directory's protocol.
+Keeping them apart from `/admin-api` is not automatic either — a bare prefix
+match makes `/admin` match `/admin-api`, which would put the management API on
+the affinity side silently. A prefix ends at a SEGMENT BOUNDARY, and
+`tests/request_routing.js` fails if it stops doing so.
+
+**AND THE LDAP PROTOCOL FANS OUT TOO, AS AN OPERATION.** This section said it
+"cannot be dispatched" for an hour and that was wrong: the front process holds
+the SOCKET, which is a reason for it to do the framing and not a reason for it
+to do the WORK. `workers.operations` is the protocol-independent half — the
+front process accepts the connection, decodes the BER and writes the reply, and
+hands a `{ kind, args }` pair to a worker. It fans out, because a directory
+operation carries its own DN and credential. The same mechanism is what the KDC
+and the two gRPC surfaces would use.
+
+Those surfaces are emphatically NOT stateless — SCIM and LDAP writes mutate the
+directory every other family reads — but that is a question about the state
+channel and not about which worker answers.
+
+**AFFINITY IS A LOCALITY MEASURE AND NEVER A CORRECTNESS ONE.** Of the stores
+this service keeps, only the sign-on sessions and the pending authentication
+records are per-session. The rest are read by a request other than the one that
+wrote them.
+
+**A WORKER IS ANOTHER PROCESS AGAINST THE STORE, AND THAT IS THE STATE
+CHANNEL.** There was nearly a second mechanism here. There did not need to be:
+this repository already built *several processes against one store* —
+`persistence/persistence_replication.js`, five appliers, a change log that is
+the contract and a notification that is only latency — and **a request worker is
+exactly one more such process.** So a worker runs `common/service_state.js`, the
+same four startup steps `server.js` runs and from the same file: the store, the
+signing keys, the minted rows, and COORDINATION. What makes dispatch correct is
+that last step, not anything written for the pool.
+
+**DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
+Everything else about the pool degrades — no workers means the front process
+does the work, a dead worker is a 502, a pool that gave up handles everything
+here — and all of those leave a service that is correct and slow. This one
+leaves a service that answers WRONGLY, which was measured before the guard
+existed: `/admin-api` across three workers with a memory store, one setting
+written, six reads, and the fifth returned the value from before the write.
+Nothing errored and nothing logged. So it is fatal, with a message naming both
+ways out, on the same argument `persistence.start()` makes about a store it
+cannot open.
+
+**WITH COORDINATION ON IT WAS MEASURED AGAIN AND IT HOLDS.** Three workers
+against one PostgreSQL store: a setting written through one worker and read back
+twelve times gave `1500 override` twelve times, with the thirteen requests
+fanned 5/4/4 across all three; a person created over SCIM in one worker was
+found by all three, 9 reads out of 9. **Convergence is 0.5–1.0s** — the change
+log with `LISTEN`/`NOTIFY` doing the work and the five-second poll as the
+backstop.
+
+**CONVERGENCE IS NOT READ-YOUR-WRITE, AND `workers.readYourWrite` IS THE
+DIFFERENCE.** With it off — the default — a caller that writes through one
+worker and immediately reads through another may be answered by one that has
+not caught up. Measured across three workers, writing and reading over SCIM
+with no pause: **20 of 40 could not read their own write.** With it on: **0 of
+40.**
+
+The mechanism pays on the READ side. The obvious fix — make every write wake
+every worker and wait — was rejected because it charges every write for a read
+that mostly never happens; a bulk load of five thousand entries would pay it
+five thousand times for one read-back. Instead the pool keeps a GENERATION,
+bumped when a request that may have written finishes, and a worker that is
+behind pulls before it answers. So the cost falls on the first read after a
+write on each worker, and on nothing at all while nothing is being written.
+**What counts as a write is the METHOD**, which is conservative on purpose: the
+front process is proxying bytes and cannot know whether a POST changed
+anything, and an occasional unnecessary pull is the error worth making.
+
+Measured cost, three workers on one PostgreSQL store: 37ms to 43ms per read and
+30ms to 37ms per write. **It is OFF by default** because that is the behaviour
+that existed before it, and because whether the wait is worth it is a question
+about the callers rather than about the pool.
+
+`persistence_replication.js`'s `syncNow()` is the barrier itself, and it is a
+different shape from `pull()` beside it on purpose: `pull()` returns at once
+when a catch-up is already running, which is right for a timer and useless for
+a caller that needs to know it is up to date.
 
 ## The require order in `server.js` IS the route order
 
@@ -635,6 +927,17 @@ exception — `script-src 'self'` naming one resource, never `'unsafe-inline'`.
 fallback nobody sees: with the script blocked the button is the whole mechanism,
 so it is labelled for a person rather than hidden.
 
+**ONE OF THE SIX IS A PAGE OF THE ADMIN CONSOLE SINCE 2026-09-09, WHICH IS NEW
+AND CHANGES A SENTENCE ELSEWHERE IN THIS FILE.** The explorer was
+`/admin-api/docs` and is `/admin/api-explorer`; it moved because that API began
+requiring an access token and a browser navigating to a URL carries none, so
+the one page in this service written to be opened in a browser had become the
+one page a browser could not open. **So "this console is `script-src 'none'`"
+is now "every page of this console except one"** — the claim is qualified
+wherever it is made, and the XACML editor's version of it is unaffected because
+that page genuinely has no script and would still not have one if this page had
+never moved.
+
 **The inventory is the cross-cutting part and the argument for each is made
 where the page is**, which is why this is a table of pointers:
 
@@ -643,7 +946,7 @@ where the page is**, which is why this is a table of pointers:
 | `/authn/webauthn` | `/authn/webauthn.js` | `authn/CLAUDE.md` |
 | WS-Federation's sign-in response | `/wsfed/autopost.js` | `ws-federation/CLAUDE.md` |
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
-| `/admin-api/docs` | the explorer | `mgmt-api/CLAUDE.md` |
+| `/admin/api-explorer` | the explorer | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 
@@ -784,18 +1087,115 @@ that header too.
 
 
 
+## Versioning: M.N.O, and the number is fixed when an artifact is BUILT
+
+Since 2026-09-06, and it is **the parent project's scheme rather than one of
+this repository's own** — `id-proto-debugger/client/version.js` is where it was
+written, `common/version.js` is a port of it, and the differences are listed in
+that file's header rather than here.
+
+```
+0.1.20260906143205
+│ │ └── the BUILD NUMBER: the UTC build instant, YYYYMMDDHHMMSS, or BUILD_NUMBER
+│ └──── minor ┐ both from the repo-root VERSION file, which is the single
+└────── major ┘ source of M.N. Bump a release by editing it.
+```
+
+**THE BUILD NUMBER IS DECIDED AT IMAGE BUILD TIME AND NOT AT STARTUP, AND THAT
+IS THE WHOLE DESIGN.** `Dockerfile` runs `node common/version.js --stamp .`
+after the source is copied, which writes a `version.json` that ships inside the
+image; `load()` prefers that record and computes one only when there is none. A
+service that numbered itself when the process started would report a different
+build every time its container restarted — which makes *which build is this*
+unanswerable in exactly the situation where it gets asked, because restarting is
+what somebody does when they suspect the build. **A record that was computed
+rather than stamped says so**, and every surface that draws the version repeats
+it: `stamped: false` means a checkout is being run and the number is when it
+started.
+
+**SEVEN SURFACES DRAW IT AND THERE IS ONE SOURCE.** The startup banner, the front
+page's version line, the foot of every admin console page, the foot of every
+user portal page, `GET /admin-api` (with `build`, `commit`, `builtAt` and
+`stamped` broken out beside it, so a client reads fields rather than writing a
+regular expression), `/admin/sts-metadata` — the one page whose subject is
+what this service IS, where it is in the lead paragraph and in the JSON — and
+**the remote PEP's own `GET /`, together with the row it registers on the PDP's
+`/admin/xacml/peps`**, which is the seventh and the subject of the section
+below. **Two
+of them used to read `require('../package.json').version`**, which is `M.N.0`
+with a placeholder patch, so the front page and the management API reported the
+same string for every build ever made. `tests/version.js` asserts the SOURCE
+each of them reads and not the string it renders, because two surfaces reading
+two different sources agree perfectly right up until they stop.
+
+**THE THREE OUTBOUND REQUESTS SAY WHICH BUILD IS CALLING**, in RFC 9110 product
+form — `mock-sts/0.1.<build> (federation)`, `(ssf-transmitter)`,
+`(xacml-pdp-notify)` — built by `version.userAgent()` so there is one copy of
+the product token. Each of those reaches somebody else's server, and their
+access log is where an integration with a mock they did not install gets
+diagnosed.
+
+**`xacml-pep/` REPORTS THE COMPLETE NUMBER TOO, AND IT IS THE ONE PLACE A
+VERSION WAS ALREADY BEING DRAWN AND WAS A LIE.** `options.version` rides on the
+registration that container sends and on every heartbeat, the PDP stores it as
+`xacmlPepVersion`, and `/admin/xacml/peps` draws it in a column headed Version —
+and until 2026-09-06 the value was the hand-written string `'mock-sts xacml-pep,
+phase five'`. A console column answering *which build is that enforcement point
+running* with the name of a development phase, unchanged since it was typed and
+incapable of changing, because nothing computed it.
+
+`VERSION` and `common/version.js` are copied into that image at build time the
+way the seven engine modules are — one copy in the tree, never a checked-in
+second — and stamped there. **They go to the CONTAINER ROOT and not into
+`./common/`**, which is the whole of the placement decision: that directory is
+the thirty-line shim, and what makes it worth anything is that an engine module
+which grew a dependency on the mock's config table, crypto module or realm
+registry THROWS AT LOAD because there is nothing else in there to resolve.
+`version.js` reads files and shells out to git; a second file beside the shim
+turns "the shim is the evidence" into "the shim plus whatever else we put
+there". `tests/xacml_pep.js` pins it — exactly one COPY may write into the
+image's `./common/`.
+
+`pep.js` resolves the module across both layouts (`./version` in the image,
+`../common/version` in a checkout), which is the two-candidate shape the parent
+project's `api/server.js` uses for its own copy. **M.N MUST AGREE BETWEEN THE
+TWO IMAGES AND THE BUILD NUMBERS NEED NOT**: they are two artifacts, compose
+stamps each with the instant it was built, and passing one `BUILD_NUMBER` to
+both is how you say they are one release. A difference in M.N is a build that
+took its VERSION from somewhere else; a difference in the build number is the
+ordinary case — and a PEP left behind across a release is exactly what that
+console column exists to make visible.
+
+**Both `package.json` files carry the same M.N as `M.N.0`** (semver needs three
+parts, and the real build number is not one of them). `node common/version.js
+--check-manifests` reports drift and `--sync-manifests` fixes it.
+
+**ONE NUMBER IS NOT RECONCILED WITH THE PARENT AND CANNOT BE FROM HERE.** That
+project's own `--sync-manifests` carries `sts` in its manifest list and rewrites
+`sts/package.json` to the PARENT's M.N.0. That checkout is this repository, so
+after a parent sync the two say different things — which is correct: they answer
+*which release of the debugger is this submodule pinned into* and *which release
+of the mock STS is this*, and those are different questions. `--check-manifests`
+here checks this tree only, and `../id-proto-debugger/sts` is read-only forever.
+
+**A version may never be the thing that stops this service starting.** An
+unreadable VERSION file falls back to `0.0` with a message on stderr and a
+corrupt stamp falls back to a computed record — the opposite of the signing key
+above, and deliberately so: a wrong version misinforms a reader, a lost key
+invalidates every token this service ever issued.
+
 ## Tests
 
 **THE PROTOCOL SUITE IS WRITTEN IN THE PARENT PROJECT AND A COPY OF IT RUNS
 HERE.** Those are two claims and keeping them apart is the whole of this
-section; `tests/CLAUDE.md` carries everything else, including the eighteen-job
+section; `tests/CLAUDE.md` carries everything else, including the job
 table, the three launchers, the coverage run and the rules that are not optional
 there.
 
 ```bash
 npm test                      # the in-process half alone: no port, no container, under 2s
-./local-run-tests.sh          # ALL 44 jobs — the development loop
-./docker-run-tests.sh         # the same 44, runner and service both in containers. What CI runs
+./local-run-tests.sh          # EVERY job — the development loop
+./docker-run-tests.sh         # the same set, runner and service both in containers. What CI runs
 ./run-coverage.sh             # the same run with coverage collected
 ```
 
@@ -807,18 +1207,42 @@ second one that comes before it.**
    `local: true` — whatever the answer to the next question. That is an
    OWNERSHIP argument rather than a capability one: the tree that ADDS a control
    to that console is the tree that should go red when the control loses its
-   operation. Ten jobs are here on it.
+   operation. Most of the `local: true` jobs are here on it.
 2. **Otherwise: can it be asserted by driving the running service over HTTP?**
    If yes it goes in `../id-proto-debugger/tests/`, where it costs one entry in
    `run-report.js` and runs in three stacks without anything being invented for
    it. Only if NO does it belong here — a test that needs to choose how the
-   PROCESS was started, or that hands a document to an independent
-   implementation in the same address space.
+   PROCESS was started, that hands a document to an independent
+   implementation in the same address space, **or that needs A SECOND CONTAINER
+   on this service's own docker network and drives the seam between them.**
+   There is exactly one of that last kind and `tests/CLAUDE.md` argues it:
+   `tests/vendored/sts_xacml_remote_pep.js`, which both launchers bring an
+   `xacml-pep/` container up for. It is NOT the closed row about several copies
+   of this service — a realm is another copy of this service and that is why
+   that row closed; the remote PEP is a different program, and no number of
+   realms produces one.
+3. **AND A THIRD KIND SINCE 2026-09-06: a test that needs a SOCKET THIS
+   SERVICE BINDS AND NO STACK PUBLISHES.**
+   `tests/vendored/sts_directory_bulk_load_ldap.js` writes five thousand
+   entries over RFC 4511 on TCP 389, and it is **the only job in either suite
+   that touches the directory's own socket** — everything else that reaches
+   this directory reaches it over HTTP, through `ldap_server.js`'s FUNCTIONS
+   rather than its PROTOCOL, so the BER codec, the ldapjs submodule, the add
+   handler's refusals and the modify handler's change loop were exercised by
+   nothing anywhere. `docker-compose.yml` deliberately publishes neither 389
+   nor 636 — the host most likely to want a mock directory is a host already
+   running slapd — so the parent's stacks cannot reach it and this one has to
+   arrange it: the containerized runner is on the bridge and needs nothing,
+   `./local-run-tests.sh` layers `tests/docker-compose-ldap.yml` on a free host
+   port, and the throwaway service hands its own `LDAP_PORT` over. **It is not
+   `docker: true`** — that flag is for a job needing a DAEMON, and this one
+   needs a PORT — so with neither launcher it FAILS naming the variable rather
+   than reporting green having driven nothing.
 
 **Editing a vendored copy instead of the parent's original is the one thing this
 arrangement cannot survive** — the copy is overwritten by the next
 `--vendor-sync` and the fix never reaches the stack that gates that project. The
-nine marked `local: true` are the exact inversion of that rule: they are edited
+ones marked `local: true` are the exact inversion of that rule: they are edited
 here and only here, and there is no copy over there to sync from.
 `tests/vendored/MANIFEST.js` says which is which, and `--vendor-check` reports
 drift in the others.
@@ -862,9 +1286,9 @@ argument in two places is an argument that will disagree with itself.
 | Decide who may delegate to whom IN THE ACT, in two of the three families that can — the KDC polices S4U on every request; WS-Trust polices nothing. **RFC 8693 is no longer on this row unqualified**: since 2026-09-01 a DELEGATED PERMISSION may be configured between two OAuth application entries, and `oauth2.delegatedPermissionsEnforced` — off by default — refuses a request for one the client does not hold | `common/CLAUDE.md`, `kerberos/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Give a trust realm its own Kerberos KDC, TLS listeners or SPIFFE signing authority — those three socket families have no path to put a realm segment in and no name inside the protocol to put one in either. **The DIRECTORY is no longer on this list**: it is a subtree per realm since 2026-08-25, because a DN is a name a client can carry | `common/CLAUDE.md`, `ldap/CLAUDE.md` |
 | Give a trust realm its own administrator — the two console roles are groups in the DEFAULT realm's directory, read there from every realm, and the console's gate accepts that realm's session only. Deliberate: a per-realm roster would let anybody who can create a realm administer the whole service | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `ldap/CLAUDE.md` |
-| Persist anything it MINTS — sessions, tokens, codes, artifacts, Kerberos tickets, the statistics, the audit log — in any mode, because the signing key is regenerated on every start and a token that outlived it would verify against nothing. **What it DOES persist since 2026-08-27, when a store is configured, is the three things somebody TYPED**: the embedded directory, the trust realm registry and the runtime appconfig overrides. This row said "persist anything at all" until that date | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| ~~Persist anything it MINTS — sessions, tokens, codes, artifacts, Kerberos tickets, the statistics, the audit log~~ — **REVERSED 2026-09-06, IN PRODUCT MODE ONLY, AND THE QUALIFIER IS THE WHOLE ROW.** It rested on one fact: the signing key was regenerated on every start, so a restored token would verify against nothing. That is still true in DEVELOPMENT mode, which is the default, and it stopped being true in product mode when `keystore.js` learnt to keep its keys — which is why product mode requires a store. So: **development persists nothing it minted; product on a postgres store persists all of it**, every row encrypted under the same key-encryption key as the signing keys. The `ldif` store holds none of it in either mode and says so at startup, because it writes whole files per flush. What did NOT change: the three things somebody TYPED persist in every mode with a store, and this row said "persist anything at all" until 2026-08-27 | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | Dial its database in the clear — since 2026-08-30 the compose stack's PostgreSQL refuses a plaintext connection (`hostssl` on every rule) and the client asks for `sslmode=require`, so both ends say it. It does NOT authenticate that server: the certificate is generated in the container and signed by nobody, which `/admin/persistence` reports as two facts rather than one tick | `persistence/CLAUDE.md` |
-| COORDINATE several processes through that store — two copies pointed at one database each hold their own directory in memory and never see each other's writes. Persistence is not clustering, and the store's own status says so | `persistence/CLAUDE.md` |
+| ~~COORDINATE several processes through that store~~ — **REVERSED 2026-09-06.** Every change is written to a monotonic log (`sts_changes`) INSIDE the transaction that made it, and each process applies what the others committed: the directory, the realms, the settings and the minted rows alike. A `LISTEN`/`NOTIFY` nudge only makes that prompt — **the log is the contract**, so a missed notification costs latency and never a change, which is the same trade `xacml-pep/` already makes about its own pull. What did NOT change: it shares STATE and not SOCKETS (the KDC, both LDAP listeners, the two TLS ports and SPIFFE's four are per process), and the replay caches CONVERGE rather than synchronise — there is a window the size of `persistence.pollInterval` in which a proof one process refused is accepted by another. `persistence.coordinate` turns it off | `persistence/CLAUDE.md` |
 | Recall anything it has already ISSUED — a SAML assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED since 2026-09-05: it now DISOWNS them.** A sign-out marks each revoked in this service's own record, which is a different claim from recalling one and must never be drawn as the same — the credential still verifies, still decrypts, still chains, because nothing consults this service when it is presented and nothing can be made to. What the mark buys is that a sign-out can say what it disowned, that CAEP can carry it to a receiver that subscribed, and that SAML Single Logout can carry it for an assertion from a browser profile. `revocationReach` on every row of the issued list is the field that keeps the two apart | `logout/CLAUDE.md`, `common/CLAUDE.md` |
 | Perform back-channel logout. Front-channel IS implemented; the metadata says which | `oauth-oidc/CLAUDE.md` |
 | Fake WS-Federation's `wauth`, or dereference `wreqptr` | `ws-federation/CLAUDE.md` |
@@ -897,9 +1321,10 @@ that door off.
 The console's is the newest and the one with the most surprising edges, all of
 which are argued in `admin-ui/CLAUDE.md`: the two roles are ORDINARY DIRECTORY
 GROUPS rather than a store of the console's own, so four doors write one
-membership; **`/admin-api` is deliberately NOT gated**, which is what a test
-drives and what somebody locked out reaches for — and also means anybody who can
-reach this port can grant themselves both roles; and while NEITHER role group has
+membership; **`/admin-api` is gated too since 2026-09-09, by a DIFFERENT
+credential** — an OAuth 2.0 access token rather than a session, which is what a
+test drives and what somebody locked out reaches for, and `adminApi.authRequired`
+is the switch that puts it back the way it was; and while NEITHER role group has
 a member, anybody who signs in holds both, because this service has no password
 anywhere to bootstrap an administrator with.
 

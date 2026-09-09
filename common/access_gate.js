@@ -76,6 +76,17 @@ const config = require('./config');
 //                       ONLY — that surface is open in development by design
 //   scim                `scim/scim_auth.js`'s authenticate() funnel
 //   spire-server-api    `spiffe/spiffe_grpc.js`'s prepareCall()
+//   xacml-pep-api       `xacml/xacml.js`'s pepAccess()
+//   xacml-api           `xacml/xacml.js`'s xacmlAccess()
+//
+// **THE LAST TWO ARE NOT LIKE THE FIVE ABOVE THEM AND THE DIFFERENCE IS THE
+// DEFAULT.** The five are surfaces an operator NARROWS: they require
+// `EVERYBODY` until somebody says otherwise, so this layer changed nothing the
+// day it was added. The two XACML ones carry their requirement in the REQUEST
+// and are restricted out of the box, because a gate that is permissive until
+// configured is a gate that is open on every deployment nobody has configured.
+// It is still a POLICY decision either way — the same document decides all
+// seven, and `xacml.enforceAccess` is the one switch that stops it deciding.
 //
 // **EACH ONE ASKS AFTER ITS OWN CHECK AND NEVER INSTEAD OF IT.** The console's
 // two roles, SCIM's six RFC 7644 schemes and SPIRE's per-method table are
@@ -96,7 +107,27 @@ const RESOURCE = {
   MANAGEMENT_API: 'management-api',
   PORTAL: 'user-portal',
   SCIM: 'scim',
-  SPIRE_SERVER_API: 'spire-server-api'
+  SPIRE_SERVER_API: 'spire-server-api',
+  // THE THREE ENDPOINTS A REMOTE POLICY ENFORCEMENT POINT LIVES ON
+  // (2026-09-06): register, policies, heartbeat. It is the sixth resource and
+  // the FIRST that is not permissive by default — see `requiredRoles` on
+  // `check()` below, and `xacml/xacml.js` where it is asked.
+  XACML_PEP_API: 'xacml-pep-api',
+  // THE XACML SURFACE PROPER: GET /xacml, POST /xacml/pdp, GET
+  // /xacml/policies, GET /xacml/protected. The seventh resource and the second
+  // that is restricted from the start — it requires `XACML_USER`, which
+  // `xacml/xacml.js` puts in the request.
+  //
+  // **A SEPARATE RESOURCE FROM `XACML_PEP_API` AND NOT A WIDENING OF IT**, and
+  // the two ids are what make the separation writable: an operator adding a
+  // second Permit rule for a helpdesk role, or narrowing one surface and not
+  // the other, needs two names to target. One id covering all seven endpoints
+  // would mean every policy anybody wrote about the demonstration surface also
+  // decided who may pull the documents this service enforces its own access
+  // with, which is the collapse `roles.js` keeps the two roles apart to
+  // prevent — and a policy layer that cannot express the distinction its own
+  // register makes is a policy layer somebody will work around.
+  XACML_API: 'xacml-api'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's

@@ -11,21 +11,55 @@ what still is not matters just as much.
 
 ## What survives, and what never can
 
-| Survives a restart | Never does, in any mode |
-|---|---|
-| the embedded **LDAP directory** — every entry under every realm's base | sessions, access tokens, ID Tokens, refresh tokens |
-| …which is also the **applications registry**, the **federation register**, the **SPIFFE registry** and the **group roster**, because in this service those *are* directory entries | authorization codes, pre-authorized codes, SAML artifacts |
-| the **trust realm registry** — names, descriptions, per-realm settings | Kerberos tickets and the replay caches |
-| **runtime setting changes** — what the console and `POST /admin-api/config/set` write | the statistics, the audit log |
-| | **the signing key** |
+**This section had two columns until 2026-09-06 and now has three, because the
+answer stopped being the same in every configuration.**
 
-The right-hand column is not a to-do list. **The signing key is regenerated on
-every start**, so a token restored from a disk would verify against nothing, an
-assertion would be a document nobody could check, and a statistics file that
-outlived the key that signed the tokens it described would be worse than none.
+| Survives with any store | Also survives in **product** mode on **postgres** | Never does |
+|---|---|---|
+| the embedded **LDAP directory** — every entry under every realm's base | sessions, access tokens, ID Tokens, refresh tokens | nothing, beyond two caches that are re-derivable |
+| …which is also the **applications registry**, the **federation register**, the **SPIFFE registry** and the **group roster**, because in this service those *are* directory entries | authorization codes, pre-authorized codes, SAML artifacts | |
+| the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches | |
+| **runtime setting changes** — what the console and `POST /admin-api/config/set` write | the statistics, the counters and the audit log | |
+| the **signing keys**, encrypted (product mode only) | | |
 
-The rule, in one sentence: **what persists is what somebody typed, and what
-resets is what this process minted or counted.**
+### The middle column rests on one fact, and so did the rule it replaced
+
+The old rule was **what persists is what somebody typed, and what resets is what
+this process minted or counted** — and it was right for one reason: *the signing
+key was regenerated on every start*, so a token restored from a disk would verify
+against nothing, an assertion would be a document nobody could check, and a
+statistics file that outlived the key that signed the tokens it described would
+be worse than none.
+
+**That is still exactly true in development mode, which is the default.** It
+stopped being true in product mode, where `keystore.js` generates a realm's keys
+once and reads them back — which is why product mode requires a store. A token
+restored beside the key that signed it verifies, so restoring the rest of it is
+honest.
+
+Two conditions, both required:
+
+* **`global.mode` is `product`.** Development persists nothing it minted.
+* **`persistence.mode` is `postgres`.** The `ldif` store holds none of it in
+  either mode and says so once at startup, because it writes *whole files* per
+  flush — right for a directory somebody types into, wrong for a session table
+  and an audit ring that change on every request.
+
+`persistence.minted` turns it off; `persistence.mintedRetention` (7 days) is how
+long a row is kept.
+
+### Every minted row is encrypted
+
+A session id is a cookie value. An authorization code and a pre-authorized code
+are redeemable. A SAML artifact handle is dereferenceable. A Kerberos principal's
+long-term key *is* the password. So each row's body is AES-256-GCM under **the
+same key-encryption key that already protects the signing keys** — read from a
+mounted file or one of four cloud secret stores, never from the database it
+protects. A dump of `sts_minted` is not a set of live sessions and usable codes.
+
+What that costs is that nothing in that table is queryable by SQL. That is the
+trade taken deliberately: what wants querying is the directory, which is JSONB
+and is not sealed.
 
 ## Turning it on
 
@@ -85,9 +119,39 @@ Point it somewhere else with `STS_DATABASE_URL`, or by editing
 `persistence.databaseUrl` in your appconfig file — all four of them carry the
 same base block.
 
-Three tables, created on first connection: `sts_ldap_entries` (one row per
-entry, attributes as JSONB, keyed by realm and normalised DN), `sts_realms` and
-`sts_appconfig`. Nothing is migrated: if the schema ever changes, drop them.
+Five tables: `sts_ldap_entries` (one row per entry, attributes as JSONB, keyed
+by realm and normalised DN), `sts_realms`, `sts_appconfig`, `sts_keys` (the
+signing keys, as ciphertext, in product mode) and `sts_schema`. Nothing is
+migrated: if the schema ever changes, drop them.
+
+#### Building it, and the role that cannot rebuild it
+
+Against a database with nothing in it, this service creates the tables on its
+first connection exactly as it always did — which is what the command above
+does, and it needs a role that may create them.
+
+**For anything you would leave running, build the schema separately:**
+
+```bash
+psql -v ON_ERROR_STOP=1 -f postgres/schema.sql "postgres://owner@host:5432/sts"
+```
+
+That script creates the tables *and* a second role — `sts_app` by default, or
+whatever `-v sts_app_role=` and `-v sts_app_password=` name — which holds
+`SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` but **not**
+`CREATE` on the schema. Point `STS_DATABASE_URL` at that role and the running
+service can change every row in its store and cannot add, alter, truncate or
+drop a table in it. The script is idempotent, so running it again is also how
+you rotate that password.
+
+The service notices: it asks which objects exist and issues a `CREATE` only for
+one that is missing, so against a schema built this way it creates nothing and
+needs no privilege to. If you point it at an *empty* database with the
+restricted role it refuses to start and says so, naming the script — that is the
+one arrangement this split cannot paper over.
+
+**The compose stack below does all of this for you**, on the start that creates
+the database volume. See the warning there about an older volume.
 
 ### With Docker Compose
 
@@ -95,6 +159,15 @@ entry, attributes as JSONB, keyed by realm and normalised DN), `sts_realms` and
 up a Postgres container beside this service, with a named volume under each and
 the `env/` directory bind-mounted so the appconfig files stay editable from the
 host.
+
+The database container runs `postgres/schema.sql` itself, once, on the start
+that creates its volume — so the stack comes up with the schema built and with
+this service connecting as the restricted `sts_app` rather than as the owner.
+**A volume created before 2026-09-06 has the tables and no such role**, and the
+service container then restart-loops with `password authentication failed for
+user "sts_app"`. `docker compose down -v` is the fix, and what it removes is the
+directory, the realm registry and the appconfig overrides — never anything this
+service minted.
 
 ```bash
 docker compose up            # start; the directory is there again next time
@@ -188,16 +261,42 @@ signing key is not** — every realm's key is regenerated on every start, exactl
 like the default realm's, so a token minted in a realm today verifies against
 nothing tomorrow.
 
-### Persistence is not coordination
+### Processes against one store coordinate
 
-Two processes pointed at one Postgres database each hold their own copy of the
-directory in memory. Each writes its own changes down, and **neither sees the
-other's until it restarts.**
+**This section said the opposite until 2026-09-06** — *"persistence is not
+coordination… one process per store"* — and that was the honest description of
+what existed.
 
-Running several copies against one store is not yet a way to scale this service
-— it is a way to have several services quietly overwrite each other. **One
-process per store.** `/admin/persistence` says so on the page, and
-`status.coordinates` is `false` in the JSON.
+Every change is now written to a monotonic log, `sts_changes`, **inside the
+transaction that made it**. Each process remembers the highest entry it has
+applied and asks for everything after it — the directory, the realm registry, the
+runtime settings and the minted rows alike. A `LISTEN`/`NOTIFY` nudge wakes that
+ask early.
+
+**The log is the contract and the notification is only latency.** That is the
+one sentence worth keeping, because it is what makes the hard parts easy: a
+process whose listener dropped for four seconds misses nothing, the 8000-byte
+notification limit stops mattering (the payload is a *pointer*, never a row), and
+the database can restart underneath it. It is the same trade the remote XACML PEP
+already makes about its own pull.
+
+Turn it off with `persistence.coordinate`; `persistence.pollInterval` (5s) is the
+worst-case convergence lag when a notification is lost.
+
+#### What it does *not* share
+
+* **Sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's four
+  are bound per process, and always will be. Coordination is about state.
+* **The replay caches and DPoP `jti` sets converge rather than synchronise.**
+  Between a write in one process and its arrival in another there is a window the
+  size of the poll interval in which a proof one process refused is accepted by
+  another. Sticky sessions at the load balancer close it; nothing here does.
+* **A realm's signing keys are not adopted mid-life.** A key changed in another
+  process is logged and ignored here: taking it would strand everything this
+  process has already signed. Rotation across processes is a rolling restart.
+
+`/admin/persistence` reports all of it, and `status.replication` carries it in
+the JSON.
 
 ## Checking on it
 

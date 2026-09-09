@@ -96,30 +96,75 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // They are not redundant: the first would notice the editor page failing to
 // draw, and nothing but the second notices it drawing a menu against the wrong
 // row's path.
+//
+// ---------------------------------------------------------------------------
+// `docker: true` MEANS THE JOB NEEDS A REMOTE PEP CONTAINER, AND IT IS A
+// FALLBACK FLAG RATHER THAN A REQUIREMENT. There is ONE such job,
+// `sts_xacml_remote_pep.js`, and the ordinary way it gets its container is that
+// the LAUNCHER brought one up:
+//
+//   * `./local-run-tests.sh` adds `--profile xacml` to the project it already
+//     starts the service in and publishes the PEP on a free host port;
+//   * `./docker-run-tests.sh` declares an `xacml-pep` service in
+//     `docker-compose-run-tests.yml`, on the bridge the tests container shares
+//     with the service.
+//
+// Both then export `XACML_PEP_URL`, `XACML_PEP_NAME` and `XACML_PEP_REALM`, and
+// the job drives that container over HTTP and shells out to nothing. **THAT IS
+// WHY THE LAUNCHER OWNS IT**: the containerized runner is a container with no
+// docker in it, deliberately, so a job that started its own could never run in
+// the stack that gates this repository.
+//
+// The flag matters only when NEITHER launcher is involved — a bare
+// `node tests/tools/run-report.js`, or a coverage run, both of which drive a
+// service that is a plain process with no compose network to join. There the
+// job builds the image and starts a container itself, which needs a daemon; and
+// where there is none, `tools/run-report.js` reports the job SKIPPED with the
+// reason — amber in the report, `<skipped>` in the JUnit, a line in the summary
+// — instead of failing it or, worse, going green.
+//
+// **THAT SKIP IS A DELIBERATE EXCLUSION AND NOT A CAPABILITY TEST DODGED**,
+// which is the distinction `tests/CLAUDE.md` draws between a skip and a
+// failure, and it is now a narrow one: it is reachable only by driving a
+// service nobody's launcher started, on a machine with no docker.
 // ---------------------------------------------------------------------------
 //
 // `local: true` means THIS REPOSITORY OWNS THE FILE and there is no copy of it
-// over there to compare against. EIGHT jobs are marked so, and they are the
-// eight that drive this service's OWN `/admin` console and its `/admin-api`:
+// over there to compare against. THE LIST BELOW IS THE AUTHORITY ON HOW MANY
+// THERE ARE — this paragraph used to open by counting them and the count went
+// stale twice, which is exactly the drift a manifest exists to stop. They are
+// the jobs that drive this service's OWN `/admin` console and its `/admin-api`:
 // `sts_metadata.js`, `admin_api.js`, `sts_admin_api_operations.js`,
 // `sts_admin_console.js`, `sts_delegated_permissions_example.js`,
-// `sts_consent.js`, `sts_xacml_endpoints.js` and `sts_xacml_editor.js` — the
-// last four of which are newer than the argument below
-// and are covered by it for the same reason: one builds an example THROUGH
-// `/admin-api` for somebody to read on `/admin`, and the other grants a GLOBAL
-// CONSENT through `/admin-api/consent` and then watches a sign-in stop being
+// `sts_consent.js`, `sts_global_logout.js`, `sts_portal_sessions.js`,
+// `sts_roles.js`, `sts_roles_builtin.js`, `sts_route_inputs.js`,
+// `sts_xacml_endpoints.js`, `sts_xacml_editor.js` and
+// `sts_xacml_remote_pep.js` — the later ones of which
+// are covered by the argument below for the same reason: one builds an example
+// THROUGH `/admin-api` for somebody to read on `/admin`, and another grants a
+// GLOBAL CONSENT through `/admin-api/consent` and then watches a sign-in stop
+// being
 // asked, which is a console control with a protocol consequence and could not
-// be asserted at all from a repository holding only one half of it. THE TWO
-// XACML JOBS ARE HERE FOR THAT SAME REASON AND IT IS THE STRONGEST CASE OF THE
-// FOUR: a PDP with an empty repository answers NotApplicable to everything, so
+// be asserted at all from a repository holding only one half of it. THE THREE
+// XACML JOBS ARE HERE FOR THAT SAME REASON AND IT IS THE STRONGEST CASE OF
+// ALL: a PDP with an empty repository answers NotApplicable to everything, so
 // there is no question worth asking `/xacml/pdp` until a policy exists, and the
 // only way to put one there over HTTP is `/admin-api/xacml`. Every assertion in
-// either file therefore spans a console door and a protocol door — a template
+// any of the three therefore spans a console door and a protocol door — a
+// template
 // built on `/admin-api` deciding at `/xacml/pdp`, a policy disabled on the
 // console disappearing from what a remote PEP pulls, a rule built by pressing
 // buttons on `/admin/xacml/editor` changing what `/xacml/protected` allows —
 // and a test with the two halves in two repositories could not make one of
-// them. Read the paragraph below as though it said all of them: they build
+// them. **`sts_xacml_remote_pep.js` IS THE THIRD AND IS ALSO THE ONLY JOB HERE
+// THAT STARTS A SECOND PROCESS OF ITS OWN**: it runs `xacml-pep/pep.js` — the
+// real container's program, not a stand-in — registers it, deploys policy
+// through `/admin-api/xacml` and asserts that what that separate process
+// ALLOWS changes with it. So it answers YES to the console question above AND
+// NO to CLAUDE.md's second one ("can it be asserted by driving the running
+// service over HTTP?"), which is the case reserved for this repository, and
+// both answers put it here.
+// Read the paragraph below as though it said all of them: they build
 // something THROUGH `/admin-api` for somebody to read on `/admin`, so the tree
 // that changes those doors is the tree that should go red when it stops
 // working. They ran from the parent project's `tests/` until
@@ -135,15 +180,23 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //
 // What `local` buys is that `tools/vendor-check.js` does not compare them:
 // `allFiles()` leaves them out, so a parent checkout beside this one reports
-// clean instead of eight GONE UPSTREAM, and `--vendor-sync` cannot overwrite
-// them. THE EDITING RULE IS THEREFORE INVERTED FOR THESE EIGHT — they are
-// changed HERE, and only here.
+// clean instead of a screenful of GONE UPSTREAM, and `--vendor-sync` cannot
+// overwrite them. THE EDITING RULE IS THEREFORE INVERTED FOR EVERY `local`
+// JOB — they are changed HERE, and only here.
 // ---------------------------------------------------------------------------
 const JOBS = [
   { file: 'admin_api.js',                browser: false, local: true },
   { file: 'ldp_vc_issuance.js',          browser: false },
   { file: 'ldp_vc_refresh.js',           browser: false },
   { file: 'oauth2_sts_endpoints.js',     browser: false },
+  // THE GATE IN FRONT OF THAT API, as opposed to what is behind it
+  // (2026-09-09). `sts_admin_api_operations.js` walks every documented
+  // operation; this one asserts that none of them can be reached
+  // without an access token audienced to this API and carrying the
+  // scope the action needs. Two jobs because they fail for different
+  // reasons: one goes red when an operation drifts from its document,
+  // the other when the surface stops refusing.
+  { file: 'sts_admin_api_auth.js',       browser: false, local: true },
   { file: 'sts_admin_api_operations.js', browser: false, local: true },
   { file: 'sts_admin_console.js',        browser: true,  local: true },
   { file: 'sts_consent.js',              browser: false, local: true },
@@ -161,7 +214,65 @@ const JOBS = [
   { file: 'sts_userinfo_protected.js',   browser: false },
   { file: 'sts_xacml_editor.js',         browser: true,  local: true },
   { file: 'sts_xacml_endpoints.js',      browser: false, local: true },
-  { file: 'vc_did.js',                   browser: false }
+  { file: 'sts_xacml_remote_pep.js',     browser: false, local: true,
+    docker: true },
+  { file: 'vc_did.js',                   browser: false },
+  // ---------------------------------------------------------------------
+  // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
+  // (2026-09-06).
+  //
+  // The three bulk-load jobs put five thousand people, fifty groups and five
+  // thousand memberships EACH into the DEFAULT REALM and delete none of it —
+  // that is what they are for, and their headers argue both halves. Every job
+  // above them therefore runs against the directory it has always run against,
+  // and the one that walks every console page does so before the store has
+  // fifteen thousand rows in it. A job added after this line inherits a large
+  // directory; one added above it does not.
+  //
+  // **THEY DO THE SAME WORK THROUGH THREE DIFFERENT DOORS** — SCIM, the raw
+  // LDAP socket and this service's own management API — and everything they
+  // share is in `bulk_load.js`, so a difference between their numbers is a
+  // difference in the door. Each stamps every name it invents with its own
+  // door (`bulk-scim-…`, `bulk-ldap-…`, `bulk-api-…`), which is what lets
+  // three of them run in one suite against one directory that nothing deletes
+  // from.
+  //
+  // **THE ORDER AMONG THE THREE IS DELIBERATE AND IT IS NOT ALPHABETICAL.**
+  // SCIM first, LDAP second, `/admin-api` last, because each raises
+  // `ldap.maxEntries` for what IT is about to add and the one that runs last
+  // leaves the highest ceiling — so a person poking at the service afterwards
+  // is not up against a full directory. Reversing them works and leaves a
+  // ceiling sized for the smallest of the three runs.
+  //
+  // **AND THEY CARRY A TIMEOUT OF THEIR OWN**, which no other entry here does.
+  // Ten thousand sequential writes take about four minutes against a warm
+  // local service and more in a container on a loaded CI host, against the
+  // runner's 300s default — so without this each would be killed partway
+  // through and reported as a hang rather than as the measurement it is.
+  //
+  // **THE LDAP ONE NEEDS THE DIRECTORY'S OWN SOCKET**, which
+  // `docker-compose.yml` deliberately does not publish. Both launchers arrange
+  // it and hand the job `STS_LDAP_URL` — `./docker-run-tests.sh` by putting
+  // the runner on the bridge with the service, `./local-run-tests.sh` by
+  // layering `tests/docker-compose-ldap.yml` with a free host port. It is NOT
+  // marked `docker: true`: that flag is for a job needing a DAEMON, and this
+  // one needs a port. Run by hand with neither, it FAILS naming the variable
+  // rather than reporting green having driven nothing.
+  { file: 'sts_directory_bulk_load_scim.js', browser: false, local: true,
+    timeoutMs: 1800000 },
+  { file: 'sts_directory_bulk_load_ldap.js', browser: false, local: true,
+    timeoutMs: 1800000 },
+  { file: 'sts_directory_bulk_load_api.js',  browser: false, local: true,
+    timeoutMs: 1800000 },
+  // FIFTY THOUSAND OVER LDAP, and LAST — it leaves the directory an order of
+  // magnitude larger than the three above found it, so every job that walks a
+  // page or reads a register has run before it. It drives
+  // sts_directory_bulk_load_ldap.js's file at a different scale rather than
+  // copying its client; that file argues why. The watchdog is sized for the
+  // failure it exists to report — a quadratic come back — rather than for the
+  // half minute the adds actually take.
+  { file: 'sts_directory_bulk_load_ldap_50k.js', browser: false, local: true,
+    timeoutMs: 3600000 }
 ];
 
 // ---------------------------------------------------------------------------
@@ -196,6 +307,25 @@ const HELPERS = [
 // MOCK_STS_DIR at the repository root so `module_paths.js` finds them where
 // they actually live.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE HELPERS THAT ARE OURS (2026-09-06). Same idea as a job's `local: true`
+// and it needed a list of its own for the same reason: `HELPERS` above is
+// vendored FROM the parent, and a file of ours listed there is reported GONE
+// UPSTREAM by `--vendor-check` for ever — which is a permanent red line about
+// a file that is exactly where it should be.
+//
+// They are still listed rather than merely present, because the reason HELPERS
+// exists at all is the other half of that check: the set was computed as the
+// transitive local-require closure of the jobs, so a job that grows a
+// `require('./x.js')` arrives as a MISSING MODULE at load time rather than as
+// a silent gap. A local helper that nothing lists gets that guarantee from
+// nothing.
+const LOCAL_HELPERS = [
+  // What the three sts_directory_bulk_load_*.js jobs share, which is
+  // everything except the door.
+  'bulk_load.js'
+];
+
 const CLIENT_MODULES = [
   // named directly by a job
   'did.js',
@@ -230,6 +360,9 @@ function allFiles() {
   HELPERS.forEach(function (h) {
     out.push({ rel: h, source: SOURCE_DIR });
   });
+  // LOCAL_HELPERS is deliberately NOT here, for the reason a `local` job is
+  // not: it has no upstream to differ from.
+
   CLIENT_MODULES.forEach(function (c) {
     out.push({ rel: c, source: CLIENT_SOURCE_DIR });
   });
@@ -238,4 +371,5 @@ function allFiles() {
 
 module.exports = { SOURCE_DIR: SOURCE_DIR, CLIENT_SOURCE_DIR: CLIENT_SOURCE_DIR,
                    JOBS: JOBS, HELPERS: HELPERS,
+                   LOCAL_HELPERS: LOCAL_HELPERS,
                    CLIENT_MODULES: CLIENT_MODULES, allFiles: allFiles };

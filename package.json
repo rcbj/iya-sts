@@ -1,6 +1,6 @@
 {
   "name": "mock-sts",
-  "version": "0.9.0",
+  "version": "0.1.0",
   "private": true,
   "description": "A permissive mock identity service for exercising clients: WS-Trust 1.0-1.4, SAML 2.0, a full OAuth 2.0 / OIDC authorization server with DPoP (RFC 9449), an OpenID4VCI 1.0 Credential Issuer, an OpenID4VP 1.0 Verifier, a did:web document with its DIF domain linkage, and a SPIFFE issuing authority with its bundle endpoint, Workload API and SPIRE Server API. Verifies no credential, checks no password and attests no workload: not a production service.",
   "author": "Robert C. Broeckelmann Jr.",

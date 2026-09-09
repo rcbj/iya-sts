@@ -47,6 +47,49 @@ starts. `docs/configuration.md`'s `global.https` section is the user-facing half
 `tls/CLAUDE.md` says what it takes away from `/tls/trust`, and
 `tests/tools/trust.js` is what pays for it in a test run.
 
+## AND THEY ARE WHAT RAISED THE RATE LIMITS (2026-09-06)
+
+**The second use of the same placement, and it is worth having as a pair with
+the one above.** All three files now carry a `security` block raising
+`rateLimitPerAddress` to 500 and `rateLimitPerIdentity` to 100.
+**`env/defaults.js` still says 20 and 5** — it is GENERATED from `config.js`,
+and `config.js` describes what this service IS.
+
+The problem was structural rather than a wrong number. The limiter's shipped
+values are right for what it was written for: a SIGN-IN, where five attempts a
+minute is generous and a sixth is somebody guessing. **A test suite is the
+wrong shape for them**, because every job in it comes from ONE ADDRESS — the
+runner — so the address bucket counts the whole suite as one caller while the
+identity bucket, the one that is actually about credential guessing, stays
+nearly empty.
+
+MEASURED before it was changed, with the limiter effectively off and the whole
+suite driven against one instance:
+
+| action | bucket | peak | shipped limit |
+|---|---|---|---|
+| `activation` | address | **25** | 20 |
+| `activation` | identity | 2 | 5 |
+| `xacml-pip` | address | 7 | 20 |
+| `sign-in` | address | never accumulated | 20 |
+
+**One door did it.** `sts_portal_sessions.js` and `sts_admin_console.js` each
+issue and open several activation links, and the address bucket is not cleared
+by an activation that WORKS the way a sign-in's is — `succeeded()` is called on
+the sign-in path and not there. The symptom was a 429 on a link the console had
+just handed over, which reads exactly like a broken handler.
+
+500 and 100 are 20× and 50× the measured peaks, so the suite can grow several
+times over before this needs looking at again, and both remain a real control.
+
+**Two things keep this honest, and neither existed before the change.**
+`tests/rate_limiter.js` drives `websecurity.attempt()` in process with limits
+passed as arguments, so the control is TESTED rather than merely exercised by
+accident — before this, the suite's own 429s were the only thing touching it,
+and raising the limit would have made it invisible. And the numbers above are
+reproducible: put a peak counter in `attempt()`, run the suite with
+`STS_SECURITY_RATE_PER_ADDRESS` very high, and read it back.
+
 ## The union is also what keeps a file that is NOT this service's loadable
 
 The parent project's in-process Kerberos jobs point `CONFIG_FILE` at that test

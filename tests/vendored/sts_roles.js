@@ -39,8 +39,8 @@
 // a job that narrowed an application in the default realm and died before
 // clearing it would leave every later job in the run signing in to a service
 // that turned them away, and the failure would name the wrong file. Inside a
-// realm nothing it does reaches anything else, and removing the realm at the
-// end takes the roles, the applications and the settings with it.
+// realm nothing it does reaches anything else — which is what lets the realm
+// be LEFT STANDING at the end rather than removed. See theRealmIsLeftBehind().
 //
 // `roles.enforceIssuance` is turned off and on in section 8, and that is the
 // second reason: it is process-wide at the top level and realm-scoped here.
@@ -300,17 +300,30 @@ async function createTheRealm() {
   log.info("Created the throwaway realm " + REALM + ".");
 }
 
-async function removeTheRealm() {
-  const r = await postJson(base + "/admin-api/realms/remove", { id: REALM });
-  // ASSERTED RATHER THAN HOPED FOR. This job narrows applications and turns a
-  // setting off; all of it lives in the realm, so a removal that silently did
-  // not happen would leave exactly the mess the realm exists to prevent.
-  assert.ok(r.status === 200 && r.body && r.body.ok !== false,
-    "removing the realm " + REALM + " should have worked; it answered " +
-    r.status + ". Everything this job configured is in that realm, so a " +
-    "realm left behind is a service that refuses people for the rest of the " +
-    "run.");
-  log.info("Removed the throwaway realm " + REALM + ".");
+// THE REALM IS LEFT STANDING, DELIBERATELY (2026-09-06), AND THIS FUNCTION IS
+// WHAT SAYS SO.
+//
+// It used to remove it here and assert that the removal happened. What changed
+// is not the argument for the realm — it is still what keeps this job's
+// narrowed applications and its `xacml.roleIssuance` off out of every other
+// job's way — but what happens to it AFTERWARDS: **a realm a test run created
+// stays, because it is what a person reads when the run went red.** A realm is
+// a whole logical copy of the service, so its directory, its role register,
+// its applications and its audit log ARE the record of what this job did, and
+// a teardown that removes it destroys that evidence at exactly the moment it
+// is worth something.
+//
+// Nothing else had to change for it, and that is worth saying because it is
+// what makes the leaving safe: the id carries `names.runStamp()`, so two runs
+// against one long-lived service never meet each other's leavings, and every
+// write this job makes is INSIDE the realm, so a realm left standing changes
+// nothing for the default realm or for any other job.
+async function theRealmIsLeftBehind() {
+  log.info("The throwaway realm " + REALM + " is LEFT IN PLACE on purpose — " +
+           "it holds this job's role register, its applications and its " +
+           "audit log, and it is where somebody debugging this run should " +
+           "look. Read it at " + base + "/realm/" + REALM + "/admin, or " +
+           "remove it by hand when you are done with it.");
 }
 
 // ---------------------------------------------------------------------------
@@ -338,10 +351,51 @@ async function anUnconfiguredRealmRefusesNobody() {
       "a realm's ou=roles starts empty; this one holds " +
       JSON.stringify(register.body.roles.map(function (r) { return r.name; })));
   });
-  check("and the six built-in ones are there anyway", function () {
-    assert.strictEqual(register.body.builtIn.length, 6,
-      "the six are computed rather than stored, so an empty container has " +
-      "them; this realm reports " + register.body.builtIn.length);
+  check("and the built-in ones are there anyway", function () {
+    // TEN SINCE 2026-09-09: eight until ADMIN_READ and ADMIN_WRITE arrived
+    // with the management API's access token — seven when REMOTE_PEPS was
+    // added, eight when XACML_USER joined it. The COUNT is asserted rather
+    // than the names because this file is about the register rather than the
+    // catalogue — `sts_roles_builtin.js` drives each built-in role one section
+    // at a time and is where a new one earns its coverage. What matters here
+    // is that they are COMPUTED: an empty ou=roles has all of them, which is
+    // what makes a role usable in a realm nobody configured.
+    //
+    // THE TWO NEW ONES ARE COMPUTED FROM A SCOPE rather than from what the
+    // party IS, which is a third shape beside the other two: EVERYBODY and its
+    // siblings are computed from the subject, REMOTE_PEPS and XACML_USER are
+    // held through a group, and these two are held by any caller whose access
+    // token carries `admin:read` or `admin:write`. That is why the count moved
+    // by two on a change that added no container and no membership anywhere.
+    assert.strictEqual(register.body.builtIn.length, 10,
+      "the built-in roles are computed rather than stored, so an empty " +
+      "container has them; this realm reports " +
+      register.body.builtIn.length + " (" +
+      register.body.builtIn.map(function (r) { return r.name; }).join(", ") +
+      ")");
+    assert.ok(register.body.builtIn.some(function (one) {
+      return one.name === "REMOTE_PEPS";
+    }), "REMOTE_PEPS is one of them, and it is the first built-in role held " +
+        "through a GROUP rather than computed from what the party is — which " +
+        "is what lets a remote PEP's certificate DN hold it. The catalogue " +
+        "lists " + register.body.builtIn.map(function (r) {
+          return r.name;
+        }).join(", "));
+    // AND THE SECOND GROUP-DERIVED ONE, ASSERTED BY NAME BESIDE IT rather
+    // than left to the count. The two are what gate this service's own XACML
+    // surface and they are DELIBERATELY NOT ONE ROLE — REMOTE_PEPS reaches
+    // the endpoints publishing the documents this service enforces its own
+    // access with and a named person's directory attributes, XACML_USER
+    // reaches the four endpoints proper. A change that collapsed them would
+    // leave the count at seven and pass every other assertion in this file,
+    // so the name is checked here even though the catalogue is somebody
+    // else's subject.
+    assert.ok(register.body.builtIn.some(function (one) {
+      return one.name === "XACML_USER";
+    }), "XACML_USER should be here too. The catalogue lists " +
+        register.body.builtIn.map(function (r) {
+          return r.name;
+        }).join(", "));
   });
   check("the default requirement is EVERYBODY", function () {
     assert.strictEqual(register.body.defaultRequired, "EVERYBODY",
@@ -611,10 +665,31 @@ async function theAuthorizationEndpointRefuses() {
         (refusedSignIn.text.indexOf(ROLE) >= 0 ? "names" : "does NOT name") +
         " the role");
     });
-  check("and no session was established", function () {
-    assert.strictEqual(refusedBrowser.cookie, "",
-      "a refused sign-in must mint nothing; the jar holds " +
-      refusedBrowser.cookie);
+  // A REFUSED SIGN-IN MUST LEAVE THE BROWSER SIGNED IN TO NOTHING, and HOW that
+  // is asked changed on 2026-09-07. It used to be `refusedBrowser.cookie === ""`,
+  // which stopped being the same question when `authn.js` began minting an
+  // ARRIVAL SESSION for every cookie-less request at a protocol front door: this
+  // browser was handed one by the authorization request three steps above,
+  // before it had typed anything, so the jar is not empty and never was — the
+  // refusal below it minted nothing, which is what the sentence actually claims.
+  //
+  // **THE PROXY WENT STALE, NOT THE PROPERTY.** An arrival session names the
+  // `anonymous` principal, carries `authenticated: false` and `chosen: false`,
+  // and `sessionOf()` refuses to hand one to anybody — so no issuance site, no
+  // console gate and no role check can mistake it for a party. Asserting on the
+  // jar was always a proxy for "is this browser signed in", and this asks the
+  // thing itself, of the ENDPOINT rather than of the cookie: drive the same
+  // authorization request again on the same browser and it must arrive back at
+  // the sign-in screen. A session that had been established would go straight
+  // through with a code, which is exactly the failure the old line was for.
+  const afterRefusal = await refusedBrowser.go("GET", authorizeUrl(NARROWED));
+  check("and no session was established — the same browser is sent BACK to the " +
+        "sign-in screen rather than through it", function () {
+    assert.ok(/\/authn\/login\?authn=/.test(afterRefusal.location),
+      "a refused sign-in must leave the browser signed in to nothing. This " +
+      "one was answered " + afterRefusal.status + " -> " +
+      afterRefusal.location + " instead of being sent back to the screen. " +
+      "The jar holds " + refusedBrowser.cookie);
   });
 
   // THE HOLDER GOES ALL THE WAY THROUGH, which is what says the refusal above
@@ -1063,7 +1138,7 @@ async function test() {
     await turningItOff();
     await theRegisterRefuses();
   } finally {
-    await removeTheRealm();
+    await theRealmIsLeftBehind();
   }
 
   // A FLOOR ON THE COUNT, for the reason sts_admin_console.js gives: a section

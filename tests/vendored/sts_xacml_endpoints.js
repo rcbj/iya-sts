@@ -19,6 +19,26 @@
 // file's subject and of nothing the in-process suite touches.
 //
 // ---------------------------------------------------------------------------
+// WHERE THIS FILE STOPS, AND WHAT PICKS IT UP.
+//
+// **THE CALLER HERE IS THIS TEST IMPERSONATING A PEP.** Sections 6 and 7 drive
+// `GET /xacml/pep/policies`, `POST /xacml/pep/register` and
+// `POST /xacml/pep/heartbeat` with `fetch` and a certificate made with forge,
+// which is the right way to assert what those endpoints ANSWER — the ETag, the
+// 304, the disabled policy left out, the name taken from the certificate and
+// never from the body. What it cannot assert is any CONSEQUENCE of those
+// bytes, because nothing here evaluates them: the document pulled in section 6
+// is checked for a `<Policy` and thrown away.
+//
+// `tests/vendored/sts_xacml_remote_pep.js` (2026-09-06) starts
+// `xacml-pep/pep.js` as a second process and asserts the other half — that a
+// policy deployed through `/admin-api/xacml` reaches it by POLLING and changes
+// what it ALLOWS, and that a policy disabled here stops being ENFORCED there.
+// Keep the two apart when editing either: an assertion about what an endpoint
+// answers belongs in this file, and one about what a PEP does with the answer
+// belongs in that one.
+//
+// ---------------------------------------------------------------------------
 // WHY THIS IS THIS REPOSITORY'S OWN (`local: true`) AND NOT THE PARENT'S.
 //
 // CLAUDE.md's rule is that anything drivable over HTTP belongs in the parent
@@ -55,9 +75,9 @@
 // `xacml.remotePeps`, `xacml.pepBias` and `xacml.pepRequireCertificate` off and
 // on, and every one of those is process-wide when set at the top level: a job
 // that turned XACML off and died would leave every later job in the run driving
-// a service answering 501. Set inside the realm they reach nothing else, and
-// removing the realm at the end takes them with it — which is why the teardown
-// asserts the removal rather than hoping for it.
+// a service answering 501. Set inside the realm they reach nothing else — and
+// that is what lets the realm be LEFT STANDING at the end rather than removed,
+// which it is since 2026-09-06. See theRealmIsLeftBehind().
 //
 // ---------------------------------------------------------------------------
 // THE CLIENT CERTIFICATE IS MINTED HERE, AND IT IS WHAT MAKES TWO OF THESE
@@ -138,7 +158,31 @@ const REALM = ("xacml-" + names.runStamp()).toLowerCase()
     .replace(/[^a-z0-9-]/g, "").slice(0, 40);
 
 const POLICY = "rbac-under-test";
-const PEP_CN = "pep-" + names.runStamp();
+// **THE SEEDED IDENTITY, NOT A RANDOM ONE, SINCE 2026-09-06.** It was
+// `pep-<runStamp>` — unique per run, which is this suite's habit and was right
+// while any certificate at all could register. The three endpoints are gated
+// now: a client certificate is resolved to a directory entry by its subject DN
+// and that entry has to be a member of `cn=remote-peps`, which every realm is
+// seeded with holding exactly `cn=remote-pep-1`. A random common name resolves
+// to an entry in no group and is refused — which is section 7a's assertion
+// rather than an obstacle to work around.
+const PEP_CN = "remote-pep-1";
+// A second identity from the SAME trusted authority, for the one case that
+// matters most: verified, named, and holding no role.
+const ROGUE_CN = "rogue-pep-" + names.runStamp();
+// THE SEEDED XACML_USER IDENTITY, and it is a FIXED name rather than a stamped
+// one — `cn=xacml-user-1` is what `ldap_server.js` seeds into `cn=xacml-users`
+// in every realm, so a certificate for it is admitted with nothing configured.
+// The rogue name above is stamped precisely because it must resolve to an
+// entry that exists and holds NOTHING, which a fresh name does.
+const XACML_USER_CN = "xacml-user-1";
+// The XACML core namespace and the access-subject category, written out here
+// because the PIP section below builds XML by hand — a job driving a wire
+// format has to spell it rather than import the service's own constant, or it
+// would be asserting that the service agrees with itself.
+const XACML_NS = "urn:oasis:names:tc:xacml:3.0:core:schema:wd-17";
+const SUBJECT_CATEGORY =
+  "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject";
 
 // The one obligation the embedded PEP knows how to discharge. Written out here
 // rather than read from the service, because the whole assertion in section 5
@@ -248,8 +292,7 @@ function requestFor(subject, action, resource) {
 }
 
 async function decisionFor(subject, action, resource) {
-  const r = await postJson(realmUrl("/xacml/pdp"),
-                           requestFor(subject, action, resource));
+  const r = await xPost("/xacml/pdp", requestFor(subject, action, resource));
   assert.strictEqual(r.status, 200,
     "POST /xacml/pdp should answer 200 with a JSON Profile response even when " +
     "the answer is a refusal; it answered " + r.status + " " +
@@ -268,6 +311,161 @@ async function decisionFor(subject, action, resource) {
 // fetch, deliberately — a second HTTP client used everywhere would be a second
 // thing that could be wrong about a status code.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A TRUSTED CLIENT CREDENTIAL, MINTED FOR THIS RUN (2026-09-06).
+//
+// The three `/xacml/pep` endpoints no longer accept a certificate that chains
+// to nothing: a DN is only worth resolving to a directory entry if this service
+// verified the chain it came from. So this file builds a Root CA, an Issuing CA
+// and a client leaf on the SAME engine `spiffe/spiffe_ca.js` issues X509-SVIDs
+// with, and POSTs the root to `/tls/trust` — which is exactly what the parent
+// project's `tests/pki_mutual_tls.js` has always done, and what
+// `tests/tools/pep-credential.js` does for the launchers.
+//
+// **IT REQUIRES THAT TOOL RATHER THAN REIMPLEMENTING IT.** A second way of
+// building a chain in this file would be a second set of edge cases, and the
+// one thing worse than a test that fails is one that passes against a
+// certificate built differently from the one the product uses.
+// ---------------------------------------------------------------------------
+const credentials = require("../tools/pep-credential.js");
+
+var trusted = null;   // the identity this file registers with — REMOTE_PEPS
+var rogue = null;     // verified, and in no group
+// ---------------------------------------------------------------------------
+// A THIRD IDENTITY, AND IT IS A THIRD BECAUSE THERE ARE TWO ROLES.
+//
+// The four XACML endpoints proper — GET /xacml, POST /xacml/pdp, GET
+// /xacml/policies, GET /xacml/protected — went behind the same certificate
+// chain as /xacml/pep/* and a DIFFERENT role: `XACML_USER`, granted by
+// `cn=xacml-users`, where the three PEP endpoints want `REMOTE_PEPS` from
+// `cn=remote-peps`.
+//
+// **SO THIS FILE HOLDS TWO ADMITTED IDENTITIES AND NEITHER OPENS THE OTHER'S
+// DOOR**, which is the property section 0 below asserts in both directions. A
+// single identity put in both groups would have been fewer lines and would
+// have made that assertion unwritable — and the whole reason there are two
+// roles is that admitting a caller to the demonstration surface must not
+// silently admit it to the endpoints publishing the documents this service
+// enforces its own access with.
+// ---------------------------------------------------------------------------
+var xacmlUser = null; // verified, in cn=xacml-users — XACML_USER and not REMOTE_PEPS
+
+async function mintTheCredentials() {
+  log.debug("Entering mintTheCredentials().");
+  trusted = await credentials.mint({
+    subject: "CN=" + PEP_CN + ",OU=remote-peps,O=mock-sts tests" });
+  rogue = await credentials.mint({
+    subject: "CN=" + ROGUE_CN + ",OU=remote-peps,O=mock-sts tests" });
+  xacmlUser = await credentials.mint({
+    subject: "CN=" + XACML_USER_CN + ",OU=xacml-users,O=mock-sts tests" });
+  for (const one of [trusted, rogue, xacmlUser]) {
+    const posted = await credentials.trustAnchor(base, one.anchorPem);
+    assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this " +
+      "file just built; it answered " + posted.status + " " +
+      String(posted.why || posted.body).slice(0, 200) + ". Without the " +
+      "anchor every assertion below is about an unverified certificate.");
+  }
+  log.info("Minted a REMOTE_PEPS credential for " + trusted.subject +
+           ", an XACML_USER one for " + xacmlUser.subject +
+           " and a rogue one for " + rogue.subject +
+           "; all three Root CAs are in the truststore.");
+  log.debug("Leaving mintTheCredentials().");
+}
+
+// A request carrying one of those identities. `fetch` in node cannot present a
+// client certificate, so everything that has to be authenticated goes through
+// `https.request` — which is why these two exist beside the fetch-based verbs
+// above rather than replacing them.
+function pepRequest(method, url, identity, payload, rawBody) {
+  log.debug("Entering pepRequest(). " + method + " " + url);
+  return new Promise(function (resolve, reject) {
+    const target = new URL(url);
+    // A RAW STRING WINS OVER A PAYLOAD, for the three malformed bodies in
+    // section 3: `JSON.stringify` cannot produce them, which is the point, and
+    // they have to travel down THIS path now that /xacml/pdp needs a
+    // certificate and `fetch` cannot present one.
+    const data = rawBody !== undefined && rawBody !== null ? rawBody
+      : (payload === undefined ? null : JSON.stringify(payload));
+    const request = https.request({
+      host: target.hostname,
+      port: target.port || 443,
+      path: target.pathname + target.search,
+      method: method,
+      rejectUnauthorized: false,
+      cert: identity ? identity.certPem : undefined,
+      key: identity ? identity.keyPem : undefined,
+      headers: data ? { "Content-Type": "application/json",
+                        "Content-Length": Buffer.byteLength(data) } : {}
+    }, function (response) {
+      let text = "";
+      response.on("data", function (chunk) { text += chunk; });
+      response.on("end", function () {
+        let body;
+        try {
+          body = JSON.parse(text);
+        } catch (e) {
+          // A non-JSON answer from a door that answers JSON is worth reporting
+          // whole rather than as a parse failure.
+          body = null;
+        }
+        log.debug("Leaving pepRequest(). status=" + response.statusCode);
+        // `type` as well, because the fetch-based `get()` reports it and the
+        // one assertion that reads it — GET /xacml must be HTML for a person —
+        // moved onto this path when that endpoint began asking for a
+        // certificate.
+        resolve({ status: response.statusCode, body: body, text: text,
+                  etag: response.headers.etag || "",
+                  type: response.headers["content-type"] || "" });
+      });
+    });
+    request.on("error", reject);
+    if (data) {
+      request.write(data);
+    }
+    request.end();
+  });
+}
+
+function pepGet(path, identity) {
+  return pepRequest("GET", realmUrl(path),
+                    identity === undefined ? trusted : identity);
+}
+
+function pepPost(path, payload, identity) {
+  return pepRequest("POST", realmUrl(path),
+                    identity === undefined ? trusted : identity, payload || {});
+}
+
+// ---------------------------------------------------------------------------
+// THE FOUR XACML ENDPOINTS PROPER, AS AN ADMITTED CALLER.
+//
+// These are `get()` and `postJson()` with a client certificate on the
+// connection, and they exist because those two are `fetch` and node's fetch
+// cannot present one. They default to `xacmlUser` — the identity holding the
+// role these four require — so a call site reads as "ask this endpoint" and
+// the credential is not repeated forty times; passing an identity explicitly
+// is how the gate assertions in section 0 drive the same endpoints as somebody
+// else, or as nobody.
+// ---------------------------------------------------------------------------
+function xGet(path, identity) {
+  return pepRequest("GET", path.indexOf("http") === 0 ? path : realmUrl(path),
+                    identity === undefined ? xacmlUser : identity);
+}
+
+function xPost(path, payload, identity) {
+  return pepRequest("POST", path.indexOf("http") === 0 ? path : realmUrl(path),
+                    identity === undefined ? xacmlUser : identity,
+                    payload || {});
+}
+
+// A raw body, for the malformed requests in section 3. `JSON.stringify` cannot
+// produce them, which is the point.
+function xPostRaw(path, raw, identity) {
+  return pepRequest("POST", path.indexOf("http") === 0 ? path : realmUrl(path),
+                    identity === undefined ? xacmlUser : identity,
+                    undefined, raw);
+}
+
 function selfSignedFor(commonName) {
   log.debug("Entering selfSignedFor(). cn=" + commonName);
   const keys = forge.pki.rsa.generateKeyPair(2048);
@@ -340,7 +538,7 @@ async function theSurfaceDescribesItself() {
   log.debug("Entering theSurfaceDescribesItself().");
   log.info("=== GET /xacml — what this surface says it is ===");
 
-  const html = await get(realmUrl("/xacml"));
+  const html = await xGet("/xacml");
   check("GET /xacml draws a page", function () {
     assert.strictEqual(html.status, 200,
       "GET /xacml answered " + html.status);
@@ -351,7 +549,7 @@ async function theSurfaceDescribesItself() {
       html.text.slice(0, 200));
   });
 
-  const doc = await get(realmUrl("/xacml?format=json"));
+  const doc = await xGet("/xacml?format=json");
   check("?format=json answers the same document as JSON", function () {
     assert.strictEqual(doc.status, 200, "?format=json answered " + doc.status);
     assert.ok(doc.body && doc.body.enabled === true,
@@ -359,14 +557,14 @@ async function theSurfaceDescribesItself() {
       "document says " + JSON.stringify(doc.body).slice(0, 200));
   });
 
-  // THE SEVEN, ASKED FOR RATHER THAN COUNTED. Each is driven for real
+  // THE EIGHT, ASKED FOR RATHER THAN COUNTED. Each is driven for real
   // elsewhere in this file; what is checked here is that the DOCUMENT names
   // exactly them, because a route added without a line here is invisible to
   // every client that reads this page.
   const advertised = (doc.body.endpoints || []).map(function (one) {
     return one.method + " " + one.path;
   }).sort();
-  check("the document advertises exactly the seven endpoints", function () {
+  check("the document advertises exactly the eight endpoints", function () {
     assert.deepStrictEqual(advertised, [
       "GET /xacml",
       "GET /xacml/pep/policies",
@@ -374,15 +572,55 @@ async function theSurfaceDescribesItself() {
       "GET /xacml/protected",
       "POST /xacml/pdp",
       "POST /xacml/pep/heartbeat",
-      "POST /xacml/pep/register"
+      "POST /xacml/pep/register",
+      "POST /xacml/pip"
     ], "GET /xacml advertises " + JSON.stringify(advertised) + ". A route " +
        "added to xacml.js without a line in description() is a route no " +
        "client reading this page can find.");
   });
 
+  // ---------------------------------------------------------------------
+  // AND EVERY ROW SAYS WHICH ROLE IT WANTS. That column is the only place
+  // the two-role split is machine-readable, and it is what stops a reader
+  // having to infer a role from a path — which is exactly what `POST
+  // /xacml/pip` would have them get wrong, since it sits outside
+  // `/xacml/pep/` and wants `REMOTE_PEPS`.
+  // ---------------------------------------------------------------------
+  const requires = {};
+  (doc.body.endpoints || []).forEach(function (one) {
+    requires[one.method + " " + one.path] = one.requires;
+  });
+  check("every endpoint says which role it requires", function () {
+    assert.deepStrictEqual(requires, {
+      "GET /xacml": "XACML_USER",
+      "POST /xacml/pdp": "XACML_USER",
+      "GET /xacml/policies": "XACML_USER",
+      "GET /xacml/protected": "XACML_USER",
+      "POST /xacml/pep/register": "REMOTE_PEPS",
+      "GET /xacml/pep/policies": "REMOTE_PEPS",
+      "POST /xacml/pep/heartbeat": "REMOTE_PEPS",
+      "POST /xacml/pip": "REMOTE_PEPS"
+    }, "the Requires column is " + JSON.stringify(requires) + ". POST " +
+       "/xacml/pip is the one row whose role does not follow its path, and " +
+       "it is deliberate: what comes back is a person's directory " +
+       "attributes rather than a rule anybody may check.");
+  });
+
+  check("and the page names the two groups that grant them", function () {
+    assert.ok(doc.body.access && doc.body.access.enforced === true,
+      "access enforcement should be ON in a realm nobody has turned it off " +
+      "in; the document says " + JSON.stringify(doc.body.access));
+    assert.notStrictEqual(doc.body.access.xacmlUserGroup,
+                          doc.body.access.remotePepGroup,
+      "THE TWO GROUPS MUST NOT BE THE SAME ONE. If they ever are, admitting " +
+      "a caller to the demonstration surface silently admits it to the " +
+      "endpoints publishing the documents this service enforces its own " +
+      "access with. Both are \"" + doc.body.access.xacmlUserGroup + "\".");
+  });
+
   // THE COUNTS AGREE WITH THE ENDPOINT THAT OWNS THEM. This is the check that
   // would catch a description reading its own cached idea of the repository.
-  const policies = await get(realmUrl("/xacml/policies"));
+  const policies = await xGet("/xacml/policies");
   check("the repository counts on /xacml agree with /xacml/policies",
         function () {
     assert.strictEqual(doc.body.repository.policies,
@@ -410,7 +648,7 @@ async function theSurfaceDescribesItself() {
       policies.body.rootNote);
   });
 
-  log.info("[surface] OK — the document names seven endpoints and its counts " +
+  log.info("[surface] OK — the document names eight endpoints, each with the role it wants, and its counts " +
            "come from the repository rather than from itself.");
   log.debug("Leaving theSurfaceDescribesItself().");
 }
@@ -441,7 +679,7 @@ async function anEmptyRepositoryDecidesNothing() {
       JSON.stringify(answer.Status));
   });
 
-  const denied = await get(realmUrl("/xacml/protected?subject=carol&action=GET"));
+  const denied = await xGet("/xacml/protected?subject=carol&action=GET");
   check("the deny-biased PEP refuses that with 403", function () {
     assert.strictEqual(denied.status, 403,
       "deny-biased means anything that is not Permit is a refusal; the " +
@@ -455,7 +693,7 @@ async function anEmptyRepositoryDecidesNothing() {
   });
 
   await setSetting("xacml.pepBias", "permit-biased");
-  const allowed = await get(realmUrl("/xacml/protected?subject=carol&action=GET"));
+  const allowed = await xGet("/xacml/protected?subject=carol&action=GET");
   check("the SAME decision is allowed by a permit-biased PEP", function () {
     assert.strictEqual(allowed.status, 200,
       "permit-biased means anything that is not Deny is allowed; the PEP " +
@@ -472,7 +710,7 @@ async function anEmptyRepositoryDecidesNothing() {
   });
   await resetSetting("xacml.pepBias");
 
-  const back = await get(realmUrl("/xacml/protected?subject=carol&action=GET"));
+  const back = await xGet("/xacml/protected?subject=carol&action=GET");
   check("resetting the setting puts the refusal back", function () {
     assert.strictEqual(back.status, 403,
       "after /admin-api/config/reset the PEP should be deny-biased again; " +
@@ -516,7 +754,7 @@ async function aPolicyBuiltThroughTheApiDecides() {
       "one created should say it became the root. It said: " + built.what);
   });
 
-  const listed = await get(realmUrl("/xacml/policies"));
+  const listed = await xGet("/xacml/policies");
   check("GET /xacml/policies now lists it, with its document", function () {
     const rows = listed.body.policies || [];
     assert.strictEqual(rows.length, 1, "the repository should hold exactly " +
@@ -608,7 +846,7 @@ async function aMalformedRequestIsRefused() {
       says: "DataType" }
   ];
   for (const one of bad) {
-    const r = await postRaw(realmUrl("/xacml/pdp"), one.body);
+    const r = await xPostRaw("/xacml/pdp", one.body);
     check("a request that is " + one.what + " is refused 400", function () {
       assert.strictEqual(r.status, 400,
         "a malformed request must be a 400 and never a decision: an " +
@@ -656,7 +894,7 @@ async function anUndischargeableObligationRefuses() {
   log.debug("Entering anUndischargeableObligationRefuses().");
   log.info("=== The embedded PEP and an obligation it cannot discharge ===");
 
-  const before = await get(realmUrl("/xacml/protected?subject=carol&action=GET"));
+  const before = await xGet("/xacml/protected?subject=carol&action=GET");
   check("carol is allowed before any obligation exists", function () {
     assert.strictEqual(before.status, 200,
       "carol is the admin and the policy permits her; the PEP answered " +
@@ -669,7 +907,7 @@ async function anUndischargeableObligationRefuses() {
   await act("add-policy-obligation", { policy: POLICY, path: "", on: "Permit" },
             "added an obligation to the policy");
 
-  const refused = await get(realmUrl("/xacml/protected?subject=carol&action=GET"));
+  const refused = await xGet("/xacml/protected?subject=carol&action=GET");
   check("an undischargeable obligation turns the Permit into a refusal",
         function () {
     assert.strictEqual(refused.status, 403,
@@ -709,7 +947,7 @@ async function anUndischargeableObligationRefuses() {
               on: "Permit" },
             "renamed the obligation to the one this PEP knows");
 
-  const discharged = await get(realmUrl("/xacml/protected?subject=carol&action=GET"));
+  const discharged = await xGet("/xacml/protected?subject=carol&action=GET");
   check("the one obligation this PEP knows IS discharged, and access returns",
         function () {
     assert.strictEqual(discharged.status, 200,
@@ -726,7 +964,7 @@ async function anUndischargeableObligationRefuses() {
   // subject here; leaving it would make every later Permit carry one.
   await act("remove", { policy: POLICY, path: obligation.path },
             "removed the obligation again");
-  const clean = await get(realmUrl("/xacml/protected?subject=carol&action=GET"));
+  const clean = await xGet("/xacml/protected?subject=carol&action=GET");
   check("removing the obligation leaves an ordinary Permit", function () {
     assert.strictEqual(clean.status, 200);
     assert.deepStrictEqual(clean.body.obligations, [],
@@ -753,7 +991,7 @@ async function aRemotePepPulls() {
   log.debug("Entering aRemotePepPulls().");
   log.info("=== What a remote PEP pulls ===");
 
-  const first = await get(realmUrl("/xacml/pep/policies"));
+  const first = await pepGet("/xacml/pep/policies");
   check("a pull answers the enabled policies with a sync token", function () {
     assert.strictEqual(first.status, 200, "the pull answered " + first.status);
     assert.ok(first.body.syncToken, "there is no syncToken on the answer: " +
@@ -779,8 +1017,8 @@ async function aRemotePepPulls() {
       "row carries " + Object.keys(row).join(", "));
   });
 
-  const unchanged = await fetchJson(
-    realmUrl("/xacml/pep/policies?since=" + encodeURIComponent(first.body.syncToken)));
+  const unchanged = await pepGet(
+    "/xacml/pep/policies?since=" + encodeURIComponent(first.body.syncToken));
   check("?since= with the current token answers 304 and no body", function () {
     assert.strictEqual(unchanged.status, 304,
       "an unchanged repository must answer 304 rather than 200 with a flag — " +
@@ -793,7 +1031,7 @@ async function aRemotePepPulls() {
       "and it should still carry the ETag; it carried " + unchanged.etag);
   });
 
-  const stale = await fetchJson(realmUrl("/xacml/pep/policies?since=not-the-token"));
+  const stale = await pepGet("/xacml/pep/policies?since=not-the-token");
   check("?since= with a token this repository never had answers 200",
         function () {
     assert.strictEqual(stale.status, 200,
@@ -807,8 +1045,8 @@ async function aRemotePepPulls() {
   // difference from /xacml/policies, which lists it — asserted here in both
   // directions in one breath.
   await act("disable", { name: POLICY }, "disabled the policy");
-  const withoutIt = await get(realmUrl("/xacml/pep/policies"));
-  const stillListed = await get(realmUrl("/xacml/policies"));
+  const withoutIt = await pepGet("/xacml/pep/policies");
+  const stillListed = await xGet("/xacml/policies");
   check("a disabled policy leaves the pull and stays on the repository page",
         function () {
     assert.strictEqual((withoutIt.body.policies || []).length, 0,
@@ -834,7 +1072,7 @@ async function aRemotePepPulls() {
   });
 
   await act("enable", { name: POLICY }, "enabled the policy again");
-  const restored = await get(realmUrl("/xacml/pep/policies"));
+  const restored = await pepGet("/xacml/pep/policies");
   check("re-enabling it restores the token it had", function () {
     assert.strictEqual(restored.body.syncToken, first.body.syncToken,
       "the token is over the BYTES that would be sent, so a repository " +
@@ -866,26 +1104,92 @@ async function registeringAPep() {
   log.debug("Entering registeringAPep().");
   log.info("=== Registering a remote PEP ===");
 
-  const identity = selfSignedFor(PEP_CN);
+  // The shape `postWithCertificate()` below takes, which is not the shape
+  // `mint()` returns — that one names its fields `certPem`/`keyPem` because it
+  // is what `pep.js` and the launchers read. Converted once, here, rather than
+  // teaching a helper two spellings.
+  const identity = { cert: trusted.certPem, key: trusted.keyPem };
 
+  // BEFORE ANY REGISTRATION IN THIS REALM, which is the only moment a caller is
+  // past the access policy and absent from the register at once. A heartbeat
+  // must not CREATE a row: one made here would carry no certificate subject, no
+  // notify URL and no registration date, and would look on the console exactly
+  // like a PEP somebody had deliberately admitted.
+  const ghost = await pepPost("/xacml/pep/heartbeat", {});
+  check("a heartbeat from an identity that never registered is refused 404",
+        function () {
+    assert.strictEqual(ghost.status, 404,
+      "this certificate is trusted and its DN holds REMOTE_PEPS, so it is " +
+      "past the gate — and it has not registered, so there is no row to beat " +
+      "against. It answered " + ghost.status + " " +
+      String(ghost.text).slice(0, 200));
+    assert.ok(String(ghost.body.error_description).indexOf("register") > 0,
+      "and it should name the registration endpoint; it says " +
+      ghost.body.error_description);
+  });
+
+  // **THIS WAS A 401 FROM `xacml.pepRequireCertificate` UNTIL 2026-09-06 AND IS
+  // NOW A 403 FROM THE ACCESS POLICY**, and the change is the feature rather
+  // than a regression. These endpoints are gated by the same embedded PEP and
+  // the same access-control document that decide the console and the
+  // management API: a caller with no certificate resolves to no directory
+  // entry, holds no REMOTE_PEPS role, and is refused BEFORE the certificate
+  // requirement is ever consulted. The old refusal still exists behind this
+  // one — turn `xacml.enforceAccess` off and it is what answers.
   const refused = await postJson(realmUrl("/xacml/pep/register"),
                                  { name: "no-certificate-here" });
-  check("a registration with no client certificate is refused 401", function () {
-    assert.strictEqual(refused.status, 401,
-      "xacml.pepRequireCertificate is on by default; the door answered " +
-      refused.status + " " + String(refused.text).slice(0, 300));
-    assert.strictEqual(refused.body.error, "invalid_client");
+  check("a registration with no client certificate is refused by POLICY",
+        function () {
+    assert.strictEqual(refused.status, 403,
+      "the access policy should refuse a caller it cannot name; the door " +
+      "answered " + refused.status + " " + String(refused.text).slice(0, 300));
+    assert.strictEqual(refused.body.error, "access_denied");
     assert.ok(String(refused.body.error_description)
-                .indexOf("xacml.pepRequireCertificate") > 0,
-      "the refusal should name the setting that caused it; it says: " +
+                .indexOf("REMOTE_PEPS") > 0,
+      "the refusal should name the role the caller is missing; it says: " +
       refused.body.error_description);
     assert.ok(String(refused.body.error_description)
-                .indexOf("/xacml/pep/policies") > 0,
-      "AND IT SHOULD SAY THAT REGISTERING IS NOT WHAT LETS A PEP ENFORCE. " +
-      "The shape of this register looks like an access-control list and is " +
-      "not one: an unregistered PEP pulls and decides perfectly. A refusal " +
-      "that did not say so would send somebody looking for a permission " +
-      "problem they do not have. It says: " + refused.body.error_description);
+                .indexOf("roles.remotePepGroup") > 0,
+      "AND THE SETTING THAT NAMES THE GROUP THAT GRANTS IT, because that is " +
+      "the one thing an operator changes to fix this. It says: " +
+      refused.body.error_description);
+    assert.ok(String(refused.body.error_description)
+                .indexOf("no client certificate") > 0,
+      "and it should say WHICH of the three ways to fail this was — no " +
+      "certificate, one that did not verify, or one that verified and holds " +
+      "no role — because they need different fixes: " +
+      refused.body.error_description);
+  });
+
+  // ---- THE CASE THE WHOLE CHAIN EXISTS FOR --------------------------------
+  // A certificate this service VERIFIED, naming an identity it can resolve,
+  // holding no role. It is the difference between authentication and
+  // authorization made visible: nothing is wrong with this certificate.
+  const rogueTried = await pepPost("/xacml/pep/register", {}, rogue);
+  check("a VERIFIED certificate whose DN is in no group is refused too",
+        function () {
+    assert.strictEqual(rogueTried.status, 403,
+      "this certificate chains to an anchor in the truststore and names " +
+      ROGUE_CN + "; it is not a member of cn=remote-peps and must be refused. " +
+      "The door answered " + rogueTried.status + " " +
+      String(rogueTried.text).slice(0, 300));
+    assert.ok(String(rogueTried.body.error_description)
+                .indexOf("VERIFIED") > 0,
+      "AND THE REFUSAL MUST SAY THE CERTIFICATE WAS FINE. Somebody debugging " +
+      "this needs to know the handshake is not the problem — otherwise they " +
+      "regenerate a certificate that was never wrong. It says: " +
+      rogueTried.body.error_description);
+    assert.ok(String(rogueTried.body.error_description)
+                .indexOf("cn=" + ROGUE_CN.toLowerCase()) > 0,
+      "and it should name the entry the certificate resolved to, which is " +
+      "what somebody adds to the group: " + rogueTried.body.error_description);
+  });
+
+  const rogueRead = await pepGet("/xacml/pep/policies", rogue);
+  check("and it cannot pull the repository either", function () {
+    assert.strictEqual(rogueRead.status, 403,
+      "the pull is gated by the same policy as the registration; it answered " +
+      rogueRead.status);
   });
 
   const registered = await postWithCertificate(
@@ -955,26 +1259,31 @@ async function registeringAPep() {
                             { notifyUrl: "https://127.0.0.1:9/notify" },
                             identity);
 
-  const nameless = await postJson(realmUrl("/xacml/pep/heartbeat"), {});
-  check("a heartbeat that says who it is from is refused 400", function () {
-    assert.strictEqual(nameless.status, 400,
-      "a nameless heartbeat answered " + nameless.status);
-    assert.ok(String(nameless.body.error_description).indexOf("name") > 0,
-      "and it should say how to name one; it says " +
-      nameless.body.error_description);
-  });
-
-  const ghost = await postJson(realmUrl("/xacml/pep/heartbeat"),
-                               { name: "never-registered" });
-  check("a heartbeat from something that never registered is refused 404",
-        function () {
-    assert.strictEqual(ghost.status, 404,
-      "a heartbeat must not CREATE a row — one made here would carry no " +
-      "certificate, no notify URL and no registration date. It answered " +
-      ghost.status);
-    assert.ok(String(ghost.body.error_description).indexOf("register") > 0,
-      "and it should name the registration endpoint; it says " +
-      ghost.body.error_description);
+  // ---- TWO ASSERTIONS THE GATE MADE UNREACHABLE, AND WHAT REPLACED THEM ----
+  //
+  // This file used to check that a NAMELESS heartbeat is refused 400 and that a
+  // heartbeat naming something UNREGISTERED is refused 404. Both were made with
+  // no client certificate, and both are now unreachable through the front door:
+  // the access policy refuses a caller it cannot name before either branch is
+  // reached, and a caller it CAN name is one whose name came from a
+  // certificate — so there is no such thing as a nameless heartbeat that got
+  // this far.
+  //
+  // **THOSE BRANCHES STILL EXIST AND ARE STILL RIGHT**; they are simply behind
+  // a door now. `xacml.enforceAccess=false` reaches them, and section 9 already
+  // drives the off-switches. What is asserted here instead is the refusal that
+  // replaced them, and the ONE case that survived intact: a heartbeat from an
+  // identity the register has never heard of must not create a row — checked
+  // below with the trusted certificate BEFORE it registers, which is the only
+  // moment in this file when a caller is past the gate and off the register at
+  // the same time.
+  const namelessNoCert = await postJson(realmUrl("/xacml/pep/heartbeat"), {});
+  check("a heartbeat with no certificate is refused by POLICY, not by the " +
+        "name check", function () {
+    assert.strictEqual(namelessNoCert.status, 403,
+      "the access policy answers first now; the door said " +
+      namelessNoCert.status + " " + String(namelessNoCert.text).slice(0, 200));
+    assert.strictEqual(namelessNoCert.body.error, "access_denied");
   });
 
   const misfiled = await postWithCertificate(realmUrl("/xacml/pep/heartbeat"),
@@ -999,7 +1308,7 @@ async function registeringAPep() {
       "and it should be told what to do about it: " + misfiled.body.action);
   });
 
-  const current = await get(realmUrl("/xacml/pep/policies"));
+  const current = await pepGet("/xacml/pep/policies");
   const uptodate = await postWithCertificate(realmUrl("/xacml/pep/heartbeat"),
     { syncToken: current.body.syncToken, policyCount: 1 }, identity);
   check("a heartbeat holding the current token is told it is current",
@@ -1168,7 +1477,7 @@ async function aSaveDoesNotWaitOnTheNudge() {
       "says lastNotify=" + JSON.stringify(row.lastNotify));
   });
 
-  const pulled = await get(realmUrl("/xacml/pep/policies"));
+  const pulled = await pepGet("/xacml/pep/policies");
   check("and the PEP converges by PULLING, nudge or no nudge", function () {
     assert.strictEqual(pulled.status, 200);
     assert.strictEqual((pulled.body.policies || []).length, 1,
@@ -1201,14 +1510,25 @@ async function turningItOff() {
   log.info("=== xacml.enabled and xacml.remotePeps, off ===");
 
   await setSetting("xacml.remotePeps", false);
+  // FOUR, NOT THREE: `POST /xacml/pip` is behind this switch too, because the
+  // only caller it exists for is a remote PEP and a switch that took remote
+  // enforcement points away while leaving an endpoint handing out a named
+  // person's directory attributes would not be doing what its description
+  // says.
   const pepOff = [
     ["GET", "/xacml/pep/policies"],
     ["POST", "/xacml/pep/register"],
-    ["POST", "/xacml/pep/heartbeat"]
+    ["POST", "/xacml/pep/heartbeat"],
+    ["POST", "/xacml/pip"]
   ];
   for (const [method, path] of pepOff) {
-    const r = method === "GET" ? await get(realmUrl(path))
-                               : await postJson(realmUrl(path), {});
+    // WITH THE CERTIFICATE, because these three are gated and a 403 would be
+    // read here as a 501 that never happened. The OFF CHECK RUNS FIRST in the
+    // handler, so an unadmitted caller would in fact still see the 501 — but
+    // asserting that by accident is asserting the wrong thing, and it would
+    // stop being true the moment the two checks were ordered the other way.
+    const r = method === "GET" ? await pepGet(path)
+                               : await pepPost(path, {});
     check("remotePeps off: " + method + " " + path + " answers 501",
           function () {
       assert.strictEqual(r.status, 501,
@@ -1232,11 +1552,19 @@ async function turningItOff() {
   const allOff = [
     ["POST", "/xacml/pdp"], ["GET", "/xacml/policies"],
     ["GET", "/xacml/protected"], ["GET", "/xacml/pep/policies"],
-    ["POST", "/xacml/pep/register"], ["POST", "/xacml/pep/heartbeat"]
+    ["POST", "/xacml/pep/register"], ["POST", "/xacml/pep/heartbeat"],
+    ["POST", "/xacml/pip"]
   ];
   for (const [method, path] of allOff) {
-    const r = method === "GET" ? await get(realmUrl(path))
-                               : await postJson(realmUrl(path), {});
+    // EACH WITH THE IDENTITY ITS OWN GATE WANTS — two roles, so two
+    // credentials, and a job that used one for all six would be asserting a
+    // 501 that a 403 could have been mistaken for.
+    // `/xacml/pip` takes the PEP's identity even though it is not under
+    // /xacml/pep/ — the one endpoint whose role does not follow its path.
+    const identity = (path.indexOf("/xacml/pep/") === 0 ||
+                      path === "/xacml/pip") ? trusted : xacmlUser;
+    const r = method === "GET" ? await xGet(path, identity)
+                               : await xPost(path, {}, identity);
     check("xacml off: " + method + " " + path + " answers 501", function () {
       assert.strictEqual(r.status, 501,
         method + " " + path + " answered " + r.status + " with XACML off");
@@ -1248,7 +1576,7 @@ async function turningItOff() {
 
   // THE ONE THAT MAKES THE REALM WORTH USING. Every setting above is
   // process-wide when set at the top level.
-  const elsewhere = await get(base + "/xacml/policies");
+  const elsewhere = await xGet(base + "/xacml/policies");
   check("the default realm goes on answering while this one is off",
         function () {
     assert.strictEqual(elsewhere.status, 200,
@@ -1260,7 +1588,7 @@ async function turningItOff() {
   });
 
   await resetSetting("xacml.enabled");
-  const back = await get(realmUrl("/xacml/policies"));
+  const back = await xGet("/xacml/policies");
   check("turning it back on decides against the same policies", function () {
     assert.strictEqual(back.status, 200, "it answered " + back.status);
     assert.strictEqual((back.body.policies || []).length, 1,
@@ -1289,8 +1617,8 @@ async function theRepositoryIsPerRealm() {
   log.debug("Entering theRepositoryIsPerRealm().");
   log.info("=== ou=policies is this realm's own ===");
 
-  const here = await get(realmUrl("/xacml/policies"));
-  const there = await get(base + "/xacml/policies");
+  const here = await xGet("/xacml/policies");
+  const there = await xGet(base + "/xacml/policies");
   const hereNames = (here.body.policies || []).map(function (one) {
     return one.name;
   });
@@ -1332,13 +1660,21 @@ async function theRepositoryIsPerRealm() {
 }
 
 // ---------------------------------------------------------------------------
-// THE REALM, AND WHY THE TEARDOWN ASSERTS RATHER THAN HOPES.
+// THE REALM, AND WHY IT IS LEFT STANDING (2026-09-06).
 //
-// Removing the realm takes its directory subtree, its ou=policies, its ou=peps
-// AND its configuration overrides with it. That last one is why the removal is
-// checked: a realm left behind with `xacml.enabled: false` on it is harmless to
-// every other job, but a teardown that silently did nothing is how a later run
-// of this same file meets a realm it thinks it just created.
+// This file used to remove it here and assert the removal. **A realm a test
+// run created stays now, because it is what a person reads when the run went
+// red**: its ou=policies, its ou=peps, its directory subtree and its
+// configuration overrides are the whole record of what these fourteen sections
+// did, and a teardown that took them destroyed the evidence at exactly the
+// moment it was worth something.
+//
+// The old argument for removing it was that a realm left behind with
+// `xacml.enabled: false` on it must not be met by a later run of this same
+// file. That is answered by the ID rather than by the teardown: it carries
+// `names.runStamp()`, so a second run mints a second realm. Nothing here is
+// process-wide except the truststore anchor, which is posted once and shared
+// on purpose.
 // ---------------------------------------------------------------------------
 async function createTheRealm() {
   log.debug("Entering createTheRealm().");
@@ -1346,8 +1682,9 @@ async function createTheRealm() {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       id: REALM, name: "XACML endpoint test realm",
-      description: "Created by tests/vendored/sts_xacml_endpoints.js; " +
-                   "removed at the end."
+      description: "Created by tests/vendored/sts_xacml_endpoints.js; LEFT " +
+                   "IN PLACE on purpose, so that a failed run can be read " +
+                   "afterwards. Remove it by hand when you are done with it."
     })
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
@@ -1358,28 +1695,398 @@ async function createTheRealm() {
   log.debug("Leaving createTheRealm().");
 }
 
-async function removeTheRealm() {
-  log.debug("Entering removeTheRealm().");
-  const r = await fetchJson(base + "/admin-api/realms/remove", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: REALM })
-  });
-  if (r.status !== 200 || !r.body || r.body.ok === false) {
-    log.warn("Could not remove the throwaway realm " + REALM + ": " +
-             r.status + " " + String(r.text).slice(0, 200));
-    return;
-  }
+async function theRealmIsLeftBehind() {
+  log.debug("Entering theRealmIsLeftBehind().");
+  // IT IS STILL READ BACK, and that is the half of the old teardown worth
+  // keeping: a job that thinks it has been writing into a realm the registry
+  // has never heard of has been writing somewhere else, and the last thing it
+  // does should be to say which. The check is now "it is there", where it used
+  // to be "it is gone".
   const left = await fetchJson(base + "/admin-api/realms");
   const found = ((left.body && left.body.realms) || []).filter(function (one) {
     return one.id === REALM;
   });
-  assert.strictEqual(found.length, 0,
-    "the realm " + REALM + " is still in the registry after being removed. " +
-    "Its ou=policies, its ou=peps and its configuration overrides go with it, " +
-    "so a removal that did not happen leaves state behind for the next run of " +
-    "this file to trip over.");
-  log.info("Removed the throwaway realm " + REALM + ".");
-  log.debug("Leaving removeTheRealm().");
+  assert.strictEqual(found.length, 1,
+    "the realm " + REALM + " should still be in the registry at the end of " +
+    "the run — this file no longer removes it, and every assertion above was " +
+    "made inside it. The registry holds " +
+    JSON.stringify(((left.body && left.body.realms) || []).map(function (one) {
+      return one.id;
+    })));
+  log.info("The throwaway realm " + REALM + " is LEFT IN PLACE on purpose — " +
+           "its ou=policies, its ou=peps and its overrides are the record of " +
+           "this run. Read them at " + base + "/realm/" + REALM + "/admin, " +
+           "or remove the realm by hand when you are done with it.");
+  log.debug("Leaving theRealmIsLeftBehind().");
+}
+
+// ===========================================================================
+// 0. THE GATE, AND THE TWO ROLES THAT ARE NOT ONE ROLE (2026-09-06).
+//
+// **THIS SECTION IS AN INVERTED MATRIX AND THAT IS THE WHOLE VALUE OF IT.**
+// Every one of these eight endpoints is behind the same four-link chain — a
+// certificate this service VERIFIED, a DN resolved to a directory entry, the
+// roles that entry holds, a policy decision — and they split on the LAST link
+// into two roles granted by two groups.
+//
+// A single "the gate refuses an anonymous caller" assertion would pass against
+// a service that had collapsed the two roles into one, which is the change
+// somebody tidying up will make. So each identity is driven against BOTH sets:
+//
+//                        the four proper     /xacml/pep/* and /xacml/pip
+//   nobody                    403                      403
+//   a rogue, verified         403                      403
+//   XACML_USER                200                      403   ← the interesting one
+//   REMOTE_PEPS               403   ← and this one     200
+//
+// The two diagonal cells are the ones no other assertion in this file can
+// produce, and they are what "two groups" MEANS. If either ever goes green in
+// the wrong direction, admitting a caller to a demonstration policy has
+// silently admitted it to the documents this service decides its own
+// admissions with, or to somebody's directory attributes.
+//
+// **THE ROGUE IS FULLY AUTHENTICATED AND STILL REFUSED**, which is the third
+// thing worth pinning: its certificate verifies, its DN resolves, and it holds
+// neither role — so the refusal says the certificate was fine, because
+// somebody debugging it otherwise regenerates a certificate that was never
+// wrong.
+// ===========================================================================
+async function theGateSplitsOnTheRole() {
+  log.debug("Entering theGateSplitsOnTheRole().");
+  log.info("=== The gate: two roles, two groups, four callers ===");
+
+  const proper = [["GET", "/xacml"], ["POST", "/xacml/pdp"],
+                  ["GET", "/xacml/policies"], ["GET", "/xacml/protected"]];
+  const pepSide = [["POST", "/xacml/pep/register"],
+                   ["GET", "/xacml/pep/policies"],
+                   ["POST", "/xacml/pep/heartbeat"],
+                   ["POST", "/xacml/pip"]];
+
+  async function drive(method, path, identity) {
+    return method === "GET" ? await xGet(path, identity)
+                            : await xPost(path, {}, identity);
+  }
+
+  for (const [method, path] of proper.concat(pepSide)) {
+    const anonymous = await drive(method, path, null);
+    check("no certificate: " + method + " " + path + " is refused",
+          function () {
+      assert.strictEqual(anonymous.status, 403,
+        method + " " + path + " answered " + anonymous.status + " to a " +
+        "caller presenting nothing. Every endpoint in this family asks now.");
+      assert.ok(String(anonymous.body && anonymous.body.error_description)
+                  .indexOf("client certificate") > 0,
+        "and the refusal should say what to present; it says " +
+        JSON.stringify(anonymous.body).slice(0, 300));
+    });
+
+    const stranger = await drive(method, path, rogue);
+    check("a VERIFIED certificate in neither group: " + method + " " + path +
+          " is refused", function () {
+      assert.strictEqual(stranger.status, 403,
+        method + " " + path + " answered " + stranger.status + " to " +
+        ROGUE_CN + ". The certificate says WHO and the group says WHETHER; " +
+        "this one is fully authenticated and in no group.");
+      assert.ok(String(stranger.body && stranger.body.error_description)
+                  .indexOf("VERIFIED") > 0,
+        "and the refusal must say the certificate was FINE, or somebody " +
+        "debugging it regenerates a certificate that was never wrong. It " +
+        "says " + JSON.stringify(stranger.body).slice(0, 300));
+    });
+  }
+
+  // THE TWO DIAGONALS. Everything above this point would pass against a
+  // service holding one role for all eight endpoints.
+  for (const [method, path] of proper) {
+    const wrongRole = await drive(method, path, trusted);
+    check("REMOTE_PEPS does NOT open " + method + " " + path, function () {
+      assert.strictEqual(wrongRole.status, 403,
+        method + " " + path + " answered " + wrongRole.status + " to the " +
+        "identity holding REMOTE_PEPS. These four want XACML_USER, and a " +
+        "service where one role opened both sets would pass every other " +
+        "assertion in this file.");
+      assert.ok(String(wrongRole.body && wrongRole.body.error_description)
+                  .indexOf("XACML_USER") > 0,
+        "and the refusal should name the role it wanted; it says " +
+        JSON.stringify(wrongRole.body).slice(0, 300));
+    });
+  }
+  for (const [method, path] of pepSide) {
+    const wrongRole = await drive(method, path, xacmlUser);
+    check("XACML_USER does NOT open " + method + " " + path, function () {
+      assert.strictEqual(wrongRole.status, 403,
+        method + " " + path + " answered " + wrongRole.status + " to the " +
+        "identity holding XACML_USER. These four want REMOTE_PEPS: three of " +
+        "them publish the documents this service enforces its own access " +
+        "with, and /xacml/pip publishes a named person's directory " +
+        "attributes.");
+      assert.ok(String(wrongRole.body && wrongRole.body.error_description)
+                  .indexOf("REMOTE_PEPS") > 0,
+        "and the refusal should name the role it wanted; it says " +
+        JSON.stringify(wrongRole.body).slice(0, 300));
+    });
+  }
+
+  // AND THE ONE WAY PAST IT, asserted because a gate with no documented way
+  // out is a gate somebody will work around with a worse one. It is reset
+  // immediately: everything after this section is driven WITH credentials, so
+  // leaving it off would quietly make the rest of this file assert nothing
+  // about the gate at all.
+  await setSetting("xacml.enforceAccess", false);
+  const open = await drive("GET", "/xacml", null);
+  check("xacml.enforceAccess off opens it to a caller presenting nothing",
+        function () {
+    assert.strictEqual(open.status, 200,
+      "with enforcement off, GET /xacml answered " + open.status +
+      " to an anonymous caller. That setting is the documented way past this " +
+      "layer and a deployment that has turned it off has said so.");
+  });
+  await resetSetting("xacml.enforceAccess");
+  const shutAgain = await drive("GET", "/xacml", null);
+  check("and resetting it closes the door again", function () {
+    assert.strictEqual(shutAgain.status, 403,
+      "GET /xacml answered " + shutAgain.status + " after the setting was " +
+      "reset. A test that left this open would silently un-gate every " +
+      "section below it.");
+  });
+
+  log.info("[gate] OK — four callers against eight endpoints, and the two " +
+           "diagonals that show the roles are not one role.");
+  log.debug("Leaving theGateSplitsOnTheRole().");
+}
+
+// ===========================================================================
+// THE PIP OVER HTTP, WHICH IS THE ONE ENDPOINT HERE THAT SPEAKS XACML XML BOTH
+// WAYS (2026-09-06).
+//
+// A remote PEP holds the engine and NOT the directory, so a designator the
+// request did not carry resolves to an empty bag out there and to a real value
+// in here. `POST /xacml/pip` closes that, and the property that makes it worth
+// having is not "it returns some values" — it is that **what comes back is a
+// REQUEST FRAGMENT**, so a PEP splices it into its own request and its engine
+// finds the values where a designator looks for them, with no translation.
+//
+// So this section asserts the SHAPE as hard as the content: the `<Attributes>`
+// are in the XACML core namespace, an unresolved designator is an ABSENT
+// `<Attribute>` rather than an empty one, and the diagnostics are in a
+// namespace of this service's own so that a PEP reading only OASIS's never
+// meets them.
+// ===========================================================================
+function pipQuery(subject, designators) {
+  const dz = designators.map(function (one) {
+    return '  <AttributeDesignator xmlns="' + XACML_NS + '" Category="' +
+           (one.category || SUBJECT_CATEGORY) + '" AttributeId="' + one.id +
+           '" DataType="' + (one.type ||
+             "http://www.w3.org/2001/XMLSchema#string") +
+           '" MustBePresent="false"/>';
+  }).join("\n");
+  const subjectBlock = subject === null ? "" :
+    '    <Attributes Category="' + SUBJECT_CATEGORY + '">\n' +
+    '      <Attribute AttributeId="urn:oasis:names:tc:xacml:1.0:subject:' +
+    'subject-id" IncludeInResult="true">\n' +
+    '        <AttributeValue DataType="http://www.w3.org/2001/XMLSchema#' +
+    'string">' + subject + '</AttributeValue>\n' +
+    '      </Attribute>\n    </Attributes>\n';
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+         '<PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0">\n' +
+         '  <Request xmlns="' + XACML_NS + '" CombinedDecision="false" ' +
+         'ReturnPolicyIdList="false">\n' + subjectBlock + '  </Request>\n' +
+         dz + '\n</PIPRequest>\n';
+}
+
+async function thePipAnswersInXacmlsOwnXml() {
+  log.debug("Entering thePipAnswersInXacmlsOwnXml().");
+  log.info("=== POST /xacml/pip — the PIP, in XACML's own XML ===");
+
+  const answered = await xPostRaw("/xacml/pip", pipQuery("carol", [
+    { id: "mail" }, { id: "employeeType" },
+    { id: "urn:sts-mock:xacml:attribute:sn" },
+    { id: "noSuchAttributeAnywhere" },
+    { id: "mail", category: "urn:oasis:names:tc:xacml:3.0:attribute-category:resource" }
+  ]), trusted);
+
+  check("it answers XML and not JSON", function () {
+    assert.strictEqual(answered.status, 200,
+      "POST /xacml/pip answered " + answered.status + " " +
+      String(answered.text).slice(0, 300));
+    assert.ok(/xml/.test(answered.type),
+      "XACML defines no PIP protocol, so this endpoint speaks XACML's own " +
+      "XML rather than a vocabulary of this service's own. It answered " +
+      answered.type);
+    assert.ok(answered.text.indexOf("<PIPResponse") >= 0,
+      "the document should be a <PIPResponse>; it is " +
+      answered.text.slice(0, 200));
+  });
+
+  check("THE PAYLOAD IS A REQUEST FRAGMENT, in XACML's namespace", function () {
+    assert.ok(answered.text.indexOf('<Attributes xmlns="' + XACML_NS +
+                                    '"') > 0,
+      "the <Attributes> must be in the XACML CORE namespace, because the " +
+      "whole design is that a PEP splices them into its own <Request> and " +
+      "evaluates. The document is " + answered.text.slice(0, 600));
+    assert.ok(answered.text.indexOf('Category="' + SUBJECT_CATEGORY + '"') > 0,
+      "and carry the category the designator named");
+    assert.ok(answered.text.indexOf('IncludeInResult="false"') > 0,
+      "IncludeInResult must be written FALSE explicitly: a PEP splicing this " +
+      "into a request it then echoes must not start reporting this " +
+      "service's directory contents back to its own callers");
+  });
+
+  check("it resolves both spellings of a directory attribute", function () {
+    assert.ok(answered.text.indexOf('AttributeId="mail"') > 0 &&
+              answered.text.indexOf("@") > 0,
+      "carol's mail should come back with a value; the document is " +
+      answered.text.slice(0, 800));
+    assert.ok(answered.text.indexOf(
+      'AttributeId="urn:sts-mock:xacml:attribute:sn"') > 0,
+      "and the urn:sts-mock:xacml:attribute: form should resolve too — a PEP " +
+      "asserting only one of the two spellings is the defect " +
+      "xacml-pep/CLAUDE.md records having cost a run");
+  });
+
+  check("AN UNRESOLVED DESIGNATOR IS AN ABSENT <Attribute>, not an empty one",
+        function () {
+    assert.ok(answered.text.indexOf(
+      'AttributeId="noSuchAttributeAnywhere" IncludeInResult') < 0,
+      "an attribute the directory does not hold must not appear in the " +
+      "<Attributes> at all. The schema requires at least one " +
+      "<AttributeValue> inside an <Attribute>, so an empty one is not a " +
+      "legal request fragment — and a PEP that receives NOTHING behaves " +
+      "exactly as the embedded PDP does when the PIP answers nothing, with " +
+      "no branch of its own. The document is " +
+      answered.text.slice(0, 800));
+  });
+
+  check("and the reason is in this service's OWN namespace, out of the way",
+        function () {
+    assert.ok(answered.text.indexOf("<Unresolved>") > 0,
+      "the five reasons a bag can be empty are useless to a PDP and " +
+      "essential to a person, so they come back named rather than in a log " +
+      "the caller cannot read");
+    assert.ok(answered.text.indexOf("does not hold") > 0,
+      "the entry-does-not-hold-it reason should be distinguished from the " +
+      "others; the document says " + answered.text.slice(-800));
+    assert.ok(answered.text.indexOf("Only the access-subject category") > 0,
+      "and a resource designator should say THAT rather than looking like a " +
+      "missing attribute");
+  });
+
+  const noDesignators = await xPostRaw("/xacml/pip",
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0">\n  <Request xmlns="' +
+    XACML_NS + '"/>\n</PIPRequest>\n', trusted);
+  check("a query naming no designator is a 400 and never an empty answer",
+        function () {
+    assert.strictEqual(noDesignators.status, 400,
+      "it answered " + noDesignators.status + ". An unresolved designator is " +
+      "a legitimate ANSWER here, so a malformed query that came back as one " +
+      "would be indistinguishable from the attribute being absent — and the " +
+      "caller's PDP would go on to decide on it.");
+    assert.ok(noDesignators.text.indexOf("<PIPError") >= 0,
+      "and the refusal should be XML too, since nothing else on this " +
+      "endpoint is JSON; it answered " + noDesignators.text.slice(0, 200));
+  });
+
+  const notXml = await xPostRaw("/xacml/pip", "{\"Designator\":[]}", trusted);
+  check("and so is a body that is not a PIPRequest at all", function () {
+    assert.strictEqual(notXml.status, 400,
+      "a JSON body answered " + notXml.status + ". This endpoint took JSON " +
+      "in its first draft, and an old client sending it must be refused " +
+      "rather than quietly answered nothing.");
+  });
+
+  // ---------------------------------------------------------------------
+  // WHAT A CALLER MAY CHOOSE THE SIZE OF, AND THE ANSWER IS NOTHING.
+  //
+  // The XML readers are held to 454 of 455 OASIS conformance cases, so what a
+  // designator IS is not re-checked at this door — but a conformance suite has
+  // no opinion about an AttributeId a megabyte long, and **three of these
+  // scalars come back out again**: an unresolved designator is echoed into
+  // <Unresolved>, every one is named in this service's audit log, and the
+  // subject is handed to the directory's locateEntry(), which walks the tree
+  // comparing it against every DN.
+  //
+  // **THE RATE LIMIT IS DELIBERATELY NOT DRIVEN HERE.** Its buckets are per
+  // PROCESS and not per realm, so a job that drove one to its ceiling would
+  // leave the next job in the run meeting 429s that are nothing to do with it
+  // — which this suite has been bitten by before. It is asserted in process by
+  // `tests/portal_access.js`, where the bucket can be cleared afterwards.
+  // ---------------------------------------------------------------------
+  const oversizedId = await xPostRaw("/xacml/pip",
+    pipQuery("carol", [{ id: "a".repeat(400) }]), trusted);
+  check("an AttributeId longer than an identifier is refused", function () {
+    assert.strictEqual(oversizedId.status, 400,
+      "it answered " + oversizedId.status + ". That string is echoed into " +
+      "<Unresolved> and written into this service's audit log, so its " +
+      "length is not the caller's to choose.");
+    assert.ok(oversizedId.text.indexOf("<PIPError") >= 0,
+      "and the refusal is XML like everything else on this endpoint");
+  });
+
+  const controlChar = await xPostRaw("/xacml/pip",
+    pipQuery("carol", [{ id: "ma\u0007il" }]), trusted);
+  check("and so is one carrying a control character", function () {
+    assert.strictEqual(controlChar.status, 400,
+      "it answered " + controlChar.status + ". A BEL in an AttributeId ends " +
+      "up in an XML attribute value in the reply and in a log line, and " +
+      "xmlEscape() has nothing to say about C0 — it handles < > & and quotes.");
+  });
+
+  const longSubject = await xPostRaw("/xacml/pip",
+    pipQuery("x".repeat(300), [{ id: "mail" }]), trusted);
+  check("a subject-id longer than a name is refused before the directory " +
+        "sees it", function () {
+    assert.strictEqual(longSubject.status, 400,
+      "it answered " + longSubject.status + ". This is the one scalar that " +
+      "goes somewhere other than a log: locateEntry() walks the tree " +
+      "comparing it against every DN, every uid and every certificate " +
+      "subject, and this is the only door that takes it from a stranger.");
+  });
+
+  // A BODY OVER THE CEILING. `validation.parseXml()`'s CAP.LARGE is a MEGABYTE
+  // and app.js's body parser stops at five, so without the tighter cap a
+  // caller chooses how much of this process's memory one request costs.
+  const huge = '<?xml version="1.0"?><PIPRequest xmlns="urn:sts-mock:xacml:' +
+               'pip:1.0"><Request/><!--' + "z".repeat(1100000) + '--></PIPRequest>';
+  const oversizedBody = await xPostRaw("/xacml/pip", huge, trusted);
+  check("and a body over the megabyte ceiling never reaches the parser",
+        function () {
+    assert.strictEqual(oversizedBody.status, 400,
+      "it answered " + oversizedBody.status + ". The engine's own " +
+      "parseDocument() has NO size ceiling — it is the right reader for a " +
+      "policy and the wrong one for a body a stranger POSTs.");
+  });
+
+  // ENTITY EXPANSION, ASSERTED RATHER THAN ASSUMED. @xmldom/xmldom resolves no
+  // entity declared in a DTD, so a billion-laughs document is refused as not
+  // well-formed rather than expanded — and this check is what stops that
+  // becoming an assumption the day the parser is swapped.
+  let entities = '<!ENTITY lol "aaaaaaaaaa">';
+  let prev = "lol";
+  for (let i = 1; i <= 6; i += 1) {
+    entities += '<!ENTITY lol' + i + ' "' + ('&' + prev + ';').repeat(10) + '">';
+    prev = "lol" + i;
+  }
+  const bomb = '<?xml version="1.0"?><!DOCTYPE PIPRequest [' + entities +
+               ']><PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0"><Request/>' +
+               '<x>&' + prev + ';</x></PIPRequest>';
+  const started = Date.now();
+  const laughs = await xPostRaw("/xacml/pip", bomb, trusted);
+  check("a billion-laughs document is refused rather than expanded",
+        function () {
+    assert.strictEqual(laughs.status, 400,
+      "it answered " + laughs.status + ". This parser resolves no entity " +
+      "declared in a DTD — internal or external — so the document is not " +
+      "well-formed rather than being a bomb. Asserting it is what stops that " +
+      "becoming an assumption the day the parser is swapped.");
+    assert.ok(Date.now() - started < 2000,
+      "and it does it immediately; it took " + (Date.now() - started) + "ms");
+  });
+
+  log.info("[pip] OK — XML both ways, a request fragment a PEP can splice, " +
+           "an absent <Attribute> for every empty bag, and nothing about the " +
+           "query whose size the caller chooses.");
+  log.debug("Leaving thePipAnswersInXacmlsOwnXml().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1397,8 +2104,14 @@ async function test() {
     "GET /admin-api/status answered " + status.status + " at " + base +
     ". This job needs the mock and nothing else.");
 
+  // THE CREDENTIALS BEFORE THE REALM, because the truststore is process-wide
+  // while the realm is not: posting the anchor once covers every realm this
+  // file works in, and doing it first means the register section cannot be the
+  // place a certificate problem is first noticed.
+  await mintTheCredentials();
   await createTheRealm();
   try {
+    await theGateSplitsOnTheRole();
     await theSurfaceDescribesItself();
     await anEmptyRepositoryDecidesNothing();
     await aPolicyBuiltThroughTheApiDecides();
@@ -1407,17 +2120,19 @@ async function test() {
     await aRemotePepPulls();
     await registeringAPep();
     await aSaveDoesNotWaitOnTheNudge();
+    await thePipAnswersInXacmlsOwnXml();
     await turningItOff();
     await theRepositoryIsPerRealm();
   } finally {
-    await removeTheRealm();
+    await theRealmIsLeftBehind();
   }
 
   // A FLOOR ON THE COUNT, for the reason sts_admin_console.js gives: a section
   // that stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure mode a suite cannot report about itself.
-  assert.ok(checks >= 45,
-    "only " + checks + " checks ran. This file makes well over fifty against " +
+  assert.ok(checks >= 90,
+    "only " + checks + " checks ran. This file makes well over a hundred " +
+    "against " +
     "a healthy service, so a count this low means a SECTION STOPPED BEING " +
     "CALLED rather than that the surface got simpler.");
   log.info(checks + " checks passed.");
@@ -1428,7 +2143,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_xacml_endpoints")
-  .description("Drive the mock STS's seven /xacml endpoints over HTTP in a " +
+  .description("Drive the mock STS's eight /xacml endpoints over HTTP in a " +
       "throwaway trust realm: the decision endpoint and its refusals, the " +
       "repository, the embedded PEP's bias and its obligation rule, and the " +
       "three a remote PEP registers, pulls and reports on.")

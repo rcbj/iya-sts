@@ -36,6 +36,18 @@
 # swap the two environment variables below to use it, and the postgres service
 # becomes dead weight rather than a requirement.
 #
+# TWO DATABASE ROLES SINCE 2026-09-06, AND THIS SERVICE DIALS THE SMALLER ONE.
+# `postgres/schema.sql` builds the five tables as the owner `sts` and creates
+# `sts_app`, which holds SELECT, INSERT, UPDATE and DELETE on them and USAGE —
+# not CREATE — on the schema; STS_DATABASE_URL below dials that one. So a
+# running mock can change every row in its store and cannot add, alter,
+# truncate or drop a table in it. The database container runs the script
+# itself, through postgres/apply-schema.sh, ON THE START THAT CREATES THE
+# CLUSTER — so a `sts-db` volume from before that date has the tables and no
+# such role, and `docker compose down -v` is the way to a stack that starts.
+# postgres/CLAUDE.md and persistence/CLAUDE.md argue it; do not argue it again
+# here.
+#
 # THE TEST SUITE USES THIS FILE AND NOT ONE WORD OF THIS PARAGRAPH'S SUBJECT,
 # AND THE DISTINCTION IS THE WHOLE POINT. Since 2026-08-28
 # `./local-run-tests.sh` brings the `sts` service below up as the thing its
@@ -43,7 +55,14 @@
 # it does so with `STS_PERSISTENCE_MODE=memory` and `--no-deps`, which means no
 # database, no volume that matters and nothing carried from one run to the
 # next. A test that persisted would be a test whose second run started from the
-# first run's leavings. The parent project's stack is unchanged and unaffected:
+# first run's leavings. **SO NEITHER TEST STACK EXERCISES THE APPLICATION ROLE
+# EITHER** — `--no-deps` means the postgres service below never starts on a
+# `./local-run-tests.sh` run, and docker-compose-run-tests.yml has no database
+# service at all. What the split costs a test run is nothing, and what it gains
+# is nothing; it is the plain `docker compose up` stack, and an operator's own
+# database, that connect as `sts_app`. Dropping `--no-deps` and setting
+# STS_PERSISTENCE_MODE=postgres is what a run against it would take, and the
+# paragraph above is why no run does that by default. The parent project's stack is unchanged and unaffected:
 # it starts this service with its own configuration and `persistence.mode` at
 # its default of `memory`, which is why not one job there had to change either.
 #
@@ -156,9 +175,37 @@ services:
     # things somebody TYPED — and never anything this service minted.
     image: postgres:18
     environment:
+      # THE OWNER, AND SINCE 2026-09-06 IT IS NOT THE ROLE THIS SERVICE DIALS
+      # WITH. This one is the cluster's bootstrap superuser: it is what initdb
+      # creates, what the healthcheck below probes with, and what runs
+      # postgres/schema.sql — so it is the role that OWNS the five tables and
+      # the only one that can change them. The service connects as
+      # STS_DB_APP_USER instead; see the two variables below and
+      # STS_DATABASE_URL on the sts service.
       - POSTGRES_USER=sts
       - POSTGRES_PASSWORD=sts
       - POSTGRES_DB=sts
+      # ---------------------------------------------------------------------
+      # THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.
+      #
+      # postgres/apply-schema.sh creates it on the start that creates the
+      # cluster, with SELECT, INSERT, UPDATE and DELETE on the schema and no
+      # CREATE anywhere — so this service cannot add, alter, drop or truncate
+      # a table in the database it persists to. postgres/schema.sql argues it
+      # at length and is runnable by hand against any other database.
+      #
+      # THE VALUES ARE SPELT HERE AND AGAIN IN STS_DATABASE_URL BELOW, because
+      # a connection string is one string and compose cannot build it out of
+      # these without making the override case (`STS_DATABASE_URL=...`)
+      # ambiguous. Changing the role means changing both, and
+      # tests/postgres_schema.js is what notices if only one of them moves.
+      #
+      # THE PASSWORD IS IN THIS FILE IN PLAIN TEXT for the reason the header
+      # gives about the superuser's: it guards a throwaway database of mock
+      # identities on a private bridge network.
+      # ---------------------------------------------------------------------
+      - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
+      - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
     volumes:
       # ONE MOUNT AT /var/lib/postgresql, NOT AT .../data, AND 18 IS WHY.
       # These images store the cluster in a major-version-specific directory
@@ -178,6 +225,22 @@ services:
       # Runs ONCE, on the start that creates the cluster, and turns every
       # `host` rule in pg_hba.conf into `hostssl`. See the script.
       - ./postgres/require-tls.sh:/docker-entrypoint-initdb.d/00-require-tls.sh:ro
+      # AND THEN THE SCHEMA, on the same one start. `10-` so that it sorts
+      # after the TLS hardening above; the DDL itself is mounted OUTSIDE
+      # /docker-entrypoint-initdb.d on purpose, because the entrypoint runs
+      # every *.sql in that directory itself, with no way to pass the role name
+      # and password — it would run a second time with the defaults and undo
+      # whatever STS_DB_APP_PASSWORD said.
+      #
+      # **NEITHER RUNS AGAIN ON A VOLUME THAT ALREADY HAS A CLUSTER IN IT.** A
+      # sts-db volume written before 2026-09-06 has the tables and no
+      # application role, and the sts container then restart-loops with
+      # `password authentication failed for user "sts_app"`. `docker compose
+      # down -v` is the answer, and what it throws away is the directory, the
+      # realms and the appconfig overrides — never anything this service
+      # minted.
+      - ./postgres/apply-schema.sh:/docker-entrypoint-initdb.d/10-apply-schema.sh:ro
+      - ./postgres/schema.sql:/usr/local/share/sts/schema.sql:ro
     # THE KEY PAIR IS MADE BEFORE THE SERVER STARTS, which is why this is a
     # `command` wrapper and not an initdb script: `ssl_cert_file` is read when
     # the server boots, and an initdb script runs after that has already
@@ -219,6 +282,60 @@ services:
     # Same image name the parent project builds, so a local `docker compose up`
     # here and the suite there produce the one image rather than two that drift.
     image: rcbj/sts
+    # -----------------------------------------------------------------------
+    # THE KEY-ENCRYPTION KEY IS MADE ON THE FIRST START THAT FINDS NONE.
+    #
+    # Product mode refuses to start without one, and a stack that cannot come
+    # up until somebody has read a paragraph is a stack nobody runs. So this
+    # mints one into the `sts-secrets` volume the first time and uses it for
+    # ever after — which is exactly the property that matters, because a KEK
+    # regenerated per start would leave every stored signing key unopenable
+    # and the service would refuse to start rather than issue tokens nobody
+    # can verify.
+    #
+    # A `command` wrapper rather than an entrypoint script in the image, and
+    # the same shape the postgres service above uses for its TLS material:
+    # the generation belongs to THIS stack rather than to the image, because
+    # a real deployment mounts a key it manages and must not have one invented
+    # for it. `exec` so node keeps pid 1 and still receives the stop signal.
+    #
+    # 32 bytes from the kernel, base64 — `common/secrets.js` reads the file's
+    # contents as the key material.
+    #
+    # -----------------------------------------------------------------------
+    # AND THE MANAGEMENT API'S CLIENT SECRET, ON THE SAME ARGUMENT (2026-09-09).
+    #
+    # `/admin-api` requires an access token minted by the seeded
+    # `sts-management-api` client. Left alone, that client's secret is
+    # generated at every start and is readable only THROUGH the API it
+    # unlocks — so the default stack would ship an administrative surface
+    # nobody could ever obtain a token for, and the first thing anybody would
+    # do about it is turn the gate off.
+    #
+    # **IT IS KEPT IN THE SAME VOLUME AS THE KEK AND FOR THE SAME REASON**: a
+    # secret regenerated per start invalidates the credential somebody wrote
+    # down, and this stack's whole point is that a restart changes nothing.
+    # `ADMIN_API_CLIENT_SECRET` in the environment WINS, because a deployment
+    # that manages its own must not have one invented for it — which is why
+    # the generated value is only used when the variable is empty.
+    #
+    # It is READABLE from the volume by design: `docker compose exec sts cat
+    # /run/secrets/sts-admin-api-secret` is how an operator gets a token on a
+    # stack they own. That is a property of a stack whose database password is
+    # also in this file.
+    # -----------------------------------------------------------------------
+    command: >
+      sh -c 'if [ ! -s /run/secrets/sts-kek ]; then
+      head -c 32 /dev/urandom | base64 > /run/secrets/sts-kek;
+      chmod 600 /run/secrets/sts-kek; fi;
+      if [ ! -s /run/secrets/sts-admin-api-secret ]; then
+      head -c 24 /dev/urandom | base64 | tr -d "/+=" | head -c 24
+      > /run/secrets/sts-admin-api-secret;
+      chmod 600 /run/secrets/sts-admin-api-secret; fi;
+      if [ -z "$$ADMIN_API_CLIENT_SECRET" ]; then
+      ADMIN_API_CLIENT_SECRET="$$(cat /run/secrets/sts-admin-api-secret)";
+      export ADMIN_API_CLIENT_SECRET; fi;
+      exec node server.js'
     build:
       # Repo root, and the default ./Dockerfile. The parent passes
       # `dockerfile: sts/Dockerfile` with a root context because its COPY paths
@@ -229,6 +346,22 @@ services:
       # and a per-DIRECTORY list acquired the same forget-one-silently failure
       # the old `COPY *.js` wildcard existed to avoid.
       context: .
+      # THE BUILD'S IDENTITY, both optional and both empty by default.
+      #
+      # The Dockerfile stamps M.N.O into version.json at build time; these are
+      # the two things it cannot work out for itself. GIT_COMMIT because
+      # .dockerignore excludes .git, so there is no history in the context to
+      # read a commit id out of — leave it and the version has no commit in its
+      # provenance, which costs a tooltip. BUILD_NUMBER to replace the UTC build
+      # instant with something a CI system chose, in which case keeping it
+      # unique and increasing is that system's job.
+      #
+      # `${VAR:-}` rather than omitting them: an unset variable with no default
+      # makes compose warn on every command, and an empty string is exactly what
+      # the Dockerfile's ARG defaults to anyway.
+      args:
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
+        GIT_COMMIT: "${GIT_COMMIT:-}"
     # A published port rather than the parent's `network_mode: "host"`. Host
     # networking is what that stack needs and is Linux-only; publishing works on
     # Docker Desktop too, and nothing in this repo has to share a loopback with
@@ -267,6 +400,22 @@ services:
       # WHERE THE ldif MODE WRITES. Mounted in postgres mode too, so that
       # switching between them is one environment variable — see the header.
       - sts-data:/usr/src/sts/data
+      # ---------------------------------------------------------------------
+      # THE KEY-ENCRYPTION KEY, which product mode cannot start without.
+      #
+      # Product mode keeps its signing keys across restarts by sealing them in
+      # the store under a key this service NEVER generates and never writes
+      # down — `common/secrets.js` reads it from a mounted file (the default)
+      # or one of four cloud secret stores. A volume rather than a bind mount
+      # so it is not a file in this repository: a key-encryption key in a
+      # checkout is a key-encryption key in everybody's checkout.
+      #
+      # `docker compose down -v` removes it WITH the database, which is the
+      # right pairing — the keys it opens go at the same moment, so the two can
+      # never be out of step. `down` on its own keeps both, which is what makes
+      # a restart keep every token it ever issued verifiable.
+      # ---------------------------------------------------------------------
+      - sts-secrets:/run/secrets
       # THE APPCONFIG FILES, bind-mounted from this repository so that editing
       # env/local.js on the host is all it takes. Read-only from the
       # container's side, and that is the point rather than caution: nothing in
@@ -335,6 +484,67 @@ services:
       # says otherwise.
       # ---------------------------------------------------------------------
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-postgres}
+      # ---------------------------------------------------------------------
+      # THE DEFAULT STACK IS DISPATCH + PRODUCT SINCE 2026-09-09, and that is a
+      # reversal worth stating: this file used to bring up the service "as it
+      # always was" — one process, development mode — on the argument that a
+      # plain `docker compose up` should be the simplest thing.
+      #
+      # It is the wrong default for the one thing this stack is FOR. Every
+      # other way of running this service exists to be experimented with; the
+      # compose stack is the only one that looks like a deployment, so it
+      # should be the closest thing here to one. That means:
+      #
+      #   product mode      signing keys that SURVIVE A RESTART, sealed under a
+      #                     key-encryption key this service never generates —
+      #                     and every gate that development mode leaves open
+      #                     (the console, SCIM, the management API) closed.
+      #   request workers   the handlers off the thread that owns every socket,
+      #                     which is the only configuration where a slow
+      #                   signature does not stop the KDC answering.
+      #   coordination      because three workers against one store are three
+      #                     processes, and the change log is what makes them
+      #                     one service.
+      #
+      # EVERY ONE IS STILL OVERRIDABLE. `STS_MODE=development docker compose up`
+      # is the old behaviour exactly, and `tests/tools/modes.sh` overrides all
+      # of them per mode, which is why the matrix still runs `memory` and
+      # `postgres` against this same file.
+      # ---------------------------------------------------------------------
+      - STS_MODE=${STS_MODE:-product}
+      - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
+      - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-3}
+      - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-*}
+      - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api}
+      - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
+      # ---------------------------------------------------------------------
+      # THE MANAGEMENT API'S CLIENT SECRET, AND IT IS NOT OPTIONAL IN PRODUCT
+      # MODE (2026-09-09).
+      #
+      # `/admin-api` requires an OAuth 2.0 access token, minted by the seeded
+      # `sts-management-api` client. That client's secret is generated at every
+      # start unless this pins it — and it is readable only THROUGH the API it
+      # unlocks, so a stack that does not set it has an administrative surface
+      # nobody can obtain a token for. In DEVELOPMENT mode the token endpoint
+      # does not verify a client secret at all, which is why the omission is
+      # survivable there and fatal here.
+      #
+      # **IT WAS MISSING FROM THIS FILE FOR THE FIRST DAY OF THAT FEATURE AND
+      # NOTHING FAILED.** The launchers were already generating one per run and
+      # putting it in compose's environment; with no line here compose dropped
+      # it, the service minted its own, and every test still passed — because
+      # development mode ignores the secret. It would have failed the moment
+      # anybody ran this stack in product mode, which is now the default.
+      #
+      # BARE, so that an unset variable leaves the setting alone rather than
+      # setting it to the empty string. See STS_LOG_LEVEL above for what the
+      # `=${VAR:-}` form costs.
+      - ADMIN_API_CLIENT_SECRET
+      # The other two halves of the same surface, forwarded for a deployment
+      # that pins an audience or turns the requirement off. Bare for the same
+      # reason: unset must mean "the default", not "the empty string".
+      - ADMIN_API_AUTH_REQUIRED
+      - ADMIN_API_AUDIENCE
       # `sslmode=require` IS IN THE DEFAULT, and it is the client half of the
       # `hostssl` rules the database now enforces. Both ends say it: the server
       # refuses a plaintext connection and the client refuses to make one, so
@@ -347,7 +557,14 @@ services:
       # the honest description of a self-signed pair — and it is what
       # STS_DATABASE_TLS_REJECT_UNAUTHORIZED below says out loud rather than
       # leaves to be discovered.
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts:sts@postgres:5432/sts?sslmode=require}
+      #
+      # **THE USER IN IT IS `sts_app` AND NOT `sts` SINCE 2026-09-06**, and
+      # that is the whole of the least-privilege change: `sts` owns the schema
+      # and can change it, `sts_app` can only read and write the rows in it.
+      # The pair is created by postgres/schema.sql, which the database
+      # container runs once through postgres/apply-schema.sh — see the postgres
+      # service above, and note that an OLD VOLUME has no such role.
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app:sts_app@postgres:5432/sts?sslmode=require}
       # Where ldif mode would write. Set even in postgres mode so that the
       # volume above has a meaning and switching modes changes one line.
       - STS_PERSISTENCE_DATA_DIR=/usr/src/sts/data
@@ -399,8 +616,19 @@ services:
   # makes the other way: the mock is sixteen protocol families and a remote PEP
   # is one demonstration inside one of them, so it is opt-in
   # (`docker compose --profile xacml up`) rather than a container everybody
-  # pays for. It also keeps the test suite unaffected — `local-run-tests.sh`
-  # brings up the `sts` service with --no-deps and never sees this.
+  # pays for.
+  #
+  # **SINCE 2026-09-06 `./local-run-tests.sh` ASKS FOR THAT PROFILE BY NAME**,
+  # which the paragraph above used to say it never did. The suite has a job
+  # that drives a REMOTE PEP end to end — registration, the pull, a policy
+  # deployed at the PAP changing what this container allows, the nudge arriving
+  # over the bridge — and none of it is assertable without a second container
+  # on this network. The launcher overrides the four variables below that
+  # matter to it (`XACML_PEP_PDP_URL` names the throwaway realm that job owns,
+  # `XACML_PEP_HOST_PORT` is a free port rather than 9090, and the two
+  # intervals are shortened) and tears the whole project down afterwards. A
+  # PLAIN `docker compose up` IS UNAFFECTED: without `--profile xacml` this
+  # service does not start, exactly as before.
   #
   # WHAT IT DEMONSTRATES THAT THE EMBEDDED PEP AT /xacml/protected CANNOT: this
   # one can be STALE, can hold a policy the PDP no longer has, and can go on
@@ -422,8 +650,22 @@ services:
       # argues why a checked-in copy and an npm package were both refused.
       context: .
       dockerfile: xacml-pep/Dockerfile
+      # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Pass
+      # the SAME BUILD_NUMBER to both to say the PDP and this PEP are one
+      # release; leave them and each image gets the instant it was built, which
+      # is two different numbers for two artifacts and is the honest default.
+      args:
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
+        GIT_COMMIT: "${GIT_COMMIT:-}"
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
+    volumes:
+      # WHERE A LAUNCHER PUTS THE CLIENT CREDENTIAL. It defaults to this
+      # directory — which exists, contains no key, and mounts harmlessly — so
+      # that a plain `docker compose --profile xacml up` needs no file and no
+      # variable. A launcher sets XACML_PEP_CERT_DIR to a directory it wrote
+      # pep.crt and pep.key into and names them with the two variables below.
+      - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
     depends_on:
       sts:
         condition: service_healthy
@@ -445,10 +687,26 @@ services:
       #     - PEP_TLS_CERT=/certs/pep.crt
       #     - PEP_TLS_KEY=/certs/pep.key
       #
-      # EITHER WAY IT ENFORCES. Registering buys a row on
-      # /admin/xacml/peps and an address for the nudge, not the ability to
-      # decide — GET /xacml/pep/policies requires no credential.
+      # EITHER WAY IT REGISTERS OR IT DOES NOT; the ability to DECIDE is a
+      # different question and the answer changed on 2026-09-06. Registering
+      # still buys only a row on /admin/xacml/peps and an address for the
+      # nudge — but GET /xacml/pep/policies now requires a VERIFIED client
+      # certificate whose subject holds the built-in REMOTE_PEPS role, so a
+      # container with no certificate pulls nothing, holds nothing, and
+      # answers NotApplicable to everything with the bias deciding. Mount one
+      # (below) or turn xacml.enforceAccess off on the mock.
       - PEP_NAME=${XACML_PEP_NAME:-pep-1}
+      # THE CLIENT CERTIFICATE, WHEN SOMEBODY MOUNTED ONE (2026-09-06). The
+      # three /xacml/pep endpoints are gated now: a PEP is admitted by a
+      # certificate this service VERIFIES, whose subject resolves to a
+      # directory entry in the group named by roles.remotePepGroup. Nothing in
+      # this image or in the mock provides that certificate — a launcher makes
+      # one with tests/tools/pep-credential.js, POSTs the issuing CA to
+      # /tls/trust, and mounts it here. Unset, these two are empty and this
+      # container registers as nothing and is refused, which is the honest
+      # default and says so on /admin/xacml/peps.
+      - PEP_TLS_CERT=${XACML_PEP_TLS_CERT:-}
+      - PEP_TLS_KEY=${XACML_PEP_TLS_KEY:-}
       # The mock regenerates its key on every start and signs it itself, so
       # there is no anchor to verify against. `pep.js` logs this on every
       # start rather than once, for federation_http.js's reason: a
@@ -467,7 +725,25 @@ services:
       - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://xacml-pep/protected}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
+      # THE REMOTE POLICY INFORMATION POINT (2026-09-06). On by default:
+      # this PEP resolves designators the request did not carry against
+      # the mock's embedded directory, through POST /xacml/pip, in one
+      # batched query before each evaluation — so a policy reading
+      # employeeType off a person's entry decides HERE the way it decides
+      # at the PDP. Set it false to watch the old behaviour, where every
+      # attribute has to be asserted in the request and the two
+      # enforcement points legitimately disagree. A container with no
+      # PEP_TLS_CERT reaches that state anyway, because the endpoint
+      # requires a verified certificate holding REMOTE_PEPS.
+      - PEP_PIP=${XACML_PEP_PIP:-true}
       - PEP_POLL_INTERVAL_MS=${XACML_PEP_POLL_INTERVAL_MS:-15000}
+      # OVERRIDABLE SINCE 2026-09-06 BECAUSE THE SUITE OVERRIDES IT.
+      # ./local-run-tests.sh brings this service up as part of its stack and
+      # tests/vendored/sts_xacml_remote_pep.js reads the counters this beat
+      # carries off /admin-api/xacml/peps — at the shipped sixty seconds that
+      # job would spend a minute waiting for a number. A demonstration
+      # container still beats once a minute.
+      - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-60000}
       - PEP_LOG_LEVEL=${XACML_PEP_LOG_LEVEL:-info}
 
 # ---------------------------------------------------------------------------
@@ -489,3 +765,7 @@ volumes:
   # mode, and mounted anyway so that switching modes is one environment
   # variable.
   sts-data:
+  # /run/secrets inside the STS container: the key-encryption key product mode
+  # seals its signing keys with, generated on the first start that finds none
+  # and kept until `down -v`. See the `command` on the sts service.
+  sts-secrets:

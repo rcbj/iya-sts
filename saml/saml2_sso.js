@@ -260,7 +260,7 @@ const REQUEST_TTL_MS = 10 * 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingRequests = realms.map();
+const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests' });
 
 // Artifact -> the message it stands for. See decision 6: resolving one deletes
 // it, so this map is also the record of what has NOT been resolved yet.
@@ -269,7 +269,7 @@ const pendingRequests = realms.map();
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const artifacts = realms.map();
+const artifacts = realms.map({ persist: 'saml2_sso.artifacts' });
 
 // The RelayState values the mock service provider below has minted, so it can
 // check the round trip. Its own state and nobody else's, exactly as
@@ -281,7 +281,7 @@ const SP_CONTEXT_TTL_MS = 30 * 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const spContexts = realms.map();
+const spContexts = realms.map({ persist: 'saml2_sso.spContexts' });
 
 // ---------------------------------------------------------------------------
 // WHICH SERVICE PROVIDER A PATH NAMES.

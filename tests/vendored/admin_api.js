@@ -32,7 +32,7 @@
 //     prove it is not to read the code but to revoke a token here and watch
 //     RFC 7662 introspection call it inactive.
 //
-// It also checks the one thing the explorer costs: /admin-api/docs is the only
+// It also checks the one thing the explorer costs: /admin/api-explorer is the only
 // page in this service with a script on it, so it is the only one served under
 // a relaxed Content-Security-Policy. That relaxation must stay scoped — the
 // console next door must still be `script-src 'none'` — and it must stay
@@ -47,6 +47,7 @@
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 const assert = require("assert");
 const { Command, Option } = require("commander");
+const consoleSignIn = require("./console_signin.js");
 const common = require("./jwt_vc_json_common.js");
 var appconfig = require(process.env.CONFIG_FILE);
 
@@ -79,6 +80,19 @@ const CONDITIONAL = {
   // Present, and false, only in a process with no LDAP directory loaded. A run
   // with one — which is every run of this suite — must not carry it.
   "GroupList.directory": true,
+  // THE COMMIT THE BUILD CAME FROM, and its absence is the ORDINARY case for a
+  // container rather than an edge one. `.dockerignore` excludes `.git`, so
+  // there is no history in the build context for `git rev-parse` to read — an
+  // image knows its commit only when `GIT_COMMIT` was passed in as a build
+  // argument, which the compose files offer and neither launcher sets. A
+  // checkout run in place DOES have one, so this property is present for a
+  // host run and absent for the containerized one, and a check that demanded
+  // it would fail in exactly the stack CI uses.
+  //
+  // It is reported as ABSENT rather than as an empty string on purpose: "this
+  // build does not know which commit it came from" and "it came from a commit
+  // named nothing" are different claims, and the second one is not true.
+  "ApiIndex.commit": true,
 };
 
 // ---------------------------------------------------------------------------
@@ -116,43 +130,19 @@ const CONDITIONAL = {
 // pass: no redirect means no session is needed, and the reads below then work
 // exactly as they did before any of this existed.
 // ---------------------------------------------------------------------------
+// **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06**, because the
+// console became a relying party of this service's own authorization server on
+// that date and the three-fetch sign-in this function used to hold became a
+// five-hop flow with two cookies — which `sts_metadata.js` also needs. Two
+// copies of it would agree on the day they were written and diverge the first
+// time the flow gained a hop. That file argues every hop; this one keeps the
+// two things that are THIS job's: which user, and what a missing role means.
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
-  const gated = await fetch(base + "/admin/tokens", { redirect: "manual" });
-  if (gated.status !== 302) {
-    log.info("[console] admin.authRequired is off (GET /admin/tokens " +
-             "answered " + gated.status + " with no redirect), so the reads " +
-             "below need no session.");
-    log.debug("Leaving signInToTheConsole(). The gate is off.");
-    return null;
-  }
-  const where = gated.headers.get("location") || "";
-  const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
-  assert.ok(authn,
-    "a console GET with no session should be sent to the sign-in screen " +
-    "carrying the id of the request waiting there, and it went to \"" +
-    where + "\". Without that id the screen has nothing to sign in FOR and " +
-    "refuses the POST.");
-  const body = "authn_id=" + encodeURIComponent(authn) +
-      "&username=" + encodeURIComponent(CONSOLE_USER) +
-      "&password=" + encodeURIComponent(CONSOLE_USER);
-  const signedIn = await fetch(base + "/authn/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body,
-    redirect: "manual",
-  });
-  const setCookie = signedIn.headers.get("set-cookie") || "";
-  const session = (setCookie.match(/(sts_mock_session=[^;]+)/) || [])[1];
-  assert.ok(session,
-    "signing in at /authn/login should set the session cookie; the reply was " +
-    signedIn.status + " and its Set-Cookie is \"" + setCookie + "\". This " +
-    "service checks no password, so a refusal here is about the request " +
-    "rather than the credential.");
-  log.info("[console] signed in as " + CONSOLE_USER + " for the console " +
-           "reads. admin.authRequired is on.");
-  log.debug("Leaving signInToTheConsole(). Holding a session.");
-  return session;
+  const cookie = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER, log);
+  log.debug("Leaving signInToTheConsole(). " +
+            (cookie ? "Holding a session." : "The gate is off."));
+  return cookie;
 }
 
 // One console read, carrying the session when there is one.
@@ -289,6 +279,87 @@ async function theIndexAgreesWithTheDocument(doc) {
            " operations, each naming what it mirrors.");
   log.debug("Leaving theIndexAgreesWithTheDocument().");
   return index;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY SURFACE REPORTS THE SAME BUILD.
+//
+// The version is M.N.O — a release from the repo-root VERSION file plus a build
+// number fixed when the image was built (see CLAUDE.md, *Versioning*). Six
+// surfaces draw it, and `tests/version.js` asserts in process that each of them
+// reads the same MODULE. What only a running service can be asked is whether
+// they then report the same STRING, which is the check here.
+//
+// **It is worth an over-HTTP check because the failure it guards is the state
+// this feature replaced.** Two of those surfaces used to read
+// `require('../package.json').version` — M.N.0, whose patch is a placeholder —
+// so the front page and this API agreed with each other perfectly while both
+// being wrong about every build ever made. Two surfaces reading two sources
+// agree right up until they stop, and nothing goes red when they do: a wrong
+// version still renders and still answers 200.
+//
+// The console page is read through the session, for the reason
+// theReadsAgreeWithTheConsole() gives: `?format=json` at a gated page is a 401
+// rather than a redirect, because a sign-in screen is not an answer a program
+// can read.
+// ---------------------------------------------------------------------------
+async function everySurfaceReportsTheSameBuild(index, session) {
+  log.debug("Entering everySurfaceReportsTheSameBuild().");
+  log.info("=== The version ===");
+
+  assert.ok(/^\d+\.\d+\.[A-Za-z0-9._-]+$/.test(index.version),
+    "the index's version should be M.N.O — a release and a build number. It " +
+    "is " + JSON.stringify(index.version) + ". A version ending in `.0` is " +
+    "the shape package.json carries, which is a release with a placeholder " +
+    "where the build number goes.");
+  assert.strictEqual(index.version,
+    index.version.split(".").slice(0, 2).join(".") + "." + index.build,
+    "the index's `version` should be its `major.minor` and its `build` " +
+    "joined, so a client can use either without parsing the other.");
+  assert.strictEqual(typeof index.stamped, "boolean",
+    "the index should say whether this version came off a build stamp or was " +
+    "computed at startup. Without it a build number is unreadable: two " +
+    "instances reporting different ones mean nothing if neither was built.");
+  assert.ok(index.builtAt && !isNaN(Date.parse(index.builtAt)),
+    "`builtAt` should be a timestamp. It is " + JSON.stringify(index.builtAt));
+
+  // THE SERVICE METADATA PAGE, which is the one page whose subject is what
+  // this service IS — so it names the build in its lead paragraph and in its
+  // JSON, and that JSON must be the same string this API just gave.
+  const read = await consoleJson("/admin/sts-metadata?format=json", session);
+  assert.ok(read.ok,
+    "the service metadata page's JSON view should answer 200, and it " +
+    "answered " + read.status + ": " + String(read.raw).slice(0, 300) +
+    ". A 401 or a 403 here is the console's own gate rather than a broken " +
+    "read — see signInToTheConsole().");
+  const metadata = read.body;
+  assert.strictEqual(metadata.version, index.version,
+    "/admin/sts-metadata and /admin-api should report the SAME version. " +
+    "They say " + JSON.stringify(metadata.version) + " and " +
+    JSON.stringify(index.version) + ", which means one of them is reading a " +
+    "different source — the exact defect this check exists for.");
+  assert.strictEqual(metadata.build.number, index.build,
+    "and the same build number.");
+  assert.strictEqual(metadata.build.stamped, index.stamped,
+    "and agree about whether it was stamped.");
+
+  // THE FRONT PAGE. Not JSON and not gated: it is HTML, so the assertion is
+  // that the string is ON it. This is the surface that carried the wrong
+  // number for the whole life of the service before this feature existed,
+  // which is why it is checked here rather than assumed from the two above.
+  const home = await fetch(base + "/", { redirect: "manual" });
+  const html = await home.text();
+  assert.ok(html.indexOf(index.version) >= 0,
+    "the front page should carry the version this API reports (" +
+    index.version + "). It is the surface that reported package.json's " +
+    "placeholder patch for every build ever made, so it is checked against " +
+    "the string rather than trusted.");
+
+  log.info("[version] OK — " + index.version + " (build " + index.build +
+           ", " + (index.stamped ? "stamped at build time" :
+                   "computed at startup: this is a checkout, not an artifact") +
+           ") on the API, the metadata page and the front page.");
+  log.debug("Leaving everySurfaceReportsTheSameBuild().");
 }
 
 // ---------------------------------------------------------------------------
@@ -820,9 +891,24 @@ async function theBulkRevocationsWorkAndAreUndone() {
 async function theExplorerIsServedUnderAScopedPolicy(session) {
   log.debug("Entering theExplorerIsServedUnderAScopedPolicy().");
   log.info("=== The explorer and its Content-Security-Policy ===");
-  const page = await fetch(api + "/docs");
-  assert.ok(page.ok, "GET /admin-api/docs should answer 200; got " +
-            page.status);
+  // ---------------------------------------------------------------------
+  // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09, and this section reads
+  // it there. It was `GET /admin-api/docs`, fetched here with no credential
+  // at all, which is what that API was — until it began requiring an access
+  // token, at which point the one page in this service written to be opened
+  // in a browser became the one page a browser could not open.
+  //
+  // **THE SESSION IS NOW LOAD-BEARING FOR THE FIRST FETCH AS WELL.** Without
+  // one this is a 303 to the sign-in screen, `fetch` follows it, and the
+  // policy read back is that screen's — which is the same failure the
+  // console check at the bottom of this function already carries a paragraph
+  // about, now applying twice.
+  // ---------------------------------------------------------------------
+  const explorerUrl = base + "/admin/api-explorer";
+  const withSession = session ? { headers: { Cookie: session } } : undefined;
+  const page = await fetch(explorerUrl, withSession);
+  assert.ok(page.ok, "GET /admin/api-explorer should answer 200 to a session " +
+            "that holds a role; got " + page.status);
   assert.ok(/text\/html/.test(page.headers.get("content-type") || ""),
     "and be served as HTML, or a browser shows the source.");
   const policy = page.headers.get("content-security-policy") || "";
@@ -840,13 +926,35 @@ async function theExplorerIsServedUnderAScopedPolicy(session) {
     "everything else stays as the service sets it.");
   const html = await page.text();
   assert.ok(html.indexOf("<script") >= 0 &&
-            html.indexOf("/admin-api/docs/explorer.js") >= 0,
+            html.indexOf("/admin/api-explorer/explorer.js") >= 0,
     "the page should load its script from its own URL rather than inline.");
-  assert.ok(/(nothing here is|not) protected/i.test(html),
-    "and say it is unprotected in the HTML itself, so the warning is there " +
-    "even when the document it renders cannot be fetched.");
+  // THE BANNER IT USED TO CARRY IS GONE AND ITS ABSENCE IS ASSERTED. It read
+  // "Nothing here is protected", which was true of this API for as long as
+  // the page hung off it and is now false twice over: the API takes a token
+  // and this page takes a session. A page still claiming it would be the
+  // most misleading sentence in the service, on the one page an operator
+  // reads before pressing things.
+  assert.ok(!/nothing here is protected/i.test(html),
+    "the explorer must not still say it is unprotected: it is a console " +
+    "page behind a session and two roles, calling an API that requires an " +
+    "access token.");
+  // AND IT SAYS WHAT THE READER MAY ACTUALLY DO, which is what replaced the
+  // banner: the scopes the token it was handed carries.
+  assert.ok(/admin:read/.test(html),
+    "the page should say which scopes its calls will carry, so that a " +
+    "reader knows before pressing Try it whether a write would be refused. " +
+    "It is the token the console minted for THEM, with their own roles' " +
+    "scopes and no others.");
+  // THE DOCUMENT COMES FROM THE CONSOLE'S OWN PATH rather than from
+  // /admin-api/openapi.json, and that is not cosmetic: the API path needs a
+  // token, and a page whose first act is a fetch that 401s would fail to
+  // render rather than rendering and saying so.
+  assert.ok(html.indexOf("/admin/api-explorer/openapi.json") >= 0,
+    "the page should read its document from the console's own path, which " +
+    "arrives on the session it was drawn with.");
 
-  const script = await fetch(api + "/docs/explorer.js");
+  const script = await fetch(base + "/admin/api-explorer/explorer.js",
+                             withSession);
   assert.ok(script.ok, "the script should be served; got " + script.status);
   const source = await script.text();
   assert.ok(source.length > 2000,
@@ -1106,7 +1214,55 @@ async function successfulHealthchecksAreNotInTheAuditLog() {
       "just refused — so this section proved nothing: the query, the " +
       "recording or the path could each be broken and it would still pass.");
 
-  const after = await get("/metrics");
+  // -------------------------------------------------------------------------
+  // POLLED, BECAUSE A PER-PROCESS TALLY CONVERGES RATHER THAN SYNCHRONISING
+  // (2026-09-08).
+  //
+  // `admin_stats.calls` is declared `merge: 'own'`: each process keeps its own
+  // tally, because `count++` is an INCREMENT and a last-writer-wins row would
+  // report one process's traffic while looking perfectly plausible. The
+  // console sums them when somebody asks — and those sums are exactly the rows
+  // the read barrier deliberately does NOT wait for, since a target that moves
+  // with every request is one no reader ever reaches (224 barrier timeouts in
+  // one run, every one a stale answer).
+  //
+  // So with request workers these three probes land on three workers and the
+  // sum reaches the reader shortly afterwards rather than instantly. Measured:
+  // reading straight back gave 6, 5, 5, 6 for an expected 7, depending on
+  // which worker answered — never wrong for long, and never exact at once.
+  //
+  // THE ASSERTION IS UNCHANGED — the probes must still all be counted. Only
+  // the reading is retried, and a run where the number never arrives still
+  // fails with the same sentence.
+  //
+  // **THE BUDGET WENT FROM 20s TO 45s ON 2026-09-09 AND THE REASON IS NOT
+  // "IT WAS FLAKY".** It went because this read stopped being able to use the
+  // fast path, and the change that did it was somewhere else entirely: on that
+  // day `/admin-api` began requiring an access token, so every call this job
+  // makes now carries an Authorization header — and `request_pool.js` keys a
+  // fanout request on its CREDENTIAL. Every poll below therefore lands on ONE
+  // worker, where before they spread across three.
+  //
+  // That matters because of WHICH mechanism does the catching up.
+  // `syncNow()`'s unconditional pass — the one written for exactly these
+  // excluded counter rows — runs when the pool decides a reader is behind, and
+  // the pool decides that from a generation the WRITES move. These probes are
+  // GETs of `/healthcheck`, so nothing bumps it, no barrier fires, and the
+  // pinned worker catches up on `persistence.pollInterval` alone.
+  //
+  // Measured against a three-worker stack under a full suite's load: three
+  // probes were visible to every worker in 12s, in two or three poll cycles,
+  // and 20s had already failed a run at 1 of 3. 45s is several times the
+  // measurement rather than several times the poll interval, which is what the
+  // sentence here used to claim.
+  // -------------------------------------------------------------------------
+  let after = await get("/metrics");
+  const deadline = Date.now() + 45000;
+  while (healthcheckCalls(after) < countedBefore + PROBES &&
+         Date.now() < deadline) {
+    await new Promise(function (r) { setTimeout(r, 250); });
+    after = await get("/metrics");
+  }
   assert.ok(healthcheckCalls(after) >= countedBefore + PROBES,
       "The metrics page counted " + healthcheckCalls(after) + " calls to " +
       "/healthcheck against " + countedBefore + " before " + PROBES + " were " +
@@ -1278,6 +1434,7 @@ async function test() {
   const session = await signInToTheConsole();
   const doc = await theDocumentIsServedAndWellFormed();
   const index = await theIndexAgreesWithTheDocument(doc);
+  await everySurfaceReportsTheSameBuild(index, session);
   const status = await get("/status");
   everyConsolePageIsMirrored(status, index);
   await everyConsoleActionIsMirrored(index);

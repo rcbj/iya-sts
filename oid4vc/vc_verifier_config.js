@@ -287,7 +287,7 @@ function defaultRequested() {
 // reassignments below work exactly as the two bindings they replaced did.
 const state = realms.obj(function () {
   return { requested: defaultRequested(), format: 'dc+sd-jwt' };
-});
+}, { persist: 'vc_verifier_config.state' });
 
 // The default credential format: what /oid4vp/start asks for when the link it was
 // reached by does not name one. The bar door's three format buttons DO name one,

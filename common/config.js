@@ -917,6 +917,164 @@ const SETTINGS = [
                  'and a realm resizing it would be resizing every other ' +
                  'realm\'s too.' },
 
+  // ---------------------------------------------------------------------
+  // THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER FROM THE ONE ABOVE.
+  //
+  // `workers.count` forks children that run a JOB TABLE — four leaf
+  // computations handed everything they need. These three configure children
+  // that run THE SERVICE: each loads the whole protocol stack in the same
+  // order, binds no protocol port, and answers HTTP on a unix socket the front
+  // process proxies to. `common/request_pool.js` argues it.
+  //
+  // All three are `perProcess` for `workers.count`'s reason, and
+  // restart-only rather than runtime: a request worker takes seconds to start
+  // because it loads the service, and the pool is brought up BEFORE the
+  // listener binds so that cost is paid where nobody is waiting. A table that
+  // said `runtime: true` and meant "on restart" is the lie this file refuses
+  // to tell about a bound port.
+  // ---------------------------------------------------------------------
+  { key: 'workers.requestCount', group: 'Global',
+    label: 'Request worker processes',
+    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
+    runtime: false, perProcess: true,
+    restartReason: 'the pool is forked before the listener binds, and the ' +
+                   'check that refuses to dispatch without a coordinating ' +
+                   'store runs once, there',
+    description: 'How many child processes REQUESTS are handled in, so that ' +
+                 'the process holding the sockets is doing request and ' +
+                 'response I/O and not running handlers. Each worker loads ' +
+                 'the whole protocol stack in the same order and binds no ' +
+                 'protocol port. 0 — the default — means every request is ' +
+                 'handled in the process that holds the sockets, which is ' +
+                 'what this service has always done. Nothing is dispatched ' +
+                 'whatever this is set to until workers.dispatch names a ' +
+                 'path.' },
+
+  { key: 'workers.dispatch', group: 'Global',
+    label: 'Paths handled in a request worker',
+    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'dispatching is REFUSED at startup unless this process is ' +
+                   'coordinating, and that check runs once, before the ' +
+                   'listener binds — a path named afterwards would be ' +
+                   'dispatched without it having run at all',
+    description: 'A comma-separated list of path prefixes whose requests go ' +
+                 'to a request worker instead of being handled here — for ' +
+                 'example "/scim/v2,/admin-api" — or "*" for EVERY path, ' +
+                 'which is how "all protocol requests run in the pool" is ' +
+                 'said (a list of families goes stale the next time one is ' +
+                 'added; "*" cannot). /tls is never dispatched whatever this ' +
+                 'says, because its whole content is what the server saw of ' +
+                 'the connection the request arrived on. EMPTY IS THE DEFAULT AND ' +
+                 'MEANS NOTHING IS DISPATCHED, which is what makes the pool ' +
+                 'inert until it is asked for. A prefix is matched after the ' +
+                 'realm segment is removed, so naming /scim/v2 covers every ' +
+                 'realm. A path named here when no worker is serving is ' +
+                 'REFUSED 503 rather than handled here, because the same path ' +
+                 'answered by whichever of two processes was available is the ' +
+                 'failure this pool exists to avoid.' },
+
+  // ---------------------------------------------------------------------
+  // THE ROUTING POLICY, AND THE LIST IS OF THE EXCEPTIONS ON PURPOSE.
+  //
+  // Everything dispatched holds affinity unless it is named here, which is the
+  // right way round: a protocol subsystem carries a browser flow across several
+  // requests and belongs on one worker, and the surfaces that do not are few
+  // enough to write down. Naming the affinity side instead would mean every new
+  // protocol family had to be added to a list or would silently lose its flow.
+  // ---------------------------------------------------------------------
+  { key: 'workers.fanout', group: 'Global',
+    label: 'Dispatched paths with no session affinity',
+    env: 'STS_WORKERS_FANOUT', type: 'string',
+    dflt: '/scim,/xacml,/admin-api',
+    runtime: false, perProcess: true,
+    restartReason: 'the workers this spreads requests across are forked ' +
+                   'before the listener binds',
+    description: 'A comma-separated list of path prefixes that go to the ' +
+                 'least-loaded request worker instead of being stuck to the ' +
+                 'session or flow they belong to. These three carry their own ' +
+                 'credential on every request and name their own target, so ' +
+                 'nothing about one request has to be remembered to answer the ' +
+                 'next. EVERYTHING ELSE DISPATCHED HOLDS AFFINITY — every ' +
+                 'protocol family, the admin console and the user portal — ' +
+                 'because a browser flow spans several requests whose state ' +
+                 'lives in the worker that made it. LDAP is not here and ' +
+                 'cannot be: its protocol is a raw socket the front process ' +
+                 'holds, and its only HTTP views are console pages under ' +
+                 '/admin/ldap, which are the console. Affinity is a LOCALITY ' +
+                 'measure and never a correctness one — what makes a ' +
+                 'dispatched path correct is that every store its handlers ' +
+                 'touch is reachable from a worker.' },
+
+  // ---------------------------------------------------------------------
+  // AND THE HALF THAT IS NOT HTTP AT ALL.
+  //
+  // The front process owns six listener families and one of them speaks HTTP.
+  // An operation is the protocol-independent way the other five reach the pool:
+  // the front process keeps the socket and the framing and hands over a
+  // `{ kind, args }` pair. A kind is `family.operation`, and naming the family
+  // alone dispatches all of it.
+  // ---------------------------------------------------------------------
+  { key: 'workers.operations', group: 'Global',
+    label: 'Operations run in a request worker',
+    env: 'STS_WORKERS_OPERATIONS', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'an operation named here is refused at startup unless ' +
+                   'this process is coordinating, for workers.dispatch\'s ' +
+                   'reason and in the same check',
+    description: 'A comma-separated list of non-HTTP operation kinds handled ' +
+                 'in a request worker instead of in the process that owns the ' +
+                 'socket — "ldap" for every directory operation, or ' +
+                 '"ldap.search" for one of them. They FAN OUT: a directory ' +
+                 'operation carries its own DN and credential and nothing ' +
+                 'about one has to be remembered to answer the next. EMPTY IS ' +
+                 'THE DEFAULT. **A worker holds its own copy of the ' +
+                 'directory, so dispatching a WRITE before that store is ' +
+                 'shared forks it N ways on the first entry** — which is why ' +
+                 'this is off and why the switch is not thrown by adding a ' +
+                 'listener. An operation with no worker to run it is done by ' +
+                 'the caller rather than refused, because failing it would ' +
+                 'take a protocol listener down for what is a performance ' +
+                 'measure.' },
+
+  // ---------------------------------------------------------------------
+  // READ-YOUR-WRITE ACROSS WORKERS. Off by default, and the cost is the reason.
+  // ---------------------------------------------------------------------
+  { key: 'workers.readYourWrite', group: 'Global',
+    label: 'Read-your-write across request workers',
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: false,
+    runtime: true, perProcess: true,
+    description: 'Whether a request worker must catch up with what the other ' +
+                 'workers have written before it serves. Coordination makes ' +
+                 'workers CONVERGE — measured at half a second to a second — ' +
+                 'and convergence is not read-your-write: with this off, a ' +
+                 'caller that writes through one worker and reads through ' +
+                 'another may be answered by one that has not caught up, ' +
+                 'which matters most for the fanout surfaces (SCIM, XACML, ' +
+                 'the management API) precisely because consecutive requests ' +
+                 'there land anywhere. With it on, the pool counts writes and ' +
+                 'a worker that is behind pulls before it answers — so the ' +
+                 'cost falls on the first read after a write on each worker, ' +
+                 'and on nothing while nothing is being written. OFF BY ' +
+                 'DEFAULT because that is the behaviour that existed before ' +
+                 'it, and because whether the wait is worth it is a question ' +
+                 'about the callers rather than about the pool.' },
+
+  { key: 'workers.socketDir', group: 'Global',
+    label: 'Request worker socket directory',
+    env: 'STS_WORKERS_SOCKET_DIR', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the owner-only directory is created once, when the pool ' +
+                   'starts, and removed on the way out',
+    description: 'Where the unix sockets request workers listen on are ' +
+                 'created. Empty means the system temporary directory. One ' +
+                 'owner-only directory is made per process and removed on the ' +
+                 'way out, so two copies of this service on one machine ' +
+                 'cannot meet. A socket here is a door into this service that ' +
+                 'skips every check the front process makes, which is why ' +
+                 'both the directory and the socket are narrowed to the ' +
+                 'owner.' },
+
   // --- Trust realms --------------------------------------------------------
   // Two settings, and they are the only two in this table that a realm cannot
   // set on itself: a realm that could turn realms off, or move the prefix it
@@ -1496,6 +1654,56 @@ const SETTINGS = [
                  'group does not also need the read group, because a role ' +
                  'that could change a page it could not see would be a trap ' +
                  'rather than a permission.' },
+
+  // -------------------------------------------------------------------------
+  // THE MANAGEMENT API'S OWN GATE (2026-09-09), which is a different question
+  // from the console's two roles above.
+  //
+  // `/admin-api` is a machine surface: there is no browser, no session and no
+  // sign-in screen, so it is reached with an OAuth 2.0 access token. What the
+  // token must carry is an AUDIENCE naming this API — so a token minted for
+  // some other resource cannot be replayed at it — and a SCOPE saying what it
+  // may do, which `common/roles.js` turns into the built-in ADMIN_READ and
+  // ADMIN_WRITE roles that the XACML access policy asks for.
+  // -------------------------------------------------------------------------
+  { key: 'adminApi.authRequired', group: 'Management API',
+    label: 'Require an access token on /admin-api',
+    env: 'ADMIN_API_AUTH_REQUIRED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Every call into /admin-api must present a Bearer access ' +
+                 'token this service issued, audienced to this API, carrying ' +
+                 '`admin:read` for a read and `admin:write` for anything that ' +
+                 'changes state. OFF restores what this surface did before ' +
+                 'the token was required — open to anybody who can reach the ' +
+                 'port — which is the recovery path when nobody can mint a ' +
+                 'token, and is exactly as dangerous as it sounds.' },
+
+  { key: 'adminApi.clientSecret', group: 'Management API',
+    label: 'The management API client\'s secret',
+    env: 'ADMIN_API_CLIENT_SECRET', type: 'string', dflt: '',
+    secret: true,
+    restartReason: 'the seeded registration is written once, at startup, so a ' +
+                   'secret changed while running would be a value nothing ' +
+                   'reads until the next start — and the client would go on ' +
+                   'authenticating with the old one meanwhile.',
+    description: 'The `client_secret` of the seeded `sts-management-api` ' +
+                 'client, which is what a caller exchanges for an access ' +
+                 'token. EMPTY means one is minted at every start — fine ' +
+                 'while this API was open, and a BOOTSTRAP HOLE now that it ' +
+                 'is not: the secret is only readable THROUGH the API it ' +
+                 'unlocks, so a restart would leave nobody able to get in. ' +
+                 'Set it and the client keeps that secret across restarts, ' +
+                 'which is what a deployment and every test launcher need.' },
+
+  { key: 'adminApi.audience', group: 'Management API',
+    label: 'The audience an /admin-api token must carry',
+    env: 'ADMIN_API_AUDIENCE', type: 'string', dflt: '', runtime: true,
+    description: 'What the `aud` claim must name for a token to be accepted ' +
+                 'here. EMPTY means "this service\'s own /admin-api under ' +
+                 'the host the request arrived on", which is what a client ' +
+                 'gets by asking for `resource=<base>/admin-api` at the token ' +
+                 'endpoint (RFC 8707). Set it to pin a single value where a ' +
+                 'deployment is reached under several names.' },
 
   { key: 'admin.openWhenEmpty', group: 'Admin console',
     label: 'Open while no role has a member',
@@ -2873,14 +3081,17 @@ const SETTINGS = [
     label: 'A registering PEP must present a client certificate',
     env: 'STS_XACML_PEP_REQUIRE_CERTIFICATE', type: 'bool', dflt: true,
     runtime: true,
-    description: 'ON by default, and it is the one refusal in this family. ' +
-                 'POST /xacml/pdp authenticates nobody on purpose — a PDP ' +
-                 'answers a question about somebody ELSE\'S boundary and the ' +
-                 'identity that matters is in the request — but REGISTERING ' +
-                 'is a different question: it writes an entry, it is what ' +
-                 'the console lists, and it is the address a nudge is sent ' +
-                 'to. So "which PEP is this" is exactly the question here, ' +
-                 'and a client certificate is the answer. Like every other ' +
+    description: 'ON by default. It was once the ONE refusal in this family; ' +
+                 'every /xacml endpoint asks for a certificate now, and what ' +
+                 'this setting still governs is the REGISTRATION specifically ' +
+                 '— it writes an entry, it is what the console lists, and it ' +
+                 'is the address a nudge is sent to, so "which PEP is this" ' +
+                 'is exactly the question there and a client certificate is ' +
+                 'the answer. The access-policy layer above it is a different ' +
+                 'and stronger check (roles.remotePepGroup, and ' +
+                 'xacml.enforceAccess to turn it off); this one is about ' +
+                 'whether a registration with NO certificate is accepted at ' +
+                 'all and marked unauthenticated. Like every other ' +
                  'gate in this service it is a TURNSTILE: the certificate is ' +
                  'not required to chain to anything, because RFC 8705\'s ' +
                  'argument applies unchanged — what is proved is that the ' +
@@ -2890,6 +3101,29 @@ const SETTINGS = [
                  'UNAUTHENTICATED on its entry and on the console rather ' +
                  'than being quietly indistinguishable from one that proved ' +
                  'something.' },
+
+  { key: 'xacml.pipMaxPerWindow', group: 'XACML',
+    label: 'PIP queries one caller may make per rate-limit window',
+    env: 'STS_XACML_PIP_MAX_PER_WINDOW', type: 'int', dflt: 600,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many POST /xacml/pip queries one enforcement point — ' +
+                 'and one address — may make in a security.rateLimitWindowS ' +
+                 'window. IT IS ITS OWN NUMBER RATHER THAN ' +
+                 'security.rateLimitPerIdentity, and that is the point: that ' +
+                 'setting is FIVE, because it guards a SIGN-IN, where five ' +
+                 'attempts a minute is generous and a sixth is somebody ' +
+                 'guessing. A PIP query is the opposite rhythm — a remote ' +
+                 'Policy Enforcement Point makes one per access decision, so ' +
+                 'a busy one makes several a second and every one of them is ' +
+                 'legitimate. Sharing the sign-in limiter\'s number would ' +
+                 'have turned this endpoint off for its only caller, which ' +
+                 'is worse than not limiting it: the PEP falls back to ' +
+                 'deciding on what the request asserts and says nothing is ' +
+                 'wrong. The default is ten a second over the default ' +
+                 'sixty-second window. What it bounds is a caller this ' +
+                 'service ADMITTED reading directory attributes in a loop; ' +
+                 'an unadmitted one is refused by the access policy before ' +
+                 'it gets here.' },
 
   { key: 'xacml.maxPeps', group: 'XACML',
     label: 'Remote PEPs the register may hold',
@@ -3771,6 +4005,45 @@ const SETTINGS = [
                  'register reachable from an ungated /admin-api is a way to ' +
                  'exhaust it.' },
 
+  { key: 'roles.remotePepGroup', group: 'Roles',
+    label: 'Group granting the REMOTE_PEPS role',
+    env: 'STS_ROLES_REMOTE_PEP_GROUP', type: 'string', dflt: 'remote-peps',
+    runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'REMOTE_PEPS role, which is what the three /xacml/pep ' +
+                 'endpoints require. A remote Policy Enforcement Point ' +
+                 'presenting a client certificate this service VERIFIED is ' +
+                 'somebody it can name; membership of this group is what ' +
+                 'makes them somebody it lets in, and the two are kept apart ' +
+                 'on purpose — a certificate proves an identity and a group ' +
+                 'grants a permission. Setting it to the empty string means ' +
+                 'NOBODY holds the role, which closes those three endpoints ' +
+                 'to every caller including a correctly configured PEP.' },
+
+  { key: 'roles.xacmlUserGroup', group: 'Roles',
+    label: 'Group granting the XACML_USER role',
+    env: 'STS_ROLES_XACML_USER_GROUP', type: 'string', dflt: 'xacml-users',
+    runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'XACML_USER role, which is what the four XACML endpoints ' +
+                 'proper require — GET /xacml, POST /xacml/pdp, GET ' +
+                 '/xacml/policies and GET /xacml/protected. A caller ' +
+                 'presenting a client certificate this service VERIFIED is ' +
+                 'somebody it can name; membership of this group is what ' +
+                 'makes them somebody it lets in, and the two are kept apart ' +
+                 'for the reason roles.remotePepGroup above is: a ' +
+                 'certificate proves an identity and a group grants a ' +
+                 'permission. IT IS A SECOND GROUP AND NOT THE SAME ONE: ' +
+                 'REMOTE_PEPS reaches the three /xacml/pep endpoints, which ' +
+                 'hand out the documents this service enforces its own ' +
+                 'access with, and one group granting both would make ' +
+                 'admitting a caller to the demonstration surface silently ' +
+                 'admit it to those. Setting it to the empty string means ' +
+                 'NOBODY holds the role, which closes those four endpoints ' +
+                 'to every caller; that is the way to take the XACML surface ' +
+                 'away without turning xacml.enabled off and losing the ' +
+                 'embedded issuance and access PEPs with it.' },
+
   { key: 'xacml.issuancePolicy', group: 'XACML',
     label: 'The policy issuance decisions are made with',
     env: 'STS_XACML_ISSUANCE_POLICY', type: 'string', dflt: 'role-issuance',
@@ -4260,12 +4533,17 @@ const SETTINGS = [
                  'everything is gone on restart. ldif writes an RFC 2849 file ' +
                  'per realm plus two JSON files in persistence.dataDir, which ' +
                  'is the local-development answer and needs no database. ' +
-                 'postgres writes three tables and is the shared store. ' +
-                 'NOTHING THIS SERVICE MINTS IS EVER PERSISTED in any mode: ' +
-                 'sessions, tokens, codes, artifacts, Kerberos tickets and ' +
-                 'the signing key are in memory always, because the key is ' +
-                 'regenerated on every start and a token that outlived it ' +
-                 'would verify against nothing.' },
+                 'postgres writes six tables and is the shared store. ' +
+                 'WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
+                 'artifacts, Kerberos principals, the replay caches, the ' +
+                 'counters and the audit log — is persisted in PRODUCT ' +
+                 'mode on postgres and in no other configuration; see ' +
+                 'persistence.minted. Development mode persists none of ' +
+                 'it, because the signing key is regenerated on every ' +
+                 'start there and a token that outlived it would verify ' +
+                 'against nothing. The ldif store holds none of it in ' +
+                 'either mode and says so at startup, because it writes ' +
+                 'whole files per flush.' },
 
   { key: 'persistence.dataDir', group: 'Persistence', label: 'Data directory',
     env: 'STS_PERSISTENCE_DATA_DIR', type: 'string', dflt: './data',
@@ -4308,6 +4586,22 @@ const SETTINGS = [
   // reason docker-compose.yml gives: it guards a throwaway database of mock
   // identities, and this repository's whole premise is that nothing in it is a
   // real credential. An operator with a real one sets the environment variable.
+  //
+  // ---------------------------------------------------------------------
+  // AND SINCE 2026-09-06 THIS DEFAULT NAMES A DIFFERENT ROLE FROM THE ONE THE
+  // COMPOSE STACK DIALS, WHICH LOOKS LIKE DRIFT AND IS NOT.
+  //
+  // The stack's database is built by `postgres/schema.sql`, which creates the
+  // five tables as the owner `sts` and a second role `sts_app` that may read
+  // and write the rows and may NOT create, alter, truncate or drop a table —
+  // and STS_DATABASE_URL there dials `sts_app`. That is the arrangement to
+  // want for anything left running.
+  //
+  // THIS value is the other case: a local database with NOTHING IN IT, which
+  // no script has been run against, where the driver creates what is missing
+  // exactly as it always did. An `sts_app` here would be a role that does not
+  // exist yet, so the default names the owner and the two are answers to two
+  // different questions. `persistence/CLAUDE.md` argues the split.
   // ---------------------------------------------------------------------
   { key: 'persistence.databaseUrl', group: 'Persistence',
     label: 'Database connection string',
@@ -4327,7 +4621,12 @@ const SETTINGS = [
                  'its network. IT CARRIES A PASSWORD, so /admin/persistence ' +
                  'and GET /admin-api/persistence report the host, port, ' +
                  'database and user parsed out of it and never the string ' +
-                 'itself.' },
+                 'itself. THE DEFAULT NAMES AN OWNER AND THE COMPOSE STACK ' +
+                 'DOES NOT: this value is for a local database with nothing ' +
+                 'in it, which this service builds for itself, while the ' +
+                 'stack dials the least-privileged role postgres/schema.sql ' +
+                 'creates — read and write on the rows, no CREATE on the ' +
+                 'schema.' },
 
   // ---------------------------------------------------------------------
   // TLS TO THE DATABASE, and the one knob that is about TRUST rather than
@@ -4403,7 +4702,94 @@ const SETTINGS = [
                  'unchanged and a runtime override is simply durable now. ' +
                  'Only a runtime-changeable setting can be saved, because ' +
                  'only a runtime-changeable setting can be set: that is what ' +
-                 'makes applying them after every module has loaded safe.' }
+                 'makes applying them after every module has loaded safe.' },
+
+  // -------------------------------------------------------------------------
+  // WHAT THIS PROCESS MINTED, IN PRODUCT MODE. The two settings below are the
+  // only configuration the 2026-09-06 change added, and the first one is worth
+  // reading as a REFUSAL rather than a feature switch: turning it off is a
+  // product-mode service that loses every session, token and audit row on
+  // every restart, which is what development mode is for.
+  // -------------------------------------------------------------------------
+  { key: 'persistence.minted', group: 'Persistence',
+    label: 'Persist sessions, tokens and the audit log',
+    env: 'STS_PERSISTENCE_MINTED', type: 'bool', dflt: true, runtime: false,
+    restartReason: 'the minted rows are restored before the listener binds, ' +
+                   'so turning this on or off part-way through a run would ' +
+                   'leave a process writing rows it never read',
+    description: 'Whether the things this service MINTS — sessions, access, ' +
+                 'ID and refresh tokens, authorization codes, pre-authorized ' +
+                 'codes, SAML artifacts, Kerberos principals and tickets, the ' +
+                 'replay caches, the counters and the audit log — survive a ' +
+                 'restart. ON, and it reaches nothing at all unless BOTH ' +
+                 'global.mode is "product" AND persistence.mode is ' +
+                 '"postgres". Development mode ignores it, because the ' +
+                 'signing key is regenerated on every start there and a ' +
+                 'restored token would verify against nothing; the ldif store ' +
+                 'ignores it too and says so at startup, because it writes ' +
+                 'whole files per flush and these rows change on every ' +
+                 'request. Every row is encrypted with the same ' +
+                 'key-encryption key that protects the signing keys, because ' +
+                 'a session id is a cookie value and an authorization code is ' +
+                 'redeemable.' },
+
+  { key: 'persistence.mintedRetention', group: 'Persistence',
+    label: 'Minted state retention (ms)',
+    env: 'STS_PERSISTENCE_MINTED_RETENTION', type: 'int',
+    dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
+    description: 'How long a persisted session, token, code, artifact or ' +
+                 'audit row is kept. A row older than this is neither ' +
+                 'restored nor left behind — it is deleted on the start that ' +
+                 'skipped it. Seven days by default, which is longer than ' +
+                 'every lifetime this service issues and short enough that a ' +
+                 'long-running store does not read a month of dead sessions ' +
+                 'on the way up. 0 keeps everything for ever, which is a ' +
+                 'supported answer for a deployment whose audit log is the ' +
+                 'point and which prunes the table itself.' },
+
+  // -------------------------------------------------------------------------
+  // SEVERAL PROCESSES AGAINST ONE STORE. Until 2026-09-06 this service said,
+  // in several files, that persistence was NOT coordination — two processes
+  // each held their own copy and never saw each other's writes. These two
+  // settings are that sentence being reversed.
+  // -------------------------------------------------------------------------
+  { key: 'persistence.coordinate', group: 'Persistence',
+    label: 'Coordinate with other processes',
+    env: 'STS_PERSISTENCE_COORDINATE', type: 'bool', dflt: true, runtime: false,
+    restartReason: 'the change log\'s high-water mark is taken once the ' +
+                   'store has been restored, so starting or stopping ' +
+                   'part-way through a run would leave a process applying ' +
+                   'changes from a point it was never at',
+    description: 'Whether this process applies changes other processes ' +
+                 'committed to the same store. ON, and it needs the postgres ' +
+                 'store: every change is written to a monotonic log INSIDE ' +
+                 'the transaction that made it, and each process reads what ' +
+                 'it has not yet applied. A LISTEN/NOTIFY nudge wakes that ' +
+                 'read early, so a missed notification costs latency and ' +
+                 'never a change — the same trade the remote XACML PEP makes ' +
+                 'about its own pull. Turning it off is what this service ' +
+                 'did before this existed: correct, and each process alone ' +
+                 'with its own copy. IT SHARES STATE AND NOT SOCKETS — the ' +
+                 'KDC, the LDAP listeners, the two TLS ports and SPIFFE\'s ' +
+                 'four are bound per process — and the replay caches ' +
+                 'CONVERGE rather than synchronise, so between a write in ' +
+                 'one process and its arrival in another there is a window ' +
+                 'in which a proof one refused is accepted by the other.' },
+
+  { key: 'persistence.pollInterval', group: 'Persistence',
+    label: 'Change poll interval (ms)',
+    env: 'STS_PERSISTENCE_POLL_INTERVAL', type: 'int', dflt: 5000,
+    runtime: true,
+    description: 'How often this process asks the change log what other ' +
+                 'processes have committed. This is the CONTRACT and the ' +
+                 'LISTEN/NOTIFY nudge is only an optimisation over it, so ' +
+                 'this is the worst-case convergence lag when a notification ' +
+                 'is lost — a dropped listener, a database restart — and the ' +
+                 'typical lag is a few milliseconds. Five seconds because ' +
+                 'the nudge normally arrives first and a shorter interval ' +
+                 'buys nothing but queries; 250ms is the floor. It is also ' +
+                 'the size of the replay-cache window described under ' +
+                 'persistence.coordinate.' }
 ];
 
 // Indexed once. A linear scan per read would be invisible on a mock and the
@@ -5002,6 +5388,39 @@ function applyPersistedOverrides(saved) {
     overrides[key] = saved[key];
     applied.push(key);
   });
+  // ------------------------------------------------------------------------
+  // AND WHAT IS NO LONGER THERE IS CLEARED (2026-09-08). This function used to
+  // only ADD, which is correct at STARTUP — `overrides` is empty then, so
+  // there is nothing to clear — and silently wrong for the OTHER caller.
+  //
+  // `persistence.js`'s `applyAppconfigChange()` calls it with the whole stored
+  // set every time another process changes the configuration, and a RESET is
+  // the absence of a key. Only ever merging meant a reset made in one process
+  // never reached any other: `POST /admin-api/config/reset` answered ok, the
+  // store no longer held the row, and every other process went on serving the
+  // overridden value for ever. It cost two jobs in the dispatch suite —
+  // `admin_api` read a batch size back as 7 after resetting it to 4, and
+  // `sts_roles` was refused 400 resetting a setting the worker it reached had
+  // never been told was set.
+  //
+  // A KEY THAT IS PRESENT AND REFUSED IS LEFT ALONE, which is why this walks
+  // `saved` rather than `applied`: a refusal above says nothing was applied
+  // for that key, and treating it as an absence would clear an override this
+  // process is legitimately running with because another process's build
+  // validates it differently.
+  // ------------------------------------------------------------------------
+  const cleared = [];
+  Object.keys(overrides).forEach(function (key) {
+    if (!Object.prototype.hasOwnProperty.call(saved || {}, key)) {
+      delete overrides[key];
+      cleared.push(key);
+    }
+  });
+  if (cleared.length) {
+    log.info('config: ' + cleared.length + ' runtime override(s) are no ' +
+             'longer in the store and have been cleared here: ' +
+             cleared.join(', ') + '.');
+  }
   // Once, after all of them, rather than per setting: applyLogLevel() walks
   // every registered logger, and doing that per key would be n times the work
   // for the same answer.

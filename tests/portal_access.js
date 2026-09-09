@@ -172,6 +172,74 @@ function run(t) {
           'constant everybody shares');
   t.equal(websecurity.checkCsrf('session-of-alice', { csrf_token: mine }).ok,
           true, 'and the right one does');
+
+  // -----------------------------------------------------------------------
+  // THE RATE LIMITER'S PER-DOOR CEILING (2026-09-06).
+  //
+  // `attempt()` gained an optional fourth argument, and it is asserted HERE
+  // rather than over HTTP for a reason this suite has been bitten by before:
+  // **the buckets are per PROCESS and not per realm**, so a job that drove a
+  // limiter to its ceiling would leave the next job in the run meeting 429s
+  // that are nothing to do with it. In process the bucket can be cleared
+  // between sections, which is what `reset()` is for.
+  //
+  // The argument exists because one number cannot serve two rhythms:
+  // `security.rateLimitPerIdentity` is FIVE because it guards a SIGN-IN, and
+  // `POST /xacml/pip` is called once per access decision by a remote
+  // enforcement point — so a busy one makes several a second and every one is
+  // legitimate. Sharing the sign-in number would have switched that endpoint
+  // off for its only caller, SILENTLY, because the client treats a refused
+  // query as an empty bag and goes on deciding on less information.
+  // -----------------------------------------------------------------------
+  t.log.info('=== a door may name its own rate-limit ceiling ===');
+  websecurity.reset();
+  const caller = { socket: { remoteAddress: '198.51.100.7' }, headers: {} };
+
+  // THE DEFAULT IS UNCHANGED, which is the half that matters most: every
+  // existing caller omits the argument and must behave exactly as it did.
+  let refusedAt = 0;
+  for (let i = 1; i <= 12 && !refusedAt; i += 1) {
+    if (!websecurity.attempt('probe-default', caller, 'alice').ok) {
+      refusedAt = i;
+    }
+  }
+  t.check(refusedAt > 0 && refusedAt <= 6,
+          'with no ceiling named, the sign-in limit still applies — five ' +
+          'attempts and the sixth is refused',
+          'refused at attempt ' + refusedAt);
+
+  websecurity.reset();
+  let stillOk = 0;
+  for (let i = 1; i <= 40; i += 1) {
+    if (websecurity.attempt('probe-named', caller, 'a-pep', 100).ok) {
+      stillOk += 1;
+    }
+  }
+  t.equal(stillOk, 40,
+          'AND A DOOR THAT NAMES 100 GETS 100 — forty machine-to-machine ' +
+          'calls that the sign-in limiter would have refused after five. ' +
+          'This is the assertion that would fail if the argument were ever ' +
+          'dropped, and the failure it prevents is silent: the caller reads ' +
+          'a refusal as an empty bag',
+          stillOk);
+
+  websecurity.reset();
+  let namedRefusedAt = 0;
+  for (let i = 1; i <= 12 && !namedRefusedAt; i += 1) {
+    if (!websecurity.attempt('probe-low', caller, 'a-pep', 3).ok) {
+      namedRefusedAt = i;
+    }
+  }
+  t.check(namedRefusedAt === 4,
+          'and a ceiling BELOW the default is honoured too — the argument ' +
+          'names the limit rather than raising it, so an operator can ' +
+          'tighten a door as well as loosen one',
+          'refused at attempt ' + namedRefusedAt);
+
+  // THE BUCKETS ARE LEFT CLEAN. A limiter left near its ceiling is exactly
+  // the cross-test interference this section is placed in process to avoid,
+  // and leaving it dirty here would reintroduce it one layer down.
+  websecurity.reset();
 }
 
 module.exports = {

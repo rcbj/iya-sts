@@ -603,6 +603,35 @@ function create(options) {
                   ' realm(s) left.');
       });
     }
+
+    // -----------------------------------------------------------------------
+    // AND NO `loadMinted`, `saveMinted` OR `purgeMinted` — DELIBERATELY, AND
+    // THE ABSENCE IS THE ANSWER RATHER THAN AN OMISSION.
+    //
+    // Since 2026-09-06 product mode writes down what this process MINTS:
+    // sessions, tokens, authorization codes, SAML artifacts, Kerberos
+    // principals, the replay caches, the counters and the audit log. This
+    // driver cannot hold them, and the reason is the sentence at the top of
+    // this file rather than anything missing from it: **IT WRITES WHOLE FILES,
+    // ATOMICALLY, PER FLUSH.** That is exactly right for a directory that
+    // changes when somebody types — thirteen entries of a realm build in one
+    // rewrite — and exactly wrong for a session table and an audit ring that
+    // change on EVERY REQUEST. A product deployment on this driver would
+    // rewrite megabytes per write delay for as long as it had traffic.
+    //
+    // `persistence_minted.js`'s `supports()` tests for these three functions by
+    // name and reports the absence as a REASON on `/admin/persistence` and in
+    // one warning at startup, so an operator who chose `ldif` and `product`
+    // together learns it on the way up rather than at the next restart. The
+    // three things somebody TYPED — the directory, the realm registry, the
+    // settings — and the signing keys are all still written here and restored.
+    //
+    // Adding them here would be a second write mechanism in this file (an
+    // appended journal, plus a compaction pass nothing else here needs), and
+    // it was refused rather than deferred: the deployment that wants durable
+    // sessions wants a database, and saying so is cheaper than half-building
+    // one out of files.
+    // -----------------------------------------------------------------------
   };
 }
 

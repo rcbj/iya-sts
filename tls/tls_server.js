@@ -177,6 +177,26 @@ const TLS_IPS = config.value('tls.ips');
 // more to parse than the handshakes it will be used for.
 const MAX_ANCHORS = 32;
 
+// ---------------------------------------------------------------------------
+// THE CLIENT TRUSTSTORE BELONGS TO THE PROCESS THAT TERMINATES TLS, AND THAT
+// IS THE FRONT PROCESS (2026-09-08).
+//
+// This was briefly a shared, persisted store, on the theory that `POST
+// /tls/trust` could land on a request worker while the handshake it exists for
+// happens somewhere else. It cannot: `request_pool.js`'s `NEVER_DISPATCHED`
+// names `/tls` precisely so that every route in this module is answered by the
+// process holding the listeners. So one array in that process is the whole of
+// it, and a store would have implied a sharing that does not happen — the
+// workers never write here and would report an empty truststore either way.
+//
+// **WHAT ACTUALLY WENT WRONG WAS A TEST**, and it is recorded here because the
+// symptom pointed at this file for a day: `sts_route_inputs` drives every route
+// it can find, `POST /tls/trust/clear` needs no credential and succeeds, and a
+// remote PEP eleven jobs later then authenticated as nobody with a perfectly
+// good certificate. That job skips the route by name now, which is the second
+// entry on a list `tests/CLAUDE.md` argues.
+// ---------------------------------------------------------------------------
+
 // State the two listeners share.
 let anchors = [];
 let boundTlsPort = null;
@@ -197,8 +217,53 @@ let listenError = null;
 // disable verification, which is the habit this whole workflow is trying to
 // break.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A CERTIFICATE HANDED IN, RATHER THAN ONE MADE HERE (2026-09-07).
+//
+// This certificate is self-signed and generated PER START, which is right for a
+// process that owns its own listener and was silently wrong the moment a
+// REQUEST WORKER existed. A worker loads this module like everything else, so
+// it made a certificate of its own — and `/admin` and `/portal` are OpenID
+// Connect relying parties that dial this service BACK on a loopback address and
+// PIN its certificate (`common/oidc_rp.js`). So a worker pinned the one it had
+// just made, the front process presented the one IT had made, and the back
+// channel failed TLS verification. The symptom is `TypeError: fetch failed`
+// during a console sign-in, which names nothing.
+//
+// So the front process's material can be handed in, and every process in the
+// service then presents and pins the same certificate. It arrives over the IPC
+// channel and is put in `process.env` by the worker BEFORE this module is
+// loaded — deliberately not passed in the fork's environment, because that
+// would put a private key in `/proc/<pid>/environ` for anything running as this
+// user to read, while an assignment made after start is visible only inside
+// the process.
+// ---------------------------------------------------------------------------
+function handedInCertificate() {
+  const certPem = process.env.STS_TLS_SERVER_CERT_PEM || '';
+  const keyPem = process.env.STS_TLS_SERVER_KEY_PEM || '';
+  if (!certPem || !keyPem) {
+    return null;
+  }
+  log.info('tls: using the server certificate handed in by the front ' +
+           'process rather than generating one, so that every process in ' +
+           'this service presents and pins the same certificate.');
+  return { privateKeyPem: keyPem, certPem: certPem,
+           subject: 'CN=' + (TLS_HOSTNAMES[0] || 'localhost') + ', O=mock-sts',
+           names: TLS_HOSTNAMES.concat(TLS_IPS),
+           fingerprint256: fingerprintOf(certPem),
+           // The handed-in certificate's own expiry is what matters and it is
+           // not parsed here: this value is reported, not enforced, and the
+           // process that MADE the certificate reports the real one.
+           notAfter: '' };
+}
+
 function makeServerCertificate() {
   log.debug('Entering makeServerCertificate().');
+  const handed = handedInCertificate();
+  if (handed) {
+    log.debug('Leaving makeServerCertificate(). Handed in.');
+    return handed;
+  }
   // altNames type 2 is dNSName and type 7 is iPAddress. The CN is ignored by
   // every current client — RFC 6125 has said so since 2011 and browsers stopped
   // reading it years ago — so the subjectAltName is not decoration here, it is
@@ -611,13 +676,81 @@ function secureContextOptions() {
   };
 }
 
-// Apply the current anchors to both listeners. Existing connections keep the
-// context they were made under — node says so and it is the behaviour worth
-// having, since a connection judged under one truststore should not silently
-// change its mind halfway through.
+// ---------------------------------------------------------------------------
+// LISTENERS THAT ARE NOT THIS MODULE'S, AND WHY THE TRUSTSTORE REACHES THEM.
+//
+// 8443 and 9443 are created below and this module owns them. **THE MAIN HTTPS
+// LISTENER IS NOT**: `server.js` creates it, because it is the one every
+// protocol family answers on and this module is required at 20 of a
+// twenty-four line require order. Until 2026-09-06 that meant the truststore
+// stopped at this module's own two sockets, and a client certificate presented
+// on the main port could be THUMBPRINTED but never VERIFIED — `socket.authorized`
+// was false for every certificate ever presented there, because there was no
+// `ca` to build a path to and no way to add one after the listener existed.
+//
+// That was exactly right while the only thing on that port which read a client
+// certificate was RFC 8705 token binding, which binds to the certificate and
+// explicitly does not care whether anybody vouched for it. It stopped being
+// right when the remote XACML PEP arrived: that caller has to be RECOGNISED —
+// its DN resolved to a directory entry, to a group, to a role, to a policy
+// decision — and recognition is precisely the thing an unverified certificate
+// cannot support.
+//
+// So a listener created elsewhere registers here and gets every anchor change
+// the two below get. It is a REGISTRATION rather than a require in the other
+// direction for the ordinary reason: `server.js` requires this module, so this
+// module cannot require it back.
+//
+// **THE POSTURE ON THAT PORT IS UNCHANGED AND MUST STAY THAT WAY.** It is
+// `requestCert: true, rejectUnauthorized: false` — asked for, never required —
+// so a certificate that chains to nothing still completes the handshake and
+// still binds a token, exactly as before. What the truststore adds is that a
+// certificate which DOES chain to an anchor is now known to. Making it
+// `rejectUnauthorized: true` would refuse every caller that presents no
+// certificate at all, which is almost all of them.
+// ---------------------------------------------------------------------------
+const externalServers = [];
+
+function trustClientCertificatesOn(server, label) {
+  log.debug('Entering trustClientCertificatesOn(). label=' + label);
+  if (!server || typeof server.setSecureContext !== 'function') {
+    // Refused rather than thrown: the caller is `server.js` at startup, and a
+    // truststore that could not be extended must not stop this service from
+    // listening. It is loud because the consequence is silent — every client
+    // certificate on that port stays unverified and the only symptom is a
+    // remote PEP that cannot register.
+    log.error('tls: trustClientCertificatesOn() was given something that is ' +
+              'not a TLS server (' + label + '), so the client truststore ' +
+              'does NOT cover it. Certificates presented there will be ' +
+              'thumbprinted and never verified.');
+    log.debug('Leaving trustClientCertificatesOn(). Refused.');
+    return false;
+  }
+  externalServers.push({ server: server, label: String(label || 'a listener') });
+  // APPLIED IMMEDIATELY, because anchors may already be loaded — this service
+  // can be handed a truststore before the main port binds, and a listener that
+  // only picked anchors up on the NEXT change would be one whose behaviour
+  // depended on the order two unrelated things happened in.
+  applyAnchors();
+  log.info('tls: the client truststore now covers ' + label + ' as well as ' +
+           TLS_PORT + ' and ' + MTLS_PORT + '. A client certificate presented ' +
+           'there is verified against the ' + anchors.length + ' anchor(s) at ' +
+           '/tls/trust; one that chains to none of them is still accepted and ' +
+           'still binds a token, which is what that port has always done.');
+  log.debug('Leaving trustClientCertificatesOn(). Covered.');
+  return true;
+}
+
+
+// Apply the current anchors to every listener whose truststore this module
+// owns. Existing connections keep the context they were made under — node says
+// so and it is the behaviour worth having, since a connection judged under one
+// truststore should not silently change its mind halfway through.
 function applyAnchors() {
   log.debug('Entering applyAnchors(). anchors=' + anchors.length);
-  [permissiveServer, strictServer].forEach(function (server) {
+  [permissiveServer, strictServer].concat(
+    externalServers.map(function (one) { return one.server; })
+  ).forEach(function (server) {
     try {
       server.setSecureContext(secureContextOptions());
     } catch (e) {
@@ -2168,6 +2301,15 @@ module.exports = {
   dnRfc4514: dnRfc4514,
   addAnchors: addAnchors,
   clearAnchors: clearAnchors,
+  // The main HTTPS listener is created in server.js and registers here so that
+  // /tls/trust reaches it too — see the block above trustClientCertificatesOn().
+  trustClientCertificatesOn: trustClientCertificatesOn,
+  // What secureContextOptions() would give a listener created elsewhere: the
+  // certificates this service presents AND the anchors it verifies clients
+  // against. Exported so that server.js builds its listener from the same
+  // answer this module applies to its own two, rather than assembling a second
+  // one that can drift.
+  clientTruststoreOptions: secureContextOptions,
   // See the note above it: the six modules that describe this certificate to
   // a reader ask here rather than each asserting it is self-signed.
   certificateProvenance: certificateProvenance,

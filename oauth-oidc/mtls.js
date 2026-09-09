@@ -102,6 +102,70 @@ function peerCertificate(req) {
   return cert;
 }
 
+// ---------------------------------------------------------------------------
+// DID THAT CERTIFICATE VERIFY, AND AGAINST WHAT (2026-09-06).
+//
+// **PRESENTED AND VERIFIED ARE TWO DIFFERENT QUESTIONS AND THIS FILE ANSWERED
+// ONLY THE FIRST ONE.** `peerCertificate()` above returns whatever arrived;
+// until this function existed, every caller of it treated "a certificate is
+// here" as "a certificate was accepted", because on this listener there was no
+// third answer available — `server.js` passed no `ca`, so `socket.authorized`
+// was false for every certificate ever presented and reading it would have been
+// reading a constant.
+//
+// THAT IS NO LONGER TRUE. The main listener joined the client truststore that
+// `POST /tls/trust` fills, so a certificate that chains to an anchor is now
+// distinguishable from one that chains to nothing. RFC 8705 binding does not
+// care about the difference — it binds to the certificate and section 3
+// explicitly permits a self-signed one — but anything that RESOLVES a
+// certificate to an identity does: a DN read off an unverified certificate is a
+// name the caller chose for itself.
+//
+// `authorizationError` is node's own reason string (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`,
+// `CERT_HAS_EXPIRED`, …) and it is carried out whole rather than mapped,
+// because it is the one string that tells somebody debugging a mutual-TLS
+// deployment WHICH of a dozen things went wrong.
+// ---------------------------------------------------------------------------
+function peerVerified(req) {
+  log.debug("Entering peerVerified().");
+  const socket = req && req.socket;
+  if (!socket || typeof socket.getPeerCertificate !== 'function') {
+    log.debug("Leaving peerVerified(). Not a TLS connection.");
+    return { verified: false, presented: false,
+             why: 'This is a plain HTTP connection, which cannot carry a ' +
+                  'client certificate at all.' };
+  }
+  if (!peerCertificate(req)) {
+    log.debug("Leaving peerVerified(). Nothing presented.");
+    return { verified: false, presented: false,
+             why: 'No client certificate was presented. This listener asks ' +
+                  'for one and never requires it, so the connection is ' +
+                  'perfectly ordinary.' };
+  }
+  if (socket.authorized) {
+    log.debug("Leaving peerVerified(). Verified.");
+    return { verified: true, presented: true,
+             why: 'The chain built from what was presented to an anchor in ' +
+                  'this service\'s client truststore (POST /tls/trust). NO ' +
+                  'REVOCATION WAS CHECKED — a revoked certificate verifies ' +
+                  'here and would not verify anywhere that matters.' };
+  }
+  const error = socket.authorizationError
+    ? String(socket.authorizationError) : '';
+  log.debug("Leaving peerVerified(). Not verified: " + error);
+  return {
+    verified: false, presented: true, error: error,
+    why: 'A client certificate was presented and it did NOT verify' +
+         (error ? ' (' + error + ')' : '') + '. The commonest cause is that ' +
+         'nothing in the truststore issued it — POST the issuing CA to ' +
+         '/tls/trust — and the next commonest is a chain sent without its ' +
+         'intermediates, which looks identical from the client side. The ' +
+         'certificate is still thumbprinted and still binds a token: RFC ' +
+         '8705 section 3 binds to the certificate rather than to anybody\'s ' +
+         'opinion of it.'
+  };
+}
+
 // RFC 8705 `x5t#S256`: SHA-256 over the DER, base64url. The same digest
 // `tls/tls_server.js` prints as colon-hex and `spiffe/spiffe_ca.js` truncates
 // as an authority id — three spellings of one computation, which is why the
@@ -223,6 +287,7 @@ function available() {
 module.exports = {
   CONFIRMATION_MEMBER: CONFIRMATION_MEMBER,
   peerCertificate: peerCertificate,
+  peerVerified: peerVerified,
   thumbprintOf: thumbprintOf,
   presentedThumbprint: presentedThumbprint,
   confirmationFor: confirmationFor,

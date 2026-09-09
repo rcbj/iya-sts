@@ -132,7 +132,7 @@ const VP_DCQL_ID = vpConfig.DCQL_ID;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vpTransactions = realms.map();
+const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
 
 // id -> state, so a Request Object fetched by reference can find its transaction.
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -140,7 +140,7 @@ const vpTransactions = realms.map();
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vpRequests = realms.map();
+const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests' });
 
 function sweepVpTransactions() {
   const now = Date.now();
@@ -999,6 +999,12 @@ app.post('/oid4vp/response', async function (req, res) {
     // The wallet refused, which is a legitimate answer (section 8.4).
     record.verdict = { ok: false, refused: true, error: String(body.error),
                        errorDescription: String(body.error_description || ''), checks: [], at: new Date().toISOString() };
+    // THROUGH THE STORE, so the verdict is not a fact only this process holds:
+    // `vpTransactions` is `realms.map({persist})` and its journal sees `set()`
+    // rather than a field stamped on the object it handed out. The status
+    // endpoint a wallet polls may well be answered by another process, which
+    // would otherwise report the transaction as still outstanding for ever.
+    vpTransactions.set(state, record);
     res.status(200).type('application/json').send(JSON.stringify({
       redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' + encodeURIComponent(state)
     }));
@@ -1027,6 +1033,7 @@ app.post('/oid4vp/response', async function (req, res) {
                  detail: 'vp_token must be a JSON object keyed by the DCQL credential query id ("' +
                          VP_DCQL_ID + '"), each value an array of presentations.' }]
     };
+    vpTransactions.set(state, record);  // through the store, as above
     res.status(400).type('application/json').send(JSON.stringify({
       error: 'invalid_request',
       error_description: 'vp_token is not the JSON object OID4VP section 8.1 defines.'
@@ -1055,6 +1062,7 @@ app.post('/oid4vp/response', async function (req, res) {
     sub: verified.sub,
     presentation: presentations[0]
   };
+  vpTransactions.set(state, record);  // through the store, as above
   logArtifact('OID4VP verification result', verified.ok ? 'accepted' : 'REFUSED', record.verdict);
 
   if (!verified.ok) {

@@ -145,3 +145,32 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
 * **Every vendored file, byte for byte.** Nothing in `common/vendored/` or
   `kerberos/krb5_spnego.js` was edited for any of this — they were moved, and the
   two byte-compare tests pass against them where they now sit.
+
+---
+
+## 2026-09-06 — `sts_persistence_postgres.js` asserts a claim this tree reverses
+
+**The next bump of the `sts/` gitlink across this change turns that job red, and
+the fix is over there.**
+
+It starts two mocks against one database and asserts `coordinates: false`,
+demonstrating that neither sees the other's writes. `persistence_replication.js`
+makes that false: every change is written to a monotonic log inside the
+transaction that made it, and each process applies what the others committed.
+
+**Two assertions in it need to change and one of them is mode-dependent:**
+
+1. `coordinates: false` becomes the inversion — process A writes an entry and
+   process B sees it within `persistence.pollInterval` without restarting, with
+   `status.replication.appliedSeq` moving. `STS_PERSISTENCE_COORDINATE=false`
+   restores the old behaviour exactly and is worth a section of its own, because
+   that is what keeps the off-switch honest.
+2. **"the `kid` differs after a restart, and a token minted before it is dead at
+   introspection"** is still true in DEVELOPMENT mode and false in PRODUCT mode,
+   where the signing keys persist. The claim has to become mode-aware rather
+   than being deleted — it is the property that made the old rule about minted
+   state correct, and asserting it in the mode where it still holds is what
+   stops that rule quietly becoming untrue everywhere.
+
+What has NOT changed and should stay asserted: a database that is not there
+leaves this service running out of its seeded directory.

@@ -53,6 +53,11 @@
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 const gate = require('../common/access_gate');
+// The audit log, for the refusals. A LEAF in the ordinary direction (rule
+// 3c): it registers no route and requires nothing here, so it can be required
+// from a module reached through `common/access_gate.js` without moving a route
+// or closing a cycle.
+const audit = require('../common/audit');
 const roles = require('../common/roles');
 const applications = require('../common/applications');
 const templates = require('./xacml_templates');
@@ -60,6 +65,10 @@ const model = require('./xacml_model');
 const pdp = require('./xacml_pdp');
 const pip = require('./xacml_pip');
 const store = require('./xacml_store');
+// The decision counters. A LEAF (rule 3) that requires no route-registering
+// module — which is what makes it safe to require from a file reached through
+// `common/access_gate.js`; its header argues that constraint in full.
+const monitor = require('./xacml_monitor');
 
 const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
 
@@ -239,12 +248,23 @@ function buildRequest(asked, held, required) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE TWO FUNNELS EVERY ANSWER PASSES THROUGH, AND SINCE 2026-09-06 THEY COUNT.
+//
+// Told here rather than at the return sites, for the reason the issuance PEP's
+// pair gives: a branch added later is counted by construction. `record()`
+// never throws, and this is one of the two call sites that argument is about —
+// every request to a gated surface in this service comes through here.
+// ---------------------------------------------------------------------------
 function allowed(why, answer) {
-  return { allowed: true, decision: answer ? answer.decision : 'NotApplicable',
+  const decision = answer ? answer.decision : 'NotApplicable';
+  monitor.record('access', { decision: decision, allowed: true });
+  return { allowed: true, decision: decision,
            why: why, policy: answer ? answer.policyId : null };
 }
 
 function refused(why, decision, answer) {
+  monitor.record('access', { decision: decision, allowed: false });
   return { allowed: false, decision: decision, why: why,
            policy: answer ? answer.policyId : null };
 }
@@ -277,7 +297,26 @@ function decide(asked) {
   (subject.roles || []).forEach(function (one) {
     if (held.indexOf(one) < 0) held.push(one);
   });
-  const required = applications.requiredRolesOf(asked.resource);
+  // THE REQUIREMENT COMES FROM THE CALLER WHEN THE CALLER HAS ONE, AND FROM
+  // THE APPLICATION REGISTER OTHERWISE (2026-09-06).
+  //
+  // The five original resources are surfaces an operator NARROWS: they require
+  // `EVERYBODY` until somebody says otherwise, which is `requiredRolesOf()`'s
+  // permissive default and is what keeps this layer from changing behaviour
+  // the day it was added. A BUILT-IN resource can be the other shape — one
+  // that is restricted from the start — and `/xacml/pep/*` is the first: the
+  // three endpoints a remote enforcement point lives on require `REMOTE_PEPS`
+  // out of the box, because a gate that is permissive until configured is a
+  // gate that is open on every deployment nobody has configured.
+  //
+  // It is still a POLICY decision and not a hard-coded refusal: the requirement
+  // travels in the REQUEST, the same access-control document decides it as
+  // decides the console, and an operator who edits that document or names a
+  // different group changes the answer. What is fixed is only the DEFAULT.
+  const required = (Array.isArray(asked.requiredRoles) &&
+                    asked.requiredRoles.length)
+    ? asked.requiredRoles.map(String)
+    : applications.requiredRolesOf(asked.resource);
 
   const loaded = accessPolicy();
   if (!loaded.policy) {
@@ -333,6 +372,30 @@ function decide(asked) {
           'algorithm is deny-unless-permit — so a question it does not answer ' +
           'is a refusal rather than a permission.';
   }
+  // ---------------------------------------------------------------------
+  // AND IT IS AUDITED (2026-09-06), WHICH IT WAS NOT BEFORE.
+  //
+  // The issuance PEP has audited its refusals since it was written; this one
+  // logged at info level and recorded nothing, so a refusal at a gated
+  // surface was findable in a log file and nowhere in `/admin/audit`. That
+  // gap became worth closing rather than noting when
+  // `/admin/xacml/monitor` began COUNTING these refusals: a page that says
+  // how many and points at a log for the reason has to be pointing at a log
+  // that has them.
+  //
+  // ONLY THE REFUSALS. A permit here is every request to every gated surface
+  // in the service — the console draws sixty pages, each with its own
+  // request — and auditing those would push everything else out of a
+  // 5,000-event ring within minutes. That is the same line the issuance PEP
+  // draws, and the ordinary one: an audit log is of things that were
+  // refused, changed or issued.
+  // ---------------------------------------------------------------------
+  audit.audit({
+    action: 'xacml.access.refused',
+    actor: subject.name || '',
+    protocol: 'XACML',
+    detail: answer.decision + ' for ' + what + ': ' + why
+  });
   log.debug('Leaving decide(). Refused: ' + answer.decision);
   return refused(why, answer.decision, answer);
 }

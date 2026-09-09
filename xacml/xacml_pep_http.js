@@ -94,6 +94,10 @@ const http = require('http');
 const { URL } = require('url');
 const config = require('../common/config');
 const { log } = require('../common/helpers');
+// Built once at require time: the version cannot change while the process runs.
+// See the header comment on the headers block below for why the nudge carries
+// one at all.
+const USER_AGENT = require('../common/version').userAgent('xacml-pdp-notify');
 
 // A PEP that answers a nudge with more than this is not answering a nudge. The
 // expected reply is 204 with nothing in it; 16 KiB is generous for the error
@@ -231,7 +235,15 @@ function nudge(url, issuer, options) {
       port: parsed.port || (insecure ? 80 : 443),
       path: parsed.pathname + parsed.search,
       headers: { 'Content-Type': 'application/json',
-                 'Content-Length': Buffer.byteLength(body) },
+                 'Content-Length': Buffer.byteLength(body),
+                 // WHO IS CALLING, AND WHICH BUILD OF IT. This is the WEAKEST
+                 // of this repository's three outbound requests — no
+                 // specification asks for it at all, and a PEP pulls and
+                 // converges whether or not the nudge arrives — which is
+                 // exactly why the receiver deserves to be told what an
+                 // unsolicited POST it never asked for is. RFC 9110 product
+                 // form; common/version.js owns the product token.
+                 'User-Agent': USER_AGENT },
       timeout: timeoutMs(),
       // A PEP's certificate is its own and this service is not the authority
       // for it. `allowInsecure` covers both halves of "insecure" on purpose —

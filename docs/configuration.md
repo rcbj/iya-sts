@@ -421,7 +421,7 @@ outlived it would verify against nothing.
 |---|---|---|
 | `persistence.mode` | `memory` | `memory` writes nothing. `ldif` writes an RFC 2849 file per realm plus two JSON files in `dataDir`, and needs no database. `postgres` writes three tables. |
 | `persistence.dataDir` | `./data` | Where `ldif` writes. Relative paths resolve against the package root, not the working directory. |
-| `persistence.databaseUrl` | `postgres://sts:sts@localhost:5432/sts` | The connection string `postgres` mode dials. A local development default matching this repository's `docker-compose.yml`, so turning persistence on is one setting rather than two. Inert unless `mode` is `postgres`. |
+| `persistence.databaseUrl` | `postgres://sts:sts@localhost:5432/sts` | The connection string `postgres` mode dials. Inert unless `mode` is `postgres`. **The default names an owner and the compose stack does not**: this value is for a local database with nothing in it, which the service builds for itself, while the stack dials the least-privileged `sts_app` that `postgres/schema.sql` creates — read/write on the rows, no `CREATE` on the schema. See [Persistence](persistence.md). |
 | `persistence.writeDelay` | `1500` | How long a change waits before the `ldif` files are rewritten. Postgres ignores it and commits per request. |
 | `persistence.realms` | `true` | Write the realm registry down too. |
 | `persistence.appconfig` | `true` | Make a setting changed at runtime survive a restart. |
@@ -443,11 +443,15 @@ out of memory, and `/admin/persistence` and `GET /admin/ldap/service` both carry
 The next change recomputes the same difference and tries again, so a failure
 loses nothing.
 
-**Persistence is not coordination.** Two processes pointed at one Postgres
-database each hold their own copy of the directory in memory: each writes its
-own changes down, and neither sees the other's until it restarts. Running
-several copies against one store is not yet a way to scale this service. One
-process per store.
+**Processes against one Postgres store coordinate, since 2026-09-06.** This
+paragraph said the opposite before it. Every change goes into a monotonic log
+inside the transaction that made it, and each process applies what the others
+committed; a `LISTEN`/`NOTIFY` nudge only makes that prompt, so a missed
+notification costs latency and never a change. `persistence.coordinate` turns it
+off and `persistence.pollInterval` sets the worst-case lag. It shares **state and
+not sockets** — the KDC, the LDAP listeners, the TLS ports and SPIFFE's four are
+per process — and the replay caches *converge* rather than synchronise. See
+[Persistence](persistence.md).
 
 ### `oauth2.breakIdTokenNonce`
 

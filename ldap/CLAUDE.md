@@ -230,6 +230,84 @@ ldapjs implements none, and this repository does not patch that submodule.
    NOT a way to write an arbitrary entry, so what a username may be — and the
    refusal of one already here — has one definition rather than one per surface.
 
+   **AND SINCE 2026-09-06 THAT FUNCTION TAKES THE PERSON'S DETAILS AS WELL AS
+   THEIR NAME, WHICH IS WHERE THE ONE TRAP IN THIS CHANGE IS.**
+   `/admin/users/new` is a form with a box for every attribute a person here
+   can carry; only the username is required, and **an empty box records NO
+   VALUE**. Two options carry that: `options.attributes`, checked against
+   `vc_claims.js`'s catalogue by `personAttributesFrom()` — a name that is not
+   on it is REFUSED and the whole create fails, so `userPassword` cannot be
+   written through the attribute door and `uid` cannot contradict the DN — and
+   `options.invent`, which **defaults to TRUE so that every caller written
+   before this gets exactly what it always got**.
+
+   **THE TRAP IS THAT A PERSON IS INVENTED IN TWO PLACES AND ONLY ONE OF THEM
+   IS OBVIOUS.** `applyVcAttributes()` is the one anybody would find.
+   `namePlan()` is the one that bites: it puts a `cn`, `sn`, `givenName`,
+   `displayName` and `mail` on the entry before `createUser()` has looked at
+   its options at all. An implementation that switched off only the first would
+   leave a page promising "no value is recorded" while five invented facts
+   landed on every person created through it — and NOTHING WOULD LOOK WRONG,
+   because the create succeeds and the fiction is visible only in an
+   `ldapsearch`. `invent: false` drops both; the entry then carries its object
+   classes, its `uid`, a description and what was typed.
+   `tests/vendored/sts_admin_console.js` reads the entry back and asserts those
+   five are absent, which is the assertion that whole change rests on.
+
+   **IT IS NOT A PROMISE THAT THE ENTRY STAYS EMPTY**, and the page says so
+   rather than leaving it to be discovered. `populateVcAttributes()` — the
+   sweep behind Populate on `/admin/vc`, and the one run when a realm is
+   created — fills every MISSING selected attribute on every person under
+   `ou=users`, and it does not know or care which of them somebody typed. That
+   is right for the sweep, whose whole job is that the directory and an issued
+   credential agree; it means "no value recorded" is a statement about one
+   create rather than a property of the entry.
+
+   **AND SINCE 2026-09-06 THERE IS A SECOND WRITER, `setGroupWriter()`, WHICH
+   IS `admin.js`'s TWELFTH SLOT.** It carries `createGroup()` and
+   `addGroupMember()` — what `createUser()` is to a person, for a group — and
+   it exists because until that day there was no by-hand door onto a group at
+   all: `/admin/groups` and `/admin-api/groups` were both READS, so the only
+   two ways to put a group in this directory were an `ldapadd` on the socket
+   and `POST /scim/v2/Groups`. Rule 7 could not have caught that; a parity
+   check is satisfied when both sides are missing.
+
+   **IT IS A SLOT OF ITS OWN RATHER THAN A THIRD ARGUMENT TO
+   `setDirectoryWriter()`.** That one carries ONE function and every caller of
+   it means "put a person in the directory"; widening it would have been a
+   change to a slot four callers already fill correctly, to add something none
+   of them wants.
+
+   **SCIM STILL HAS ITS OWN GROUP INGRESS AND IS NOT ROUTED THROUGH
+   `createGroup()`**, which is the one place this pair differs from the person
+   half. That handler is SCIMMY-shaped — handed a resource, throwing
+   `SCIMMY.Types.Error` with a `scimType`, and serving PUT and PATCH as well as
+   a create — so making it call this one would mean `createGroup()` growing an
+   update mode and a second error vocabulary. What the two SHARE is the part
+   that could disagree: `groupDnFor()`, `nameUsableInDn()` and
+   `writeGroupEntry()`. They agree about the store because they are the same
+   three calls, not because anybody remembered to keep them in step.
+
+   **THREE THINGS `addGroupMember()` DELIBERATELY DOES NOT DO**, and each is a
+   rule stated elsewhere in this service that doing it would contradict. It
+   does not refuse a member that names nothing — the SCIM ingress gives that
+   argument in full and it is the same one: refusing would make the dangling
+   state `/admin/groups` exists to report impossible to produce from this door.
+   It does not write `memberOf` onto the person — nothing here maintains that
+   attribute and `admin_rbac.js` refuses a revoke of a membership held that
+   way, so this would be the one door creating a fact no other door can undo.
+   And it does not nest-expand, because nothing in this service walks a group
+   tree and a function that flattened on the way in would claim a feature that
+   is not here. **It is idempotent**, which is `admin_rbac.js`'s `grant()`
+   rule: a script that adds on every run must not fail on its second one.
+
+   **`createGroup()` CREATES AN EMPTY GROUP AND RFC 4519 SAYS IT SHOULD NOT.**
+   `member` is MUST on `groupOfNames` and `/admin/groups`'s own note says a
+   real directory refuses one. This creates it anyway when no member is named,
+   for one reason: SCIM already does, and a console stricter than SCIM about
+   the same store would be two doors disagreeing about what this directory
+   holds.
+
    **A THIRD hook is the same direction as the second, and there is one rule it
    carries that is not obvious from the code.** `/admin/groups` lists this
    directory's groups and drills into one; `admin.js` offers `setGroupReader()`
@@ -607,6 +685,294 @@ differently from any other kind: a federation partner is the one source of
 identities whose VOLUME this service does not control, and off gives a session
 and no entry.
 
+## A CREATE WAS A FUNCTION OF DIRECTORY SIZE, AND THE USERNAME INDEX IS WHY IT IS NOT (2026-09-07)
+
+`existingUserEntry()` is where the one-entry-per-person rule is ENFORCED: every
+door that creates somebody asks it first, and a hit is a refusal. Its fast path
+is a lookup at `uid=<name>,ou=users` and answers a RETURNING person in one Map
+hit — **but it misses BY DEFINITION for somebody who is not there yet, which is
+exactly what a create is.** So every create fell through to a walk of the whole
+realm, comparing each entry's `uid` values and RDN value against the wanted
+name, and five thousand creates walked a store that was five thousand entries
+long by the end of it.
+
+**THE 2026-09-06 BULK-LOAD BASELINE HAD ALREADY MEASURED THIS AND NOBODY READ
+IT AS A DEFECT.** It records a create going from 9ms at the 500th person to 54ms
+at the 5,000th, through all three doors, and calls it "not constant-time in
+directory size" — which is true and is the symptom rather than the cause. A
+create is not supposed to be a function of directory size. Driven in process
+with no HTTP in the way, the walk cost 0.73ms at the 500th person and 13.45ms at
+the 5,000th: 34 seconds for the five thousand, all of it on the one thread this
+process answers every socket from.
+
+With the index it is flat at 0.025ms — **0.14 seconds for the same five
+thousand** — and the last person costs what the first did.
+
+The index holds every name an entry under `ou=users` answers to, its `uid`
+values AND its RDN value, against that entry's key in the store. Both, because
+that is the pair the walk compared: an entry added by hand as
+`cn=Alice Example,ou=users` carrying `uid: alice` was found under either, and an
+index holding one of them would have quietly narrowed the rule it enforces.
+First entry wins, because the walk stopped at its first hit and the store
+iterates in insertion order — so the entry the index names is the entry the walk
+would have returned.
+
+**IT IS MAINTAINED INCREMENTALLY, WHICH `groupIndexNow()` BESIDE IT DELIBERATELY
+IS NOT, and the difference is the shape of the load rather than a change of
+mind.** A group index is read once per token and written rarely, so rebuilding
+it on the first read after any write costs nothing. A username index is read and
+written by the SAME operation — a create asks it, is told no, and then adds to
+it — so a rebuild-on-write cache would rebuild once per create and leave the
+quadratic exactly where it was.
+
+**AND A STALE ANSWER IS STILL IMPOSSIBLE, BY THE MECHANISM THAT WAS ALREADY
+THERE.** The cache carries the `directoryVersion` it is current for, and the
+section below is the reason that is enough: every writer in this service is
+required to call `touchDirectory()`, which bumps it. **Only `putEntry()` updates
+the index in step, and only for a DN that held nothing** — every other writer,
+every delete, every modify and every overwrite simply leaves the version behind
+and the next read rebuilds. So a writer nobody hooked costs a REBUILD and can
+never cost a wrong answer, which is what makes hooking one site rather than
+fifteen the safe choice rather than the lazy one. It is the same bargain the
+group index makes, taken one step further.
+
+The `usersDn()` it was built against is kept and compared as well, which the
+group index does not do. That container moves when `ldap.baseDn` changes and **a
+settings change bumps no directory version at all** — so without it, changing the
+base would leave an index describing a container nothing is in any more.
+
+### And the index was defeated by nine version bumps, on the SCIM door only
+
+The first implementation was correct and, on the `invent: true` path, no faster
+at all — 0.63ms at the 500th person and 13.03ms at the 5,000th, which is the
+quadratic exactly as it was. **That path is the SCIM door**: `scim.js` calls
+`createUser()` without `invent: false` while `/admin-api` sends it, so the
+management API went flat and SCIM did not.
+
+`applyVcAttributes()` was the reason and the mechanism is worth keeping,
+because it is the failure mode this whole arrangement is built to have. It
+fills the attributes a credential claim set needs on a person who arrived with
+none, and it called **`touchDirectory()` once per attribute** — nine bumps of
+`directoryVersion`, immediately after `putEntry()` had folded that person into
+the index. So the index was stale before the very next create, which rebuilt it
+by walking the realm.
+
+**Nothing was ever wrong, and that is the point.** The version check did its
+job: a write it did not know about cost a REBUILD and never a wrong answer. What
+it cost instead was the entire benefit, silently, on one of the three doors —
+which is the honest price of choosing safety over hooking every writer, and the
+reason the fix is a measurement rather than a bug report.
+
+Two changes: one `touchDirectory()` for one logical change (nine schedules of
+the persistence write became one, which is worth having on its own), and the
+index is told the entry has GAINED names rather than left to rebuild.
+`noteUsernameIndexRefresh()` is **only valid for a mutation that adds names and
+removes none**, which is a precondition rather than a caution — this function
+fills attributes that are ABSENT and never replaces one, and `uid` is among the
+attributes it can fill. Any other shape of write must still leave the version
+behind. Flat at 0.05ms after.
+
+### And under it was a third one, in the GROUP index, on the same door
+
+With the create flat at 0.05ms the SCIM door was still growing — 11.1ms at the
+1,000th person and 46.7ms at the 5,000th, driven over HTTP. Measured in process,
+a create ALONE was flat while **a create followed by `groupsOfUser()`** went
+0.379ms at the 500th to 2.567ms at the 3,000th.
+
+**A SCIM User resource carries `groups`**, so the bulk load asks for that index
+once per person — and `groupIndexNow()` rebuilds on ANY write, which is the
+right policy when reads are rare relative to writes and quadratic when a write
+and a read are the same operation. The LDAP door never showed it because an
+`add` builds no SCIM resource, and `/admin-api` never showed it because its
+create response carries no groups.
+
+The fix is the same shape as the username index's and rests on **a narrow
+invariant that has to be stated, because it is the only thing making it safe**:
+`buildGroupIndex()` calls `groupRuleFor()` on every entry and returns early on a
+falsy one, so a non-group entry contributes to neither half of that index — and
+a person's own `memberOf` is not in there either, because `groupsOfUser()` reads
+it live off the entry and looks the value up in `byDn`. So a write of an entry
+that is not a group by placement or by object class **cannot have changed the
+index**, and `putEntry()` stamps the cache forward instead of leaving it to
+rebuild. A group write — every membership change — still rebuilds, which is the
+ordinary path.
+
+Two details that are easy to get wrong. The `size` is stamped as well as the
+version: that check is documented beside the builder as a second line of defence
+against a writer that forgot to bump, and leaving it alone would have made the
+whole stamp a no-op, since a create changes `entries.size` by definition. And
+**the cache declaration moved up beside the username index's**, because
+`putEntry()` now reaches it and `putEntry()` runs while this module is still
+loading — the seeding does it — so a `const` declared further down the file
+would not exist yet. The builder and `groupIndexNow()` stayed where they are.
+
+**If either half of that invariant ever stops holding, the stamp has to go.**
+Flat at 0.05ms after, and a group write is still visible to the very next
+read — which is the property `groupsOfUser()` exists to keep and the one thing
+here worth a test of its own.
+
+### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
+
+With the create flat and the group index kept, the SCIM door was STILL growing
+over HTTP — 13.7ms at the 1,000th person and 48.0ms at the 5,000th — while an
+in-process probe of `createUser()` plus `groupsOfUser()` was flat at 0.05ms. The
+probe was not the shape SCIM uses.
+
+**A SCIM CREATE IS TWO WRITES.** `scim.js` calls `createUser()`, which puts the
+entry, and then `writePerson()`, which puts it AGAIN with the SCIM attributes
+merged over it — and `putEntry()` is a SET, so the second one is an OVERWRITE.
+The first implementation of `noteUsernameIndexPut()` declined to follow an
+overwrite, which was safe and left the index stale at the end of every create
+through that door. `/admin-api` and the LDAP socket never showed it because
+neither writes twice.
+
+**Why declining was tempting is worth keeping, because it is the hard half.**
+The names the OLD entry answered to are still in the index, pointing at somebody
+who may no longer have them. So an overwrite now takes them out — but only the
+ones that pointed AT THIS ENTRY, because a name mapping to a different DN
+belongs to whichever entry the walk would have found first and is not this
+write's to remove. Then the current names go in.
+
+**The state that exercises the removal is an ordinary one and not a contrived
+one**: an entry whose RDN is not its uid, which is what a client certificate's
+entry is (`cn=<CN>,ou=users`, carrying no uid until something writes one).
+Where the DN is `uid=<name>,ou=users` the old uid is ALSO the RDN value and
+survives the edit either way, so nothing is removed and a test built on that
+shape cannot see the branch at all — which is exactly what the first version of
+`tests/directory_indexes.js` did, and why a mutant that removed the removal
+passed it. The measured shape — create, read back, write, ask for groups by DN —
+is flat at 0.07ms.
+
+### AND A FIFTH, ON THE SAME DOOR, WHICH WAS NOT AN INDEX AT ALL
+
+2026-09-07. With all four of the above fixed the SCIM door was still quadratic
+over HTTP, and by a wide margin: **5,000 creates in 197.6s, 8.18ms at the 500th
+person and 39.42ms at the 5,000th**, while `/admin-api` did the same five
+thousand in 4.1s and LDAP in 2.2s — both flat, both against a directory
+*larger* than the one SCIM started against.
+
+**That last clause is the tell, and the bulk-load jobs tell you not to look at
+it.** Each of the three prints "compare the `users.create` row with a run that
+started from a similar number, not with the other two doors' rows in the same
+suite", because they run one after another against one directory nothing
+deletes from. Here the caveat pointed the wrong way: SCIM runs FIRST, against
+227 entries, and was forty times slower than a door reading ten thousand. When
+a caveat and the numbers disagree that badly it is the caveat that needs
+checking.
+
+**The cause was not an index. It was a whole-realm sweep called once per
+person.** `scim.js` ended a create with `directory.populateVcAttributes()` — the
+function that walks every entry under `ou=users` TWICE and fills in the
+attributes the credential claim set asks for. It was there for a real reason:
+`createUser()` runs `applyVcAttributes()` on the entry it makes, and the
+`writePerson()` that follows REPLACES the attribute set with SCIM's window
+merged over it, so an invented value the client did not send is gone again.
+
+What was wrong is the SIZE of the hammer. That function is exported with a
+comment saying a batch of fifty creates should sweep once "and the caller is
+what knows the batch is over" — and **SCIM has no batch**: every POST is one
+create, so every create was a batch of one that swept the entire realm.
+`/admin-api` and LDAP never called it at all.
+
+`populateVcAttributesAt(dn)` is the batch-of-one case and is what that line
+calls now — the sweep's own two membership tests applied to the one entry, then
+`applyVcAttributes()`. The sweep is untouched and still right for the two
+callers that mean every entry: startup, and a change to WHICH attributes the
+claim set asks for, which is a fact about the directory rather than about one
+person. **197.6s → 58.2s** in the suite's own job.
+
+### AND A SIXTH, WHICH WAS NOT THIS DOOR'S AT ALL: the access gate's three walks
+
+The SCIM door was still growing after that — 4.73ms to 19.71ms across 5,000 —
+so it was profiled rather than reasoned about (`node --cpu-prof` writes nothing
+for this service; use an `inspector.Session` wrapper). **`normalizeDn` was 24%
+of all non-idle CPU**, called from three places that each walked the whole realm
+and tested every entry with `isUnder()`: `allPolicies()`, `allRoles()` and
+`applicationEntry()`'s by-identifier fallback.
+
+**None of those is SCIM's.** The XACML access gate asks for the policies and the
+roles on EVERY gated request, so every call to `/scim`, `/admin`, `/admin-api`,
+`/portal` and `/xacml` walked the directory three times — to read a few dozen
+policies and roles out of a store holding thousands of people. The bulk load
+only made it visible by doing it five thousand times against a directory that
+was growing underneath it.
+
+**IT COULD NOT BE KEYED ON `directoryVersion`, AND THAT IS THE WHOLE DESIGN.**
+Every writer bumps that, so a policy listing keyed on it would be invalidated by
+every person created — which is precisely the load it is expensive under. It
+would have been correct and worth nothing, which is this file's own failure
+twice over already. So the clock is PER CONTAINER: a write records the version
+against every ANCESTOR of the DN it landed on, and a listing of `ou=policies`
+stays current until something is written under `ou=policies`. Five thousand
+creates bump `ou=users` and the realm root five thousand times and never touch
+the policy container.
+
+**Invalidation is safe by default and that is load-bearing.**
+`touchDirectory(dn)` takes the location OPTIONALLY. A caller that names where it
+wrote gets a precise invalidation; **a caller that says nothing invalidates
+every listing at once.** There are about thirty callers of that function here
+and they are held to it by prose rather than by the compiler, so the failure
+mode of forgetting to annotate a writer — or of adding a new one later — is a
+slower cache and never a wrong answer. Only the two writers on the hot path
+(`putEntry()` and `applyVcAttributes()`) are annotated at all; the other
+twenty-eight behave exactly as they did.
+
+Only ANCESTORS are recorded, never the DN written to: `subtreeVersion()` is only
+ever asked about containers, and recording leaves would put one key in that map
+per entry in the directory for nothing.
+
+**5,000 creates over SCIM: 254.6s before either fix, 59.6s after the fifth, 7.7s
+after this one.** 1.94ms at the 500th person and 1.40ms at the 5,000th — the
+cost now FALLS as the directory fills, which is the JIT warming up on a
+constant-time path, and is the shape the other two doors have always had.
+`normalizeDn` is absent from the profile; what is left at the top is idle time,
+GC, key generation and scimmy's own coercion.
+
+### The mutation record, and two mutants that were equivalent rather than missed
+
+Caught: the group-index stamp applied to group writes as well (6 assertions
+red, including the headline "the very next read sees it"), and an overwrite
+that folds new names in without removing departed ones (2 red, one of them the
+consequence that matters at the door — the departed name can be given to
+somebody else).
+
+**Two were equivalent and are recorded rather than counted**, per
+`tests/CLAUDE.md`'s rule. Both mutated the REMOVAL loop — deleting
+unconditionally, and dropping the "was it ours" guard — and both are
+behaviour-preserving here for the same reason: the removal is immediately
+followed by the loop that re-adds the entry's current names, so a name wrongly
+removed is put straight back. The guard is defensive against a shape the
+directory can hold and this suite does not build (two entries claiming one name,
+the index pointing at the first, the second overwritten), and it is kept for
+that rather than because a mutant demanded it.
+
+### WHAT IS STILL QUADRATIC, MEASURED AND LEFT ALONE: a membership write read back
+
+`addGroupMember()` followed by `groupsOfUser()` measured 4.69ms at the 200th
+write and 8.46ms at the 1,000th, against a directory of 4,000 people. **That one
+is inherent to the current design rather than an oversight**: a membership write
+IS a group write, so it genuinely changes the index and the stamp above rightly
+declines — and the read that follows rebuilds by walking the realm.
+
+**It shows on the SCIM door and nowhere else, for the same reason the create did
+and it is worth stating because it looks like a contradiction of the numbers
+above.** The LDAP door writes 5,000 memberships at 0.19ms each because an
+`ldapmodify` never READS the index — a rebuild is triggered by a read, not by a
+write, so five thousand writes with no read between them cost one rebuild at the
+end. `/admin-api` is 1.32ms for the same reason. SCIM is 31ms because its
+response is a resource that carries the membership, so every write is followed
+by a read.
+
+**The fix, if it is ever wanted, is a genuinely incremental group index** —
+a membership write touches exactly one group entry, so its contributions to
+`byMember` and `byDn` could be withdrawn and re-added rather than the whole
+thing rebuilt. That is a real piece of work rather than a stamp, because the
+membership is asserted from BOTH ends and this service deliberately does not
+reconcile them (see `claimedMembersOf()`), so an incremental update has to
+handle a group that names a person and a person who names a group as two
+separate edits. It was not attempted on 2026-09-07; the three fixes above were,
+and this is the measurement that says where the next one would go.
+
 ## A WRITE MUST CALL `touchDirectory()`
 
 `groupsOfUser()` is called ONCE PER TOKEN — every access token, every ID Token
@@ -728,6 +1094,63 @@ construction.
 
 `persistence/CLAUDE.md` argues the rest, including why this is not a node-ldapjs
 feature and could not be.
+
+## A SIZE-LIMITED SEARCH SENT NO RESULT AT ALL, AND HUNG EVERY CLIENT (fixed 2026-09-06)
+
+**This is the worst defect this module has had, it survived for as long as the
+search handler has existed, and nothing in either suite could have seen it.**
+
+`ldap.sizeLimit` is 500. When a search matched more than that, the handler
+logged the truncation, wrote an audit row saying `resultCode: 4`, and did
+this:
+
+```js
+return next();          // no res.end(), no error
+```
+
+A bare `next()` ends the handler chain **without sending any LDAP result
+message**. So this server sent five hundred `SearchResultEntry` messages and
+then no `SearchResultDone` — which RFC 4511 section 4.5.2 makes mandatory,
+because it is how a search finishes. The client sat on an open connection
+waiting for a reply that was never coming.
+
+**IT WAS NOT SLOW, IT WAS STOPPED**, and that is what made it hard to recognise
+from the outside: this process sat at 0.3% CPU beside a client that had been
+waiting twenty minutes. An `ldapsearch` against a directory with five thousand
+people in it never returned.
+
+**THE COMMENT ABOVE THE BRANCH IS THE PART TO LEARN FROM.** It said, correctly
+and at length, that a truncated search must be `refused` rather than `success`
+because "the client has an INCOMPLETE answer and, unless it reads result code 4,
+does not know it". The audit row said `resultCode: 4`. The log line said the
+limit had been reached. **Nothing sent result code 4.** Three descriptions of a
+behaviour and no implementation of it, agreeing with each other and with
+nothing on the wire.
+
+**WHY NOTHING CAUGHT IT.** Two facts, and it needed both:
+
+* The seeded directory holds about twenty-six entries and every realm's holds
+  twenty-one, so no search anywhere in this repository had ever reached the
+  branch. `ldap.sizeLimit` is 500.
+* **Until 2026-09-06 nothing here drove the raw socket at all.** Every other
+  reader of this directory — the console, `/admin-api`, SCIM, the groups claim,
+  `/admin/ldap/*` — comes in over HTTP and goes through this module's
+  FUNCTIONS. The BER codec, the ldapjs submodule and the search handler's own
+  result path were exercised by nothing.
+
+`tests/vendored/sts_directory_bulk_load_ldap.js` supplies both — five thousand
+entries and a one-level search over them — and found it in the first minute of
+its first run. It is the guard now: the search that reaches the limit must END,
+and its helper carries a deadline of its own so that a recurrence is a named
+failure rather than a hang. (The same ldapjs gotcha bit the test: a search that
+ends in a non-success code emits `error` and NEVER `end`, so a client that
+resolves from `end` hangs too. Both halves are written up in that file.)
+
+**The fix is `return next(new ldap.SizeLimitExceededError(...))`** — ldapjs
+turns an error handed to `next()` into the `SearchResultDone` carrying its
+result code, and that class IS code 4. The entries already sent stay sent, which
+is what section 4.5.2 requires: they are a valid partial answer and the code is
+how the client knows it is partial.
 
 ## The library is NOT patched
 
@@ -876,7 +1299,8 @@ knowing before touching any of it.
   attribute of every entry prints `oauthClientSecret` and `fedClientSecret` in
   the clear, and these were the ONE surface in this service handing those to
   anybody who could reach the port while the console next door asked for a role
-  to show far less. `/admin-api` mirrors all eight and is still ungated, which is
+  to show far less. `/admin-api` mirrors all eight and takes an access token of
+  its own since 2026-09-09, which is
   what a test drives and what somebody locked out of the console reaches for.
 * **THE PAGING AND THE SHORTENING ARE THE CONSOLE'S, NOT THIS FILE'S.**
   `admin.pagedRows()`, `admin.pageNavPair()`, `admin.perPageOptions()`,

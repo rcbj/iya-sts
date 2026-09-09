@@ -236,7 +236,7 @@ const RP_CONTEXT_TTL_MS = 30 * 60 * 1000;
 // `acme` being recognised by the one in the default realm would make the check
 // this map exists for — did my own value come back? — answer yes across a
 // boundary the rest of the profile does not cross.
-const rpContexts = realms.map();
+const rpContexts = realms.map({ persist: 'wsfed.rpContexts' });
 
 // --- reading the request ---------------------------------------------------
 // 13.2.1 allows the sign-in request as a GET with a query string or as a form

@@ -101,7 +101,7 @@ const CONSENT_TTL_MS = 10 * 60 * 1000;
 // directory — which is the exact failure `common/CLAUDE.md` describes for the
 // stores that were left shared, and the reason `realms.map()` exists.
 // ---------------------------------------------------------------------------
-const pending = realms.map();
+const pending = realms.map({ persist: 'consent_screen.pending' });
 
 // ---------------------------------------------------------------------------
 // BEGIN. Called by the authorization endpoint and by nothing else.

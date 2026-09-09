@@ -565,6 +565,13 @@ const MAX_SIGNED_METADATA = 64;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
+// DELIBERATELY NOT PERSISTED, and it is the only store in this file that is
+// not. A CACHE is not minted state: this holds a copy of a document that is
+// re-derivable at any moment, keyed by the very claims it was derived from.
+// Restoring one would save a signature and risk serving a document built
+// under settings that have since changed — a bad trade in both directions.
+// Said here rather than left silent, because "it has no handle" and
+// "somebody forgot" look identical from persistence_minted.js.
 const signedMetadataCache = realms.map();   // the claims, serialised -> { signed, until }
 
 // RFC 8414 section 2.1: signed_metadata is a JWT whose claims are the metadata
@@ -1056,7 +1063,7 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const authzCodes = realms.map();       // code -> the authorization request it came from
+const authzCodes = realms.map({ persist: 'oauth2.authzCodes' });  // code -> the authorization request it came from
 
 // ---------------------------------------------------------------------------
 // NON-SPEC: what happens when the SAME authorization code arrives twice.
@@ -1095,7 +1102,7 @@ const authzCodes = realms.map();       // code -> the authorization request it c
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const redeemedCodes = realms.map();    // code -> the token set it was redeemed for
+const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes' });  // code -> the token set it was redeemed for
 
 // The browser session, the login screen it comes out of and the WebAuthn step
 // beside it all used to be declared here. They are `authn.js` now — see its

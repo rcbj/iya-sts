@@ -99,6 +99,17 @@ const http = require('http');
 const { URL } = require('url');
 const config = require('./../common/config');
 const { log } = require('./../common/helpers');
+// WHO IS CALLING, AND WHICH BUILD OF IT. This is the STRONGEST of this
+// repository's outbound requesters, and the one whose requests carry a client
+// secret and an authorization code — so the partner's access log is where an
+// integration problem gets diagnosed, and a User-Agent naming a version is what
+// makes that log worth reading. RFC 9110 product form; see common/version.js,
+// which owns the one copy of the product token.
+//
+// Built once at require time rather than per request: the version cannot change
+// while the process runs, and computing it per call would read a file on every
+// federated sign-in.
+const USER_AGENT = require('./../common/version').userAgent('federation');
 
 // THE THREE ATTRIBUTES THAT MAY HOLD A URL THIS SERVICE WILL DIAL. See the
 // header — this list is the mechanism, not a convenience. A fourth name here is
@@ -223,7 +234,7 @@ function fetchJson(record, attribute, options) {
   }
   const method = String(opts.method || 'GET').toUpperCase();
   const headers = Object.assign({ 'Accept': 'application/json',
-                                  'User-Agent': 'mock-sts federation' },
+                                  'User-Agent': USER_AGENT },
                                 opts.headers || {});
   let body = '';
   if (opts.form) {

@@ -421,15 +421,20 @@ async function createTheRealm() {
   log.info("Created the throwaway realm " + REALM + ".");
 }
 
-async function removeTheRealm() {
-  const r = await postJson(base + "/admin-api/realms/remove", { id: REALM });
-  if (!(r.status === 200 && r.body && r.body.ok !== false)) {
-    log.warn("could not remove the realm " + REALM + " (" + r.status + "). " +
-             "It holds only this job's applications and settings, but it is " +
-             "left behind: " + String(r.text).slice(0, 200));
-    return;
-  }
-  log.info("Removed the throwaway realm " + REALM + ".");
+// THE REALM IS LEFT STANDING, DELIBERATELY (2026-09-06). It used to be removed
+// here; what changed is an operator requirement rather than anything about the
+// feature — **a realm a test run created stays, because it is what a person
+// reads when the run went red.** Its six applications, its two clients and its
+// one setting are the record of what this job actually built, and a teardown
+// that removed it threw that away at the moment it was worth something. The id
+// carries `names.runStamp()` and every write is inside the realm, so leaving it
+// meets neither a later run of this job nor anything else in the suite.
+async function theRealmIsLeftBehind() {
+  log.info("The throwaway realm " + REALM + " is LEFT IN PLACE on purpose — " +
+           "it holds the six applications, the two clients and the settings " +
+           "this job built, and it is where somebody debugging this run " +
+           "should look. Read it at " + base + "/realm/" + REALM + "/admin, " +
+           "or remove it by hand when you are done with it.");
 }
 
 // THE WORLD. Six applications, two clients, and the one setting this feature
@@ -1050,7 +1055,7 @@ async function test() {
     await theApplicationAuthenticationSplit();
     await turningItOff();
   } finally {
-    await removeTheRealm();
+    await theRealmIsLeftBehind();
   }
 
   // A FLOOR ON THE COUNT, for the reason sts_admin_console.js gives: a section

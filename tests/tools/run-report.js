@@ -26,6 +26,24 @@
 //
 // and points tests/report/latest at it.
 //
+// TWO MORE FILES IN logs/ ARE WRITTEN BY THE LAUNCHERS RATHER THAN BY THIS
+// FILE, and they are the account of everything a per-job log cannot hold:
+//
+//   logs/00-mock-sts-service.log   the service's own — written here in host
+//                                  mode (this file starts that service), and
+//                                  by the launcher when the service is a
+//                                  container, out of `docker compose logs sts`
+//   logs/00-test-runner.log        THIS RUNNER'S own output — the jobs it
+//                                  chose, the ones it could not start and why,
+//                                  the reason a job was SKIPPED, the summary.
+//                                  ./local-run-tests.sh tees it;
+//                                  ./docker-run-tests.sh takes it out of
+//                                  `docker compose logs tests`
+//
+// A JOB THAT NEVER STARTED HAS NO logs/NN- FILE, which is the whole reason the
+// second one exists: what it says about that job is said in the runner's
+// output and used to be said in a terminal and nowhere else.
+//
 // ---------------------------------------------------------------------------
 // A PROCESS PER TEST FILE, WHICH IS THE ONE REAL DIFFERENCE FROM run.js.
 //
@@ -124,7 +142,9 @@
 //                          than skipping them, exactly as a throwaway one
 //                          that would not start does.
 //   --report-dir=<dir>     where to write (default tests/report)
-//   --timeout=<ms>         per-job watchdog (default 300000; 0 disables).
+//   --timeout=<ms>         per-job watchdog (default 300000; 0 disables). A
+//                          job may RAISE it for itself with `timeoutMs` in
+//                          MANIFEST.js and may never lower it; see runJob().
 //                          `./run-coverage.sh` passes one of its own —
 //                          see STS_COVERAGE_JOB_TIMEOUT_MS there — because
 //                          instrumentation is what makes a job slow and
@@ -179,7 +199,7 @@
 //                   (default ./coverage).
 // ===========================================================================
 
-const { spawn, execFileSync } = require('child_process');
+const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -305,7 +325,11 @@ function vendoredJobs(options) {
       return;
     }
     jobs.push({ suite: 'protocol', name: entry.file.replace(/\.js$/, ''),
-                file: entry.file, dir: VENDORED_DIR, browser: !!entry.browser });
+                file: entry.file, dir: VENDORED_DIR, browser: !!entry.browser,
+                docker: !!entry.docker,
+                // A job may raise its own watchdog and may not lower it; see
+                // runJob(), where that rule is enforced rather than trusted.
+                timeoutMs: Number(entry.timeoutMs) || 0 });
   });
   const browserJobs = jobs.filter(function (j) { return j.browser; });
   if (browserJobs.length) {
@@ -364,6 +388,41 @@ function checkTestDependencies() {
 }
 
 // ---------------------------------------------------------------------------
+// IS THERE A DOCKER DAEMON THIS RUNNER CAN USE?
+//
+// Asked ONCE, and only when a job marked `docker: true` in
+// `tests/vendored/MANIFEST.js` is actually scheduled — there is exactly one,
+// and probing for a daemon nobody is going to ask for would be a second of
+// somebody's run spent on nothing.
+//
+// **THE ANSWER PRODUCES A SKIP AND NOT A FAILURE, AND THAT IS THE ONE PLACE
+// THIS FILE MAKES THAT CHOICE.** Everywhere else here an intended job that did
+// not run is a FAILURE, for the reason the run loop states at length: the
+// throwaway service failing to start once left thirteen jobs marked `skipped`,
+// which the summary counted as passing, so a run in which nothing was checked
+// exited zero. The difference is that this is a DELIBERATE exclusion, the same
+// kind as `--no-browser`: `docker-compose-run-tests.yml` puts the suite in a
+// container with no docker socket on purpose and says so where it excludes the
+// parent suite's postgres job for the same reason. A skip here names the job,
+// the reason and what is therefore unchecked — in the summary, in the report
+// and in the JUnit — which is the honest report of a stack that cannot run it.
+// ---------------------------------------------------------------------------
+function haveDocker() {
+  log.debug('Entering haveDocker().');
+  const probe = spawnSync('docker', ['version', '--format',
+                                     '{{.Server.Version}}'],
+                          { encoding: 'utf8' });
+  if (probe.error || probe.status !== 0) {
+    const why = probe.error ? probe.error.message
+      : String(probe.stderr || probe.stdout || '').trim().split('\n')[0];
+    log.debug('Leaving haveDocker(). No: ' + why);
+    return { ok: false, why: why || 'docker did not answer' };
+  }
+  log.debug('Leaving haveDocker(). ' + probe.stdout.trim());
+  return { ok: true, version: String(probe.stdout || '').trim() };
+}
+
+// ---------------------------------------------------------------------------
 // One job, in a process of its own. Its output is TEED — written to the log
 // file as it arrives and echoed to the console unless --quiet — so a long job
 // is watchable and a finished one is readable.
@@ -404,6 +463,25 @@ function runJob(job, opts) {
     child.stderr.on('data', onData);
     let timer = null;
     let timedOut = false;
+    // ONE JOB MAY ASK FOR MORE TIME THAN THE RUN'S DEFAULT, AND NONE MAY ASK
+    // FOR LESS (2026-09-06).
+    //
+    // The watchdog is here to turn a hang into a named failure, and 300s is
+    // right for every job that drives a few hundred requests. It is wrong for
+    // the three `sts_directory_bulk_load_*.js` jobs, which make ten thousand
+    // sequential writes EACH on purpose: killed at five minutes one would be
+    // reported as a hang, which is the one thing a watchdog must not do to a
+    // job that is working.
+    //
+    // **`--timeout=` STILL WINS WHEN IT IS LARGER, AND A MANIFEST ENTRY MAY
+    // ONLY RAISE.** `Math.max` rather than `||` is what makes that true: a job
+    // cannot shorten its own leash and so cannot make itself flaky on a slow
+    // machine, and `--timeout=0` — which disables the watchdog for the whole
+    // run — is still zero here, because the branch below tests the option and
+    // not this number.
+    const jobTimeoutMs = opts.timeoutMs > 0
+      ? Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0)
+      : 0;
     if (opts.timeoutMs > 0) {
       timer = setTimeout(function () {
         timedOut = true;
@@ -414,7 +492,7 @@ function runJob(job, opts) {
         } catch (e) {
           // It finished between the timer firing and this line. Nothing to do.
         }
-      }, opts.timeoutMs);
+      }, jobTimeoutMs);
     }
     child.on('error', function (e) {
       if (timer) {
@@ -442,7 +520,7 @@ function runJob(job, opts) {
       const failures = assertions.filter(function (a) { return !a.ok; })
         .map(function (a) { return a.what; });
       if (timedOut) {
-        failures.push('the job did not finish within ' + opts.timeoutMs +
+        failures.push('the job did not finish within ' + jobTimeoutMs +
                       'ms and was killed');
       } else if (code !== 0 && !failures.length) {
         // The exit code is the only evidence there is: a parent-project job
@@ -1126,6 +1204,32 @@ async function main() {
   }
 
   // ---- run them ---------------------------------------------------------
+  // ---- can the container-driven job(s) run? -------------------------------
+  //
+  // TWO WAYS, AND THE FIRST ONE IS THE ORDINARY ONE. A launcher that brought a
+  // remote PEP up as part of its stack hands the job `XACML_PEP_URL`, and the
+  // job then shells out to nothing at all — which is what makes this work in
+  // the containerized stack, where the runner is itself a container with no
+  // docker in it. Only a run with NO such container needs a daemon, because
+  // then the job builds an image and starts one of its own.
+  //
+  // So the probe is skipped entirely when a PEP was provided. That ordering
+  // matters: `haveDocker()` would answer NO inside the tests container and the
+  // job would be skipped for the lack of something it was never going to use.
+  const wantDocker = jobs.some(function (j) { return j.docker; });
+  const pepProvided = !!process.env.XACML_PEP_URL;
+  const dockerHere = (!wantDocker || pepProvided)
+    ? { ok: true, provided: pepProvided }
+    : haveDocker();
+  if (wantDocker && pepProvided) {
+    log.info('a remote PEP was provided at ' + process.env.XACML_PEP_URL +
+             ' (realm ' + (process.env.XACML_PEP_REALM || '?') + '), so the ' +
+             'container-driven job(s) drive it and need no docker here.');
+  } else if (wantDocker && dockerHere.ok) {
+    log.info('no remote PEP was provided, and docker ' + dockerHere.version +
+             ' is answering — the container-driven job(s) will start one of ' +
+             'their own.');
+  }
   const started = Date.now();
   const results = [];
   let n = 0;
@@ -1142,6 +1246,31 @@ async function main() {
     // --only); an intended job that did not run is a failure, because the
     // thing it was going to check is unchecked either way and only one of
     // those two words makes somebody look.
+    if (job.docker && !dockerHere.ok) {
+      // A DELIBERATE EXCLUSION — see haveDocker() above for why this one is a
+      // skip where everything else here is a failure. The reason travels with
+      // it into the report, the JUnit and the summary, and it names what is
+      // therefore unchecked rather than only what did not run.
+      const why = 'no launcher provided a remote PEP (XACML_PEP_URL), so ' +
+                  'this job would have to build an image and start a ' +
+                  'container of its own — and no docker daemon answered (' +
+                  dockerHere.why + '). BOTH ./local-run-tests.sh and ' +
+                  './docker-run-tests.sh bring one up as part of their stack ' +
+                  'and neither takes this branch; a bare run-report.js against ' +
+                  'a service somebody else started is what does. The remote ' +
+                  'XACML PEP therefore has NO end-to-end coverage in this ' +
+                  'run: what stands is tests/xacml_pep.js, which loads that ' +
+                  'container\'s modules in a child process and makes no HTTP ' +
+                  'request, and sts_xacml_endpoints.js, where the TEST ' +
+                  'impersonates a PEP and nothing evaluates what it pulled.';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      results.push(Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      }));
+      continue;
+    }
     if (job.suite === 'protocol' && !instance) {
       const why = protocolWhy || 'no service to drive';
       results.push(Object.assign({}, job, {
@@ -1190,7 +1319,34 @@ async function main() {
         // exactly what is under test — ignore it rather than editing it out.
         MOCK_STS_DIR: REPO_ROOT,
         WSTRUST_STS_URL: instance.url,
-        OID4VCI_ISSUER_URL: instance.url
+        OID4VCI_ISSUER_URL: instance.url,
+        // ---------------------------------------------------------------
+        // WHERE THE DIRECTORY'S OWN SOCKET IS, FOR THE ONE JOB THAT DRIVES IT
+        // (2026-09-06). `sts_directory_bulk_load_ldap.js` writes five
+        // thousand entries over RFC 4511, and 389 is not published by
+        // docker-compose.yml.
+        //
+        // THREE WAYS IT CAN BE ANSWERED AND THIS LINE IS THE THIRD.
+        // ./docker-run-tests.sh puts `ldap://sts:389` in the runner
+        // container's environment (the runner is on the bridge, nothing is
+        // published); ./local-run-tests.sh picks a free host port, layers
+        // tests/docker-compose-ldap.yml and exports STS_LDAP_URL. Both of
+        // those arrive here as an INHERITED variable, and the `||` below is
+        // what lets them win: this object is assigned OVER process.env, so a
+        // bare assignment here would overwrite the launcher's answer with a
+        // guess about a service the launcher did not start.
+        //
+        // What it adds is the THROWAWAY case: `--no-docker`, and every
+        // coverage run. There the service is a child of this process on a
+        // block of nine ports this runner chose, so nothing outside knows
+        // where its directory is listening and only this line can say. The
+        // port comes from `instance.ports` by NAME rather than from
+        // `instance.base + 5`, so a listener added to that block in the
+        // middle cannot silently move it.
+        STS_LDAP_URL: process.env.STS_LDAP_URL ||
+          (instance.ports && instance.ports.LDAP_PORT
+            ? 'ldap://localhost:' + instance.ports.LDAP_PORT
+            : '')
       // THE TWO TRUST VARIABLES, AND THEY GO LAST SO NOTHING ABOVE CAN SHADOW
       // THEM. `NODE_EXTRA_CA_CERTS` is read by node ONCE at child start, which
       // is why it can only be handed to a job and never set for this runner;
@@ -1203,6 +1359,51 @@ async function main() {
       // OURS, not theirs: NODE_V8_COVERAGE on a protocol job would collect the
       // coverage of the parent project's own test code, which is not what this
       // report is about. The service is the instrumented process there.
+      // -------------------------------------------------------------------
+      // THE MANAGEMENT API'S TOKEN, AND THE SHIM THAT PRESENTS IT.
+      //
+      // `/admin-api` requires an access token since 2026-09-09. A launcher
+      // mints one and hands it here; `tools/attach-admin-token.js` is
+      // preloaded into every job so that the twenty-three that drive that API
+      // authenticate without each growing an HTTP client of its own. That file
+      // argues why it is a preload and what it deliberately leaves alone.
+      //
+      // APPENDED to any NODE_OPTIONS already set rather than replacing it: a
+      // coverage run sets its own, and losing that would silently measure
+      // nothing.
+      // -------------------------------------------------------------------
+      if (process.env.STS_ADMIN_API_TOKEN) {
+        job.env.STS_ADMIN_API_TOKEN = process.env.STS_ADMIN_API_TOKEN;
+        const preload = '--require ' +
+          path.join(__dirname, 'attach-admin-token.js');
+        job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
+          ? job.env.NODE_OPTIONS + ' ' + preload : preload;
+      }
+      // ------------------------------------------------------------------
+      // AND THE CLIENT SECRET, FOR THE ONE JOB THAT MINTS TOKENS OF ITS OWN.
+      //
+      // `sts_admin_api_auth.js` asserts the gate's refusals, which means
+      // asking the token endpoint for a token with ONE scope, and for one
+      // audienced at somebody else. The run's own token cannot be narrowed
+      // after the fact — that is what a signature is for — so that job needs
+      // the credential the token is minted with.
+      //
+      // **IT IS NOT AN ESCALATION AND THAT IS WHY IT IS HANDED TO EVERY JOB
+      // RATHER THAN TO ONE.** Every job already receives a token carrying
+      // both scopes, which is everything this API can do; the secret mints
+      // more of those and nothing else. Passing it to one named job would
+      // mean this file knowing which job is which, which is exactly the
+      // coupling the manifest exists to avoid.
+      //
+      // It is per RUN and lives as long as one stack — both launchers
+      // generate it — so it is not a value that outlives the thing it opens.
+      // ------------------------------------------------------------------
+      if (process.env.ADMIN_API_CLIENT_SECRET ||
+          process.env.STS_ADMIN_API_CLIENT_SECRET) {
+        job.env.STS_ADMIN_API_CLIENT_SECRET =
+          process.env.STS_ADMIN_API_CLIENT_SECRET ||
+          process.env.ADMIN_API_CLIENT_SECRET;
+      }
       delete job.env.NODE_V8_COVERAGE;
     }
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);

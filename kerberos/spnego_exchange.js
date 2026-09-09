@@ -66,6 +66,10 @@ const gss = require('./krb5_gss.js');
 const spnego = require('./krb5_spnego.js');
 const principals = require('./krb5_principals.js');
 const krb5Service = require('./krb5_service.js');
+// PER PROCESS AND NOT PER REALM — see the store below. Required only for
+// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
+// move a route or join a cycle.
+const realms = require('../common/realms');
 
 // What this acceptor supports, in ITS order of preference. Kerberos first
 // because it is the only thing here that works — NTLM is listed by every real
@@ -182,7 +186,14 @@ function applyVerdict(res, verdict) {
 // ---------------------------------------------------------------------------
 const PENDING_TTL_MS = 120000;
 const MAX_PENDING = 64;
-const pending = new Map();
+// -------------------------------------------------------------------------
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
+// is a plain Map that reports its writes so product mode can write them down;
+// `scope: 'shared'` is what says the store deliberately has no realm in it,
+// which is the discriminator `tests/realm_isolation.js` checks against.
+// -------------------------------------------------------------------------
+const pending = realms.sharedMap({ persist: 'spnego.pending',
+                                   scope: 'shared' });
 
 function whoIs(req) {
   return (req.ip || req.connection.remoteAddress || 'unknown');

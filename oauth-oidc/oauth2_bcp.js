@@ -1349,7 +1349,7 @@ const MAX_TRANSACTIONS = 500;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const transactions = realms.map();              // 'pkce:x' / 'nonce:x' -> record
+const transactions = realms.map({ persist: 'oauth2_bcp.transactions' });  // 'pkce:x' / 'nonce:x' -> record
 
 function forgetStaleTransactions() {
   log.debug("Entering forgetStaleTransactions().");
@@ -1456,6 +1456,12 @@ function noteRedeemed(record) {
     const known = transactions.get(entry.key);
     if (known) {
       known.redeemed = true;
+      // THROUGH THE STORE, because this mark is REPLAY PROTECTION and not
+      // bookkeeping. `transactions` is `realms.map({persist})` and its journal
+      // sees `set()`, never a field stamped on the object it handed out — so a
+      // redemption marked in place is a code that is spent in this process and
+      // unspent in every other one.
+      transactions.set(entry.key, known);
     }
   });
   log.debug("Leaving noteRedeemed().");
@@ -1949,13 +1955,13 @@ const MAX_REFRESH_TOKENS = 2000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const refreshTokens = realms.map();   // jti -> { family, clientId, rotated, forget }
+const refreshTokens = realms.map({ persist: 'oauth2_bcp.refreshTokens' });  // jti -> { family, clientId, rotated, forget }
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const refreshFamilies = realms.map(); // family -> { members: [jti], clientId, forget }
+const refreshFamilies = realms.map({ persist: 'oauth2_bcp.refreshFamilies' });  // family -> { members: [jti], clientId, forget }
 
 function forgetStaleRefreshTokens() {
   log.debug("Entering forgetStaleRefreshTokens().");
@@ -2027,12 +2033,17 @@ function noteRefreshRotated(jti) {
   const known = refreshTokens.get(String(jti));
   if (known) {
     known.rotated = true;
+    // THROUGH THE STORE, for noteRedeemed()'s reason: this is the mark that
+    // makes a re-presented refresh token a detected REPLAY, and a mark that
+    // does not leave this process is a rotated token another one still accepts.
+    refreshTokens.set(String(jti), known);
     // The chain has just been used, which is what the idle timeout measures
     // from. Recorded HERE — at the successful redemption — rather than when the
     // request arrived, so a run of refused attempts cannot keep a chain alive.
     const family = refreshFamilies.get(known.family);
     if (family) {
       family.lastUsedAt = Date.now();
+      refreshFamilies.set(known.family, family);
     }
   }
   log.debug("Leaving noteRefreshRotated(). " + (known ? "Marked." : "It was not one of ours."));

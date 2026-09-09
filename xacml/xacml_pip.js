@@ -148,6 +148,14 @@ function subjectOf(request) {
 
 // An attribute off a directory entry, matched without regard to case. See the
 // call site for why this is not `attributes[name]`.
+//
+// **EXPORTED as `rawAttribute()` for `POST /xacml/pip`**, which has to tell a
+// caller apart the two ways a bag can be empty on an entry that exists: the
+// entry does not hold the attribute at all, or it holds values that will not
+// parse at the datatype the policy declared. `resolverFor()` below cannot
+// distinguish them and deliberately must not — a PDP has to see one empty bag
+// — but the warning it logs about the second is the only trace of it, and a
+// caller in another container cannot read this service's log.
 function attributeOf(attributes, name) {
   if (!attributes) {
     return null;
@@ -160,6 +168,31 @@ function attributeOf(attributes, name) {
     }
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// DOES THIS SUBJECT RESOLVE TO AN ENTRY AT ALL?
+//
+// Exported for `POST /xacml/pip`, which has to tell a caller WHY a bag came
+// back empty — and *there is no such person* and *that person holds no such
+// attribute* are opposite answers needing opposite fixes. The resolver below
+// cannot answer it: an empty array is all it has to say, deliberately, because
+// a PDP must not be able to tell the two apart and decide differently.
+//
+// It goes through the SAME `locateEntry()` the resolver uses rather than a
+// second lookup, so "resolves" means one thing here — the fourth-lookup
+// mistake this file's header refuses to make, met from the other direction.
+// ---------------------------------------------------------------------------
+function locateSubject(subject) {
+  log.debug('Entering locateSubject().');
+  if (!subject || !available()) {
+    log.debug('Leaving locateSubject(). Nothing to look up.');
+    return null;
+  }
+  const located = directory.locateEntry(String(subject));
+  const stored = located && located.stored ? located.stored : null;
+  log.debug('Leaving locateSubject(). ' + (stored ? 'Found.' : 'No entry.'));
+  return stored;
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +293,8 @@ function resolverFor(request) {
 module.exports = {
   setDirectory: setDirectory,
   resolverFor: resolverFor,
+  locateSubject: locateSubject,
+  rawAttribute: attributeOf,
   directoryAttributeFor: directoryAttributeFor,
   subjectOf: subjectOf,
   available: available,

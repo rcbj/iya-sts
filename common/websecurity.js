@@ -67,6 +67,10 @@ const nodeCrypto = require('crypto');
 const { log } = require('./helpers');
 const config = require('./config');
 const stsCrypto = require('./crypto');
+// PER PROCESS AND NOT PER REALM — see the store below. Required only for
+// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
+// move a route or join a cycle.
+const realms = require('./realms');
 
 // ---------------------------------------------------------------------------
 // THE CSRF KEY. Per PROCESS and regenerated on every start, exactly like the
@@ -126,7 +130,18 @@ function checkCsrf(sessionId, body) {
 // by a string the caller composes — which is where the realm goes if a caller
 // wants it counted separately.
 // ---------------------------------------------------------------------------
-const buckets = new Map();
+// -------------------------------------------------------------------------
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
+// is a plain Map that reports its writes so product mode can write them down;
+// `scope: 'shared'` is what says the store deliberately has no realm in it,
+// which is the discriminator `tests/realm_isolation.js` checks against.
+// -------------------------------------------------------------------------
+// **AND PERSISTED FOR THE SAME REASON IT IS PER PROCESS**: an attacker who
+// could empty the buckets by making the service restart would have a fresh
+// allowance whenever they wanted one, which is the opposite of what the
+// limiter is for.
+const buckets = realms.sharedMap({ persist: 'security.rateLimitBuckets',
+                                   scope: 'shared' });
 const MAX_BUCKETS = 20000;
 
 function windowMs() {
@@ -171,16 +186,41 @@ function prune(now) {
 
 // Count one attempt. Answers whether it is allowed, and says which bucket
 // refused so the message can be honest without naming the other one.
-function attempt(what, req, identity) {
+//
+// ---------------------------------------------------------------------------
+// `limit` IS AN OPTIONAL FOURTH ARGUMENT, AND IT EXISTS BECAUSE ONE NUMBER
+// CANNOT SERVE TWO RHYTHMS (2026-09-06).
+//
+// The two settings this reads are FIVE and TWENTY, and they are right for what
+// they were written for: a SIGN-IN, where five attempts a minute is generous
+// and a sixth is somebody guessing. **A machine-to-machine door is the
+// opposite shape** — `POST /xacml/pip` is called once per access decision by a
+// remote enforcement point, so a busy one makes several a second and every one
+// of them is legitimate.
+//
+// A door like that had two options before this argument existed: share the
+// sign-in numbers and be switched off for its only caller, or not be limited
+// at all. **The first is worse than the second**, because the caller degrades
+// silently — the PEP falls back to deciding on what the request asserts and
+// reports nothing wrong.
+//
+// So a caller may name its own ceiling, and the WINDOW stays shared: an
+// operator who widens `security.rateLimitWindowS` widens every bucket at once,
+// which is what that setting is for. **The default is unchanged** — omit the
+// argument and this behaves exactly as it did, which is what every existing
+// caller does.
+// ---------------------------------------------------------------------------
+function attempt(what, req, identity, limit) {
   log.debug('Entering attempt(). what=' + what);
   const now = Date.now();
   const span = windowMs();
+  const named = Number(limit) > 0 ? Math.floor(Number(limit)) : 0;
   const checks = [
     { kind: 'identity',
       key: what + '|id|' + String(identity || '').toLowerCase(),
-      limit: limitFor('identity'), on: !!identity },
+      limit: named || limitFor('identity'), on: !!identity },
     { kind: 'address', key: what + '|ip|' + addressOf(req),
-      limit: limitFor('address'), on: true }
+      limit: named || limitFor('address'), on: true }
   ];
   prune(now);
   let refusal = null;

@@ -281,9 +281,16 @@ const REQUIREMENTS = [
 //   * NO REVOCATION IS CHECKED ON A CLIENT CERTIFICATE. There is no OCSP
 //     responder and no CRL fetch, in either mode. A revoked certificate
 //     verifies here and would not verify anywhere that matters.
-//   * NOTHING THIS SERVICE MINTS SURVIVES A RESTART, in either mode, because
-//     the signing key is regenerated on every start. A product deployment needs
-//     key persistence and rotation, and that is a feature rather than a mode.
+//   * ~~NOTHING THIS SERVICE MINTS SURVIVES A RESTART~~ — **PAID ON
+//     2026-09-06 and left here as the record of it.** It read "in either
+//     mode, because the signing key is regenerated on every start; a product
+//     deployment needs key persistence and rotation, and that is a feature
+//     rather than a mode". Both halves arrived that day: `keystore.js`
+//     persists the keys in product mode, and with the premise gone
+//     `persistence_minted.js` persists the sessions, tokens, codes,
+//     artifacts, tickets, counters and audit log beside them. DEVELOPMENT
+//     MODE IS UNCHANGED and the sentence is still true of it, which is why
+//     it is qualified here rather than deleted.
 //   * A KERBEROS ACCOUNT POLICY IS STILL PERMISSIVE in the sense that every
 //     seeded principal shares one password. Product mode stops the KDC creating
 //     principals on demand; it does not give the existing ones distinct

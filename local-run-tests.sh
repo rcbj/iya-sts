@@ -102,9 +102,28 @@
 #   there for a person who wants the old behaviour anyway.
 # ---------------------------------------------------------------------------
 #
-# What this adds over `npm test` is a REPORT — tests/report/<timestamp>/ with
-# report.html, JUnit report.xml and one log per test file — and the OTHER half
-# of this service's coverage:
+# What this adds over `npm test` is a REPORT — tests/report/<mode>/<timestamp>/
+# with report.html, JUnit report.xml and one log per test file — and the OTHER
+# half of this service's coverage:
+#
+# TWO OF THE FILES IN THAT logs/ DIRECTORY ARE THIS SCRIPT'S RATHER THAN THE
+# RUNNER'S, and both are things that are gone by the time somebody reads a
+# report:
+#
+#   logs/00-mock-sts-service.log   the container's own account of what the mock
+#                                  issued, taken before the teardown removes it
+#   logs/00-test-runner.log        THE RUNNER'S OWN OUTPUT — which jobs it
+#                                  chose, the ones it could not start and why,
+#                                  the reason a job was reported SKIPPED, the
+#                                  summary. A job that never started has no
+#                                  per-job log, so this is the only place what
+#                                  happened to it is written down. Tee'd, so
+#                                  the terminal still shows everything it
+#                                  always did
+#
+# Where a report could not be written — a run that died bringing the service up
+# — they go to tests/report/<mode>-00-*.log instead, which is precisely when
+# they are the only evidence there is.
 #
 #   THE PROTOCOL JOBS, AGAINST THIS WORKING TREE. Fourteen jobs that drive a
 #   RUNNING service over HTTP — the Selenium admin-console job among them.
@@ -153,6 +172,17 @@
 #   --only=<substr>[,<substr>...]
 #                    Only the test files (and protocol jobs) whose name
 #                    contains one of these. A bare word means the same.
+#   --modes=<mode>[,<mode>...]
+#                    Which of the three configurations in tests/tools/modes.sh
+#                    to run the whole suite in. The default is ALL THREE, which
+#                    is what a green run is supposed to mean — and what makes a
+#                    bare run take about an hour rather than about ten minutes.
+#                    `--modes=memory` is the development loop: the baseline
+#                    configuration, no database, no request workers. Narrowing
+#                    the modes narrows what the run says, exactly as --only
+#                    narrows the jobs — a pass in `memory` alone says nothing
+#                    about persistence or dispatch, which is the whole reason
+#                    the other two exist.
 #   --list           Name what would run, and run none of it.
 #   --protocol       Run the parent project's mock-only jobs as well. The
 #                    DEFAULT since 2026-08-28; the flag is kept because
@@ -233,7 +263,9 @@
 #   --timeout=MS     Per-job watchdog. Default 300000. 0 disables it.
 #   --quiet          Do not echo each job's output as it runs; the logs still
 #                    have all of it.
-#   --open           Open the report when it has been written.
+#   --open           Open the report when it has been written. With more than
+#                    one mode that is the LAST mode's, which is the one whose
+#                    stack is left standing.
 #   --verbose        set -x, for debugging this script.
 #   -h|--help        This.
 #
@@ -243,6 +275,15 @@ set -u -o pipefail
 
 CURRENT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 cd "${CURRENT_DIR}" || exit 1
+
+# ---------------------------------------------------------------------------
+# THE MODE MATRIX. `tests/tools/modes.sh` is the one definition of what the
+# three configurations are, shared with ./docker-run-tests.sh so the two
+# launchers cannot come to disagree about what a green run covers.
+# ---------------------------------------------------------------------------
+# shellcheck source=tests/tools/modes.sh
+. "${CURRENT_DIR}/tests/tools/modes.sh"
+RUN_MODES=("${STS_ALL_MODES[@]}")
 
 ONLY=""
 LIST=0
@@ -277,12 +318,132 @@ BUILD=1
 KEEP_STACK=1
 STS_PORT_ARG=""
 COMPOSE_FILE="docker-compose.yml"
+# ---------------------------------------------------------------------------
+# AND A SECOND COMPOSE FILE, LAYERED OVER IT, THAT PUBLISHES THE DIRECTORY'S
+# OWN SOCKET (2026-09-06).
+#
+# `tests/vendored/sts_directory_bulk_load_ldap.js` writes five thousand people
+# over RFC 4511 on TCP 389. In THIS stack the jobs are host processes and the
+# service is a container, so that socket has to be published — and
+# docker-compose.yml deliberately does not publish it, because 389 is the
+# assigned LDAP port and the host most likely to want a mock directory is a
+# host already running slapd. An override is the only way to give one stack a
+# published port and leave the operator's `docker compose up` untouched; that
+# file's own header argues it.
+#
+# ./docker-run-tests.sh needs none of this: over there the runner is a
+# container on the bridge with the service and reaches ldap://sts:389 with
+# nothing published at all.
+LDAP_COMPOSE_FILE="tests/docker-compose-ldap.yml"
+# Every compose invocation in this file goes through this array rather than
+# naming -f twice in seven places — which is how one of the seven eventually
+# gets the layer and the other six do not, and the symptom is a stack that
+# comes up without the port on exactly the code path nobody tested.
+COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}" -f "${LDAP_COMPOSE_FILE}")
+# Chosen at run time like the other two, so that two runs on one machine do not
+# collide with each other and neither collides with a real directory on 389.
+STS_LDAP_HOST_PORT=""
 # Overridable so that two runs on one machine (a CI agent with two workspaces)
 # do not share a project — compose scopes containers, networks and volumes by
 # it, so two runs sharing one would tear down each other's stack.
 COMPOSE_PROJECT="${STS_TEST_COMPOSE_PROJECT:-mock-sts-tests}"
 STS_TEST_CONTAINER="sts-tests"
 STS_TEST_PG_CONTAINER="sts-tests-postgres"
+# ---------------------------------------------------------------------------
+# NAMING A PROJECT MUST ISOLATE THE WHOLE RUN, AND UNTIL 2026-09-07 IT DID NOT.
+#
+# `STS_TEST_COMPOSE_PROJECT` scoped the compose PROJECT and left the three
+# container names hard-coded above — and `container_name` is machine-wide, not
+# project-scoped, which docker-compose.yml says in as many words. So a second
+# run on this machine took the first run's containers whatever project it was
+# given: compose saw a container by that name, recreated it, and the run already
+# using it started answering ECONNREFUSED half way through.
+#
+# **THAT IS NOT HYPOTHETICAL — IT HAPPENED THREE TIMES IN ONE DAY**, and each
+# time it read as a broad, alarming test failure rather than as two runs sharing
+# a name: jobs 1-46 pass, then everything after the moment the other run brought
+# the stack up fails on a closed socket.
+#
+# The defaults are untouched, so a plain run is exactly what it was and every
+# reference to `sts-tests` still finds it. Naming a project now also names the
+# containers, which is what makes two runs on one machine actually possible:
+#
+#   STS_TEST_COMPOSE_PROJECT=mine ./local-run-tests.sh
+# ---------------------------------------------------------------------------
+if [ -n "${STS_TEST_COMPOSE_PROJECT:-}" ];
+then
+  STS_TEST_CONTAINER="${COMPOSE_PROJECT}-sts"
+  STS_TEST_PG_CONTAINER="${COMPOSE_PROJECT}-postgres"
+fi
+# ---------------------------------------------------------------------------
+# THE REMOTE XACML PEP THIS STACK ALSO BRINGS UP (2026-09-06).
+#
+# `tests/vendored/sts_xacml_remote_pep.js` drives a SECOND CONTAINER — the
+# remote Policy Enforcement Point in xacml-pep/ — on the same network as the
+# service, and asserts that policy deployed through /admin-api reaches it and
+# changes what it allows. It cannot be asserted any other way: the whole point
+# of that component is that it holds its own copy of the engine in another
+# process, and the interesting states (converging by poll, a nudge arriving
+# over the bridge, a PDP that has gone away) only exist between two containers.
+#
+# THE LAUNCHER OWNS IT RATHER THAN THE JOB, for the reason ./docker-run-tests.sh
+# has no choice about: over there the suite runs INSIDE a container with no
+# docker in it, so a job that started its own could never run in CI. One
+# arrangement for both launchers is worth more than a shorter one here.
+#
+# THE REALM IS FIXED AND THE JOB OWNS IT. That container is pointed at
+# /realm/${XACML_PEP_REALM} before the realm exists; the job creates it, works
+# in it, and removes it at the end (its last section is a PDP outage made that
+# way). The PEP retries its registration on the poll timer, so it converges on
+# a console row once the realm appears — see xacml-pep/sync.js.
+# ---------------------------------------------------------------------------
+XACML_PEP_CONTAINER="xacml-pep-tests"
+# Isolated with the other two — see the block above them.
+if [ -n "${STS_TEST_COMPOSE_PROJECT:-}" ];
+then
+  XACML_PEP_CONTAINER="${COMPOSE_PROJECT}-xacml-pep"
+fi
+XACML_PEP_REALM="${XACML_PEP_REALM:-pep-e2e}"
+# **THE REGISTERED NAME IS THE CERTIFICATE'S COMMON NAME AND NOT THIS**, since
+# the endpoints were gated. `xacml.js` names a registration from the client
+# certificate and ignores anything the body or the environment says, because a
+# PEP that could name itself while holding a certificate could take over
+# another PEP's row — which is the one thing in this family that would be a
+# security bug rather than a fidelity one. So this is DERIVED from the subject
+# below rather than set beside it: `sync.js` sends `?pep=<PEP_NAME>` on every
+# pull to move its own lastSeen, and a name that differed from the row's would
+# leave a registered PEP that no pull ever touched.
+XACML_PEP_NAME=""
+XACML_PEP_HOST_PORT=""
+# ---------------------------------------------------------------------------
+# THE PEP'S CLIENT CERTIFICATE (2026-09-06).
+#
+# The three /xacml/pep endpoints are gated: a remote PEP is admitted by a
+# client certificate the service VERIFIES, whose subject DN resolves to a
+# directory entry in the `remote-peps` group, which grants the built-in
+# REMOTE_PEPS role. Nothing in the mock or in the PEP image provides that
+# certificate — this launcher mints one with tests/tools/pep-credential.js,
+# which builds a Root CA, an Issuing CA and a client leaf on the vendored PKI
+# engine and POSTs the root to /tls/trust.
+#
+# THE COMMON NAME IS `remote-pep-1` BECAUSE THAT IS THE SEEDED IDENTITY. Every
+# realm's directory carries `cn=remote-pep-1,ou=users,…` and a `cn=remote-peps`
+# group holding it, so the ordinary path needs no directory editing. A
+# different name mints a certificate that VERIFIES and is refused, which is a
+# thing the suite asserts on purpose.
+XACML_PEP_SUBJECT="${XACML_PEP_SUBJECT:-CN=remote-pep-1,OU=remote-peps,O=mock-sts}"
+XACML_PEP_CERT_DIR=""
+# The common name out of that subject, which is what the PDP will file the
+# registration under. `sed` rather than a shell parameter expansion because the
+# CN is not always first and a DN may carry spaces.
+XACML_PEP_NAME="$(printf '%s' "${XACML_PEP_SUBJECT}" \
+  | sed -n 's/.*CN=\([^,]*\).*/\1/p')"
+if [ -z "${XACML_PEP_NAME}" ];
+then
+  echo "XACML_PEP_SUBJECT (${XACML_PEP_SUBJECT}) names no CN, and the CN is" >&2
+  echo "what the mock files a PEP registration under. Nothing would find it." >&2
+  exit 1
+fi
 # The appconfig layer the SERVICE reads — the container, and since the log
 # level below became a default of this script, the --no-docker copy too.
 #
@@ -319,6 +480,9 @@ while [ $# -gt 0 ];
 do
   case "$1" in
     --only=*)          ONLY="${1#--only=}"; PASSTHROUGH+=("$1") ;;
+    # WHICH MODES TO RUN. The default is all three; this is for narrowing a
+    # loop while working on one of them, exactly as --only narrows the jobs.
+    --modes=*)         IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}" ;;
     --list)            LIST=1; PASSTHROUGH+=("$1") ;;
     --protocol)        PROTOCOL="on"; PROTOCOL_ASKED=1 ;;
     --protocol-only)   PROTOCOL="only"; PROTOCOL_ASKED=1 ;;
@@ -516,19 +680,101 @@ stsProbe()
   ' "$1" 2> /dev/null
 }
 
+# ---------------------------------------------------------------------------
+# WHERE A RUN'S OWN LOGS GO, AND WHY IT IS A FUNCTION RATHER THAN A PATH.
+#
+# Each mode is handed `--report-dir=tests/report/<mode>`, so `latest` under
+# THAT directory is the run this mode just wrote. The bare `tests/report/latest`
+# is not: it is whatever the last mode-less run left behind, quite possibly
+# weeks old, and both callers of this named it until 2026-09-07 — which put a
+# service log beside a report it had nothing to do with, the one failure mode
+# worse than having no log at all.
+#
+# The fallback carries the mode in the FILENAME, because three modes falling
+# back would otherwise be three writes to one path with only the last surviving.
+# It is reached whenever there is no report to sit beside — a run that died in
+# composeUp() before anything was written, which is precisely when these logs
+# are the only evidence there is.
+# ---------------------------------------------------------------------------
+runLogPath()
+{
+  local mode="$1" name="$2"
+  local logs="${CURRENT_DIR}/tests/report/${mode}/latest/logs"
+  if [ -d "${logs}" ] && touch "${logs}/${name}" 2> /dev/null;
+  then
+    printf '%s\n' "${logs}/${name}"
+    return 0
+  fi
+  # mkdir here as well as before the tee: this is also the path a run that died
+  # in composeUp() takes, and on a first ever run nothing has made tests/report
+  # by then — which would turn "the service never came up" into a redirection
+  # error naming a directory.
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  printf '%s\n' "${CURRENT_DIR}/tests/report/${mode}-${name}"
+}
+
 # Write the container's own log where the run's other logs are, and say where.
 # Called after the run and on every failure path: the service's account of what
 # it did is what a failing protocol job is read from, and a container that is
 # about to be removed takes it with it.
 captureContainerLog()
 {
-  local dest="$1"
+  local mode="$1" dest
   if [ "${STACK_UP}" != "1" ];
   then
     return 0
   fi
-  docker_compose -f "${COMPOSE_FILE}" logs --no-color sts > "${dest}" 2>&1 || true
+  dest="$(runLogPath "${mode}" "00-mock-sts-service.log")"
+  docker_compose "${COMPOSE_FILE_ARGS[@]}" logs --no-color sts > "${dest}" 2>&1 || true
   echo "Service log: ${dest}"
+}
+
+# ---------------------------------------------------------------------------
+# THE RUNNER'S OWN LOG, WHICH DID NOT EXIST ANYWHERE UNTIL 2026-09-07.
+#
+# THE JOBS' LOGS ARE NOT IT. run-report.js writes one file per test file and
+# those hold the JOB'S output; what the RUNNER said — which jobs it chose, the
+# ones it could not start and why, the reason a job was reported SKIPPED, the
+# summary — went to this terminal and to nowhere else. A job that never ran has
+# no log in that directory to read, and that is exactly the run somebody comes
+# back to a report for an hour later.
+#
+# ./docker-run-tests.sh has the same thing and gets it from `docker compose
+# logs tests`, because over there the runner IS a container. Here it is a plain
+# node process, so the output is TEE'd as it goes and the file is moved into the
+# report afterwards — the report directory is named for the instant the runner
+# started and does not exist until it has.
+#
+# TEE'D RATHER THAN REDIRECTED, because this launcher's whole shape is that a
+# person is watching it: --quiet already decides how much each job says, and a
+# run that went silent to gain a log file would have traded the loop for the
+# record.
+# ---------------------------------------------------------------------------
+captureRunnerLog()
+{
+  local mode="$1" from="$2" dest
+  if [ ! -f "${from}" ];
+  then
+    return 0
+  fi
+  # `--list` answers a question about the FILES and runs nothing, so it writes
+  # no report — and moving its listing into whatever `latest` happens to point
+  # at would put it in a PREVIOUS run's logs directory, labelled as that run's
+  # runner output. Thrown away instead.
+  if [ "${LIST}" = "1" ];
+  then
+    rm -f "${from}"
+    return 0
+  fi
+  dest="$(runLogPath "${mode}" "00-test-runner.log")"
+  # A FAILED MOVE REPORTS THE PATH THE FILE IS ACTUALLY AT. The tee'd file is
+  # still where it was written, and a message naming a destination with nothing
+  # at it would be worse than not printing one at all.
+  if [ "${dest}" != "${from}" ] && ! mv -f "${from}" "${dest}" 2> /dev/null;
+  then
+    dest="${from}"
+  fi
+  echo "Runner log:  ${dest}"
 }
 
 # ---------------------------------------------------------------------------
@@ -539,6 +785,131 @@ captureContainerLog()
 # or a module is missing from the image — so being up is asked separately from
 # being answering, and neither is inferred from the other.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# THE REMOTE PEP CONTAINER, BROUGHT UP BESIDE THE SERVICE.
+#
+# `--profile xacml` because that service is opt-in in docker-compose.yml, and
+# `--no-deps` because the `sts` it depends on is already up and healthy — a
+# second `up` of it here would recreate the container this run is already
+# driving.
+#
+# **A FAILURE HERE IS NOT FATAL TO THE RUN, AND THAT IS DELIBERATE.** One job
+# out of the suite drives this container; fifty-odd others do not care whether
+# it exists. So a PEP image that will not build, or a container that will not
+# start, must fail THAT job with a message naming it — not take down a run that
+# was going to check the other fifty. The job says what is wrong: without
+# XACML_PEP_URL it looks for a docker daemon to start its own container with,
+# and without one of those it is reported SKIPPED with the reason.
+#
+# IT IS NOT WAITED FOR. That container listens only after its first
+# registration and pull have been attempted, and both fail until the job
+# creates the realm it polls — so there is nothing here worth waiting for that
+# the job is not already waiting for properly.
+# ---------------------------------------------------------------------------
+composePepUp()
+{
+  # ---- THE CLIENT CREDENTIAL, BEFORE THE CONTAINER THAT PRESENTS IT --------
+  #
+  # It has to be minted AFTER the service is answering (the Root CA is POSTed
+  # to its truststore) and BEFORE the PEP container starts (`pep.js` reads the
+  # files at process start and never again). This is the one window, and it is
+  # why this runs here rather than beside the other setup above.
+  #
+  # A FAILURE IS NOT FATAL TO THE RUN, for composePepUp()'s own reason: one job
+  # drives this container and fifty-odd others do not care. The PEP then starts
+  # with no certificate, is refused by the access policy, and the job that
+  # drives it says so — which is a readable failure rather than a silent one.
+  echo "Minting the remote PEP's client certificate (${XACML_PEP_SUBJECT})"
+  echo "and adding its Root CA to the mock's truststore..."
+  if ! node "${CURRENT_DIR}/tests/tools/pep-credential.js" \
+       --url="${STS_URL}" --out="${XACML_PEP_CERT_DIR}" \
+       --subject="${XACML_PEP_SUBJECT}" > /dev/null;
+  then
+    echo ""
+    echo "WARNING: the remote PEP's client certificate could not be minted or"
+    echo "         its Root CA could not be trusted. That container will start"
+    echo "         without one and every /xacml/pep call it makes will be"
+    echo "         refused by the access policy; sts_xacml_remote_pep will say"
+    echo "         so and the rest of the run is unaffected."
+    echo ""
+  fi
+
+  # BUILT FROM THIS WORKING TREE, ON THE SAME TERMS AS THE SERVICE IMAGE ABOVE.
+  #
+  # **THIS IS NOT OPTIONAL TIDINESS AND IT COST A MUTATION TEST TO FIND.**
+  # `up` builds an image only when it is MISSING, so without this line a stack
+  # started here reuses whatever `rcbj/xacml-pep` was last built — from another
+  # branch, from another repository, from an hour ago — and the one job that
+  # drives it reports green about an engine nobody is running. It is exactly
+  # the failure the `--no-build` warning above is written for, except silent,
+  # because nothing on screen would have named the PEP at all.
+  #
+  # The Dockerfile copies the seven engine modules out of xacml/ at build time,
+  # so this build is also what makes that COPY set an assertion: a module added
+  # to engine.js and not to that file produces a container that dies at load,
+  # and the job says so.
+  if [ "${BUILD}" = "1" ];
+  then
+    echo "Building the remote XACML PEP image from this working tree..."
+    if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml build xacml-pep;
+    then
+      echo ""
+      echo "WARNING: the remote XACML PEP image would not build. The one job"
+      echo "         that drives it (sts_xacml_remote_pep) will say so; the"
+      echo "         rest of the run is unaffected."
+      echo ""
+      return 0
+    fi
+  fi
+  echo "Starting the remote XACML PEP container ${XACML_PEP_CONTAINER} on"
+  echo "http://localhost:${XACML_PEP_HOST_PORT} (polling /realm/${XACML_PEP_REALM},"
+  echo "which tests/vendored/sts_xacml_remote_pep.js creates and LEAVES"
+  echo "standing — no job in this suite removes a realm; the mock container is"
+  echo "recreated on every run, so the next one meets a clean service)."
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
+       up -d --no-deps --force-recreate xacml-pep;
+  then
+    echo ""
+    echo "WARNING: the remote XACML PEP container would not start. The one job"
+    echo "         that drives it (sts_xacml_remote_pep) will say so; the rest"
+    echo "         of the run is unaffected. \`${COMPOSE_CMD} -p ${COMPOSE_PROJECT}"
+    echo "         -f ${COMPOSE_FILE} logs xacml-pep\` is where the reason is."
+    echo ""
+    return 0
+  fi
+  # WHERE THE JOB LOOKS FOR IT. Exported rather than passed, because
+  # run-report.js hands every protocol job a copy of this process's
+  # environment — the same route STS_TEST_SERVICE_URL takes. All three
+  # together or none: the job refuses a URL with no realm rather than
+  # asserting against a container pointed somewhere else.
+  export XACML_PEP_URL="http://localhost:${XACML_PEP_HOST_PORT}"
+  export XACML_PEP_NAME
+  export XACML_PEP_REALM
+  # AND THE ROOT CA, AS TEXT, SO THE JOB CAN PUT IT BACK.
+  #
+  # This anchor is posted to /tls/trust once, here, before the container
+  # starts — and the truststore is a Map in the service's process that ANY job
+  # can empty: `POST /tls/trust/clear` needs no credential, and a job that
+  # exercises the truststore is entitled to use it. Until 2026-09-06 nothing
+  # noticed, because a client certificate was a turnstile; the container's
+  # pull, heartbeat and PIP queries all resolve a VERIFIED chain now, so one
+  # such job left this container authenticating as nobody for the rest of the
+  # run — reporting UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor that was
+  # posted correctly before anything started.
+  #
+  # **THE FIX IS NOT TO STOP OTHER JOBS CLEARING IT.** It is for the job that
+  # DEPENDS on this anchor to re-establish it, which is what every other
+  # credential in that file already does for itself. The PEM travels in the
+  # environment rather than as a path because the containerized runner cannot
+  # see this directory.
+  if [ -f "${XACML_PEP_CERT_DIR}/ca.crt" ];
+  then
+    XACML_PEP_CA_PEM="$(cat "${XACML_PEP_CERT_DIR}/ca.crt")"
+    export XACML_PEP_CA_PEM
+  fi
+  return 0
+}
+
 composeUp()
 {
   STS_HOST_PORT="${STS_PORT_ARG}"
@@ -558,16 +929,70 @@ composeUp()
   # container will get rather than assumed twice.
   STS_URL="$(stsScheme)://localhost:${STS_HOST_PORT}"
 
+  # The PEP's published port, picked the same way and for the same reason.
+  XACML_PEP_HOST_PORT="$(freePort 19090)"
+  if [ -z "${XACML_PEP_HOST_PORT}" ];
+  then
+    echo "No free host port could be found above 19090 for the remote PEP."
+    return 1
+  fi
+
+  # THE DIRECTORY'S SOCKET, picked the same way and for two reasons rather than
+  # one: two runs on this machine must not collide with each other, and NEITHER
+  # must collide with a real slapd on 389. The container side stays 389 — see
+  # tests/docker-compose-ldap.yml, which this launcher layers over the compose
+  # file for exactly this mapping.
+  STS_LDAP_HOST_PORT="$(freePort 11389)"
+  if [ -z "${STS_LDAP_HOST_PORT}" ];
+  then
+    echo "No free host port could be found above 11389 for the LDAP socket."
+    return 1
+  fi
+  # INSIDE THE RUN'S OWN REPORT DIRECTORY rather than /tmp, so that a private
+  # key this script generates lives beside the run that needed it and goes when
+  # somebody clears the reports. It has to be an ABSOLUTE path: compose
+  # resolves a bind mount's source against the compose file's directory, and a
+  # relative one here would name a directory that does not exist.
+  XACML_PEP_CERT_DIR="${CURRENT_DIR}/tests/report/pep-credential"
+  rm -rf "${XACML_PEP_CERT_DIR}"
+  mkdir -p "${XACML_PEP_CERT_DIR}"
+
   COMPOSE_ENV=(
     "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
     "STS_HOST_PORT=${STS_HOST_PORT}"
+    # WHAT tests/docker-compose-ldap.yml SUBSTITUTES. Named here rather than
+    # left to that file's own default, for the reason tests/tools/compose.sh's
+    # header gives: `sudo` empties the environment, so an exported variable
+    # reaches compose as unset and the file substitutes its default with
+    # nothing said — which on this machine, where docker needs sudo, would put
+    # the socket on 11389 whatever port this launcher picked and told the job
+    # about.
+    "STS_LDAP_HOST_PORT=${STS_LDAP_HOST_PORT}"
     "STS_CONTAINER_NAME=${STS_TEST_CONTAINER}"
     "STS_POSTGRES_CONTAINER_NAME=${STS_TEST_PG_CONTAINER}"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
-    # NOT A TUNING CHOICE — see docker-compose.yml's header. A suite that
-    # persisted would be a suite whose second run started from the first run's
-    # leavings.
-    "STS_PERSISTENCE_MODE=memory"
+    # ---- THE MODE, and this was a hardcoded `memory` until 2026-09-07 -----
+    #
+    # It said "NOT A TUNING CHOICE — a suite that persisted would be a suite
+    # whose second run started from the first run's leavings", which was right
+    # while there was ONE run. There are three now (tests/tools/modes.sh) and
+    # two of them are about persistence, so a hardcoded value here does not
+    # merely ignore the matrix — it DEFEATS it silently: the `postgres` mode
+    # ran as a second `memory` mode and reported itself green, and `dispatch`
+    # refused to start because the pool will not dispatch without coordination.
+    # The first was worse than the second, because it looked like coverage.
+    #
+    # The leavings the old comment worried about are handled by the mode loop
+    # bringing the stack DOWN --volumes between modes, so the database a
+    # `postgres` run starts from is a fresh one.
+    #
+    # Passed from the exported environment the loop set, with the old default
+    # kept for a composeUp() reached outside the loop.
+    "STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}"
+    "STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}"
+    "STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}"
+    "STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}"
+    "STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}"
     # TLS ON THE MAIN PORT. Named EXPLICITLY rather than left to the compose
     # file's own `${STS_HTTPS:-true}` default, and the reason is the one the
     # header of tests/tools/compose.sh gives: `sudo` empties the environment,
@@ -576,6 +1001,24 @@ composeUp()
     # here is what makes the override real on a machine where docker needs
     # sudo — which is this one.
     "STS_HTTPS=$(stsHttps)"
+    # ---- the remote PEP container -------------------------------------
+    # Its own free port rather than 9090, so a run can never take the port of
+    # a `docker compose --profile xacml up` somebody is looking at; its own
+    # container name for the same reason. The PDP URL names the throwaway
+    # realm the job owns — the compose file's default is the DEFAULT realm,
+    # which is the demonstration's answer and would have this job disabling
+    # policy that every other job in the run decides against. The two
+    # intervals are shortened because the job MEASURES against them.
+    "XACML_PEP_CONTAINER_NAME=${XACML_PEP_CONTAINER}"
+    "XACML_PEP_HOST_PORT=${XACML_PEP_HOST_PORT}"
+    "XACML_PEP_NAME=${XACML_PEP_NAME}"
+    "XACML_PEP_PDP_URL=$(stsScheme)://sts:8081/realm/${XACML_PEP_REALM}"
+    "XACML_PEP_POLL_INTERVAL_MS=5000"
+    "XACML_PEP_HEARTBEAT_INTERVAL_MS=2000"
+    # The credential composePepUp() writes, mounted read-only at /certs.
+    "XACML_PEP_CERT_DIR=${XACML_PEP_CERT_DIR}"
+    "XACML_PEP_TLS_CERT=/certs/pep.crt"
+    "XACML_PEP_TLS_KEY=/certs/pep.key"
   )
   # Only when it HAS a value: an empty STS_LOG_LEVEL makes bunyan throw
   # `unknown level name: ""` while this service is still loading its modules,
@@ -589,17 +1032,42 @@ composeUp()
     COMPOSE_ENV+=("STS_LOG_LEVEL=${STS_LOG_LEVEL}")
   fi
 
+  # ---------------------------------------------------------------------------
+  # THE MANAGEMENT API'S CLIENT SECRET, PINNED FOR THIS RUN (2026-09-09).
+  #
+  # `/admin-api` requires an OAuth 2.0 access token, and the token is obtained
+  # by the seeded `sts-management-api` client with `client_credentials`. That
+  # client's secret is minted at every start and is readable only THROUGH the
+  # API it unlocks — a bootstrap hole — so `adminApi.clientSecret` exists to
+  # pin it and this is where the run does so.
+  #
+  # A FRESH SECRET PER RUN rather than a constant in this file: it lives as
+  # long as one stack, it never reaches a repository, and two runs on one
+  # machine cannot lend each other a token.
+  # ---------------------------------------------------------------------------
+  ADMIN_API_CLIENT_SECRET="$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
+  export ADMIN_API_CLIENT_SECRET
+  COMPOSE_ENV+=("ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}")
+
   # A stack left behind by an interrupted run holds the container name and the
   # volumes this one is about to ask for. Removing it is safe BECAUSE of the
   # project name: this touches `mock-sts-tests` and can never reach the `sts`
   # container a `docker compose up` in this directory creates.
-  docker_compose -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
-    > /dev/null 2>&1 || true
+  #
+  # **`--profile xacml` IS LOAD-BEARING ON A `down` AND THAT IS NOT OBVIOUS.**
+  # `down` removes the containers of services in the ACTIVE profiles, and the
+  # remote PEP is in one — so without this it survives, its network cannot be
+  # removed ("Resource is still in use"), and the next run inherits both. It
+  # was found by running the teardown and looking, which is the only way this
+  # kind of thing is ever found. `--remove-orphans` does NOT cover it: a
+  # profiled service is defined in the file, so it is not an orphan.
+  docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
+    down --remove-orphans --volumes > /dev/null 2>&1 || true
 
   if [ "${BUILD}" = "1" ];
   then
     echo "Building the mock STS image from this working tree..."
-    if ! docker_compose -f "${COMPOSE_FILE}" build sts;
+    if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" build sts;
     then
       echo "The image would not build. Nothing was run."
       return 1
@@ -610,12 +1078,32 @@ composeUp()
     echo "either way. Drop --no-build if a result surprises you."
   fi
 
-  echo "Starting the mock STS container on ${STS_URL} (project"
-  echo "${COMPOSE_PROJECT}, container ${STS_TEST_CONTAINER}, persistence off)."
-  # --no-deps: the postgres service in that file is for an operator keeping a
-  # mock around for a week, and this run persists nothing. --force-recreate so
-  # that a container from a previous run is never reused with a new image.
-  if ! docker_compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate sts;
+  # ---- DOES THIS MODE NEED THE DATABASE? --------------------------------
+  #
+  # `--no-deps` was unconditional until 2026-09-07, on the argument that "the
+  # postgres service is for an operator keeping a mock around for a week, and
+  # this run persists nothing". That is still true of the `memory` mode and is
+  # FALSE of the other two: with it, the `postgres` and `dispatch` modes came
+  # up with no database at all — which the service reported honestly and which
+  # made one mode a duplicate of another and the third refuse to start.
+  #
+  # So the flag follows the mode. Dropping it lets compose bring `postgres` up
+  # through the `sts` service's own depends_on, which is the same path a plain
+  # `docker compose up` takes.
+  local depsArgs=()
+  if stsModeNeedsPostgres "${STS_MODE_NAME:-memory}";
+  then
+    echo "Starting the mock STS container on ${STS_URL} (project"
+    echo "${COMPOSE_PROJECT}, container ${STS_TEST_CONTAINER}, with postgres,"
+    echo "persistence=${STS_PERSISTENCE_MODE:-memory})."
+  else
+    depsArgs=(--no-deps)
+    echo "Starting the mock STS container on ${STS_URL} (project"
+    echo "${COMPOSE_PROJECT}, container ${STS_TEST_CONTAINER}, persistence off)."
+  fi
+  # --force-recreate so that a container from a previous run is never reused
+  # with a new image.
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d ${depsArgs[@]+"${depsArgs[@]}"} --force-recreate sts;
   then
     echo "The stack would not start."
     STACK_UP=1   # something may exist; let the teardown and the log reach it
@@ -632,6 +1120,16 @@ composeUp()
     if [ "${code}" = "200" ];
     then
       echo "The mock STS is answering on ${STS_URL}."
+      # WHERE THE LDAP JOB LOOKS FOR THE SOCKET. Exported rather than passed,
+      # because run-report.js hands every protocol job a copy of this process's
+      # environment — the same route STS_TEST_SERVICE_URL and XACML_PEP_URL
+      # take. Set only once the service is ANSWERING, so that a stack which
+      # never came up leaves the job to fail on its own connect with a message
+      # naming both launchers rather than on a URL this script promised.
+      export STS_LDAP_URL="ldap://localhost:${STS_LDAP_HOST_PORT}"
+      echo "The directory's own socket is published at ${STS_LDAP_URL} for" \
+           "sts_directory_bulk_load_ldap."
+      composePepUp
       return 0
     fi
     if [ "$(date +%s)" -ge "${deadline}" ];
@@ -670,6 +1168,38 @@ composeUp()
   done
 }
 
+# ---------------------------------------------------------------------------
+# THE ACCESS TOKEN EVERY JOB DRIVES `/admin-api` WITH (2026-09-09).
+#
+# Minted once per run, after the service answers and before any job starts,
+# audienced to this stack's own `/admin-api` and carrying both scopes —
+# `admin:read` for reads and `admin:write` for writes, which
+# `common/roles.js` turns into ADMIN_READ and ADMIN_WRITE and the XACML
+# access policy asks for.
+#
+# `run-report.js` hands it to every job together with
+# `tools/attach-admin-token.js`, which presents it. A failure here is FATAL
+# rather than a warning: without a token every job that touches that API would
+# fail with 401 and the run would report twenty-three broken tests instead of
+# one broken login.
+# ---------------------------------------------------------------------------
+mintAdminApiToken()
+{
+  local token
+  if ! token="$(STS_ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET}"         node "${CURRENT_DIR}/tests/tools/admin-api-token.js" "${STS_URL}" 2>&1)";
+  then
+    echo "Could not obtain an access token for ${STS_URL}/admin-api:" >&2
+    echo "  ${token}" >&2
+    echo "  Every job that drives that API needs one. adminApi.authRequired" >&2
+    echo "  turns the requirement off if you need the old open API back." >&2
+    return 1
+  fi
+  STS_ADMIN_API_TOKEN="${token}"
+  export STS_ADMIN_API_TOKEN
+  echo "Minted an /admin-api access token (admin:read admin:write, audience"
+  echo "${STS_URL}/admin-api)."
+}
+
 # The teardown, and it is a TRAP rather than a line at the end of the script:
 # an interrupted run (^C, a failing preflight, `set -e` in a future edit) would
 # otherwise leave a container and a network behind, and the next run would then
@@ -686,6 +1216,20 @@ stackTeardown()
     echo "The stack is still up (the default; --tear-down removes it):"
     echo "  service:  ${STS_URL}    console: ${STS_URL}/admin"
     echo "  logs:     ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} logs -f sts"
+    # THE SECOND CONTAINER IS PART OF THE RECIPE TOO. Somebody who kept the
+    # stack to poke at it will find a remote PEP in it and no explanation
+    # anywhere on screen otherwise — and the realm it polls is gone by then,
+    # because the job that owns it removes it as its last assertion. Both facts
+    # are surprising and both are one line.
+    if [ -n "${XACML_PEP_HOST_PORT}" ];
+    then
+      echo "  pep:      http://localhost:${XACML_PEP_HOST_PORT}/    (the remote XACML PEP,"
+      echo "            container ${XACML_PEP_CONTAINER}; it polls /realm/${XACML_PEP_REALM},"
+      echo "            which sts_xacml_remote_pep.js creates and REMOVES again — so a"
+      echo "            kept stack shows it stale and still enforcing what it last pulled,"
+      echo "            which is the state that job's last section asserts)"
+      echo "  pep logs: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} logs -f xacml-pep"
+    fi
     echo "  stop it:  ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} down -v"
     # THE CERTIFICATE IS PART OF THE RECIPE NOW. With the main port on TLS a
     # job run by hand meets a self-signed certificate this machine has no
@@ -706,8 +1250,11 @@ stackTeardown()
     echo "             CONFIG_FILE=./env/local.js node sts_metadata.js)"
     return 0
   fi
-  docker_compose -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
-    > /dev/null 2>&1 || true
+  # `--profile xacml` for the reason composeUp() gives at its own `down`: the
+  # remote PEP container is in a profile, and a `down` without it leaves that
+  # container running and the network undeletable.
+  docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
+    down --remove-orphans --volumes > /dev/null 2>&1 || true
   STACK_UP=0
 }
 trap stackTeardown EXIT
@@ -990,54 +1537,196 @@ export STS_TEST_CONFIG_FILE
 # runner directly.
 unset STS_TEST_SERVICE_URL
 
-if [ "${LIST}" != "1" ] && needsService;
+# The stack is brought up INSIDE the mode loop below, because each mode needs
+# its own — different persistence, different worker settings. The one variable
+# the two halves meet at is still `STS_TEST_SERVICE_URL`, exported there rather
+# than passed as an argument so that ./run-coverage.sh, which builds its own
+# argument list, cannot pick it up by accident.
+
+# ===========================================================================
+# THE SUITE RUNS ONCE PER MODE, AND THE MODES ARE IN tests/tools/modes.sh.
+#
+# `memory`, `postgres` and `dispatch` differ in what SHARES state between the
+# parts of this service, and a build can be green in one and red in another —
+# which is not a hypothesis: on 2026-09-07 `sts_admin_api_operations` passed in
+# `memory` and failed in `postgres` with dispatching off in both. A suite that
+# ran only the first would have called that build good. That file argues each
+# mode and is the ONE definition of them, shared with ./docker-run-tests.sh.
+#
+# EACH MODE GETS ITS OWN REPORT TREE — tests/report/<mode>/<timestamp> — so a
+# failure is attributable to a configuration rather than to "the last run".
+#
+# THE LAST MODE'S STACK IS LEFT UP. `dispatch` runs last on purpose: it is the
+# configuration hardest to reproduce by hand — postgres, coordination and three
+# request workers — so it is the one worth having standing when the run ends.
+# The earlier modes are torn down as they finish, because two stacks on one
+# compose project cannot coexist.
+# ===========================================================================
+# `--list` and `--vendor-check` answer a question about the FILES and drive no
+# service, so they run once whatever the matrix says — three identical listings
+# would be noise pretending to be coverage.
+if [ "${LIST}" = "1" ];
 then
-  resolveServiceMode || exit 1
-  if [ "${SERVICE}" = "docker" ];
-  then
-    if ! composeUp;
-    then
-      captureContainerLog "${CURRENT_DIR}/tests/report/mock-sts-container.log"
-      echo ""
-      echo "Tests FAILED: the service under the protocol jobs never came up,"
-      echo "so nothing was checked. This is a failure and not a skip on"
-      echo "purpose — a run in which nothing ran must never read as a pass."
-      exit 1
-    fi
-    # The one variable the two halves meet at. Exported rather than passed as
-    # an argument so that ./run-coverage.sh, which builds its own argument
-    # list, cannot pick it up by accident — it never exports this, and a
-    # coverage run must not be handed a container it cannot measure.
-    export STS_TEST_SERVICE_URL="${STS_URL}"
-  fi
+  RUN_MODES=("${RUN_MODES[0]}")
 fi
 
-node tests/tools/run-report.js ${ARGS[@]+"${ARGS[@]}"}
-RC=$?
+RC=0
+MODES_RUN=()
+MODES_FAILED=()
+MODE_COUNT="${#RUN_MODES[@]}"
+MODE_INDEX=0
+
+for MODE in "${RUN_MODES[@]}";
+do
+  MODE_INDEX=$((MODE_INDEX + 1))
+  echo ""
+  echo "==========================================================="
+  echo " MODE ${MODE_INDEX} of ${MODE_COUNT}: ${MODE}"
+  echo " $(stsModeDescription "${MODE}")"
+  echo "==========================================================="
+
+  # The mode's environment, exported so composeUp() passes it through and so a
+  # host-mode service inherits it. Every mode names every variable it cares
+  # about — see modes.sh — so a later mode cannot inherit an earlier one's.
+  #
+  # `STS_MODE_NAME` is how composeUp() knows whether to bring the database up;
+  # it is the mode's NAME rather than one of its settings, because "does this
+  # need postgres" is a question about the mode and modes.sh answers it.
+  export STS_MODE_NAME="${MODE}"
+  while IFS= read -r line;
+  do
+    [ -n "${line}" ] && export "${line?}"
+  done < <(stsModeEnv "${MODE}")
+
+  if [ "${LIST}" != "1" ] && needsService;
+  then
+    resolveServiceMode || exit 1
+    if [ "${SERVICE}" = "docker" ];
+    then
+      if ! composeUp;
+      then
+        captureContainerLog "${MODE}"
+        echo ""
+        echo "Tests FAILED in mode ${MODE}: the service under the protocol jobs"
+        echo "never came up, so nothing was checked. This is a failure and not"
+        echo "a skip on purpose — a run in which nothing ran must never read"
+        echo "as a pass."
+        exit 1
+      fi
+      export STS_TEST_SERVICE_URL="${STS_URL}"
+    fi
+  fi
+
+  # TEE'D INTO THE FALLBACK PATH AND MOVED INTO THE REPORT AFTERWARDS — see
+  # captureRunnerLog(). The runner names its own directory after the instant it
+  # starts, so there is nowhere to write this until it has finished.
+  #
+  # ${PIPESTATUS[0]} AND NOT $?, WHICH WOULD BE tee's. tee exits 0 for a suite
+  # that failed every job, so a plain `$?` here would have made every mode pass
+  # for as long as this pipe existed.
+  #
+  # The report directory, made HERE because tee opens its file when the pipeline
+  # starts and run-report.js does not create tests/report until a moment later.
+  # On a first ever run that is the difference between a log and a `tee: No such
+  # file or directory` in front of the whole suite's output.
+  # THE TOKEN, BEFORE ANY JOB RUNS. `/admin-api` requires one and twenty-three
+  # jobs drive it, so a failure here is the run's failure rather than theirs —
+  # see mintAdminApiToken().
+  if [ -n "${STS_URL}" ];
+  then
+    mintAdminApiToken || exit 1
+  fi
+
+  mkdir -p "${CURRENT_DIR}/tests/report" || exit 1
+  RUNNER_LOG="${CURRENT_DIR}/tests/report/${MODE}-00-test-runner.log"
+  node tests/tools/run-report.js ${ARGS[@]+"${ARGS[@]}"} \
+    "--report-dir=${CURRENT_DIR}/tests/report/${MODE}" 2>&1 \
+    | tee "${RUNNER_LOG}"
+  MODE_RC="${PIPESTATUS[0]}"
+  captureRunnerLog "${MODE}" "${RUNNER_LOG}"
+  MODES_RUN+=("${MODE}")
+  if [ "${MODE_RC}" -ne 0 ];
+  then
+    RC="${MODE_RC}"
+    MODES_FAILED+=("${MODE}")
+  fi
+
+  # Torn down between modes, and NOT after the last one — see the header. The
+  # next mode needs this project's containers gone before it can bring its own
+  # up with different settings.
+  if [ "${MODE_INDEX}" -lt "${MODE_COUNT}" ] && [ "${STACK_UP}" = "1" ];
+  then
+    # NOT `stackTeardown`, which honours --keep-stack and would therefore
+    # PRINT rather than remove — leaving the next mode's composeUp to collide
+    # with this mode's containers on the same compose project. Between modes
+    # the removal is unconditional; the LAST mode's stack is what --keep-stack
+    # is about, and that one is never reached by this branch.
+    docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
+      down --remove-orphans --volumes > /dev/null 2>&1 || true
+    STACK_UP=0
+  fi
+done
+
+if [ "${MODE_COUNT}" -gt 1 ];
+then
+  echo ""
+  echo "==========================================================="
+  echo " ${MODE_COUNT} mode(s): ${MODES_RUN[*]}"
+  if [ "${#MODES_FAILED[@]}" -gt 0 ];
+  then
+    echo " FAILED in: ${MODES_FAILED[*]}"
+  else
+    echo " all modes passed"
+  fi
+  echo " reports: tests/report/<mode>/latest"
+  echo "==========================================================="
+fi
 
 # The container's own account of what it did, kept beside the jobs' logs and
 # named as the in-process service's log is, so a report reads the same either
 # way. It has to happen HERE: the teardown below removes the container, and a
-# removed container takes its log with it.
-if [ "${STACK_UP}" = "1" ] && [ -d "${CURRENT_DIR}/tests/report/latest/logs" ];
+# removed container takes its log with it — and the LAST mode's stack is the one
+# this launcher leaves standing, so this is the last chance at it.
+#
+# The `[ -d tests/report/latest/logs ]` guard that used to be on this line went
+# with the path: runLogPath() decides where the file goes and has a fallback for
+# there being no report at all, so a guard here could only have suppressed the
+# capture in exactly the case it is most wanted.
+# `${MODE}` is the loop variable and still holds the LAST mode run, which is the
+# one whose stack is standing. Defaulted, because a `--modes=` naming nothing
+# never entered the loop and would leave it unset under `set -u`.
+if [ "${STACK_UP}" = "1" ] && [ -n "${MODE:-}" ];
 then
-  captureContainerLog \
-    "${CURRENT_DIR}/tests/report/latest/logs/00-mock-sts-service.log"
+  captureContainerLog "${MODE}"
 fi
 
-REPORT="${CURRENT_DIR}/tests/report/latest/report.html"
-if [ "${LIST}" != "1" ] && [ -f "${REPORT}" ];
+# WHERE EACH MODE'S REPORT LANDED, one block per mode. This named
+# `tests/report/latest` until 2026-09-07, which stopped being this run's report
+# the day the mode matrix landed: every mode writes under
+# tests/report/<mode>/, so the bare `latest` is whatever the last mode-less run
+# left behind — a path that exists and holds a report that is not this one's.
+REPORT=""
+if [ "${LIST}" != "1" ];
 then
-  echo ""
-  echo "Report:   ${REPORT}"
-  echo "Logs:     ${CURRENT_DIR}/tests/report/latest/logs/"
-  echo "JUnit:    ${CURRENT_DIR}/tests/report/latest/report.xml"
-  if [ "${OPEN}" = "1" ];
-  then
-    # Best effort and quiet: a headless machine has no opener, and failing to
-    # open a report must not change the exit code of the run it describes.
-    (xdg-open "${REPORT}" > /dev/null 2>&1 &) || true
-  fi
+  for MODE in ${MODES_RUN[@]+"${MODES_RUN[@]}"};
+  do
+    MODE_REPORT="${CURRENT_DIR}/tests/report/${MODE}/latest/report.html"
+    if [ -f "${MODE_REPORT}" ];
+    then
+      echo ""
+      echo "Report (${MODE}):   ${MODE_REPORT}"
+      echo "Logs:              ${CURRENT_DIR}/tests/report/${MODE}/latest/logs/"
+      echo "JUnit:             ${CURRENT_DIR}/tests/report/${MODE}/latest/report.xml"
+      # --open opens the LAST mode's, which is the one whose stack is left up.
+      REPORT="${MODE_REPORT}"
+    fi
+  done
+fi
+if [ -n "${REPORT}" ] && [ "${OPEN}" = "1" ];
+then
+  # Best effort and quiet: a headless machine has no opener, and failing to
+  # open a report must not change the exit code of the run it describes.
+  (xdg-open "${REPORT}" > /dev/null 2>&1 &) || true
 fi
 
 if [ "${RC}" -ne 0 ];

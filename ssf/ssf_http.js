@@ -83,6 +83,12 @@ const http = require('http');
 const { URL } = require('url');
 const config = require('../common/config');
 const { log } = require('../common/helpers');
+// WHO IS CALLING, AND WHICH BUILD OF IT. A Security Event Token arrives at a
+// receiver unasked — that is what RFC 8935 push IS — so the receiver's log is
+// the only place its operator can find out what has been talking to them. RFC
+// 9110 product form; common/version.js owns the one copy of the product token.
+// Built once at require time: the version cannot change while the process runs.
+const USER_AGENT = require('../common/version').userAgent('ssf-transmitter');
 
 // A receiver that answers a push with more than this is not answering RFC
 // 8935. A success is 202 with an EMPTY body and a failure is a small JSON
@@ -230,7 +236,7 @@ function pushSet(url, token, options) {
     'Content-Type': SET_MEDIA_TYPE,
     'Content-Length': body.length,
     'Accept': 'application/json',
-    'User-Agent': 'mock-sts ssf-transmitter'
+    'User-Agent': USER_AGENT
   };
   if (opts.authorizationHeader) {
     headers.Authorization = String(opts.authorizationHeader);

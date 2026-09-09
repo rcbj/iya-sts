@@ -2,7 +2,9 @@
 #
 # This is the image `docker-compose-run-tests.yml` builds for the `tests`
 # service: node, a Chrome, this whole repository, and both node_modules trees.
-# It runs tests/run-tests-in-container.sh, which drives all twenty-three jobs
+# It runs tests/run-tests-in-container.sh, which drives EVERY job
+# (tests/vendored/MANIFEST.js is the count and no number is written here —
+# one was, said twenty-three, and was wrong within a fortnight)
 # against the `sts` service beside it on the compose network and writes the
 # report to a bind mount. Nothing on the host is needed but docker.
 #
@@ -219,5 +221,12 @@ ENV CONFIG_FILE=./env/local.js
 # and STS_SPKI_PIN (tests/tools/trust.js). Baking one in would be a truststore
 # that is wrong for every run after the one that built it.
 ENV STS_TEST_SERVICE_URL=https://sts:8081
+# The directory's own socket, for sts_directory_bulk_load_ldap.js. Both exist
+# for the reason the line above does: a hand-run `docker run` on the same
+# network needs no environment, and a rename needs one edit. Nothing is
+# published anywhere in that stack — this container is on the bridge with the
+# service and reaches 389 directly, which is why the local launcher, whose
+# runner is a host process, has to layer a compose file to get the same thing.
+ENV STS_LDAP_URL=ldap://sts:389
 
 CMD [ "./tests/run-tests-in-container.sh" ]

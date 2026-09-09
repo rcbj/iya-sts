@@ -15,6 +15,23 @@
 //     — goes on pulling and deciding, and says so rather than exiting. Getting
 //     that backwards would make a monitoring feature into a hard dependency
 //     for authorization, which is the worst trade in the file.
+//
+//     **AND SINCE 2026-09-06 IT IS RETRIED ON THE POLL TIMER UNTIL IT
+//     SUCCEEDS, WHICH IS A CORRECTION AND NOT AN ELABORATION.** Registering
+//     happened exactly once, at start, and a PEP that came up before its PDP
+//     — or survived a PDP restart it started during — then enforced correctly
+//     FOR EVER while appearing on nobody's console. That is the worst shape
+//     the optional/required distinction can take: the feature degrades
+//     invisibly and permanently, and `/admin/xacml/peps` reports an empty
+//     register on a deployment that is working. `depends_on:
+//     service_healthy` hides it in the shipped compose file and hides nothing
+//     anywhere else.
+//
+//     The retry costs one request per polling interval while unregistered and
+//     nothing at all afterwards, it is logged at `warn` ONCE and at `debug`
+//     from then on so a PDP that refuses on policy grounds cannot fill a log,
+//     and `registration.attempts` is on `GET /` so that "registered on the
+//     fourth try" is visible rather than inferred.
 //   * THE NUDGE is optional twice over. `pep.js` answers a nudge by calling
 //     `pull()` early; if the nudge never arrives, the poll below arrives
 //     instead, at most one interval later.
@@ -74,7 +91,8 @@ let held = {
   refused: []
 };
 
-let registration = { registered: false, name: '', why: 'Not attempted yet.' };
+let registration = { registered: false, name: '', attempts: 0,
+                     why: 'Not attempted yet.' };
 
 // The PEP's own counters. Cumulative in THIS process — a restart resets them,
 // which is honest and is what the PDP's console says about them.
@@ -208,6 +226,15 @@ function call(options, method, path, body) {
 // ---------------------------------------------------------------------------
 async function register(options) {
   log.debug('Entering register().');
+  // COUNTED BEFORE THE REQUEST, so that a call which throws on the way out
+  // still shows on `GET /` as an attempt. The count is also what decides the
+  // log level below: the FIRST failure is a warn because it is news, and every
+  // one after it is a debug because a PDP refusing on policy grounds — no
+  // certificate, xacml.pepRequireCertificate on — would otherwise write a
+  // warning every polling interval for as long as the container is up.
+  const first = registration.attempts === 0;
+  const attempts = registration.attempts + 1;
+  const complain = first ? log.warn.bind(log) : log.debug.bind(log);
   const answer = await call(options, 'POST', '/xacml/pep/register', {
     name: options.name,
     notifyUrl: options.notifyUrl,
@@ -217,24 +244,27 @@ async function register(options) {
     description: options.description
   });
   if (answer.error) {
-    registration = { registered: false, name: options.name,
+    registration = { registered: false, name: options.name, attempts: attempts,
                      why: 'Could not reach the PDP to register: ' +
                           answer.error + '. THIS PEP STILL ENFORCES — ' +
                           'registering buys a row on the PDP console and an ' +
-                          'address for the nudge, not the ability to decide.' };
-    log.warn('xacml-pep: ' + registration.why);
+                          'address for the nudge, not the ability to decide. ' +
+                          'It is retried on every poll (attempt ' + attempts +
+                          ').' };
+    complain('xacml-pep: ' + registration.why);
     log.debug('Leaving register(). Unreachable.');
     return registration;
   }
   if (answer.status !== 200 && answer.status !== 201) {
     const why = (answer.body && answer.body.error_description) ||
                 answer.text || ('the PDP answered ' + answer.status);
-    registration = { registered: false, name: options.name,
+    registration = { registered: false, name: options.name, attempts: attempts,
                      why: 'The PDP refused the registration (' +
                           answer.status + '): ' + why + ' THIS PEP STILL ' +
                           'ENFORCES — GET /xacml/pep/policies needs no ' +
-                          'credential.' };
-    log.warn('xacml-pep: ' + registration.why);
+                          'credential. It is retried on every poll (attempt ' +
+                          attempts + ').' };
+    complain('xacml-pep: ' + registration.why);
     log.debug('Leaving register(). Refused.');
     return registration;
   }
@@ -242,6 +272,7 @@ async function register(options) {
   registration = {
     registered: true,
     name: said.name || options.name,
+    attempts: attempts,
     authenticated: !!said.authenticated,
     why: said.authenticated
       ? 'Registered over mutual TLS as "' + said.name + '".'
@@ -255,12 +286,36 @@ async function register(options) {
     notify: said.notify || null
   };
   log.info('xacml-pep: ' + registration.why +
+           (attempts > 1
+             ? ' It took ' + attempts + ' attempts — this PEP was up before ' +
+               'its PDP was, or before the realm it polls existed, and the ' +
+               'retry on the poll timer is what closed the gap.'
+             : '') +
            (registration.notify && !registration.notify.usable
              ? ' The PDP will NOT nudge this PEP: ' + registration.notify.why +
                ' That costs one polling interval of latency and nothing else.'
              : ''));
   log.debug('Leaving register(). Registered.');
   return registration;
+}
+
+// ---------------------------------------------------------------------------
+// REGISTER AGAIN IF IT HAS NOT WORKED YET. Called from the poll timer, so the
+// interval between attempts is the polling interval and there is no second
+// timer to reason about.
+//
+// **A SUCCESSFUL REGISTRATION IS NEVER REPEATED**, which is what keeps this
+// from being a request per interval for the life of the container: the guard
+// is the state, not a counter or a backoff. Re-registering a PEP that is
+// already on the register would also rewrite its row's `registeredAt`, and the
+// PDP's own `register()` treats a second call as a re-registration and says
+// `created: false` — harmless, and still noise nobody asked for.
+// ---------------------------------------------------------------------------
+async function registerIfNeeded(options) {
+  if (registration.registered) {
+    return registration;
+  }
+  return register(options);
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +493,7 @@ function current() {
 
 module.exports = {
   register: register,
+  registerIfNeeded: registerIfNeeded,
   pull: pull,
   heartbeat: heartbeat,
   current: current,

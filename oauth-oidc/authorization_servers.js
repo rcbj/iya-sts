@@ -242,7 +242,7 @@ const GROUPS = MEMBERS.reduce(function (out, row) {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const profiles = realms.map();   // id -> { id, label, description, overrides, removed, at }
+const profiles = realms.map({ persist: 'authorization_servers.profiles' });  // id -> { id, label, description, overrides, removed, at }
 
 // An id has to survive being a URL path segment and being typed into a form.
 // Refused by NAME rather than sanitised, because a profile silently renamed
@@ -569,6 +569,13 @@ function setMember(id, member, rawValue) {
   // have done nothing.
   profile.removed = profile.removed.filter(function (one) { return one !== name; });
   profile.at = Date.now();
+  // **WRITTEN BACK THROUGH THE STORE (2026-09-07).** `profiles` is a
+  // `realms.map({persist})` and its proxy sees `set`, not a mutation of the
+  // object `get` handed back — so changing `profile.overrides` in place left
+  // the store unmarked, unjournalled and unreplicated: the process that took
+  // the call had the override and no other did. Same shape as
+  // `admin_stats.js`'s CLAIM_SETS, and the same one-line answer.
+  profiles.set(String(id || ''), profile);
   log.info('authorization_servers: profile "' + id + '" now publishes ' + name + '=' +
            JSON.stringify(value) + '.');
   log.debug("Leaving setMember(). Set.");
@@ -595,6 +602,13 @@ function removeMember(id, member) {
     profile.removed.push(name);
   }
   profile.at = Date.now();
+  // **WRITTEN BACK THROUGH THE STORE (2026-09-07).** `profiles` is a
+  // `realms.map({persist})` and its proxy sees `set`, not a mutation of the
+  // object `get` handed back — so changing `profile.overrides` in place left
+  // the store unmarked, unjournalled and unreplicated: the process that took
+  // the call had the override and no other did. Same shape as
+  // `admin_stats.js`'s CLAIM_SETS, and the same one-line answer.
+  profiles.set(String(id || ''), profile);
   log.info('authorization_servers: profile "' + id + '" no longer publishes ' + name + '.');
   log.debug("Leaving removeMember(). Removed.");
   return { ok: true, profile: view(id),
@@ -619,6 +633,8 @@ function resetMember(id, member) {
   delete profile.overrides[name];
   profile.removed = profile.removed.filter(function (one) { return one !== name; });
   profile.at = Date.now();
+  // Written back through the store — see setMember() above for why.
+  profiles.set(String(id || ''), profile);
   log.debug("Leaving resetMember(). " + (had ? "Reset." : "It was not overridden."));
   return { ok: true, profile: view(id),
            message: had

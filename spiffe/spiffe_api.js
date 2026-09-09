@@ -82,6 +82,10 @@ const config = require('../common/config');
 const audit = require('../common/audit');
 const stats = require('../common/admin_stats');
 const spiffeId = require('./spiffe_id');
+// PER PROCESS AND NOT PER REALM — see the store below. Required only for
+// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
+// move a route or join a cycle.
+const realms = require('../common/realms');
 const ca = require('./spiffe_ca');
 const registry = require('./spiffe_registry');
 const rpc = require('./spiffe_grpc');
@@ -585,7 +589,18 @@ function maskedChanges(submitted, mask) {
 // token has that makes it different from a password. Not enforcing that would
 // make `CreateJoinToken` a way of issuing a permanent credential, which is
 // exactly what it exists not to be.
-const joinTokens = new Map();
+// -------------------------------------------------------------------------
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
+// is a plain Map that reports its writes so product mode can write them down;
+// `scope: 'shared'` is what says the store deliberately has no realm in it,
+// which is the discriminator `tests/realm_isolation.js` checks against.
+// -------------------------------------------------------------------------
+// SINGLE-USE SURVIVES THE RESTART NOW, and that is the point rather than a
+// side effect: a join token redeemed before a restart used to become usable
+// again after one, which turned the one property that makes it different
+// from a password into a property it did not have.
+const joinTokens = realms.sharedMap({ persist: 'spiffe.joinTokens',
+                                      scope: 'shared' });
 
 const agentHandlers = {
   CountAgents: rpc.unary('server', 'Agent.CountAgents', async function (call) {

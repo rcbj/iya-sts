@@ -100,7 +100,8 @@ const app = require('./common/app');
 // below; `realms` for the id of the realm it warms. Both modules are already
 // loaded by this line — app.js requires realms, and helpers is this line —
 // so neither adds a require to the order.
-const { log, PORT, HOST, warmPqKeys } = require('./common/helpers');
+const { log, PORT, HOST, warmPqKeys, bbsKeyPairForSharing } =
+  require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
 // A LIBRARY, rule 3's shape: it registers no route and its position in the
@@ -108,6 +109,25 @@ const config = require('./common/config');
 // drain in shutdown() below — and it is already loaded by then, because
 // common/crypto.js requires it. See common/worker_pool.js.
 const workerPool = require('./common/worker_pool');
+// ---------------------------------------------------------------------------
+// AND THE SECOND POOL, WHICH IS A DIFFERENT KIND OF WORKER.
+//
+// `worker_pool.js` above forks children that run a JOB TABLE — four leaf
+// computations. `request_pool.js` forks children that run THE SERVICE: each
+// loads the same protocol stack in the same order, binds no protocol port, and
+// answers HTTP on a unix socket this process proxies to. It is required here
+// for its lifecycle only; the middleware that uses it is installed in app.js,
+// because that is where the order it has to sit in is decided.
+// ---------------------------------------------------------------------------
+const requestPool = require('./common/request_pool');
+// THE VERSION, M.N.O. A LIBRARY and a LEAF: it registers no route and requires
+// nothing from this repository, so its position in the require order is not a
+// position and it can never close a cycle. `load()` prefers the record the
+// image build stamped and computes one only in a checkout — so a container
+// reports the build it came from and restarting it does not renumber it. See
+// common/version.js and CLAUDE.md, *Versioning*.
+const version = require('./common/version');
+const APP_VERSION = version.load();
 
 // ---------------------------------------------------------------------------
 // WHERE THIS SERVICE WRITES ITSELF DOWN — #4a, AND THE FIRST TIME IT EVER HAS.
@@ -140,344 +160,25 @@ const workerPool = require('./common/worker_pool');
 // ---------------------------------------------------------------------------
 const persistence = require('./persistence/persistence');
 
-// Which LDAP attributes the four claim sets carry. A LIBRARY — it registers no
-// route, so this line adds nothing to /admin/sts-metadata and its position in
-// the route order is not a position at all. It is required HERE, ahead of the
-// modules that issue, because requiring it is what fills admin_stats.js's
-// attribute-resolver slot, and an empty slot means tokens issued without their
-// configured attributes. admin.js requires it too, which would be enough today
-// by accident; this line is what makes it true on purpose, and what keeps it
-// true for a process that loads the protocol modules without the console.
-require('./common/claim_attributes');
-
-// The groups claim: for anybody who is a member of a group in the embedded
-// directory, a claim naming those groups in every access token, ID Token and
-// both SAML assertions. A LIBRARY too, required HERE for exactly the reason the
-// line above is: requiring it is what fills admin_stats.js's group-resolver
-// slot, and an empty slot means tokens issued without the claim with nothing
-// looking wrong. It must come before the modules that issue; the directory it
-// reads arrives later, through its own slot, and until then it simply reports
-// that no directory is loaded.
-require('./common/group_claims');
-
-// The front door: GET / and the one image on it. It is first among the modules
-// that register routes, and the position is a preference rather than a
-// dependency — it requires nothing but the app, registers two EXACT paths that
-// nothing else here could shadow, and being first is what puts the page a
-// person meets first at the top of the list on /admin/sts-metadata. Before this
-// module existed the root of this service was an unrouted path, so the answer
-// to the one URL somebody types first was Express's `Cannot GET /`.
-require('./home/home');
-
-// The authentication service: the sign-in screen every protocol here sends a
-// person to, and the session store it fills. FIRST of the modules that use it,
-// because require order is route order on the /admin/sts-metadata page and the
-// thing that authenticates should be listed before the protocols that lean on
-// it.
-require('./authn/authn');
-// WS-Trust 1.0-1.4. **IT MOVED BELOW authn.js ON 2026-09-05 AND THE ORDER IS
-// NOW A DEPENDENCY** where it had been no constraint at all. Issuing a token or
-// an assertion here starts a tracked sign-on session — see ws-trust/CLAUDE.md
-// for why an issued credential implies one — and it does that by calling
-// `authn.startSession()` directly, without a screen, exactly as
-// federation/federation_sp.js does and for the same reason: the caller
-// presented a credential of its own (a UsernameToken) rather than being sent
-// somewhere to type one. Requiring it from ABOVE authn.js would have dragged
-// every /authn route to the front of the router (rule 1), which is why this
-// line moved rather than a require being added where it stood.
-require('./ws-trust/wstrust');
-// THE USER PORTAL. **After `authn`**, whose session every authenticated route
-// on it reads and whose sign-in screen it sends people to — a dependency of
-// the same kind `saml2_sso.js` and `consent_screen.js` have, and one-way in the
-// same way: `authn.js` knows nothing about the portal. It registers its own
-// routes under /portal, which nothing else here could shadow.
-require('./portal/portal');
-// The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
-// both halves are dependencies rather than preferences. AFTER, because it reads
-// that module's session to check that the person answering is the person the
-// question was asked of, and draws with that module's stylesheet so the two
-// screens a person meets seconds apart in one flow look like one service.
-// BEFORE, because the authorization endpoint calls beginConsent() and takes the
-// browser back afterwards — exactly the arrangement it already has with
-// beginAuthentication(), and the dependency is one-way in the same way: this
-// module knows nothing about OAuth beyond a `returnTo` it is handed and a
-// `consent_error` it hands back.
-require('./oauth-oidc/consent_screen');
-require('./oauth-oidc/oauth2');
-// WS-Federation's passive requestor profile. It must come AFTER authn.js and the
-// order is a dependency and not a preference: it signs users in to the session
-// that service owns (startSession/sessionOf), so that single sign-on works across
-// the two protocols. The dependency is one-way — authn.js knows nothing about
-// this module — which is what keeps it out of the cycles the split exists to
-// avoid.
-require('./ws-federation/wsfed');
-// SAML 2.0 Web Browser SSO — the profile this service spent years documenting
-// the absence of. It must come AFTER authn.js for the reason wsfed.js must, and
-// it is a stronger dependency here rather than a weaker one: this module has NO
-// sign-in screen of its own at all and reaches that service's through
-// beginAuthentication(). It has no constraint against wsfed.js in either
-// direction — the two share the session and know nothing about each other — and
-// it sits here so that the two browser SSO profiles read together in the route
-// order and on /admin/sts-metadata.
-require('./saml/saml2_sso');
-// SAML 1.1's two browser profiles, and the SAML responder behind one of them.
-// TWO constraints, and the second is the interesting one. It must come AFTER
-// authn.js for the same reason saml2_sso.js must — no sign-in screen of its own,
-// and beginAuthentication() is how it reaches one. And it must come AFTER
-// saml/saml2_sso.js, because it takes that module's slugOf(): the slug is a
-// HANDLE FOR AN APPLICATION shared by both profiles and by the console, and two
-// spellings of it would make /saml2/metadata/app-1a2b3c and
-// /saml11/metadata/app-9f8e7d name one entry in one directory. That require is
-// in the ordinary direction and closes no cycle. Nothing else passes between
-// them; the two profiles share a registry and a session and know nothing else
-// about each other.
-require('./saml/saml11_sso');
-// FEDERATION, and it is the one module here that consumes rather than issues.
-// ONE constraint, and it is the strongest of the three sign-in dependencies:
-// it must come AFTER authn/authn.js, because it has no sign-in screen of its
-// own AND it does not go through beginAuthentication() either — a federated
-// sign-in ends by calling startSession() directly, since the person has already
-// authenticated somewhere else and there is no screen to show them.
-//
-// No constraint against the four protocol modules above it in either direction.
-// They know nothing about federation and federation knows nothing about them:
-// what joins the two halves is the SESSION, which is authn.js's, so a federated
-// identity satisfies an OAuth 2.0 authorization request, a WS-Federation
-// sign-in or a SAML AuthnRequest without any of those modules being told this
-// one exists. That is the whole design and it is why this require can sit
-// anywhere below line 137.
-//
-// It is placed HERE, after the four browser SSO profiles, so that the route
-// order and /admin/sts-metadata read in the order somebody thinks about them:
-// what this service ISSUES, and then what it CONSUMES.
-//
-// Only federation_sp.js is required. `federation.js`, `federation_map.js` and
-// `federation_http.js` are libraries (rule 3) — they register nothing, so their
-// position is not a position — and each is required by whoever needs it:
-// admin_stats.js and authn.js reach the register directly, and ldap_server.js
-// fills its directory slot at its own require time.
-require('./federation/federation_sp');
-require('./oid4vc/vc_offers');
-require('./oid4vc/vc_did');
-require('./oid4vc/vc_issuer');
-require('./oid4vc/vc_verifier');
-// The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals like
-// every other module here — but NOT the raw TCP/UDP listeners on port 88, which
-// are started by krb5.listen() below. Binding a privileged port can fail, and a
-// require that throws takes the whole service down; a route cannot.
-const krb5 = require('./kerberos/krb5_kdc');
-// The Kerberos-protected service. Like the KDC it registers its HTTP view at
-// require time and starts its socket from listen(), for the same reason.
-const krb5Service = require('./kerberos/krb5_service');
-// The same acceptor over HTTP: SPNEGO. It must come AFTER krb5_service.js and
-// the order is a dependency rather than a preference — it calls that module's
-// accept() for every Kerberos check and adds none of its own. Unlike the two
-// above it starts nothing: it is HTTP all the way down, so requiring it is the
-// whole of its installation.
-require('./kerberos/spnego');
 // ---------------------------------------------------------------------------
-// AND THE SAME HANDSHAKE AS A SIGN-IN: /authn/spnego, which turns a Kerberos
-// ticket into the browser session every protocol family here reads.
+// EVERY PROTOCOL MODULE, IN THE ORDER THAT IS THE ROUTE ORDER.
 //
-// TWO constraints, and both are dependencies rather than preferences. It must
-// come AFTER `spnego.js`, whose page shell and check table it draws with and
-// whose `spnego_exchange.js` performs the negotiation; and it must come AFTER
-// `authn/authn.js`, which is at #8, because it calls that module's
-// `startSession()` and reads its pending records. The second is why the
-// endpoint is HERE and not over there: `authn.js` is required before
-// `oauth2.js`, which reads the session it owns, so a require in the other
-// direction would drag the KDC's routes to the front of the router and close a
-// cycle besides. What `authn.js` needs to know about this door is a path it
-// declares itself and one setting they both read — no inverted hook, and its
-// own header says why one would have been the wrong answer.
+// That sequence moved to `common/protocol_stack.js` on 2026-09-07 and the
+// reason is that it acquired a SECOND READER: a request worker loads the same
+// stack, registers the same routes in the same order, and binds none of the
+// sockets. Two copies of the order would be two answers to "which handler
+// wins" — see that file's header.
 //
-// It starts nothing, exactly as `spnego.js` starts nothing.
+// The five modules that own listeners come back from it, because `listen()`
+// below needs the handles. Requiring them registered their HTTP views and
+// started nothing.
 // ---------------------------------------------------------------------------
-require('./kerberos/spnego_authn');
-// The admin console. It must come AFTER oauth2.js and, like wsfed.js, the order is a
-// dependency rather than a preference: its metrics page reports the browser sign-on
-// sessions oauth2.js owns, read through the `sessions` map that module exports. The
-// dependency is one way — oauth2.js knows nothing about the console — so it is not a
-// cycle. What holds the STATE it renders is admin_stats.js, which registers no route
-// and is required by app.js, so the counting is already running by the time this
-// line is reached.
-require('./admin-ui/admin');
-// The management API: everything that console shows and everything it can
-// change, at /admin-api, over JSON. It must come AFTER admin.js and the order is
-// a dependency rather than a preference — it requires that module for the four
-// action functions and the per-page JSON views, and calls nothing else, which is
-// what makes it incapable of holding a second opinion about what a revocation
-// means. Its OpenAPI document is built from its own route table (admin_api.js ->
-// admin_api_spec.js), so an operation cannot be undocumented; the explorer that
-// calls it is at /admin-api/docs and is the ONE page in this service with a
-// script on it, served under a policy that relaxes exactly that clause.
-require('./mgmt-api/admin_api');
-// The TLS / mutual-TLS endpoint. Third in the family of modules whose real
-// surface is a SOCKET rather than a route: it registers its plain-HTTP views
-// (/tls, /tls/server-certificate, /tls/trust) at require time and starts two
-// HTTPS listeners from listen() below, for the same reason the KDC and the
-// directory do — a bind can fail, and a require that throws takes the whole
-// service down where a route cannot.
-//
-// Its position used to be free. It is not any more: ldap_server.js below serves
-// this module's server certificate on 636, so it requires this file — and node
-// would load it here whatever this line said. Saying it explicitly is what
-// keeps "the order in this file is the route order" true.
-const tlsServer = require('./tls/tls_server');
-// ---------------------------------------------------------------------------
-// GET /admin/crypto-metadata — the console's report on what this service does
-// with cryptography, for every identity service it advertises.
-//
-// ITS POSITION IS A DEPENDENCY AND NOT A PREFERENCE, and it is an unusual one:
-// this module reads an algorithm table out of eleven other modules, and
-// requiring one of them that this file has not yet loaded would REGISTER ITS
-// ROUTES HERE (rule 1). Here, everything it reaches for is already loaded, so
-// every one of its requires is a cache hit that registers nothing and moves
-// nothing:
-//
-//   after ./admin-ui/admin        for the console SHELL and its gate — express
-//                                 applies middleware only to routes added after
-//                                 it, so this page is behind the sign-on and
-//                                 the two roles by construction
-//   after ./oauth-oidc/oauth2     the ID Token and UserInfo signing lists, and
-//                                 dpop.js's DPoP filter over the shared table
-//   after ./authn/authn           webauthn.js's COSE tables
-//   after ./kerberos/krb5_kdc     the encryption type codec
-//   after ./tls/tls_server        the server certificate — THE ONE THAT DECIDES
-//                                 THIS LINE'S PLACE. Every other dependency is
-//                                 satisfied several requires earlier; this is
-//                                 the last of them, which is why the module
-//                                 sits immediately below that one.
-//
-// It fills admin.js's setCryptoReporter() so that GET /admin-api/crypto can
-// mirror the page without the management API requiring this file — a require in
-// that direction would drag this page's route and tls_server's three ahead of
-// the management API's own. And ./sts_metadata.js, last in this file, hands it
-// the protocol family list so that the two pages' idea of what this service
-// advertises is checked rather than agreed by hand.
-// ---------------------------------------------------------------------------
-require('./admin-ui/crypto_metadata');
-// The embedded LDAPv3 directory (RFC 4511), built on the node-ldapjs submodule.
-// Like the two Kerberos modules it registers its HTTP views at require time
-// (/ldap, /admin/ldap/directory) and starts its TCP listener from listen() below, for
-// the same reason: binding port 389 is privileged and can fail, and a require
-// that throws takes the whole service down where a route cannot.
-//
-// It must come AFTER admin.js, and that is a dependency rather than a
-// preference: it installs itself as admin_stats.js's user observer, which is how
-// an entry appears under ou=users for anybody who authenticates through ANY
-// protocol here. Requiring it earlier would work too — nothing authenticates
-// during require — but keeping it beside the console is what makes the pairing
-// visible to the next reader.
-//
-// It must also come after ./tls_server below, and THAT one is not optional: its
-// LDAPS listener on 636 serves the certificate and key that module generates,
-// so requiring it first is what makes the route order in this file the real one
-// rather than a fiction node quietly corrects.
-const ldapServer = require('./ldap/ldap_server');
-// SCIM 2.0 (RFC 7642, 7643, 7644) — the fifteenth family, and the one whose
-// whole purpose is to WRITE. It provisions into the directory above, entry for
-// entry, with no store of its own: a POST /scim/v2/Users and an ldapadd write
-// the same entry, so a person provisioned over SCIM appears on /admin/users,
-// carries the credential-claim attributes /admin/vc selects, and lands in
-// whatever group a client puts them in.
-//
-// It must come AFTER ./ldap_server, and that is a dependency rather than a
-// preference: it requires that module for the twelve functions that make
-// ou=users and ou=groups a store, and requiring it any earlier would pull every
-// /ldap route into the express router at that point. It is NOT one of that
-// file's five inverted hooks — there is no cycle and no route moves, which is
-// rule 3e's test, and this proposal fails it both ways round, so it is a plain
-// require.
-//
-// Unlike the four modules above it, it starts nothing: it is HTTP all the way
-// down, so requiring it is the whole of its installation.
-require('./scim/scim');
-// SPIFFE — the sixteenth family, and the third module here whose own listeners
-// are started from listen() below rather than at require time.
-//
-// Three server-side surfaces: the BUNDLE ENDPOINT (plain HTTPS, registered by
-// requiring this), the WORKLOAD API and the SPIRE SERVER API (both gRPC, on a
-// Unix socket and a TCP port each). The gRPC listeners are invisible to
-// /admin/sts-metadata for the same reason the KDC's, the directory's and the
-// TLS endpoint's sockets are, so they are described by hand there.
-//
-// It must come AFTER ./ldap_server, and it is a dependency rather than a
-// preference: the SPIFFE registry's store is the directory under ou=spiffe, and
-// that module fills spiffe_registry.js's setDirectory() slot at ITS require
-// time. Requiring this any earlier would leave the registry with no store at
-// the moment the seed entries are written.
-//
-// The 8443/9443/636/8081 certificate is NOT shared with this. A SPIFFE trust
-// domain is its own PKI — the CA here signs identities in one trust domain and
-// the TLS certificate identifies a host — and one process holding two of them
-// is correct rather than wasteful. See spiffe_ca.js.
-const spiffeServer = require('./spiffe/spiffe_server');
-// ---------------------------------------------------------------------------
-// SHARED SIGNALS — THE SEVENTEENTH FAMILY, AND THE FIRST ONE THAT TALKS BACK.
-//
-// Every other module above answers a request. This one AGREES A STREAM and
-// then delivers a Security Event Token to somebody who asked in advance to be
-// told — which is why it is the only protocol module here that makes an
-// outbound request, and only the second module in the repository that does
-// (`federation/federation_http.js` is the first, and `ssf/ssf_http.js` argues
-// its own case rather than citing that one, because RFC 8935 push IS the
-// receiver telling the transmitter where to post).
-//
-// **AFTER `admin-ui/admin.js`, and that is the constraint that decides the
-// line.** It fills that module's eighth slot — the reader and the four actions
-// behind `/admin/ssf` and `/admin-api/ssf` — and it requires it for the page
-// shell and the gate, exactly as `sts_metadata.js` and `crypto_metadata.js`
-// do. Rule 3e's test was applied both ways round: a require from `admin.js` to
-// here CLOSES A CYCLE, and a require from `mgmt-api/admin_api.js` to here
-// would MOVE ROUTES — every /ssf endpoint and the well-known document ahead of
-// the management API's own and of ldap, scim and spiffe. So a slot, not an
-// indirection added by analogy.
-//
-// It starts nothing: it is HTTP all the way down, so requiring it is the whole
-// of its installation. It registers no listener and holds no socket, and its
-// streams are in memory and die with the process — which persistence/CLAUDE.md
-// decides: the signing key is regenerated on every start, so a restored queue
-// would be tokens nothing can verify.
-require('./ssf/ssf');
-// ---------------------------------------------------------------------------
-// THE PROTOCOL-INDEPENDENT LOGOUT — SECOND TO LAST, AND THE POSITION IS THE
-// WHOLE OF ITS ARGUMENT.
-//
-// `GET|POST /logout` lists everything this service is still holding for one
-// identity — across the session store, the token registry, the authorization
-// codes, the pre-authorized codes, the directory's bound connections and the
-// Kerberos principal database — and ends what is asked for. So it READS NINE
-// MODULES, and it must come after every one of them.
-//
-// It is a plain require of each rather than nine inverted hooks, and rule 3e's
-// test is why: a slot is what you reach for when a require would close a cycle
-// or move a route, and neither applies here. Every module it requires has
-// already been loaded by the lines above, so each require is a cache hit that
-// registers nothing and moves nothing; and nothing in this service requires
-// that module back, so there is no cycle to close.
-//
-// It is NOT last. `sts_metadata.js` is, for everybody, because it reads the
-// router to list what everything else registered — and a logout endpoint
-// missing from that list would be the exact drift that page exists to catch.
-// ---------------------------------------------------------------------------
-// 23c. XACML 3.0 — the PDP, the policy repository and the embedded PEP.
-//
-// AFTER `ldap/ldap_server` (21), which fills two slots it owns: the policy
-// repository's directory functions and the PIP's entry lookup. The store IS
-// ou=policies, so this module has nothing to load and nothing to hold.
-//
-// It does NOT go through a slot on admin.js, because it has no console page
-// yet — that is phase three, and when it lands the require stays here and a
-// slot appears, for the reason SSF's does at 23b: a require from
-// mgmt-api/admin_api.js (19) to this module would drag every /xacml route
-// ahead of the management API's own.
-//
-// It starts nothing and holds no socket.
-require('./xacml/xacml');
-
-require('./logout/logout');
-require('./sts_metadata');
+const stack = require('./common/protocol_stack');
+const krb5 = stack.krb5;
+const krb5Service = stack.krb5Service;
+const tlsServer = stack.tlsServer;
+const ldapServer = stack.ldapServer;
+const spiffeServer = stack.spiffeServer;
 
 // ---------------------------------------------------------------------------
 // THE MAIN LISTENER, and the one decision made about it before it binds.
@@ -550,6 +251,15 @@ function announce() {
   // made on first use if this does not finish — the slow path is the one
   // that existed before, which is a fallback rather than a fault.
   warmPqKeys(realms.DEFAULT_ID);
+  // THE VERSION FIRST, before the endpoint tour below, because it is the one
+  // line in this banner that answers a question about the PROCESS rather than
+  // about a URL — and it is the line somebody scrolls a container's log back
+  // to find when two instances behave differently. buildInfo() says whether the
+  // record was stamped at build time or computed just now, which is the
+  // difference between an artifact and a checkout and is not guessable from the
+  // number.
+  log.info('mock-sts version ' + APP_VERSION.version + ' (' +
+           version.buildInfo(APP_VERSION) + ').');
   log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +
            ' (WS-Trust issuer ' + config.value('wstrust.issuer') +
@@ -740,7 +450,20 @@ function shutdown(signal) {
   // than rejects for the same reason persistence.stop() does: the only move
   // left here is to exit, and a rejection would replace the sentence that says
   // what was flushed with a stack trace. See common/worker_pool.js.
-  workerPool.stop().then(function (drained) {
+  // ---------------------------------------------------------------------
+  // THE REQUEST WORKERS GO FIRST, AND THE ORDER IS A DEPENDENCY RATHER THAN A
+  // PREFERENCE: a request worker that is still finishing a response may be
+  // waiting on a post-quantum signature from the COMPUTATION pool, so draining
+  // that pool first would fail the job the request is blocked on and turn a
+  // clean shutdown into a truncated answer.
+  // ---------------------------------------------------------------------
+  requestPool.stop().then(function (drained) {
+    if (drained.stopped || drained.killed) {
+      log.info('sts: ' + drained.stopped + ' request worker(s) finished and ' +
+               drained.killed + ' had to be killed.');
+    }
+    return workerPool.stop();
+  }).then(function (drained) {
     if (drained.stopped || drained.killed) {
       log.info('sts: ' + drained.stopped + ' worker process(es) finished and ' +
                drained.killed + ' had to be killed.');
@@ -818,34 +541,46 @@ process.on('SIGINT', function () { shutdown('SIGINT'); });
 const credentials = require('./common/credentials');
 // The keystore, for the product-mode key material. A LEAF (rule 3).
 const keystore = require('./common/keystore');
+// The four startup steps, shared with a request worker. See that file.
+const serviceState = require('./common/service_state');
 
-persistence.start().then(function (started) {
-  // THE SIGNING KEYS, AFTER THE STORE AND BEFORE ANYTHING SIGNS.
-  //
-  // It is a second asynchronous step in the same chain for the same reason the
-  // first one is: reading a key-encryption key from AWS, GCP, Azure or Vault is
-  // a network call, and `helpers.js` builds a key set inside a PROPERTY READ
-  // that cannot await. So everything asynchronous happens here, and what is
-  // left is a synchronous map lookup.
-  //
-  // **A FAILURE HERE IS FATAL AND FALLS INTO THE SAME catch.** A product-mode
-  // service that cannot read its signing keys and starts anyway generates new
-  // ones, and every token, assertion and signed document it ever issued stops
-  // verifying — silently, at somebody else's relying party. Refusing to start
-  // is the only honest answer, and it is the same argument persistence makes
-  // about its own store one line up.
-  return keystore.start().then(function (keys) {
-    return { started: started, keys: keys };
-  });
-}).then(function (both) {
+// ---------------------------------------------------------------------------
+// THIS PROCESS'S STATE, IN THE ONE ORDER THERE IS.
+//
+// The four steps — the store, the signing keys, what this process minted, and
+// coordination — moved to `common/service_state.js` on 2026-09-07, because a
+// REQUEST WORKER has to run exactly the same four in exactly the same order.
+// Each step's argument is in that file, where it has always been.
+// ---------------------------------------------------------------------------
+serviceState.start().then(function (both) {
   const started = both.started;
   if (started.mode !== 'memory') {
+    const mintedStatus = persistence.mintedStatus();
     log.info('sts: persistence is ' + started.mode + '. The embedded ' +
              'directory, the trust realm registry and any runtime setting ' +
              'changes are written down and were restored at startup. ' +
-             'NOTHING THIS SERVICE MINTS is persisted in any mode — the ' +
-             'signing key is regenerated on every start, so a token that ' +
-             'outlived it would verify against nothing.');
+             (mintedStatus.persisting
+               // THE SENTENCE THIS REPLACED SAID "NOTHING THIS SERVICE MINTS
+               // is persisted in any mode", and it was true until product mode
+               // learned to keep its signing keys. It is kept below WORD FOR
+               // WORD for the configuration it is still true of, because the
+               // half-remembered version of this — "the mock persists tokens
+               // now" — is worse than either version.
+               ? 'AND SO IS WHAT IT MINTS: sessions, tokens, codes, ' +
+                 'artifacts, Kerberos tickets, the counters and the audit ' +
+                 'log, each row encrypted under the same key-encryption key ' +
+                 'as the signing keys. ' + both.minted.restored + ' row(s) ' +
+                 'were restored. This is PRODUCT mode on a ' + started.mode +
+                 ' store; development mode persists none of it, because the ' +
+                 'signing key is regenerated on every start there and a ' +
+                 'restored token would verify against nothing.'
+               : 'NOTHING THIS SERVICE MINTS is persisted in this ' +
+                 'configuration — the signing key is regenerated on every ' +
+                 'start, so a token that outlived it would verify against ' +
+                 'nothing. Product mode on a postgres store persists all of ' +
+                 'it' + (mintedStatus.unsupportedReason
+                          ? '; here, ' + mintedStatus.unsupportedReason : '') +
+                 '.'));
   }
   // THE PRODUCT-MODE BOOTSTRAP, AFTER THE STORE AND BEFORE THE LISTENER.
   //
@@ -860,7 +595,58 @@ persistence.start().then(function (started) {
   // It does nothing in development mode and nothing in a realm where somebody
   // already holds a credential; see credentials.bootstrap().
   credentials.bootstrap({ username: config.value('admin.bootstrapUsername') });
-  bind();
+
+  // ---------------------------------------------------------------------
+  // THE REQUEST WORKERS, AND THEY COME UP BEFORE THE LISTENER DOES.
+  //
+  // A FOURTH asynchronous step in this chain, and it is here for the reason
+  // the three above it are here rather than at a require: forking a request
+  // worker means loading the whole protocol stack in a child, seeding its
+  // directory and generating a realm's keys, which takes seconds and cannot
+  // be awaited from a `require`.
+  //
+  // **BEFORE `bind()` is the whole point.** The computation pool above is
+  // LAZY — it forks on the first post-quantum job, because a process that
+  // never signs one must not pay for a pool. This one is EAGER, because the
+  // cost is paid per WORKER rather than per job: forking on the first request
+  // would make that request wait for the entire service to load. Here nobody
+  // is waiting, because this process is not answering yet.
+  //
+  // It never rejects. A pool that could not start is reported loudly and the
+  // front process handles every request itself, which is what
+  // `workers.requestCount = 0` means — a slow service rather than none.
+  // ---------------------------------------------------------------------
+  // EVERY PROCESS PRESENTS AND PINS THE SAME CERTIFICATE. Handed over before
+  // the pool forks anything — see request_pool.js's setServerCertificate() for
+  // why it travels this way round, and tls_server.js for what went wrong when
+  // each worker made its own.
+  const tlsMaterial = tlsServer.serverCertificate();
+  requestPool.setServerCertificate({ certPem: tlsMaterial.certPem,
+                                     keyPem: tlsMaterial.privateKeyPem });
+  // AND THE BBS PAIR, for the same reason and on the same channel. Awaited here
+  // because generating one is asynchronous and the pool's start() is not the
+  // place to wait — see request_pool.js's setBbsKeyPair(). A failure is logged
+  // and not fatal: each process then makes its own, which is what it did
+  // before, and only Data Integrity proofs are affected.
+  return bbsKeyPairForSharing().then(function (encoded) {
+    requestPool.setBbsKeyPair(encoded);
+  }).catch(function (e) {
+    log.error('sts: the BBS key pair could not be shared with the request ' +
+              'workers (' + e.message + '); each will generate its own and a ' +
+              'did:web document may name a key its siblings did not sign with.');
+  }).then(function () {
+    return requestPool.start().then(function (pool) {
+      if (pool.wanted) {
+        log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +
+                 'worker(s) are serving' +
+                 (requestPool.dispatchPrefixes().length
+                   ? '; dispatching ' + requestPool.dispatchPrefixes().join(', ')
+                   : '. NOTHING IS DISPATCHED TO THEM — workers.dispatch is ' +
+                     'empty, so every request is still handled here') + '.');
+      }
+      bind();
+    });
+  });
 }).catch(function (err) {
   // Both kinds of failure arrive here and both are fatal: a store that was
   // configured and could not be opened or read, and a programming error in the
@@ -873,7 +659,7 @@ persistence.start().then(function (started) {
   // database. Told apart on the message rather than on a flag, because
   // keystore.js writes a complete explanation and this only has to choose which
   // paragraph follows it.
-  if (/key material|key-encryption key|signing key/i.test(err.message || '')) {
+  if (/key material|key-encryption key|signing key|minted state/i.test(err.message || '')) {
     log.fatal('sts: NOT STARTING. ' + err.message +
               '\n\nThis service will not generate a replacement signing key ' +
               'and carry on. Doing that would silently stop every token, ' +
@@ -903,9 +689,24 @@ persistence.start().then(function (started) {
 function bind() {
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
-  https.createServer({
+  const mainServer = https.createServer({
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
+    // THE CLIENT TRUSTSTORE, THE SAME ONE /tls/trust FILLS FOR 8443 AND 9443
+    // (2026-09-06). Passed at creation AND kept current by the registration
+    // below, because anchors arrive at runtime — the CA a caller presents a
+    // client certificate from does not exist anywhere until somebody POSTs it.
+    //
+    // WHAT IT CHANGES AND WHAT IT DOES NOT. Before this, `socket.authorized`
+    // was false for every client certificate ever presented on this port,
+    // because there was no `ca` to build a path to; a certificate could be
+    // thumbprinted and bound to a token and never RECOGNISED. That was right
+    // while RFC 8705 binding was the only reader — it binds to the certificate
+    // and does not care who vouched for it — and it stopped being right when
+    // the remote XACML PEP arrived, because that caller's DN has to resolve to
+    // a directory entry, a group and a role, and none of that may rest on a
+    // certificate nobody issued.
+    ca: tlsServer.clientTruststoreOptions().ca,
     // RFC 8705 — certificate-bound access tokens. The token endpoint is on this
     // listener, so a certificate has to be ASKED FOR here or there is never one
     // to bind to. The posture is 8443's exactly: asked for, never required.
@@ -919,7 +720,14 @@ if (useHttps) {
     // truststore at /tls/trust starts empty by design.
     requestCert: true,
     rejectUnauthorized: false
-  }, app).listen(PORT, HOST, announce);
+  }, app);
+  // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
+  // `tls_server.js` owns the anchors and applies them to every listener it
+  // knows about; this is how the one it did not create becomes one of them. It
+  // is a registration rather than a require in the other direction because
+  // this file requires that module, not the other way round.
+  tlsServer.trustClientCertificatesOn(mainServer, 'the main port (' + PORT + ')');
+  mainServer.listen(PORT, HOST, announce);
 } else {
   app.listen(PORT, HOST, announce);
 }

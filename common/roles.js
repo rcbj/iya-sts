@@ -131,12 +131,19 @@ const SCHEMA = {
 };
 
 // ---------------------------------------------------------------------------
-// THE SIX BUILT-IN ROLES.
+// THE BUILT-IN ROLES. SIX WHEN THIS TABLE WAS WRITTEN, SEVEN SINCE 2026-09-06
+// AND EIGHT SINCE THE XACML SURFACE WAS CLOSED.
 //
 // A table rather than six constants, because three things have to agree about
 // them — the console's menus, the resolver below, and the refusal that stops
 // somebody creating a role with one of these names — and three copies of a
 // list is three chances for one to be missed.
+//
+// **THE COUNT IS NOT WRITTEN DOWN ANYWHERE THAT MATTERS, AND THAT IS
+// DELIBERATE.** `BUILT_IN_NAMES`, `builtInCatalogue()` and `isBuiltIn()` are
+// all derived from this array, so adding a row is the whole of adding a role.
+// The numbers in the prose around it are the part that goes stale — this
+// heading said "six" for the whole of the day REMOTE_PEPS existed.
 // ---------------------------------------------------------------------------
 const BUILT_IN = [
   { name: 'EVERYBODY',
@@ -161,6 +168,39 @@ const BUILT_IN = [
     holds: function (who) {
       return who.kind === 'user' && !who.authenticated;
     } },
+  // ---------------------------------------------------------------------
+  // THE TWO MANAGEMENT-API ROLES (2026-09-09), and they are the first
+  // built-ins computed from a CREDENTIAL rather than from what the party IS.
+  //
+  // `/admin-api` is reached with an OAuth 2.0 access token whose audience is
+  // the management API and whose scopes say what it may do. A scope is not a
+  // role — it is what the client ASKED FOR and the authorization server
+  // granted — so the mapping is stated here, once, and the policy is written
+  // in terms of roles like every other policy in this service. That is what
+  // lets `/admin/xacml` express "a read needs ADMIN_READ" without the
+  // document having to know that scopes exist.
+  //
+  // They are built-in rather than configured for the same reason
+  // ALL_AUTHENTICATED_USERS is: nobody grants them, they are READ OFF the
+  // request, and a deployment that could edit the membership of "holds
+  // admin:write" would have two answers to one question.
+  // ---------------------------------------------------------------------
+  { name: 'ADMIN_READ',
+    what: 'A caller presenting an access token for the management API that ' +
+          'carries the `admin:read` scope. Every READ operation on ' +
+          '/admin-api requires it.',
+    holds: function (who) {
+      return who.scopes.indexOf('admin:read') >= 0;
+    } },
+  { name: 'ADMIN_WRITE',
+    what: 'A caller presenting an access token for the management API that ' +
+          'carries the `admin:write` scope. Every operation on /admin-api ' +
+          'that CHANGES anything requires it. It does not imply ADMIN_READ: ' +
+          'a token may carry either, both or neither, and the policy asks ' +
+          'for the one the operation needs.',
+    holds: function (who) {
+      return who.scopes.indexOf('admin:write') >= 0;
+    } },
   { name: 'ALL_APPLICATIONS',
     what: 'Any client, however it turned up.',
     holds: function (who) {
@@ -177,8 +217,124 @@ const BUILT_IN = [
     what: 'A public client that proved nothing.',
     holds: function (who) {
       return who.kind === 'application' && !who.authenticated;
+    } },
+  // -------------------------------------------------------------------------
+  // THE SEVENTH, AND THE FIRST ONE COMPUTED FROM A GROUP (2026-09-06).
+  //
+  // The six above are computed from what the party IS — a person or a client,
+  // authenticated or not — and none of them reads the directory. This one is
+  // held by whoever is in one named GROUP, which makes it a hybrid and the
+  // hybrid is deliberate:
+  //
+  //   * it is BUILT IN rather than a row in `ou=roles`, because the surface it
+  //     guards (`/xacml/pep/*`) has to be guarded in a realm nobody has
+  //     configured. A configured role is absent until somebody makes it, and a
+  //     gate that is absent is a gate that is open.
+  //   * it is held through a GROUP rather than by name, because the party
+  //     holding it is a certificate DN that does not exist until a launcher
+  //     mints one — there is no name to write into a role definition in
+  //     advance, and there IS a group to put whatever turns up into.
+  //
+  // **THE GROUP IS THE GRANT AND THE CERTIFICATE IS ONLY THE IDENTITY.** A
+  // remote PEP presenting a certificate this service verified is somebody it
+  // can NAME; it is not thereby somebody it lets in. Membership of this group
+  // is the deliberate act, and a verified certificate whose DN is not in it is
+  // refused — which is the whole point of resolving the DN rather than
+  // stopping at the handshake.
+  // -------------------------------------------------------------------------
+  { name: 'REMOTE_PEPS',
+    what: 'A remote XACML Policy Enforcement Point: whoever is a member of ' +
+          'the group named by `roles.remotePepGroup` (default ' +
+          '"remote-peps"). It is what `/xacml/pep/register`, ' +
+          '`/xacml/pep/policies` and `/xacml/pep/heartbeat` require, and the ' +
+          'party that holds it is normally a client-certificate DN rather ' +
+          'than a person — the certificate says WHO, and this group says ' +
+          'whether they may.',
+    holds: function (who) {
+      const wanted = remotePepGroupName().toLowerCase();
+      if (!wanted) {
+        return false;
+      }
+      return (who.groups || []).some(function (one) {
+        return String(one).toLowerCase() === wanted;
+      });
+    } },
+  // -------------------------------------------------------------------------
+  // THE EIGHTH, AND THE SECOND COMPUTED FROM A GROUP.
+  //
+  // **THE ARGUMENT IS MADE AGAIN RATHER THAN CITED, and it comes out in the
+  // same place for a different reason.** REMOTE_PEPS is group-derived because
+  // the party holding it is a certificate DN that does not exist until a
+  // launcher mints one — there is no name to write into a role definition in
+  // advance. That reason does NOT apply here: the parties reaching
+  // `/xacml/pdp`, `/xacml/policies` and `/xacml/protected` are ordinary
+  // callers and some of them are people who already have directory entries.
+  //
+  // What decides it is the other half of REMOTE_PEPS's argument, and that one
+  // does apply, harder: **A CONFIGURED ROLE IS ABSENT UNTIL SOMEBODY MAKES
+  // IT.** `ou=roles` is per realm, so a role seeded once in the default realm
+  // leaves every realm created afterwards with a XACML surface that either
+  // refuses everybody (if the requirement still travels) or admits everybody
+  // (if it does not) — and both of those are answers nobody chose. A built-in
+  // role is computed, so it exists in a realm nobody has configured, which is
+  // the only realm most of them ever are.
+  //
+  // **SO A GROUP IS THE GRANT AND IT REACHES BOTH THINGS THAT WERE ASKED
+  // FOR.** A GROUP is admitted by naming it in `roles.xacmlUserGroup`; a
+  // PERSON is admitted by being put in that group, which is one line on
+  // `/admin/ldap/directory` and one `ldapmodify` on the raw socket. Neither
+  // costs a per-realm entry that can be deleted, and membership is resolved at
+  // DECISION TIME, so adding somebody changes the very next request rather
+  // than the next restart.
+  //
+  // **IT IS NOT THE SAME ROLE AS REMOTE_PEPS AND MUST NOT BECOME ONE.** A
+  // remote enforcement point pulls the documents this service enforces its own
+  // access with; a XACML caller asks a question and reads a demonstration
+  // policy. One group granting both would mean admitting somebody to the
+  // second silently admits them to the first, which is exactly the collapse
+  // the two-register split in this file exists to prevent.
+  // -------------------------------------------------------------------------
+  { name: 'XACML_USER',
+    what: 'A caller of the XACML surface proper: whoever is a member of the ' +
+          'group named by `roles.xacmlUserGroup` (default "xacml-users"). ' +
+          'It is what `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` ' +
+          'and `GET /xacml/protected` require, and the party that holds it ' +
+          'is normally a client-certificate DN — the certificate says WHO, ' +
+          'and this group says whether they may. It is deliberately NOT ' +
+          'REMOTE_PEPS: that role reaches the three /xacml/pep endpoints, ' +
+          'which hand out the documents this service enforces its own access ' +
+          'with, and one group granting both would make admitting a caller ' +
+          'to the demonstration surface silently admit it to those.',
+    holds: function (who) {
+      const wanted = xacmlUserGroupName().toLowerCase();
+      if (!wanted) {
+        return false;
+      }
+      return (who.groups || []).some(function (one) {
+        return String(one).toLowerCase() === wanted;
+      });
     } }
 ];
+
+// The group that grants REMOTE_PEPS. A setting rather than a constant because
+// a deployment that already has a group for its enforcement points should be
+// able to name it rather than make a second one — and because naming it '' is
+// how somebody turns the role off entirely, which `holds()` above reads as
+// "nobody".
+function remotePepGroupName() {
+  return String(config.value('roles.remotePepGroup') || '').trim();
+}
+
+// The group that grants XACML_USER, on the same terms and with one extra
+// consequence worth stating where somebody will read it before typing: naming
+// it '' closes the four XACML endpoints to EVERY caller, including one holding
+// a certificate this service verified. That is a supported configuration — it
+// is how a deployment turns the surface off without turning `xacml.enabled`
+// off and losing the embedded PEPs with it — and it is not a mistake this
+// function should second-guess.
+function xacmlUserGroupName() {
+  return String(config.value('roles.xacmlUserGroup') || '').trim();
+}
 
 const BUILT_IN_NAMES = BUILT_IN.map(function (one) {
   return one.name;
@@ -293,7 +449,7 @@ function read(name) {
 }
 
 // Every role a policy or a console menu may name: the configured ones and the
-// six built-in ones, in one list, marked. One list because a policy author
+// built-in ones, in one list, marked. One list because a policy author
 // choosing a required role does not care which kind it is — and the mark is
 // there because everything else about them differs.
 function catalogue() {
@@ -406,6 +562,14 @@ function remove(name) {
 function rolesOf(who) {
   log.debug('Entering rolesOf(). kind=' + (who || {}).kind);
   const context = normalizeContext(who);
+  // THE GROUPS ARE RESOLVED BEFORE THE BUILT-INS ARE ASKED, AND THAT IS NEW.
+  // Five of the built-in roles are computed from `kind` and `authenticated`
+  // alone and never needed this; REMOTE_PEPS and XACML_USER are held through a
+  // group, so `holds()` has to be able to see one. It is resolved ONCE and put
+  // on the context, which is also what `configuredRolesOf()` below then reads —
+  // so this is the same directory walk that was already happening, moved
+  // earlier and shared, rather than a second one.
+  context.groups = groupsFor(context);
   const held = BUILT_IN.filter(function (one) {
     return one.holds(context);
   }).map(function (one) {
@@ -438,7 +602,14 @@ function normalizeContext(who) {
     kind: kind,
     name: String(given.name || ''),
     authenticated: given.authenticated === true,
-    groups: Array.isArray(given.groups) ? given.groups.map(String) : null
+    groups: Array.isArray(given.groups) ? given.groups.map(String) : null,
+    // THE SCOPES OF THE ACCESS TOKEN THIS DECISION IS BEING MADE FOR, when
+    // there is one. Two built-in roles below are computed from them — see
+    // ADMIN_READ — and everything else ignores them, so a caller that
+    // presented no token is exactly what it was.
+    scopes: Array.isArray(given.scopes)
+      ? given.scopes.map(String)
+      : String(given.scopes || '').split(/\s+/).filter(Boolean)
   };
 }
 

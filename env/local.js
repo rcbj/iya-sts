@@ -339,6 +339,58 @@ var config = {
     maxRows: 500
   },
 
+  // --- Web security --------------------------------------------------------
+  //
+  // THE RATE LIMITS ARE RAISED HERE AND NOWHERE ELSE (2026-09-06), AND THE
+  // PLACEMENT IS THE WHOLE POINT.
+  //
+  // `env/defaults.js` ships 5 per identity and 20 per address per 60s, and
+  // those are the right numbers for what the limiter was written for: a
+  // SIGN-IN, where five attempts a minute is generous and a sixth is somebody
+  // guessing. **They are wrong for a test suite**, because every job in it
+  // comes from ONE ADDRESS — the runner — so the address bucket counts the
+  // whole suite as one caller while the identity bucket, the one that is
+  // actually about credential guessing, is nowhere near its limit.
+  //
+  // MEASURED, rather than guessed at (2026-09-06, the whole suite against one
+  // instance with the limiter effectively off):
+  //
+  //   activation   per address   peak 25   — over the shipped limit of 20
+  //   activation   per identity  peak  2   — nowhere near the limit of 5
+  //   xacml-pip    per address   peak  7
+  //   sign-in      per address   never accumulated, because a SUCCESSFUL
+  //                              sign-in calls succeeded() and clears it
+  //
+  // So one door did it: `activation`. `sts_portal_sessions.js` and
+  // `sts_admin_console.js` each issue and open several activation links, and
+  // the address bucket is not cleared by an activation that WORKS the way a
+  // sign-in's is. The symptom was a 429 on a link the console had just handed
+  // over — which reads exactly like a broken handler and is not one.
+  //
+  // 500 and 100 are 20× and 50× the measured peaks, so the suite has room to
+  // grow several times over before this needs looking at again, and both are
+  // still a real control: 500 activation attempts a minute from one address is
+  // abuse by any reading.
+  //
+  // **THIS IS A LAYER, NOT A CHANGE TO THE SETTING.** `env/defaults.js` is
+  // GENERATED from `config.js` and still says 5 and 20, so a service handed
+  // somebody else's appconfig file — or none — gets the shipped limits. It is
+  // the same decision `global.https` records above: what OUR OWN STACKS do
+  // belongs in the appconfig files, and what this service IS belongs in
+  // config.js. Raising the default instead would have weakened a security
+  // control for every deployment, including product mode, to fix a test run.
+  //
+  // The limiter itself is guarded by `tests/rate_limiter.js`, which drives
+  // `websecurity.attempt()` in process with limits of its own — so turning
+  // these up here does not leave the control untested. It was untested before
+  // this change and the 429s were the only thing exercising it.
+  security: {
+    rateLimitWindowS: 60,
+    rateLimitPerIdentity: 100,
+    rateLimitPerAddress: 500,
+    activationTtlMinutes: 1440
+  },
+
   // --- SPIFFE / SPIRE ------------------------------------------------------
   //
   // The bundle endpoint, the Workload API and the SPIRE Server API. Four of

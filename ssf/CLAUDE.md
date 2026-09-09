@@ -604,7 +604,8 @@ been.
 that is rule 7 read exactly rather than a gap. A stream carries a delivery
 endpoint THIS SERVICE WILL DIAL, and the one place that URL may come from is a
 receiver that authenticated at `POST /ssf/stream` and asked. A console form or a
-management API operation that could mint one would be a second, ungated door
+management API operation that could mint one would be a second door, reached
+with a credential any holder of the client secret can mint,
 onto the outbound request `ssf_http.js` spends its header bounding — so there is
 no control to mirror, and the parity holds.
 

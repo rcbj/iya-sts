@@ -58,14 +58,14 @@ const VCI_FORMATS = Array.from(new Set(
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const credentialOffers = realms.map();     // id -> { offer, issuerState, expires }
+const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers' });  // id -> { offer, issuerState, expires }
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const issuerStates = realms.map();         // issuer_state -> { configurationIds, expires }
+const issuerStates = realms.map({ persist: 'vc_offers.issuerStates' });  // issuer_state -> { configurationIds, expires }
 
 // Pre-authorized codes (OID4VCI Appendix H.2 / H.3): the End-User authorized the
 // issuance out of band, so there is no authorization request at all — the code
@@ -77,7 +77,7 @@ const issuerStates = realms.map();         // issuer_state -> { configurationIds
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const preAuthorizedCodes = realms.map();   // code -> { configurationIds, txCode, user, deferred, expires }
+const preAuthorizedCodes = realms.map({ persist: 'vc_offers.preAuthorizedCodes' });  // code -> { configurationIds, txCode, user, deferred, expires }
 
 // Deferred issuance transactions (OID4VCI section 9): the credential endpoint
 // answered 202 with one of these instead of a credential.
@@ -86,7 +86,7 @@ const preAuthorizedCodes = realms.map();   // code -> { configurationIds, txCode
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const deferredTransactions = realms.map(); // transaction_id -> { claims, holderJwk, readyAt, expires }
+const deferredTransactions = realms.map({ persist: 'vc_offers.deferredTransactions' });  // transaction_id -> { claims, holderJwk, readyAt, expires }
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.

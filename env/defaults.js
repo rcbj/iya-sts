@@ -70,6 +70,7 @@ var config = {
     returnPolicyIdList: false,       // Always return the applicable policy identifiers
     remotePeps: true,                // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,     // A registering PEP must present a client certificate
+    pipMaxPerWindow: 600,            // PIP queries one caller may make per rate-limit window
     maxPeps: 50,                     // Remote PEPs the register may hold
     pepStaleAfterS: 300,             // Seconds before a registered PEP is reported stale
     pepNotify: true,                 // Nudge a registered PEP when the repository changes
@@ -103,7 +104,13 @@ var config = {
 
   // --- Global ----------------------------------------------------------
   workers: {
-    count: 5  // Worker processes
+    count: 5,                          // Worker processes
+    requestCount: 0,                   // Request worker processes; restart to apply
+    dispatch: "",                      // Paths handled in a request worker; restart to apply
+    fanout: "/scim,/xacml,/admin-api", // Dispatched paths with no session affinity; restart to apply
+    operations: "",                    // Operations run in a request worker; restart to apply
+    readYourWrite: false,              // Read-your-write across request workers
+    socketDir: ""                      // Request worker socket directory; restart to apply
   },
 
   // --- Trust realms ----------------------------------------------------
@@ -131,6 +138,13 @@ var config = {
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard
     frontchannelLogout: true                     // OpenID Connect Front-Channel Logout
+  },
+
+  // --- Management API --------------------------------------------------
+  adminApi: {
+    authRequired: true, // Require an access token on /admin-api
+    clientSecret: "",   // The management API client's secret; restart to apply
+    audience: ""        // The audience an /admin-api token must carry
   },
 
   // --- Applications ----------------------------------------------------
@@ -351,10 +365,12 @@ var config = {
 
   // --- Roles -----------------------------------------------------------
   roles: {
-    claim: true,           // Carry a roles claim
-    claimName: "roles",    // Role claim name
-    enforceIssuance: true, // Decide issuance on roles
-    maxRoles: 200          // Maximum roles
+    claim: true,                   // Carry a roles claim
+    claimName: "roles",            // Role claim name
+    enforceIssuance: true,         // Decide issuance on roles
+    maxRoles: 200,                 // Maximum roles
+    remotePepGroup: "remote-peps", // Group granting the REMOTE_PEPS role
+    xacmlUserGroup: "xacml-users"  // Group granting the XACML_USER role
   },
 
   // --- Roles -----------------------------------------------------------
@@ -420,7 +436,11 @@ var config = {
     databaseTlsRejectUnauthorized: false,                 // Verify the database certificate; restart to apply
     writeDelay: 1500,                                     // Write delay (ms)
     realms: true,                                         // Persist the realm registry; restart to apply
-    appconfig: true                                       // Persist runtime setting changes; restart to apply
+    appconfig: true,                                      // Persist runtime setting changes; restart to apply
+    minted: true,                                         // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                           // Minted state retention (ms)
+    coordinate: true,                                     // Coordinate with other processes; restart to apply
+    pollInterval: 5000                                    // Change poll interval (ms)
   },
 };
 

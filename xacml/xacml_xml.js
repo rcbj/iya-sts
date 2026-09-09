@@ -687,6 +687,29 @@ function parseRequest(xml) {
       'A request document\'s root must be <Request>; this one is <' +
       localName(root) + '>.');
   }
+  const parsed = readRequest(root);
+  log.debug('Leaving parseRequest(). ' + parsed.categories.length +
+            ' category(ies).');
+  return parsed;
+}
+
+// ---------------------------------------------------------------------------
+// A <Request> ELEMENT, READ — SPLIT OUT OF THE FUNCTION ABOVE.
+//
+// `parseRequest()` takes a whole DOCUMENT, which is what a PDP is POSTed. This
+// takes the NODE, because `POST /xacml/pip` carries a `<Request>` nested inside
+// an envelope of this service's own and therefore has no document to hand over.
+//
+// **IT IS A SPLIT AND NOT A SECOND READER, WHICH IS THE ENTIRE POINT.** The
+// alternative was to serialize the nested subtree back to a string and hand it
+// to `parseRequest()` — which would put an XML SERIALIZER in the path of every
+// PIP query, and a round trip through one is exactly where namespace
+// declarations inherited from an ancestor go missing. Two readings of a
+// request would also be two chances to disagree about what a request IS, which
+// is the thing this file exists to prevent.
+// ---------------------------------------------------------------------------
+function readRequest(root) {
+  log.debug('Entering readRequest().');
   const categories = childrenNamed(root, 'Attributes').map(function (node) {
     const content = firstNamed(node, 'Content');
     return {
@@ -716,7 +739,7 @@ function parseRequest(xml) {
       })
     };
   });
-  log.debug('Leaving parseRequest(). ' + categories.length + ' category(ies).');
+  log.debug('Leaving readRequest(). ' + categories.length + ' category(ies).');
   return {
     returnPolicyIdList: booleanAttribute(root, 'ReturnPolicyIdList', false),
     combinedDecision: booleanAttribute(root, 'CombinedDecision', false),
@@ -1176,6 +1199,7 @@ module.exports = {
   parsePolicy: parsePolicy,
   writePolicy: writePolicy,
   parseRequest: parseRequest,
+  readRequest: readRequest,
   parseResponse: parseResponse,
   parseDocument: parseDocument,
   localName: localName,

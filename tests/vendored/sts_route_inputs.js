@@ -241,6 +241,31 @@ function routesFrom(root) {
         else if (cat && consts[cat[1]] !== undefined) { p = consts[cat[1]] + cat[2]; }
         else { unresolved = unresolved + 1; continue; }
         if (p.indexOf("*") >= 0) { continue; }
+        // ------------------------------------------------------------------
+        // ONE ROUTE IS LEFT OUT BY NAME, AND IT IS THE SECOND JOB TO NEED
+        // THIS (2026-09-08). `tests/CLAUDE.md` records the first:
+        // `sts_metadata.js` calls every method of every endpoint and had to
+        // stop calling `POST /tls/trust/clear`, because that endpoint needs
+        // no credential, succeeds, and EMPTIES THE CLIENT TRUSTSTORE the
+        // launcher filled before the run started.
+        //
+        // This job reaches it for the same reason — it drives every route it
+        // can find — and the consequence is identical and just as hard to
+        // read: `sts_xacml_remote_pep` runs eleven jobs later and its
+        // container, whose pull, heartbeat and PIP queries all resolve a
+        // VERIFIED client certificate, authenticates as nobody for the rest
+        // of the run. It reports `403 ... they hold ALL_UNAUTHENTICATED_USERS`
+        // about a certificate that is perfectly good. **The symptom names a
+        // certificate and the cause is another job.**
+        //
+        // The test for adding a second entry here is the one that file
+        // states, and this meets it exactly: the endpoint needs no credential
+        // AND it destroys state another job depends on. It is a LIST rather
+        // than a rule because there is no rule — every other POST in this
+        // walk changes something too, and being refused is what most of them
+        // are for.
+        // ------------------------------------------------------------------
+        if (p === "/tls/trust/clear") { continue; }
         found.set(verb + " " + p, { method: verb.toUpperCase(), path: p });
       }
     });

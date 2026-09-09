@@ -189,13 +189,22 @@ const SET_IDS = stats.CLAIM_SET_IDS;
 // actions on all three claim-set doors refused every set in every trust realm,
 // with a sentence that listed the set it was refusing, because the list is
 // read from the process-wide table and the lookup is not.
+// **LISTS AND NOT SETS, AND ONLY SO THAT THIS CAN BE PERSISTED (2026-09-07).**
+// These are the configured claim sets — an operator's choice, which every
+// request worker has to see or each one issues a different token. A store
+// replicates by declaring `persist:`, and what is written is `JSON.stringify`
+// of the value: a Set serialises to `{}`, so declaring one would have persisted
+// the shape and lost every member without anything failing.
+//
+// setSelection() still works in Sets, which is what membership and difference
+// want; only the STORED form is a list.
 const selections = realms.obj(function () {
   const fresh = {};
   SET_IDS.forEach(function (id) {
-    fresh[id] = new Set();
+    fresh[id] = [];
   });
   return fresh;
-});
+}, { persist: 'claim_attributes.selections' });
 
 function isKnownSet(setId) {
   return Object.prototype.hasOwnProperty.call(selections, String(setId || ''));
@@ -216,7 +225,7 @@ function selectedRows(setId) {
     return [];
   }
   return CATALOGUE.filter(function (row) {
-    return chosen.has(row.ldap.toLowerCase());
+    return chosen.indexOf(row.ldap.toLowerCase()) >= 0;
   });
 }
 
@@ -231,7 +240,7 @@ function selectedNames(setId) {
 
 function isSelected(setId, ldapName) {
   const chosen = selections[String(setId || '')];
-  return !!chosen && chosen.has(String(ldapName || '').toLowerCase());
+  return !!chosen && chosen.indexOf(String(ldapName || '').toLowerCase()) >= 0;
 }
 
 // Every name in the catalogue, for the "select all" button and for the API's
@@ -338,12 +347,13 @@ function setSelection(setId, names, how) {
     wanted.add(key);
   });
   if (errors.length) {
-    recordChange(id, how || 'select', [], [], selections[id].size, false, errors);
+    recordChange(id, how || 'select', [], [], selections[id].length, false, errors);
     log.debug("Leaving setSelection(). " + errors.length + " error(s); nothing changed.");
     return { ok: false, errors: errors };
   }
 
-  const before = selections[id];
+  // A Set for the difference below; the stored form is the list.
+  const before = new Set(selections[id]);
   const added = [];
   const removed = [];
   wanted.forEach(function (key) {
@@ -352,7 +362,7 @@ function setSelection(setId, names, how) {
   before.forEach(function (key) {
     if (!wanted.has(key)) removed.push(BY_LDAP.get(key).ldap);
   });
-  selections[id] = wanted;
+  selections[id] = Array.from(wanted);
 
   const now = selectedNames(id);
   log.info('admin: the ' + labelOf(id) + ' set now carries the directory attribute(s) ' +

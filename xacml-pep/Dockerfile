@@ -73,7 +73,46 @@ COPY xacml-pep/common/ ./common/
 
 COPY xacml-pep/engine.js ./engine.js
 COPY xacml-pep/sync.js ./sync.js
+COPY xacml-pep/pip.js ./pip.js
 COPY xacml-pep/pep.js ./pep.js
+
+# ---------------------------------------------------------------------------
+# THE VERSION. `common/version.js` and the repo-root `VERSION`, copied the way
+# the engine is: at BUILD TIME out of the one copy in the tree, so this image
+# cannot report a release the mock does not have.
+#
+# **THEY GO TO THE CONTAINER ROOT AND NOT INTO `./common/`, AND THAT IS THE
+# WHOLE OF THE PLACEMENT DECISION.** `./common/` is the shim — one file,
+# `helpers.js`, exporting `log` and `xmlEscape` — and what makes it worth
+# anything is that an engine module which grew a dependency on the mock's
+# config table, crypto module or realm registry THROWS AT LOAD because there is
+# nothing else in that directory to resolve. `version.js` reads files and shells
+# out to git. Putting it beside the shim would put I/O back into the one
+# directory whose emptiness is the evidence, to give a build number to a
+# container that would report it just as well from one level up.
+#
+# `common/version.js` finds its own root by looking for the VERSION file beside
+# it, which is why it is correct here as well as in the mock — see findRoot()
+# there. `pep.js` resolves it across BOTH layouts (`./version` here,
+# `../common/version` in a checkout), the same two-candidate shape the parent
+# project's `api/server.js` uses for its copy of this module.
+COPY VERSION ./VERSION
+COPY common/version.js ./version.js
+
+# AND THE STAMP, for the reason the mock's own Dockerfile gives at length: the
+# build number is fixed when the artifact is BUILT, so restarting this
+# container does not renumber it.
+#
+# **THE TWO IMAGES GET DIFFERENT BUILD NUMBERS UNLESS BUILD_NUMBER IS PASSED,
+# AND THAT IS CORRECT RATHER THAN A DEFECT.** They are two artifacts, built at
+# two instants, and they are deployed independently — a PEP left behind across
+# a release of the PDP is exactly the state the version on its console row
+# exists to make visible. Pass the same BUILD_NUMBER to both to say they are
+# one release; the compose files offer it.
+ARG BUILD_NUMBER=
+ARG GIT_COMMIT=
+RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
+    node version.js --stamp . && cat version.json
 
 EXPOSE 9090
 

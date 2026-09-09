@@ -63,6 +63,10 @@ const audit = require('./audit');
 // cycle and moves nothing in the route order. `common/validation.js` is where
 // every decision about what a value from outside may be is argued.
 const validation = require('./validation');
+// The request worker pool. A LIBRARY as far as rule 1 goes — it registers no
+// route and requires only `config` plus node builtins, so it can neither join a
+// cycle nor move a route. Its middleware is installed below the realm one.
+const requestPool = require('./request_pool');
 // --- express app -----------------------------------------------------------
 const app = express();
 
@@ -165,11 +169,13 @@ app.use(function (req, res, next) {
   //
   // THE HONEST LIMITATION, said here rather than discovered later: a URL this
   // service builds inside a SCRIPT or a JSON island in an HTML page is not
-  // rewritten. There is one such page — /admin-api/docs, whose explorer builds
-  // request URLs in JavaScript — and it is handled in mgmt-api/admin_api_explorer.js
-  // by being given the prefix as a value rather than by having its markup
-  // rewritten. A fifth scripted page would need the same treatment and would
-  // not get it for free.
+  // rewritten. There is one such page — /admin/api-explorer, whose explorer
+  // builds request URLs in JavaScript — and it is handled in
+  // mgmt-api/admin_api_explorer.js by being given the prefix as a value rather
+  // than by having its markup rewritten. A fifth scripted page would need the
+  // same treatment and would not get it for free. (It was /admin-api/docs
+  // until 2026-09-09; the page moved into the console, the limitation did
+  // not move with it.)
   // ---------------------------------------------------------------------
   const send = res.send;
   res.send = function (body) {
@@ -222,6 +228,43 @@ realms.reserve(function () {
 // Chrome Private Network Access: when a PUBLIC page calls a LOCAL (loopback)
 // server — which is exactly the live-site test setup, an HTTPS page on
 // idptools.com calling this mock at http://localhost:8081 — Chrome may send a
+// ---------------------------------------------------------------------------
+// AND HERE THE FRONT PROCESS STOPS HANDLING THE REQUEST AND STARTS PROXYING IT.
+//
+// `request_pool.js` argues the whole arrangement; this is where it is installed,
+// and the POSITION belongs in this file because two things pin it, from
+// opposite sides.
+//
+// **BELOW THE REALM MIDDLEWARE**, because that one decides which realm a
+// request is in and must go on doing so here — the call log, the audit row and
+// the flush-time check below all read `req.realm`. What the worker is sent is
+// `req.originalUrl`, which still carries the `/realm/<id>` prefix, so the
+// worker derives the same realm by the same rule rather than being told it.
+//
+// **ABOVE THE BODY PARSERS**, and that one is not a preference: `bodyParser`
+// CONSUMES the request stream. Installed after it, this middleware would pipe
+// an already-drained `req` to the worker and every POST in the service would
+// arrive there with an empty body — a failure that would look like a
+// validation bug in whichever handler happened to notice first.
+//
+// So everything between here and the routes runs IN THE WORKER for a
+// dispatched request: the private-network preflight, CORS, the security
+// headers, the body parsers, the call log and the validation guard. That is
+// the point rather than a side effect — the front process is meant to be doing
+// request/response I/O and nothing else.
+//
+// **THE ANSWER IS PIPED, WHICH IS WHY `res.send()`'s OVERRIDE BELOW DOES NOT
+// FIRE TWICE.** That override rewrites root-relative links and re-checks the
+// CSP; the proxy writes the worker's bytes through `res.write()`/`res.end()`
+// and never calls `res.send()`, so a body the worker has already rewritten is
+// not rewritten again. The flush-time CSP check still runs here over the header
+// the worker set, which is defence in depth rather than duplication.
+//
+// With `workers.dispatch` empty — the default — this calls next() for
+// everything and the service behaves exactly as it did.
+// ---------------------------------------------------------------------------
+app.use(requestPool.middleware());
+
 // CORS preflight carrying Access-Control-Request-Private-Network and require
 // this header on the response. Answer it so the call isn't blocked. Registered
 // BEFORE cors() so the header is set before the preflight response is sent;

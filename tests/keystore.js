@@ -266,6 +266,106 @@ async function run(t) {
   });
 
   // -----------------------------------------------------------------------
+  // 3b. THE SHARING CHANNEL WORKS WHILE THE KEYSTORE PERSISTS (2026-09-09).
+  //
+  // Until that day both halves of it — `publishShared()` and `sharedFor()` —
+  // returned early whenever `persists()` was true, on the argument that a
+  // store IS the channel between processes. That is true on every start
+  // except the one where the store is EMPTY, which is the first start of
+  // every product deployment there has ever been: nothing to read, so all
+  // four processes generate, and each keeps its own.
+  //
+  // Measured on a default `docker compose up` before the fix — product mode,
+  // three request workers — `/oauth2/jwks` answered THREE DIFFERENT key sets
+  // depending on which worker took the request, and an access token minted at
+  // `/oauth2/token` was refused by `/admin-api` as unverifiable. A restart
+  // cleared it, because by then the store had a row and everybody read the
+  // same one, which is the worst possible shape for a defect: the first thing
+  // anybody does about it is the thing that hides it.
+  //
+  // **BOTH GUARDS ARE ASSERTED, AND SEPARATELY, BECAUSE REMOVING ONE FIXED
+  // NOTHING.** With `sharedFor()` answering and `publishShared()` still
+  // silent, the map is never filled, the parent never learns which set a
+  // realm's keys are, no worker is ever told to adopt — and the stack answered
+  // exactly as many key sets as before. A test that only drove the read would
+  // have gone green over a service that was still broken.
+  // -----------------------------------------------------------------------
+  t.log.info('=== the sharing channel, with a store in use ===');
+  await (async function () {
+    const keystore = require('../common/keystore');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-keystore-share-'));
+    const kekFile = path.join(dir, 'kek');
+    fs.writeFileSync(kekFile, nodeCrypto.randomBytes(32).toString('base64'),
+                     'utf8');
+    process.env.STS_KEYS_SOURCE = 'persisted';
+    process.env.STS_KEYS_KEK_PROVIDER = 'file';
+    process.env.STS_KEYS_KEK_FILE = kekFile;
+    keystore.setStore(fakeStore());
+    await keystore.start();
+    t.equal(keystore.persists(), true,
+            'this section is only about the persisting case — the other one ' +
+            'never had the bug');
+
+    // A key set to share. Built the way the service builds one, then handed
+    // to the channel exactly as helpers.js hands it over.
+    const helpers = require('../common/helpers');
+    helpers.resetStsKeys();
+    // Read first, because reading `STS.kid` is what BUILDS the key set — the
+    // factory is reached through a Proxy on a property read, so nothing below
+    // would have a set to publish without this line.
+    const madeKid = helpers.STS.kid;
+    t.check(!!madeKid, 'a key set was built to share (kid=' + madeKid + ')');
+
+    // PUBLISHED. The guard that used to be here made this a no-op.
+    keystore.publishShared('default', helpers.STS);
+    const blob = keystore.sharedBlobFor('default');
+    t.check(!!blob,
+            'publishShared() records the set even though the keystore ' +
+            'persists — with the old guard this was undefined, and a parent ' +
+            'process that is never told which keys a realm has cannot tell ' +
+            'anybody else to adopt them');
+
+    // READ BACK. The other guard made this null, so a sibling that had
+    // already generated the realm's keys was invisible.
+    const seen = keystore.sharedFor('default');
+    t.check(!!seen,
+            'sharedFor() answers with the set a sibling published, while the ' +
+            'keystore persists — this is the lookup a worker makes on the ' +
+            'start that finds an empty store');
+    // COMPARED ON THE CERTIFICATE AND NOT ON THE `kid`, because this layer
+    // has no kid: what crosses the channel is key MATERIAL, and the kid is
+    // derived from the certificate by helpers.js when it builds the usable
+    // set. The certificate is what `publishShared()` itself compares to tell
+    // an enrichment from a second key set, so it is the identity of a set
+    // here in the sense that matters — two processes holding this certificate
+    // derive the same kid and advertise the same JWKS.
+    t.equal(seen && seen.certPem, helpers.STS.certPem,
+            'and it is the SAME key set rather than merely a set: the whole ' +
+            'property is that every process in this service advertises one ' +
+            'kid, so different material here would be the bug wearing a ' +
+            'passing test');
+
+    // AND THE ORDERING THAT KEEPS THE WRITE. `storedFor()` is asked first by
+    // helpers.js, so a realm with a stored set never reaches the sibling
+    // lookup — which is what stopped `remember()` being called the first time
+    // this map was consulted, and is why the fix was an ordering rather than
+    // a guard.
+    t.check(!!keystore.storedFor('default'),
+            'the generated set was WRITTEN DOWN as well, which is the ' +
+            'property the old early-return was really protecting: sharing ' +
+            'must not stop a product service persisting its keys');
+
+    delete process.env.STS_KEYS_SOURCE;
+    delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_KEYS_KEK_FILE;
+    keystore.reset();
+    keystore.setStore({ loadKeys: function () { return Promise.resolve([]); },
+                        saveKeys: function () { return Promise.resolve(); },
+                        deleteKeys: function () { return Promise.resolve(); } });
+    helpers.resetStsKeys();
+  }());
+
+  // -----------------------------------------------------------------------
   // 4. DEVELOPMENT MODE IS UNTOUCHED, which is the property every other test
   //    in this repository depends on.
   // -----------------------------------------------------------------------

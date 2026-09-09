@@ -302,6 +302,17 @@ function locationPrefix(req, type) {
   return baseUrlOf(req) + BASE + '/' + type + '/';
 }
 
+// How long this request took, in milliseconds, or null when nothing stamped it.
+// NULL AND NOT ZERO: admin_stats.js counts a call with no duration towards the
+// call total and towards nothing else, so an unstamped path shows up as a
+// smaller latency sample rather than as a fast request. The only unstamped
+// path today would be a sender called from outside handle(), which is a thing
+// this file does not do and this function is what keeps honest if it ever does.
+function elapsedFor(req) {
+  const started = req && req.scimStartedAt;
+  return typeof started === 'number' ? Date.now() - started : null;
+}
+
 // ---------------------------------------------------------------------------
 // A SCIM ERROR, WHICH IS THE ONE THING A MOCK MUST GET EXACTLY RIGHT.
 //
@@ -320,6 +331,7 @@ function sendScimError(req, res, info, ex) {
   const error = (ex instanceof SCIMMY.Types.Error) ? ex
     : new SCIMMY.Types.Error(500, null, String((ex && ex.message) || ex));
   const body = new SCIMMY.Messages.ErrorResponse(error);
+  const text = JSON.stringify(body, null, 2);
   stats.recordScim({ operation: info.operation, resourceType: info.resourceType,
                      status: error.status, ok: false, scimType: error.scimType,
                      // Which scheme got this far. A refusal from the
@@ -328,12 +340,24 @@ function sendScimError(req, res, info, ex) {
                      // whatever the caller attempted — the status and scimType
                      // tables beside it already say what happened.
                      authScheme: (req.scimAuth && req.scimAuth.ok &&
-                                  req.scimAuth.scheme) || 'refused' });
+                                  req.scimAuth.scheme) || 'refused',
+                     // WHO, only when the gate BELIEVED them. A refusal often
+                     // carries a name — Basic and Digest both put one on the
+                     // wire — and attributing traffic to an identity this
+                     // service declined to accept is the one mistake
+                     // /admin/scim/monitor could make that would matter. See
+                     // the note on `clients` in admin_stats.js.
+                     principal: (req.scimAuth && req.scimAuth.ok &&
+                                 req.scimAuth.principal) || '',
+                     isClient: !!(req.scimAuth && req.scimAuth.ok &&
+                                  req.scimAuth.isClient),
+                     ms: elapsedFor(req), bytes: Buffer.byteLength(text),
+                     method: req.method, path: req.path });
   // end() rather than send() — see the note on sendScim().
   res.status(error.status)
      .type('application/scim+json')
      .set('Cache-Control', 'no-store')
-     .end(JSON.stringify(body, null, 2));
+     .end(text);
   log.debug("Leaving sendScimError(). " + error.status + " " +
             (error.scimType || '(no scimType)') + ": " + error.message);
 }
@@ -354,16 +378,29 @@ function sendScimError(req, res, info, ex) {
 // ---------------------------------------------------------------------------
 function sendScim(req, res, info, status, body, location) {
   log.debug("Entering sendScim(). status=" + status);
+  // Serialised BEFORE it is counted, because the counter reports how many
+  // bytes went back and there is no way to know that from the object. It is
+  // the same string res.end() is handed below — built once, so the figure on
+  // /admin/scim/monitor is the payload rather than an estimate of it.
+  const text = body === undefined ? '' : JSON.stringify(body, null, 2);
   stats.recordScim({ operation: info.operation, resourceType: info.resourceType,
                      status: status, ok: true, scimType: '',
-                     authScheme: (req.scimAuth && req.scimAuth.scheme) || 'anonymous' });
+                     authScheme: (req.scimAuth && req.scimAuth.scheme) || 'anonymous',
+                     // The authenticated principal, which is what
+                     // /admin/scim/monitor counts distinct clients by. Empty
+                     // on a discovery call, where it is counted as anonymous
+                     // rather than as a client with no name.
+                     principal: (req.scimAuth && req.scimAuth.principal) || '',
+                     isClient: !!(req.scimAuth && req.scimAuth.isClient),
+                     ms: elapsedFor(req), bytes: Buffer.byteLength(text),
+                     method: req.method, path: req.path });
   if (location) {
     res.set('Location', location);
   }
   res.status(status)
      .type('application/scim+json')
      .set('Cache-Control', 'no-store')
-     .end(body === undefined ? '' : JSON.stringify(body, null, 2));
+     .end(text);
   log.debug("Leaving sendScim(). " + status + ".");
 }
 
@@ -399,6 +436,16 @@ function sendScim(req, res, info, status, body, location) {
 function handle(info, fn) {
   return function (req, res) {
     log.debug("Entering the SCIM " + info.operation + " handler for " + info.resourceType + ".");
+    // WHEN THIS REQUEST STARTED, stamped here because this is the one place
+    // every SCIM request passes through on the way in, exactly as the two
+    // senders are the one place they pass through on the way out. A per-route
+    // stamp would have been eighteen of them and the eighteenth is the one
+    // that would have been missed — the same argument this function's header
+    // makes about the gate. What it buys is the latency column on
+    // /admin/scim/monitor; a request with no stamp is counted with NO duration
+    // rather than with a zero, because a zero would pull the mean down and
+    // look healthy.
+    req.scimStartedAt = Date.now();
     if (!enabled()) {
       sendScimError(req, res, info, new SCIMMY.Types.Error(501, null,
         'SCIM is turned off on this service (scim.enabled). The routes are ' +
@@ -870,15 +917,27 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
           : 'The entry could not be written at ' + dn + ' (' + written.reason + ').');
     }
 
-    // The credential-claim sweep. createUser() already ran applyVcAttributes()
-    // on the entry it made — but the write just above REPLACED the attribute
-    // set with SCIM's window merged over it, so a mapped attribute the client
-    // did not send (a `street` the persona had invented, say) is gone again.
-    // This puts back only what is ABSENT, so nothing the SCIM client sent is
-    // touched, and /admin/vc's selection reaches a provisioned person exactly as
-    // it reaches one who signed in.
+    // The credential-claim fill, FOR THE PERSON THIS REQUEST CREATED.
+    // createUser() already ran applyVcAttributes() on the entry it made — but
+    // the write just above REPLACED the attribute set with SCIM's window merged
+    // over it, so a mapped attribute the client did not send (a `street` the
+    // persona had invented, say) is gone again. This puts back only what is
+    // ABSENT, so nothing the SCIM client sent is touched, and /admin/vc's
+    // selection reaches a provisioned person exactly as it reaches one who
+    // signed in.
+    //
+    // **IT WAS `populateVcAttributes()` — THE WHOLE-REALM SWEEP — UNTIL
+    // 2026-09-07, AND THAT MADE THIS DOOR QUADRATIC.** That function walks
+    // every entry in the realm twice, and this called it once per person, to
+    // fix up the one entry named on the line above. Five thousand creates over
+    // SCIM took 254.6s and slowed from 8.79ms each to 101.54ms as the directory
+    // filled; `/admin-api` and LDAP, which never called it, did the same five
+    // thousand in 4.1s and 2.2s and stayed flat. See populateVcAttributesAt()
+    // in ldap/ldap_server.js, which argues why the sweep is still right for the
+    // two callers that mean every entry and wrong for every caller that means
+    // one.
     if (!existing) {
-      directory.populateVcAttributes();
+      directory.populateVcAttributesAt(dn);
     }
 
     // ONLY THE UPDATE IS RECORDED HERE. createUser() writes its own
@@ -1789,19 +1848,15 @@ function description(req) {
                 'are different answers.' },
       { what: 'Any method on /Me', answer: '501.' }
     ],
-    mapping: {
+    mapping: Object.assign({
       what: 'Which LDAP attribute each SCIM member is. The whole table, with ' +
             'the schema document that defines each attribute, is on ' +
-            '/admin/scim.',
-      user: scimMap.USER_ATTRIBUTES.map(function (row) {
-        return { scim: row.scim, ldap: row.ldap, kind: row.kind,
-                 readOnly: !!row.readOnly };
-      }),
-      group: scimMap.GROUP_ATTRIBUTES.map(function (row) {
-        return { scim: row.scim, ldap: row.ldap, kind: row.kind,
-                 readOnly: !!row.readOnly };
-      })
-    },
+            '/admin/scim.'
+    // ONE PROJECTION, IN scim_map.js, SINCE 2026-09-06. This endpoint and
+    // /admin-api/scim each had one of their own and they had already drifted —
+    // the same table, published by one service at two endpoints, describing
+    // itself differently. That module's describeMapping() argues it at length.
+    }, scimMap.describeMapping()),
     counters: stats.scimSnapshot(),
     console: base + '/admin/scim',
     managementApi: base + '/admin-api/scim'

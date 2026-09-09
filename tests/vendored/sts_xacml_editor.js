@@ -160,6 +160,75 @@ function editorUrl(policy) {
 // policy or to READ BACK what the browser did — never to make an edit this file
 // then credits to the page.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A CLIENT CERTIFICATE, FOR THE TWO DOORS THIS FILE OPENS THAT ARE NOT THE
+// CONSOLE (2026-09-06).
+//
+// `/xacml/protected` and `/xacml/policies` went behind the built-in
+// `XACML_USER` role, and this job reads both — the first is what makes an edit
+// on the page mean something, and the second is how it learns which policy
+// became the root. `fetch` cannot present a client certificate, so those two
+// go through `https.request` with a credential minted here.
+//
+// **IT REQUIRES `tests/tools/pep-credential.js` RATHER THAN BUILDING A CHAIN
+// OF ITS OWN**, which is the rule `sts_xacml_endpoints.js` states: a second
+// way of building a chain is a second set of edge cases, and the one thing
+// worse than a test that fails is one that passes against a certificate built
+// differently from the one the product uses.
+//
+// The CN is `xacml-user-1` — the identity `ldap_server.js` seeds into
+// `cn=xacml-users` in every realm — so nothing has to be configured for this
+// to be admitted. **It is NOT `remote-pep-1`**: that identity holds
+// `REMOTE_PEPS` and is refused at both of these doors, which is the whole
+// point of there being two roles.
+// ---------------------------------------------------------------------------
+const credentials = require("../tools/pep-credential.js");
+const https = require("https");
+
+var xacmlUser = null;
+
+async function mintTheCredential() {
+  log.debug("Entering mintTheCredential().");
+  xacmlUser = await credentials.mint({
+    subject: "CN=xacml-user-1,OU=xacml-users,O=mock-sts tests" });
+  const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
+  assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
+    "just built; it answered " + posted.status + ". Without the anchor the " +
+    "certificate verifies against nothing and every read below is a 403.");
+  log.info("Minted an XACML_USER credential for " + xacmlUser.subject + ".");
+  log.debug("Leaving mintTheCredential().");
+}
+
+// `json()` with that certificate on the connection. Same answer shape, so the
+// two call sites read the same as every other read in this file.
+function certJson(url) {
+  log.debug("Entering certJson(). url=" + url);
+  return new Promise(function (resolve, reject) {
+    const target = new URL(url);
+    const request = https.request({
+      host: target.hostname, port: target.port || 443,
+      path: target.pathname + target.search, method: "GET",
+      rejectUnauthorized: false,
+      cert: xacmlUser ? xacmlUser.certPem : undefined,
+      key: xacmlUser ? xacmlUser.keyPem : undefined
+    }, function (response) {
+      let text = "";
+      response.on("data", function (chunk) { text += chunk; });
+      response.on("end", function () {
+        let body;
+        try {
+          body = JSON.parse(text);
+        } catch (e) {
+          body = null;
+        }
+        resolve({ status: response.statusCode, body: body, text: text });
+      });
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
 async function json(url, options) {
   const r = await fetch(url, options || {});
   const text = await r.text();
@@ -250,9 +319,9 @@ function pathOfKind(tree, kind, parentPath) {
 // endpoint rather than the console — and it is what makes an edit on the page
 // mean something.
 async function enforcementFor(subject, action) {
-  const r = await json(realmUrl("/xacml/protected?subject=" +
-                                encodeURIComponent(subject) + "&action=" +
-                                encodeURIComponent(action)));
+  const r = await certJson(realmUrl("/xacml/protected?subject=" +
+                                    encodeURIComponent(subject) + "&action=" +
+                                    encodeURIComponent(action)));
   return r;
 }
 
@@ -603,8 +672,17 @@ async function theTreeIsDrawn(driver) {
   });
 
   check("every form on the page posts to the editor IN THIS REALM", function () {
+    // THE SHELL'S SIGN OUT FORM IS NOT AN EDITOR CONTROL (2026-09-06). Every
+    // page of this console draws it, it posts to `/admin/signout`, and it is
+    // correctly realm-prefixed like every other root-relative action — it is
+    // simply not under `/admin/xacml/`, which is what this check is about: a
+    // form that EDITS THE REPOSITORY must edit the one being read. Ending your
+    // own session edits no repository, and the console session it ends is the
+    // DEFAULT realm's whichever realm the page was reached in, which is the
+    // gate's rule and not this file's.
     const wrong = page.forms.filter(function (f) {
       return f.method === "post" &&
+             f.resolvedAction.indexOf("/admin/signout") < 0 &&
              f.resolvedAction.indexOf("/realm/" + REALM + "/admin/xacml/") < 0;
     });
     assert.deepStrictEqual(wrong.map(function (f) {
@@ -1365,8 +1443,9 @@ async function createTheRealm() {
   log.debug("Entering createTheRealm().");
   const r = await apiPost("/admin-api/realms/create", {
     id: REALM, name: "XACML editor test realm",
-    description: "Created by tests/vendored/sts_xacml_editor.js; removed at " +
-                 "the end."
+    description: "Created by tests/vendored/sts_xacml_editor.js; LEFT IN " +
+                 "PLACE on purpose, so that a failed run can be read " +
+                 "afterwards. Remove it by hand when you are done with it."
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "creating the throwaway realm " + REALM + " answered " + r.status + " " +
@@ -1392,24 +1471,34 @@ async function createThePolicies() {
   // The FIRST one became the root because the repository was empty; the second
   // did not. Every section below assumes exactly that, so it is asserted rather
   // than trusted.
-  const listed = await json(base + "/realm/" + REALM + "/xacml/policies");
+  const listed = await certJson(base + "/realm/" + REALM +
+                                "/xacml/policies");
   assert.strictEqual(listed.body.root, POLICY,
     "the first policy created in an empty repository becomes the root; this " +
     "repository's root is " + listed.body.root);
   log.debug("Leaving createThePolicies().");
 }
 
-async function removeTheRealm() {
-  log.debug("Entering removeTheRealm().");
-  const r = await apiPost("/admin-api/realms/remove", { id: REALM });
-  if (r.status !== 200 || !r.body || r.body.ok === false) {
-    log.warn("Could not remove the throwaway realm " + REALM + ": " +
-             r.status + " " + String(r.text).slice(0, 200));
-    return;
-  }
-  log.info("Removed the throwaway realm " + REALM + ", and the policies this " +
-           "file edited with it.");
-  log.debug("Leaving removeTheRealm().");
+// THE REALM IS LEFT STANDING, DELIBERATELY (2026-09-06), AND THIS IS WHERE THE
+// TEARDOWN USED TO BE.
+//
+// **A realm a test run created stays, because it is what a person reads when
+// the run went red.** This job's whole subject is a DOCUMENT — the policy it
+// built element by element through the guided editor — and the failure that
+// matters here is almost always "the editor wrote something other than what it
+// drew". Removing the realm deleted the one artefact that answers it. The
+// policies are at /realm/<id>/xacml/policies and in the editor itself.
+//
+// It costs nothing to leave: the id carries `names.runStamp()`, so a second
+// run mints a second realm rather than meeting this one, and everything this
+// file writes is inside it.
+async function theRealmIsLeftBehind() {
+  log.debug("Entering theRealmIsLeftBehind().");
+  log.info("The throwaway realm " + REALM + " is LEFT IN PLACE on purpose, " +
+           "and the policies this file edited with it. Read them at " + base +
+           "/realm/" + REALM + "/admin/xacml, or remove the realm by hand " +
+           "when you are done with it.");
+  log.debug("Leaving theRealmIsLeftBehind().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1434,6 +1523,10 @@ async function test() {
       .setChromeOptions(options).build();
 
   try {
+    // THE CREDENTIAL BEFORE THE REALM, because the truststore is process-wide
+    // while the realm is not: posting the anchor once covers every realm this
+    // file works in.
+    await mintTheCredential();
     await createTheRealm();
     try {
       await signIn(driver, CONSOLE_USER);
@@ -1452,7 +1545,7 @@ async function test() {
       await theChooserOpensAnotherPolicy(driver);
       await theBrowserConsoleIsClean(driver);
     } finally {
-      await removeTheRealm();
+      await theRealmIsLeftBehind();
     }
 
     // A FLOOR ON THE COUNT, for sts_admin_console.js's reason: a section that
