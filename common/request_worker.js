@@ -162,6 +162,79 @@ let inFlight = 0;
 let served = 0;
 
 // ---------------------------------------------------------------------------
+// THE RESPONSE THIS WORKER IS CURRENTLY WRITING (2026-09-09), AND THE ONE
+// THING THAT NEEDS IT.
+//
+// `ldap_server.js` in a worker cannot close a directory connection: the socket
+// belongs to the front process. What it can do is say so ON THIS REQUEST'S
+// ANSWER, which the front process reads before it forwards a byte — see
+// `request_pool.js`'s LDAP_DROP_HEADER for why the answer and not the IPC
+// channel beside it.
+//
+// **AN AsyncLocalStorage AND NOT A MODULE-LEVEL `let`**, which is the whole
+// reason this block exists rather than a variable. Two sign-outs can be in
+// flight in one worker; a `let` would hand the second request's response to the
+// first one's handler, and the symptom would be a logout that reported a
+// connection closed while the header rode away on somebody else's answer —
+// intermittent, load-dependent, and identical to the bug this mechanism fixes.
+// The realm is ambient for the same class of reason (see `common/realms.js`),
+// and this is a second store rather than a field on that one because the realm
+// context is entered by `app.js` for EVERY process and this exists only in a
+// worker.
+// ---------------------------------------------------------------------------
+const { AsyncLocalStorage } = require('async_hooks');
+const currentResponse = new AsyncLocalStorage();
+
+// The header the front process acts on. Named here and in `request_pool.js`,
+// and those two spellings must agree — the pool's copy carries the argument.
+const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
+
+// ---------------------------------------------------------------------------
+// WHAT THIS WORKER KNOWS ABOUT DIRECTORY CONNECTIONS, AND WHAT IT ASKS FOR.
+//
+// Called once, after the protocol stack is loaded. The two halves are the two
+// ways a process with no listener is wrong about LDAP: it cannot SEE a bound
+// connection (so a sign-out finds nothing to end) and it cannot CLOSE one (so
+// saying it did would be a lie). `ldap_server.js` argues both at the block
+// above its boundConnections().
+// ---------------------------------------------------------------------------
+function installDirectoryMirror(seed) {
+  log.debug('Entering installDirectoryMirror().');
+  const ldapServer = require('../ldap/ldap_server');
+  ldapServer.setConnectionMirror(seed || []);
+  ldapServer.setRemoteDropper(function (key) {
+    const res = currentResponse.getStore();
+    if (!res) {
+      // A sign-out that did not arrive over HTTP — nothing does this today, and
+      // the honest answer is that there is no answer for it to ride out on.
+      // Thrown rather than logged, because dropConnectionsFor() catches it and
+      // says the connections may still be open, which is the truth.
+      throw new Error('there is no response in flight in this worker to carry ' +
+                      'the request on, so the front process cannot be asked');
+    }
+    if (res.headersSent) {
+      throw new Error('this request\'s headers have already gone to the ' +
+                      'client, so the front process cannot be asked in time');
+    }
+    // APPENDED, because one sign-out can end more than one person's
+    // connections — `/admin/logout` acts on a key that is not the caller's —
+    // and because the header is the only channel. Percent-encoded: a key is a
+    // username and a header is bytes, and a comma in one would otherwise
+    // become two keys.
+    const had = String(res.getHeader(LDAP_DROP_HEADER) || '');
+    const one = encodeURIComponent(String(key || ''));
+    const all = had ? had.split(',') : [];
+    if (all.indexOf(one) < 0) {
+      all.push(one);
+    }
+    res.setHeader(LDAP_DROP_HEADER, all.join(','));
+    log.debug('installDirectoryMirror(): asked the front process to sign ' +
+              key + ' out of the directory.');
+  });
+  log.debug('Leaving installDirectoryMirror().');
+}
+
+// ---------------------------------------------------------------------------
 // Load the service and answer on the socket.
 //
 // The app is required AFTER the socket path is known but BEFORE the socket is
@@ -427,7 +500,12 @@ function start(path) {
     // of the write — the barrier it already runs does the waiting, and no
     // writer blocks on a store.
     // -------------------------------------------------------------------
-    app(req, res);
+    // IN THE RESPONSE'S OWN CONTEXT. Everything the handler does — including a
+    // sign-out reaching `ldap_server.js` several modules down — can find the
+    // answer it is going to ride out on. See currentResponse.
+    currentResponse.run(res, function () {
+      app(req, res);
+    });
   });
   // Every connection is from the front process on this machine, over a socket
   // in a directory only it and this worker know. Keep-alive is what makes the
@@ -841,13 +919,27 @@ if (require.main === module) {
     // A LATE ARRIVAL, or a correction: another process generated this realm's
     // keys first and the parent is telling us which set the service uses. It
     // replaces whatever this process holds — see receivePublishedKeys().
+    //
+    // THE DIRECTORY'S CONNECTION LIST ARRIVES ON THIS SAME LISTENER, and is
+    // handed straight to `ldap_server.js` — see installDirectoryMirror() for
+    // what it is for and why this process cannot work it out for itself.
     process.on('message', function (later) {
       if (later && later.adoptKeys && later.adoptKeys.realm) {
         keystore.adoptShared(later.adoptKeys.realm, later.adoptKeys.blob);
       }
+      if (later && later.ldapConnections) {
+        require('../ldap/ldap_server').setConnectionMirror(later.ldapConnections);
+      }
     });
     try {
       start(message.socket || '');
+      // AFTER start(), which is what loads the protocol stack: requiring the
+      // directory before it would put this module in the position server.js
+      // holds and register every `/admin/ldap/*` page at a point of this
+      // file's choosing. Here it is a cache hit. The seed is the snapshot the
+      // front process took when it forked this worker; every later change
+      // arrives on the listener above.
+      installDirectoryMirror(message.ldapConnections || []);
     } catch (e) {
       report({ ready: false, error: e.message });
     }
@@ -855,6 +947,12 @@ if (require.main === module) {
 }
 
 module.exports = {
+  // THE HEADER THIS WORKER ASKS THE FRONT PROCESS ON, exported to be compared
+  // with `request_pool.js`'s copy — see that file's export of the same name.
+  LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  // Installing the directory mirror, exported so that a test can put this
+  // process in the state a worker is in without forking one.
+  installDirectoryMirror: installDirectoryMirror,
   start: start,
   stop: stop,
   register: register,

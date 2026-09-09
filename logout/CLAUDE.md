@@ -61,7 +61,7 @@ termination is a call into that same module:
 | Tokens | `admin_stats.js` | `stats.revoke()` — the ONE revocation set |
 | Authorization codes | `oauth2.outstandingCodesFor()` | `oauth2.dropCode()` |
 | Pre-authorized codes | `vc_offers.preAuthorizedCodes` | deleted there |
-| Directory connections | `ldap_server.boundConnections()` | `ldap_server.dropConnectionsFor()` |
+| Directory connections | `ldap_server.boundConnections()` | `ldap_server.dropConnectionsFor()` — the only pair here that may be answering about another PROCESS's sockets; see the LDAP bullet below |
 | Kerberos tickets | `krb5_principals.signedOutAt()` | `krb5_principals.signOut()` |
 | Everything already issued | `admin_stats.js`'s artifacts | **nothing can** |
 
@@ -177,7 +177,17 @@ they live rather than here:
   `end()`: a client mid-search can hold a half-closed socket open for as long as
   it likes. An UNSOLICITED NOTICE OF DISCONNECTION would be the polite form and
   node-ldapjs cannot send one — it is a submodule used unmodified. See
-  `ldap/CLAUDE.md`.
+  `ldap/CLAUDE.md`. **AND IT IS THE ONE FAMILY IN THIS TABLE THAT NEEDS A
+  PROCESS THIS ONE MAY NOT BE** (2026-09-09): every other row ends something
+  held in a store, and a store is shared between the front process and every
+  request worker by `persistence_replication.js`. A SOCKET is not. With
+  `workers.dispatch` on, this driver runs in a worker that binds no port, so it
+  could neither SEE a bound connection nor CLOSE one — and since it ends what
+  `collect()` finds, it quietly ended nothing and reported that it had ended
+  everything. The fix is two hooks in `ldap_server.js` and one response header,
+  argued there; what matters here is the shape of the failure, because any
+  future family whose thing is a FILE DESCRIPTOR rather than a row will fail the
+  same way and will not be caught by anything this file does.
 
 And one that is a whole specification: **OpenID Connect Front-Channel Logout
 1.0**, in `oauth-oidc/frontchannel_logout.js`. See `oauth-oidc/CLAUDE.md`.
