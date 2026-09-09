@@ -761,6 +761,206 @@ function remove(id) {
 // EVERY ONE OF THEM REGISTERS A PURGE, which is why they are here rather than
 // three copies of a WeakMap trick in three modules.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A PERSISTED STORE IS DECLARED PERSISTED, AND NOWHERE ELSE (2026-09-06).
+//
+// This is the rule two paragraphs up, read a second time. `common/CLAUDE.md`
+// says a store becomes PER REALM at its declaration; since product mode
+// learned to write down what this process MINTS, a store also becomes
+// PERSISTENT at its declaration:
+//
+//     const sessions = realms.map({ persist: 'authn.sessions' });
+//
+// and every one of the ninety call sites is unchanged again, for the same
+// reason: `set`, `delete` and `clear` on the facade below — and the `set` and
+// `deleteProperty` traps on the two Proxies — are already the only ways any of
+// these stores can be mutated. Naming the store is therefore enough to name
+// every write to it, which is what makes this ~40 one-line edits rather than
+// ~200 call-site edits.
+//
+// **WHY A JOURNAL RATHER THAN THE DIFF `persistence.js` USES.** That module
+// compares the whole directory against a shadow, because `touchDirectory()`
+// was already the one choke point and does not say which entry moved. These
+// stores are the opposite case on both counts: each has two to four mutation
+// points, so naming the key is POSSIBLE — and the rows are hot enough that a
+// full JSON.stringify sweep per flush is not affordable, because in postgres
+// mode the flush delay is 0 and a sweep of the audit ring and the token
+// register would then run on every request that touched either. So the store
+// reports the KEY, and the flush writes exactly that key.
+//
+// **THE OBSERVER IS AN INVERTED HOOK (rule 3e) AND IT PASSES THE TEST IN THE
+// ONE DIRECTION THAT MATTERS.** `persistence/persistence_minted.js` requires
+// this module — through `persistence.js`, which requires `config.js`, which
+// this module fills a slot on — so a require from here to there closes a
+// cycle, and node answers a cycle with a half-initialised module whose exports
+// are `undefined`. The symptom would arrive later as "changed is not a
+// function" from inside a session write.
+//
+// **AN UNFILLED SLOT MEANS "PERSIST NOTHING", WHICH IS EVERY DEVELOPMENT-MODE
+// PROCESS, EVERY `npm test` AND EVERY MEMORY-MODE RUN.** That is the whole
+// compatibility story here, and it is the same shape as the empty issuance
+// decider in `common/issuance_gate.js`: the absent thing has the harmless
+// answer, so a process that loaded half this service is a smaller service
+// rather than a broken one.
+// ---------------------------------------------------------------------------
+let persistObserver = null;
+
+function setPersistObserver(fn) {
+  log.debug("Entering setPersistObserver().");
+  if (typeof fn !== 'function') {
+    log.error('realms: setPersistObserver() was given a ' + typeof fn +
+              ' rather than a function. Nothing minted will be written down.');
+    log.debug("Leaving setPersistObserver(). Refused.");
+    return false;
+  }
+  persistObserver = fn;
+  log.info('realms: minted stores will now report their writes; ' +
+           declaredHandles.length + ' store(s) were declared before this ' +
+           'was installed and are all reachable, because the observer is ' +
+           'consulted per write rather than captured at declaration.');
+  log.debug("Leaving setPersistObserver(). Installed.");
+  return true;
+}
+
+// EVERY HANDLE DECLARED, in declaration order. `persistence_minted.js` reads it
+// to know what a restore may write into, and `tests/realm_isolation.js` reads
+// it to check that no two stores claim one handle — two stores sharing a name
+// would each overwrite the other's rows, and the first symptom would be one
+// restart later.
+const declaredHandles = [];
+
+function declareHandle(options, shape, accessors) {
+  if (!options || !options.persist) {
+    return null;
+  }
+  const handle = String(options.persist);
+  const already = declaredHandles.find(function (row) {
+    return row.handle === handle;
+  });
+  if (already) {
+    // NOT thrown. A duplicate handle is a programming error, and throwing here
+    // would happen at require time and take the whole service down over a
+    // store that is at worst not persisted — which is the trade rule 1's
+    // "a require that throws takes the service down where a route cannot"
+    // already makes for the listeners.
+    log.error('realms: the handle "' + handle + '" is declared TWICE (' +
+              already.shape + ' and ' + shape + '). The second declaration ' +
+              'will not be persisted: two stores under one handle would ' +
+              'each overwrite the other\'s rows, and the damage would only ' +
+              'be visible one restart later.');
+    return null;
+  }
+  declaredHandles.push({
+    handle: handle,
+    shape: shape,
+    scope: options.scope === 'shared' ? 'shared' : 'realm',
+    // -----------------------------------------------------------------------
+    // HOW TWO PROCESSES' COPIES OF THIS STORE COMBINE, and it is declared here
+    // for the same reason everything else about the store is: at the store,
+    // once, where somebody changing it will see it.
+    //
+    //   'replace'  The default and the right answer for almost everything.
+    //              The row is whole-valued, so the later write wins and both
+    //              processes converge on it — which is EXACTLY the semantics
+    //              a single process already has for two concurrent requests.
+    //   'own'      This row is MINE. The store is an ACCUMULATOR — a counter
+    //              that is incremented, or a ring that is appended to — so a
+    //              later write is not a newer version of an earlier one and
+    //              replacing would silently lose the other process's work.
+    //              Each process writes only its own row, and the fan-in
+    //              happens where the value is REPORTED.
+    //
+    // The test for 'own' is one question: **is a write to this store an
+    // ASSIGNMENT or an INCREMENT?** `sessions.set(id, row)` is an assignment
+    // and the last one is the truth. `nums.callTotal++` and `events.push(row)`
+    // are increments, and there is no "last one".
+    // -----------------------------------------------------------------------
+    merge: options.merge === 'own' ? 'own' : 'replace',
+    // ---------------------------------------------------------------------
+    // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
+    // the whole reason this is a registry at all. Two of the three shapes are
+    // Proxies over a real Array and a real Object, and a `persistRead` member
+    // hung on one of those would be a property name that shadows a row: an
+    // audit event keyed "persistRead", a counter field of that name. Keeping
+    // them here means a persisted store's public surface is EXACTLY the
+    // surface it had before it was declared — `Array.isArray()`,
+    // `Object.keys()` and a spread all answer what they always did.
+    // ---------------------------------------------------------------------
+    dump: accessors.dump,
+    read: accessors.read,
+    restore: accessors.restore,
+    remove: accessors.remove
+  });
+  log.debug('realms: "' + handle + '" declared as a persistable ' + shape + '.');
+  return handle;
+}
+
+// What a store calls when something in it moved. `key` is null for a whole-store
+// change, which is what a counter object reports — those are one small row and
+// rewriting it is cheaper than working out which field moved.
+function noteWrite(handle, key) {
+  noteWriteIn(handle, currentId(), key);
+}
+
+// THE SAME, AGAINST A NAMED REALM RATHER THAN THE AMBIENT ONE. `realmMap(id)`
+// hands out a partition BY NAME, and a write through it belongs to that realm
+// however the ambient one happens to be set — a sweep walks every realm from
+// outside all of them, and journalling those deletes against the default realm
+// would leave the rows it removed standing in every other realm's store.
+function noteWriteIn(handle, realmId, key) {
+  if (!handle || !persistObserver) {
+    return;
+  }
+  try {
+    persistObserver(handle, realmId, key === undefined ? null : key);
+  } catch (e) {
+    // SWALLOWED DELIBERATELY. This runs inside `sessions.set()`, which runs
+    // inside a sign-in. A store that cannot journal its write must not fail
+    // the request that made it — the same argument persistence.js makes about
+    // a failed flush, one layer down.
+    log.error('realms: "' + handle + '" could not report a write: ' + e.message);
+  }
+}
+
+// The handles, for the readers named above. The rows themselves rather than
+// copies of them, because they carry the three accessor functions and a copy
+// would be a second object claiming to be the same store.
+function handles() {
+  return declaredHandles.slice();
+}
+
+// One row by name, or null. What a restore uses to find the store a stored
+// handle belongs to — a handle in the store that nothing declares is an older
+// build's row, and answering null is what lets the restore say so and move on
+// rather than throwing on somebody else's data.
+function handleFor(name) {
+  return declaredHandles.find(function (row) {
+    return row.handle === String(name);
+  }) || null;
+}
+
+// ---------------------------------------------------------------------------
+// MUTATING ARRAY MEMBERS. Wrapped for a DECLARED array so that `push` and
+// `shift` are seen — see the long comment in arr()'s `get` trap, which is
+// where this list is used and why it exists.
+// ---------------------------------------------------------------------------
+const MUTATORS = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort',
+                  'reverse', 'fill', 'copyWithin'];
+
+// ---------------------------------------------------------------------------
+// THE PARTITION A REALM ID NAMES, and it exists because of a bug it already
+// caught: `keyed()`'s internal Map is keyed by the id STRING, a write lands
+// under `currentId()` — which is `'default'` in the default realm — and an
+// empty string is a perfectly ordinary way to spell "the default realm"
+// everywhere else in this service (it is what `prefixOf()` answers, and it is
+// what a stored row carries for a shared store). Handing `''` to `per.of()`
+// therefore built a SECOND, empty partition beside the real one, and the dump
+// of a store somebody had just written to came back empty.
+// ---------------------------------------------------------------------------
+function partitionId(realmId) {
+  return (get(realmId) || DEFAULT_REALM).id;
+}
+
 function keyed(factory) {
   log.debug("Entering keyed().");
   const per = new Map();
@@ -785,18 +985,135 @@ function keyed(factory) {
 
 // A Map, per realm. Every member of the Map interface is delegated, including
 // the iterator — `for (const [k, v] of store)` is a shape this codebase uses.
-function map() {
+function map(options) {
   log.debug("Entering map().");
   const per = keyed(function () { return new Map(); });
+  const handle = declareHandle(options, 'map', {
+    // Every key in the realm's own partition. `per.of(id)` rather than `per()`
+    // so that a flush does not have to be inside the realm to read it — which
+    // it is anyway, but a dump that depends on ambient state is a dump that
+    // silently returns the default realm's rows when somebody forgets.
+    dump: function (realmId) {
+      const out = [];
+      per.of(partitionId(realmId)).forEach(function (v, k) {
+        out.push({ key: k, value: v });
+      });
+      return out;
+    },
+    read: function (realmId, k) {
+      const m = per.of(partitionId(realmId));
+      return m.has(k) ? { present: true, value: m.get(k) } : { present: false };
+    },
+    // NOT `set`, and the difference is the point: this writes without
+    // journalling, because what a restore just read out of the store is the
+    // one thing that must not be written straight back into it.
+    restore: function (realmId, k, v) { per.of(partitionId(realmId)).set(k, v); },
+    // WHAT A REPLICATED DELETE REACHES. It is a fourth accessor rather than a
+    // `restore(…, undefined)` because "the value is undefined" and "the key is
+    // gone" are different states, and a store that could not tell them apart
+    // would answer `has(k) === true` for a key another process deleted.
+    remove: function (realmId, k) { per.of(partitionId(realmId)).delete(k); }
+  });
+  // ------------------------------------------------------------------------
+  // `realmMap()` HANDS OUT A JOURNALLING VIEW AND NOT THE BARE Map (2026-09-08).
+  //
+  // It used to return `per()` itself, and a write through it was invisible to
+  // the journal — so it never reached the persistence store, never became a
+  // change row, and never arrived in any other process. Every OTHER door on
+  // this facade calls `noteWrite()`; this one was the hole, and it was not
+  // theoretical: `authn.js` creates a RELYING PARTY session through it (the
+  // console's and the portal's own sessions, since both surfaces became OpenID
+  // Connect clients), expires a presented session through it, and sweeps every
+  // realm's expired sessions through it. In the request-worker pool that is a
+  // session the worker that minted it can see and no other worker can — the
+  // console signed somebody in and `GET /admin-api/sessions`, which fans out,
+  // listed no such session. It was equally wrong in one process: the rows were
+  // simply never written, so nothing survived a restart and no delete was ever
+  // recorded against a row that had been.
+  //
+  // A PROXY RATHER THAN A HAND-WRITTEN FACADE, because this really must be a
+  // Map: callers read `.size`, iterate it with `for…of`, and hand it to code
+  // that does either. Proxying the real Map keeps every one of those exact and
+  // wraps only the three members that mutate. `set()` answers with the PROXY
+  // and not the target, so a chained `set().set()` stays journalled.
+  //
+  // The realm is captured HERE rather than read at write time, for
+  // `noteWriteIn()`'s reason: `realmMap(id)` means that realm's partition, and
+  // the caller may well write to it from outside any realm at all.
+  // ------------------------------------------------------------------------
+  function viewOf(realmId, target) {
+    if (!handle || !persistObserver) {
+      // Nothing is journalling this store, so there is nothing to wrap and the
+      // bare Map is both correct and cheaper. `realms.map()` with no `persist`
+      // is the ordinary case — the embedded directory is one — and it must not
+      // pay for a Proxy on every entry it holds.
+      return target;
+    }
+    const view = new Proxy(target, {
+      get: function (t, prop) {
+        const value = Reflect.get(t, prop, t);
+        if (typeof value !== 'function') {
+          return value;
+        }
+        if (prop === 'set') {
+          return function (k, v) {
+            t.set(k, v);
+            noteWriteIn(handle, realmId, k);
+            return view;
+          };
+        }
+        if (prop === 'delete') {
+          return function (k) {
+            const gone = t.delete(k);
+            // Reported whether or not the key was there, for `delete()`'s
+            // reason on the facade above.
+            noteWriteIn(handle, realmId, k);
+            return gone;
+          };
+        }
+        if (prop === 'clear') {
+          return function () {
+            t.forEach(function (v, k) { noteWriteIn(handle, realmId, k); });
+            return t.clear();
+          };
+        }
+        return value.bind(t);
+      }
+    });
+    return view;
+  }
+
   const facade = {
-    // The realm's own Map, for the two callers that genuinely want the whole
-    // thing (a purge, and a console page counting across realms).
-    realmMap: function (id) { return id === undefined ? per() : per.of(id); },
+    // The realm's own Map, for the callers that genuinely want the whole thing
+    // (a purge, a sweep across realms, a console page counting them). It is a
+    // JOURNALLING VIEW — see viewOf() above.
+    realmMap: function (id) {
+      return id === undefined
+        ? viewOf(currentId(), per())
+        : viewOf(partitionId(id), per.of(id));  // target as before; journal on the RESOLVED id
+    },
     get: function (k) { return per().get(k); },
-    set: function (k, v) { per().set(k, v); return facade; },
+    set: function (k, v) { per().set(k, v); noteWrite(handle, k); return facade; },
     has: function (k) { return per().has(k); },
-    delete: function (k) { return per().delete(k); },
-    clear: function () { return per().clear(); },
+    delete: function (k) {
+      const gone = per().delete(k);
+      // Reported whether or not the key was there. A delete of a key this
+      // process never held may still have a ROW — restored from the store and
+      // swept before anything read it — and reporting only the hits would
+      // leave that row behind for ever.
+      noteWrite(handle, k);
+      return gone;
+    },
+    clear: function () {
+      // EVERY KEY NAMED, before the clear rather than after it: afterwards
+      // there is nothing left to name, and a store that reported "cleared"
+      // without saying what it held would need the flush to read a shadow this
+      // design deliberately does not keep.
+      if (handle) {
+        per().forEach(function (v, k) { noteWrite(handle, k); });
+      }
+      return per().clear();
+    },
     forEach: function (fn, thisArg) { return per().forEach(fn, thisArg); },
     keys: function () { return per().keys(); },
     values: function () { return per().values(); },
@@ -812,19 +1129,80 @@ function map() {
 // INDEX and by `length` as much as by method, and no list of delegated methods
 // would cover `rows[0]`, `rows.length = 0` or a spread. The proxy target is a
 // real array so that `Array.isArray()` — which several callers use — is true.
-function arr() {
+function arr(options) {
   log.debug("Entering arr().");
   const per = keyed(function () { return []; });
+  // ONE ROW FOR THE WHOLE ARRAY, under the empty key. An array's key is its
+  // POSITION, and a `splice` renumbers every row after it — so a row per index
+  // would need the flush to work out which positions moved, which is the diff
+  // this design exists to avoid. The two arrays here are an audit ring and the
+  // issued register, and both are read whole by everything that reads them.
+  const handle = declareHandle(options, 'arr', {
+    dump: function (realmId) {
+      return [{ key: '', value: per.of(partitionId(realmId)).slice() }];
+    },
+    read: function (realmId) {
+      return { present: true, value: per.of(partitionId(realmId)).slice() };
+    },
+    restore: function (realmId, key, value) {
+      const real = per.of(partitionId(realmId));
+      real.length = 0;
+      (Array.isArray(value) ? value : []).forEach(function (row) {
+        real.push(row);
+      });
+    },
+    // An array's row is the whole array, so removing it is emptying it.
+    remove: function (realmId) { per.of(partitionId(realmId)).length = 0; }
+  });
   log.debug("Leaving arr().");
   return new Proxy([], {
     get: function (target, prop, receiver) {
       const real = per();
       const v = Reflect.get(real, prop, real);
-      return typeof v === 'function' ? v.bind(real) : v;
+      if (typeof v !== 'function') {
+        return v;
+      }
+      // ---------------------------------------------------------------
+      // **THE ONE PLACE THIS PROXY DOES NOT SEE A WRITE, AND THE REASON
+      // THIS BRANCH EXISTS.** A method is handed back BOUND TO THE REAL
+      // ARRAY, so `rows.push(x)` mutates it without ever reaching the
+      // `set` trap below. That is invisible and harmless while nothing
+      // watches an array — and it is exactly how `common/audit.js`'s ring
+      // is written, `push` on one end and `shift` on the other. A
+      // persisted array that reported index assignments and not `push`
+      // would persist nothing at all, and the damage would be visible one
+      // restart later.
+      //
+      // So a DECLARED array wraps the mutating members, and only those:
+      // the read-only ones stay the bare bound function they have always
+      // been, because wrapping `map` or `slice` would cost every reader a
+      // closure for nothing.
+      // ---------------------------------------------------------------
+      if (!handle || MUTATORS.indexOf(prop) < 0) {
+        return v.bind(real);
+      }
+      return function () {
+        const out = v.apply(real, arguments);
+        // WHOLE-STORE, not per index. `splice` and `sort` move rows the
+        // caller never names, and an array's KEY is its position — so any
+        // mutation potentially renumbers every row after it. The flush
+        // rewrites the list, which for the two arrays here (an audit ring
+        // and the issued register) is what it would have had to do anyway.
+        noteWrite(handle, null);
+        return out;
+      };
     },
-    set: function (target, prop, value) { per()[prop] = value; return true; },
+    set: function (target, prop, value) {
+      per()[prop] = value;
+      noteWrite(handle, null);
+      return true;
+    },
     has: function (target, prop) { return prop in per(); },
-    deleteProperty: function (target, prop) { delete per()[prop]; return true; },
+    deleteProperty: function (target, prop) {
+      delete per()[prop];
+      noteWrite(handle, null);
+      return true;
+    },
     ownKeys: function () { return Reflect.ownKeys(per()); },
     getOwnPropertyDescriptor: function (target, prop) {
       const d = Object.getOwnPropertyDescriptor(per(), prop);
@@ -850,9 +1228,38 @@ function arr() {
 // `realms.obj(() => ({ seq: 0 }))` and spelling the reads `nums.seq` moves the
 // counter into the partition with the thing it counts — `nums.seq++` works
 // through the proxy exactly as it did through the binding.
-function obj(factory) {
+function obj(factory, options) {
   log.debug("Entering obj().");
   const per = keyed(factory || function () { return {}; });
+  // ONE ROW FOR THE WHOLE OBJECT, under the empty key, for the array's reason
+  // read the other way: these are counters and claim sets, one small object
+  // per realm, so the row IS the object and a row per field would be a table
+  // of scalars nobody wants to read.
+  const handle = declareHandle(options, 'obj', {
+    dump: function (realmId) {
+      return [{ key: '', value: Object.assign({}, per.of(partitionId(realmId))) }];
+    },
+    read: function (realmId) {
+      return { present: true, value: Object.assign({}, per.of(partitionId(realmId))) };
+    },
+    // MERGED rather than replaced. The factory has already built this realm's
+    // object with every field the current build expects; assigning over it
+    // keeps a field added since the row was written at its default instead of
+    // making it `undefined`, which is what a wholesale replacement would do
+    // and what would then arrive as NaN out of `nums.seq++`.
+    restore: function (realmId, key, value) {
+      Object.assign(per.of(partitionId(realmId)), value || {});
+    },
+    // BACK TO WHAT THE FACTORY BUILDS rather than to an empty object: these
+    // are counter sets and claim sets whose fields are read unconditionally,
+    // and `nums.seq++` on a `{}` is NaN for ever after.
+    remove: function (realmId) {
+      const id = partitionId(realmId);
+      const real = per.of(id);
+      Object.keys(real).forEach(function (k) { delete real[k]; });
+      Object.assign(real, (factory ? factory(get(id) || DEFAULT_REALM) : {}));
+    }
+  });
   log.debug("Leaving obj().");
   return new Proxy({}, {
     get: function (target, prop) {
@@ -860,9 +1267,20 @@ function obj(factory) {
       const v = real[prop];
       return typeof v === 'function' ? v.bind(real) : v;
     },
-    set: function (target, prop, value) { per()[prop] = value; return true; },
+    set: function (target, prop, value) {
+      per()[prop] = value;
+      // WHOLE-STORE, like the array above but for a different reason: these
+      // are counters and claim sets — one small object per realm — so the row
+      // IS the object and naming a field would mean a row per field.
+      noteWrite(handle, null);
+      return true;
+    },
     has: function (target, prop) { return prop in per(); },
-    deleteProperty: function (target, prop) { delete per()[prop]; return true; },
+    deleteProperty: function (target, prop) {
+      delete per()[prop];
+      noteWrite(handle, null);
+      return true;
+    },
     ownKeys: function () { return Reflect.ownKeys(per()); },
     getOwnPropertyDescriptor: function (target, prop) {
       const d = Object.getOwnPropertyDescriptor(per(), prop);
@@ -873,6 +1291,81 @@ function obj(factory) {
       return true;
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// A STORE THAT IS DELIBERATELY NOT PER REALM, DECLARED IN THE FILE ABOUT
+// REALMS — which needs its argument made rather than assumed.
+//
+// Kerberos, SPIFFE's four sockets and the rate limiter's buckets are shared
+// across every realm, because a socket has no path to put a realm segment in
+// and — unlike the directory — no name inside the protocol to put one in
+// either. `CLAUDE.md` lists them as the three things a realm does not get.
+// They are still MINTED state, so product mode has to write them down, and
+// they need somewhere to be declared.
+//
+// It is HERE, and not in `persistence_minted.js`, for one reason:
+// `declaredHandles` above is the ONE list of persistable stores, and
+// `tests/realm_isolation.js` reads it to check that a store which ought to be
+// per realm has not quietly been left process-wide. A second list somewhere
+// else would be exactly the thing that test exists to catch, hidden from the
+// test that catches it. So a shared store says so, in the same place, in one
+// word: `realms.sharedMap({ persist: 'krb5.principals', scope: 'shared' })`.
+//
+// It is a plain `Map` with no partitioning at all — every member is the real
+// Map's, and only the three mutators are wrapped — so a caller cannot tell it
+// from the `new Map()` it replaces.
+// ---------------------------------------------------------------------------
+function sharedMap(options) {
+  log.debug("Entering sharedMap().");
+  const real = new Map();
+  const declared = Object.assign({}, options || {}, { scope: 'shared' });
+  const handle = declareHandle(declared, 'shared-map', {
+    dump: function () {
+      const out = [];
+      real.forEach(function (v, k) { out.push({ key: k, value: v }); });
+      return out;
+    },
+    read: function (realmId, k) {
+      return real.has(k) ? { present: true, value: real.get(k) }
+                         : { present: false };
+    },
+    restore: function (realmId, k, v) { real.set(k, v); },
+    remove: function (realmId, k) { real.delete(k); }
+  });
+  // The realm reported is always the empty string, whatever realm the write
+  // happened in: a shared store has ONE row set, and journalling a write under
+  // the ambient realm would file the same key under whichever realm happened
+  // to be current — so a restore would find it under a realm that may not
+  // exist by then.
+  function note(k) {
+    if (handle && persistObserver) {
+      try {
+        persistObserver(handle, '', k === undefined ? null : k);
+      } catch (e) {
+        log.error('realms: "' + handle + '" could not report a write: ' +
+                  e.message);
+      }
+    }
+  }
+  const facade = {
+    get: function (k) { return real.get(k); },
+    set: function (k, v) { real.set(k, v); note(k); return facade; },
+    has: function (k) { return real.has(k); },
+    delete: function (k) { const gone = real.delete(k); note(k); return gone; },
+    clear: function () {
+      real.forEach(function (v, k) { note(k); });
+      return real.clear();
+    },
+    forEach: function (fn, thisArg) { return real.forEach(fn, thisArg); },
+    keys: function () { return real.keys(); },
+    values: function () { return real.values(); },
+    entries: function () { return real.entries(); },
+    get size() { return real.size; }
+  };
+  facade[Symbol.iterator] = function () { return real[Symbol.iterator](); };
+  log.debug("Leaving sharedMap().");
+  return facade;
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,5 +1571,9 @@ module.exports = {
   map: map,
   arr: arr,
   obj: obj,
+  sharedMap: sharedMap,
+  setPersistObserver: setPersistObserver,
+  handles: handles,
+  handleFor: handleFor,
   realmSupport: realmSupport
 };

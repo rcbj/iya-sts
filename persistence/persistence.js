@@ -182,6 +182,18 @@
 const path = require('path');
 const bunyan = require('bunyan');
 const config = require('../common/config');
+// The keystore, so this module can hand it the driver the moment one is open.
+// A LEAF (rule 3) that registers no route; it requires `config`, `crypto`,
+// `mode` and `secrets` and none of them requires this module back.
+const keystore = require('../common/keystore');
+// WHAT THIS PROCESS MINTED, in product mode. A LIBRARY (rule 3) that registers
+// no route and requires this module for nothing — it is HANDED the driver
+// below, the way `keystore.setStore()` is, so the two can be tested apart.
+const minted = require('./persistence_minted');
+// SEVERAL PROCESSES AGAINST ONE STORE. A LIBRARY (rule 3), handed the driver
+// and the appliers below — it requires this module for nothing, which is what
+// lets `tests/replication.js` drive it against a stub with no database.
+const replication = require('./persistence_replication');
 // The ordinary direction, and the header above argues why it is a require
 // rather than a third slot: realms.js requires config.js and async_hooks and
 // nothing else, registers no route, and does not require this module.
@@ -210,6 +222,12 @@ let directory = null;
 
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
+  // `applyEntry` and `removeEntry` are NOT on this list, deliberately: they
+  // are what cross-process coordination needs, and a build without them is a
+  // build that persists correctly and does not coordinate — which is what this
+  // service was until 2026-09-06 and is a smaller service rather than a broken
+  // one. `persistence_replication.js` checks for them by name and reports the
+  // absence instead of failing.
   const needed = ['realmEntries', 'replaceRealm'];
   const missing = needed.filter(function (name) {
     return !hooks || typeof hooks[name] !== 'function';
@@ -335,11 +353,56 @@ function enabled() {
 // and look up what a string argument meant.
 // ---------------------------------------------------------------------------
 
-function directoryChanged() {
+// ---------------------------------------------------------------------------
+// A JOURNAL OF WHAT MOVED, SO A FLUSH NEED NOT WALK THE WHOLE DIRECTORY
+// (2026-09-07).
+//
+// `diff()` compares every entry in every realm against the shadow. That is
+// affordable DEBOUNCED — a burst of writes coalesces into one walk — and it
+// became the dominant cost the moment a flush started happening per request,
+// which is what read-your-write across request workers needs: the worker
+// announces its commit after each response, and a reader waits for it.
+//
+// Measured with the whole-directory diff on that path: a 5,000-user SCIM load
+// took 18.2 MINUTES in the dispatch mode against 17 seconds in one process,
+// 219ms per create and rising, because every create walked a directory that
+// every create made longer.
+//
+// So a writer that knows where it wrote says so, and only those entries are
+// compared. **A writer that says nothing still gets the full walk**, which is
+// the old behaviour and is correct — `dirtyEverything` is the safe default and
+// the realm-removal path, which cannot name one DN, deliberately takes it.
+// ---------------------------------------------------------------------------
+let dirtyDns = new Set();
+let dirtyEverything = false;
+
+function directoryChanged(dn) {
   if (!enabled() || restoring) {
     return;
   }
   directoryDirty = true;
+  if (dn === undefined || dn === null || dn === '') {
+    dirtyEverything = true;
+  } else if (!dirtyEverything) {
+    dirtyDns.add(String(dn));
+  }
+  schedule();
+}
+
+// ---------------------------------------------------------------------------
+// A FOURTH DOOR, AND IT IS NOT A FOURTH DIRTY BIT.
+//
+// `persistence_minted.js` keeps its own journal — it has to, because what it
+// records is a KEY and the three bits above record only that something in a
+// category moved. What it needs from here is the SCHEDULE, so that a minted
+// write and a directory write made while handling one request cost one wake
+// between them. So this is the one "something changed" door that marks nothing
+// and only schedules.
+// ---------------------------------------------------------------------------
+function mintedChanged() {
+  if (!enabled() || restoring) {
+    return;
+  }
   schedule();
 }
 
@@ -403,6 +466,32 @@ function schedule() {
 // normalising a DN is that module's job and doing it here would be a second
 // implementation of the one function whose disagreement would be invisible.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ONE ENTRY OUT OF A REALM, WITHOUT WALKING IT (2026-09-08).
+//
+// `directory.entryAt()` is `ldap_server.js`'s keyed read. It is OPTIONAL — the
+// slot's `needed` list above is unchanged, so a filler written before this
+// exists (the in-process `appconfig_persistence.js` stub is one) still
+// installs — and the fallback is the walk this replaced, which is correct and
+// merely slow.
+//
+// It matters because both callers ran per WRITE rather than per burst once the
+// request-worker pool arrived: the flush below diffed against a snapshot of
+// everything, and `applyDirectoryChange()` searched a whole realm to record one
+// applied row. Each was O(entries) per create, on the writing side and on every
+// receiving side, which is quadratic over a bulk load and showed up exactly
+// like that — 65ms per SCIM create at 500 entries, 109ms at 4,000.
+// ---------------------------------------------------------------------------
+function entryAt(realmId, key) {
+  if (typeof directory.entryAt === 'function') {
+    return directory.entryAt(realmId, key);
+  }
+  const found = (directory.realmEntries(realmId) || []).find(function (one) {
+    return one.key === key;
+  });
+  return found ? found.entry : null;
+}
+
 function liveDirectory() {
   log.debug('Entering liveDirectory().');
   const live = new Map();
@@ -421,15 +510,57 @@ function liveDirectory() {
 // which realms were touched at all, which is what a snapshot driver needs (it
 // rewrites a file per realm and must not rewrite the ones nothing happened in)
 // and which realms disappeared entirely.
-function diff(live) {
+function diff(live, wanted) {
   log.debug('Entering diff().');
   const upserts = [];
   const deletes = [];
   const touched = {};
   const removedRealms = [];
 
-  live.forEach(function (rows, realmId) {
+  // ONLY WHAT THE JOURNAL NAMES, WHERE THERE IS ONE. `wanted` is null for a
+  // full walk — a writer that did not say where, a restore, the first flush —
+  // and a Set of normalised keys otherwise. The DELETE half still walks the
+  // shadow for a journaled realm, because a key that is GONE from `rows` is
+  // exactly the one the journal cannot name by looking at the live store.
+  // THE REALMS TO CONSIDER, and where their rows come from. With a journal
+  // there is no snapshot: each realm is visited and each journalled key looked
+  // up directly, which is the same comparison the snapshot path makes and none
+  // of the work of building one.
+  const walk = live || new Map(realms.list().map(function (realm) {
+    return [realm.id, null];
+  }));
+  walk.forEach(function (rows, realmId) {
+    const at = function (key) {
+      return rows ? rows.get(key) : entryAt(realmId, key);
+    };
     const was = shadow.get(realmId) || new Map();
+    if (wanted) {
+      wanted.forEach(function (key) {
+        const entry = at(key);
+        if (!entry) {
+          // GONE FROM THE LIVE STORE. Reported as a delete only if the shadow
+          // says this process had written it — a key journalled in one realm
+          // is looked for in every realm, and "absent here and never written
+          // here" is the ordinary case rather than a deletion.
+          if (was.has(key)) {
+            deletes.push({ realm: realmId, key: key });
+            touched[realmId] = true;
+          }
+          return;
+        }
+        const json = JSON.stringify(entry);
+        if (was.get(key) !== json) {
+          // `expect` IS WHAT THIS PROCESS BASED THE WRITE ON — the shadow's
+          // copy, or null when it believed the row absent. The driver makes
+          // the UPDATE conditional on it, so a row another process has
+          // changed since is reported back rather than overwritten. See
+          // mergeConflicts() below.
+          upserts.push({ realm: realmId, key: key, entry: entry, json: json });
+          touched[realmId] = true;
+        }
+      });
+      return;
+    }
     rows.forEach(function (entry, key) {
       const json = JSON.stringify(entry);
       if (was.get(key) !== json) {
@@ -450,7 +581,12 @@ function diff(live) {
   // sees it — the shadow is the only remaining record that its rows were ever
   // written, which is exactly what makes it the right place to look.
   shadow.forEach(function (was, realmId) {
-    if (live.has(realmId)) {
+    // ONLY A FULL WALK CAN SEE A REALM THAT IS GONE. Without a snapshot there
+    // is nothing to compare the shadow against — so `realms.onChange()` below
+    // marks the whole directory dirty, which forces the very next flush to
+    // build one. The removal is reported by that walk rather than missed
+    // here.
+    if (!live || live.has(realmId)) {
       return;
     }
     was.forEach(function (json, key) {
@@ -469,16 +605,52 @@ function diff(live) {
 // The shadow advanced to what was just written. Called ONLY after a successful
 // write, which is what makes a failed flush retry the same work rather than
 // lose it.
-function advanceShadow(live, removedRealms) {
+// ---------------------------------------------------------------------------
+// THE SHADOW RECORDS WHAT WAS WRITTEN, NOT WHAT IS LIVE NOW (2026-09-07).
+//
+// This used to re-read `live` and stringify it — and `live` holds REFERENCES to
+// the stored entries, which the service mutates in place. The database write
+// between `diff()` and this call is asynchronous, so anything written during it
+// was already visible here: the shadow recorded the NEWER value as persisted
+// while only the older one had actually been sent. The next diff then found no
+// difference and never wrote it. Lost, silently, with nothing failing.
+//
+// **IT WAS ALWAYS A RACE AND PER-REQUEST FLUSHING MADE IT ROUTINE.** Measured:
+// `POST /oauth2/register` saves twice — once for the record, once with the
+// registration document attached — and in a dispatched run some client rows
+// reached `sts_ldap_entries` with no `appregistrationjson` at all. Reading such
+// a registration back gave `userinfo_signed_response_alg: undefined` on two
+// workers of three and the right answer on the one holding it in memory, which
+// is what `sts_userinfo_protected` measured as a signed response arriving as
+// `application/json`.
+//
+// So the shadow is advanced from the CHANGES — the exact `json` that was
+// diffed and sent — and from nothing else. A key not in this batch keeps
+// whatever the shadow already said about it, which is the truth: nothing was
+// written for it. That makes the full and partial paths identical here, so
+// `wanted` is no longer needed.
+// ---------------------------------------------------------------------------
+function advanceShadow(changes, removedRealms) {
   log.debug('Entering advanceShadow().');
   removedRealms.forEach(function (realmId) { shadow.delete(realmId); });
-  live.forEach(function (rows, realmId) {
-    const next = new Map();
-    rows.forEach(function (entry, key) { next.set(key, JSON.stringify(entry)); });
-    shadow.set(realmId, next);
+  changes.upserts.forEach(function (row) {
+    let held = shadow.get(row.realm);
+    if (!held) {
+      held = new Map();
+      shadow.set(row.realm, held);
+    }
+    held.set(row.key, row.json);
   });
-  log.debug('Leaving advanceShadow().');
+  changes.deletes.forEach(function (row) {
+    const held = shadow.get(row.realm);
+    if (held) {
+      held.delete(row.key);
+    }
+  });
+  log.debug('Leaving advanceShadow(). ' + changes.upserts.length +
+            ' upsert(s), ' + changes.deletes.length + ' delete(s).');
 }
+
 
 // ---------------------------------------------------------------------------
 // The realm rows and the appconfig overrides, as they are written down.
@@ -517,7 +689,7 @@ function flush() {
     log.debug('Leaving flush(). One is already running; waiting for it.');
     return flushing.then(function () { return flush(); });
   }
-  if (!directoryDirty && !realmsDirty && !configDirty) {
+  if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty()) {
     log.debug('Leaving flush(). Nothing is dirty.');
     return Promise.resolve({ written: false });
   }
@@ -532,8 +704,23 @@ function flush() {
   realmsDirty = false;
   configDirty = false;
 
-  const live = wantDirectory ? liveDirectory() : null;
-  const changes = live ? diff(live) : null;
+  // THE JOURNAL, TAKEN AND CLEARED BEFORE THE WRITE for the same reason the
+  // dirty bits above are: a change made while this flush is in flight has to
+  // start a new journal and get its own flush, not be swallowed by this one.
+  const wanted = (wantDirectory && !dirtyEverything && dirtyDns.size)
+    ? dirtyDns : null;
+  if (wantDirectory) {
+    dirtyDns = new Set();
+    dirtyEverything = false;
+  }
+  // THE SNAPSHOT IS ONLY BUILT WHEN THERE IS NOTHING BETTER, and `wanted` is
+  // that better thing: a journal naming exactly the keys that moved. Walking
+  // every entry in every realm to find them is what made a create cost more
+  // the more entries there already were — see entryAt() above. A full walk is
+  // still right for a writer that did not say where (`dirtyEverything`), for
+  // the first flush, and for a restore.
+  const live = (wantDirectory && !wanted) ? liveDirectory() : null;
+  const changes = wantDirectory ? diff(live, wanted) : null;
 
   flushing = Promise.resolve().then(function () {
     if (!changes) {
@@ -550,7 +737,7 @@ function flush() {
       removedRealms: changes.removedRealms,
       all: live
     }).then(function () {
-      advanceShadow(live, changes.removedRealms);
+      advanceShadow(changes, changes.removedRealms);
     });
   }).then(function () {
     if (!wantRealms) {
@@ -562,6 +749,28 @@ function flush() {
       return null;
     }
     return driver.saveOverrides(config.persistableOverrides());
+  }).then(function () {
+    // ---------------------------------------------------------------------
+    // THE MINTED ROWS RIDE THE SAME SCHEDULE AND NOT THE SAME TRANSACTION.
+    //
+    // The same schedule because there is no reason for two timers: a request
+    // that changed a directory entry and minted a token should cost one wake
+    // rather than two, and `schedule()`'s delay is already right for both (0
+    // for a database).
+    //
+    // NOT the same transaction, and that is the part worth arguing. The
+    // directory write is all-or-nothing over a diff computed against a
+    // shadow; a minted write is a batch of independent rows read from live
+    // stores. Joining them would mean a failed session write rolling back a
+    // directory change that succeeded — and it would put the audit log,
+    // which is written on every request, inside the transaction that holds
+    // the directory. They fail independently, they are reported separately,
+    // and neither can lose the other's work.
+    // ---------------------------------------------------------------------
+    if (!minted.dirty()) {
+      return null;
+    }
+    return minted.flush();
   }).then(function () {
     writes++;
     lastWriteAt = new Date().toISOString();
@@ -696,6 +905,41 @@ function start() {
   activeMode = chosen;
   restoring = true;
   return driver.open().then(function () {
+    // ---------------------------------------------------------------------
+    // HAND THE KEYSTORE ITS STORE, THE MOMENT THERE IS ONE (2026-09-06).
+    //
+    // It is installed HERE rather than at require time because `driver` does
+    // not exist until this function chooses one — and it is installed BEFORE
+    // anything else is loaded so that `keystore.start()`, which `server.js`
+    // calls next, has somewhere to read from.
+    //
+    // A driver from an older build without the three key functions is
+    // reported rather than fatal: `keystore.setStore()` refuses the whole
+    // object and says what is lost, and a development-mode service does not
+    // care because it persists no keys.
+    // ---------------------------------------------------------------------
+    keystore.setStore({
+      loadKeys: function () { return driver.loadKeys(); },
+      saveKeys: function (realmId, ciphertext) {
+        return driver.saveKeys(realmId, ciphertext);
+      },
+      deleteKeys: function (realmId) { return driver.deleteKeys(realmId); }
+    });
+    // ---------------------------------------------------------------------
+    // AND THE MINTED STORE ITS DRIVER, AT THE SAME MOMENT AND FOR THE SAME
+    // REASON (2026-09-06). Installing it is also what ARMS every declared
+    // store: `realms.setPersistObserver()` is filled from in there, so from
+    // this line on a `sessions.set()` journals its key. Before it, and in
+    // every mode and build that does not reach this line, the observer is
+    // null and every store behaves exactly as it always has.
+    //
+    // It is installed even when the mode makes it inert, because the module
+    // has to be able to SAY why — `/admin/persistence` reports "the ldif
+    // store cannot hold minted state" rather than reporting nothing, and a
+    // driver that was never handed over could not tell that from "no store
+    // is open".
+    // ---------------------------------------------------------------------
+    minted.setDriver(driver, activeMode);
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
     if (saved && Object.keys(saved).length) {
@@ -729,9 +973,15 @@ function start() {
              (restoredCounts.realms + 1) + ' realm(s), ' +
              restoredCounts.realms + ' defined realm(s) and ' +
              restoredCounts.overrides + ' appconfig override(s). ' +
-             'What is NOT restored, and never will be: sessions, tokens, ' +
-             'codes, artifacts, tickets and the signing key, all of which ' +
-             'are minted rather than typed.');
+             (minted.enabled()
+               ? 'What this process MINTS is restored separately, once the ' +
+                 'keystore is open — see the line that follows this one.'
+               : 'What is NOT restored: sessions, tokens, codes, artifacts, ' +
+                 'tickets and the signing key, all of which are minted ' +
+                 'rather than typed. That is unconditional in DEVELOPMENT ' +
+                 'mode, where the signing key is regenerated on every start ' +
+                 'and a restored token would verify against nothing; product ' +
+                 'mode on a postgres store restores all of it.'));
     // A first run has an empty store and a seeded directory, so everything is
     // new and has to be written. A restored run's diff is empty and this
     // costs one no-op flush.
@@ -808,17 +1058,41 @@ function start() {
 // The realm rows, put back through the door an operator uses. See start()'s
 // step 2 — this is the reason `realms.create()` is called rather than the
 // registry being written into directly.
-function restoreRealms(rows) {
+// `replicated` SEPARATES TWO CALLERS THAT WANT OPPOSITE THINGS FROM AN EXISTING
+// REALM (2026-09-07). At STARTUP a realm already present was defined by an
+// appconfig file or an environment variable, and something a person wrote down
+// for this run beats a row this module wrote during the last one — so it is
+// left alone. Applying a change ANOTHER PROCESS just made is the reverse: the
+// realm exists here precisely because it replicated, and skipping it threw away
+// the only thing that changed.
+//
+// **WHAT THAT COST IS EVERY REALM-SCOPED SETTING.** A realm's runtime overrides
+// live on its row, so `POST /realm/<id>/admin-api/config/set` on one worker was
+// written, replicated, and then discarded by every other worker because the
+// realm was already there. A dispatched run measured it as `xacml.enforceAccess`
+// turned off and still refusing, `oauth2.consentRequired` set and the consent
+// screen still drawn — settings that reported success and did nothing anywhere
+// but the process that took the call.
+function restoreRealms(rows, replicated) {
   log.debug('Entering restoreRealms(). ' + rows.length + ' row(s).');
   let made = 0;
   rows.forEach(function (row) {
-    if (realms.get(row.id)) {
+    const existing = realms.get(row.id);
+    if (existing && !replicated) {
       // Already defined, which means an appconfig file or an environment
       // variable defined it before this ran. The stored row does not overwrite
       // it: something a person wrote down for THIS run beats something this
       // module wrote down during the last one.
       log.warn('persistence: the realm "' + row.id + '" is already defined; ' +
                'the stored row was left alone.');
+      return;
+    }
+    if (existing) {
+      // The realm is here because it replicated. Take what another process
+      // changed — its overrides above all, which is what a realm-scoped
+      // setting IS.
+      realms.update(row.id, { name: row.name, description: row.description,
+                              overrides: row.overrides || {} });
       return;
     }
     const result = realms.create({
@@ -947,7 +1221,14 @@ function stop() {
     clearTimeout(timer);
     timer = null;
   }
-  return flush().then(function () {
+  return replication.stop().then(function () {
+    return flush();
+  }).then(function () {
+    // AFTER the flush above rather than inside it, because that one returns
+    // early when nothing of ITS three kinds is dirty — and a shutdown whose
+    // only unwritten work is a session must still write the session.
+    return minted.stop();
+  }).then(function () {
     stopped = true;
     return driver.close();
   }).then(function () {
@@ -958,6 +1239,176 @@ function stop() {
     log.error('persistence: the final flush or close failed: ' + err.message +
               '. Anything changed since the last successful write is lost.');
     log.debug('Leaving stop(). It failed.');
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE APPLIERS: HOW ANOTHER PROCESS'S WRITE BECOMES THIS PROCESS'S MEMORY.
+//
+// One per kind of change. Each is handed a POINTER — a kind, a realm and a
+// key — reads the row it names out of the store, and puts it where a local
+// write would have put it. Nothing is sent in the notification, which is what
+// lets the notification be lossy.
+//
+// **EVERY ONE OF THEM SUPPRESSES THE JOURNAL AROUND ITS WRITE**, and that is
+// not tidiness: without it, applying another process's write would make this
+// process report the write as its own and flush it straight back, which wakes
+// the other process, which applies it and writes it back. Two processes would
+// exchange one row for ever. `restoring` is the same flag the startup restore
+// uses and it is set for the same reason.
+// ---------------------------------------------------------------------------
+function applyDirectoryChange(change) {
+  if (!directory || typeof directory.applyEntry !== 'function' ||
+      typeof driver.readEntry !== 'function') {
+    return Promise.resolve(false);
+  }
+  // The stored key is the NORMALISED DN, which is what `sts_ldap_entries` is
+  // keyed by and what `realmEntries()` hands back — so the change row carries
+  // the DN as written and this has to normalise nothing itself. Normalising a
+  // DN is ldap_server.js's job and a second implementation here would be one
+  // whose disagreement is invisible.
+  return driver.readEntry(change.realm, change.key).then(function (row) {
+    const was = restoring;
+    restoring = true;
+    try {
+      if (!row) {
+        directory.removeEntry(change.realm, change.key);
+      } else {
+        directory.applyEntry(change.realm, row.key, row.entry);
+      }
+    } finally {
+      restoring = was;
+    }
+    // AND THE SHADOW IS ADVANCED FOR THAT ROW, which is the subtle half. The
+    // shadow is what the DIFF compares against; leaving it stale would make
+    // the next local flush see another process's entry as one this process
+    // had changed, and write it back as its own — harmlessly, but as an
+    // endless stream of redundant UPSERTs between two idle processes.
+    const rows = shadow.get(change.realm) || new Map();
+    if (!row) {
+      rows.delete(change.key);
+    } else {
+      const stored = entryAt(change.realm, row.key);
+      if (stored) {
+        rows.set(row.key, JSON.stringify(stored));
+      }
+    }
+    shadow.set(change.realm, rows);
+    return true;
+  });
+}
+
+function applyRealmsChange() {
+  if (!persistsRealms()) {
+    return Promise.resolve(false);
+  }
+  return driver.loadRealms().then(function (rows) {
+    const was = restoring;
+    restoring = true;
+    try {
+      // THROUGH `restoreRealms()`, the same function the startup restore uses,
+      // so that every builder every module registered fires for a realm
+      // another process created — including ldap_server.js's, which seeds the
+      // subtree. A second way to make a realm is the one that is missing a
+      // step, and this service already learnt that once.
+      restoreRealms(rows || [], true);
+    } finally {
+      restoring = was;
+    }
+    return true;
+  });
+}
+
+function applyAppconfigChange() {
+  if (!persistsAppconfig()) {
+    return Promise.resolve(false);
+  }
+  return driver.loadOverrides().then(function (saved) {
+    // ----------------------------------------------------------------------
+    // AN EMPTY TABLE IS A FACT HERE, NOT AN ABSENCE (2026-09-08).
+    //
+    // The driver answers `null` when `sts_appconfig` holds no rows, and this
+    // used to return early on it. That is the right reading at STARTUP —
+    // nothing was ever stored, so keep what the appconfig file said — and the
+    // exact opposite reading of a REPLICATED change: a change row only exists
+    // because another process wrote one, and "the table is now empty" is
+    // precisely what `POST /admin-api/config/reset-all` means.
+    //
+    // So clearing the LAST override never propagated. Measured on three
+    // request workers: set `oid4vci.batchSize` to 7, reset it, and the issuer
+    // metadata answered 7, 4, 7, 4, 7, 7 depending on which worker replied —
+    // only the one that HANDLED the reset had cleared it. `admin_api` reported
+    // it as "this test has changed what every later job sees", which is
+    // exactly what it had done.
+    // ----------------------------------------------------------------------
+    const wanted = saved || {};
+    const was = restoring;
+    restoring = true;
+    try {
+      // THE SAME `applyPersistedOverrides()` the startup restore calls, so a
+      // setting changed in another process's console goes through the same
+      // validation — including the refusal of a restart-only setting, which
+      // matters more here than at startup: another process may be a different
+      // build with a different idea of which settings are runtime.
+      config.applyPersistedOverrides(wanted);
+    } finally {
+      restoring = was;
+    }
+    return true;
+  });
+}
+
+function applyKeysChange(change) {
+  // NOTHING TO DO, AND SAYING SO IS THE POINT. A realm's signing keys are read
+  // once, at `keystore.start()`, and held for the life of the process; a key
+  // that changed in another process cannot be adopted here without deciding
+  // what happens to everything this process signed with the old one. Rotation
+  // across processes is a rolling restart, which is what it is everywhere
+  // else, and pretending otherwise here would be the most dangerous kind of
+  // half-feature: tokens signed by a key this process has stopped publishing.
+  log.info('persistence: the "' + (change.realm || 'default') + '" realm\'s ' +
+           'signing keys were changed by another process. THEY ARE NOT ' +
+           'ADOPTED HERE: this process holds the keys it read at startup, ' +
+           'and taking new ones would strand everything it has already ' +
+           'signed. Restart this process to pick them up.');
+  return Promise.resolve(false);
+}
+
+// ---------------------------------------------------------------------------
+// STARTING COORDINATION. `server.js` calls this LAST — after the directory,
+// the realms, the settings, the keys and the minted rows are all restored —
+// because the change log's high-water mark only means "I am up to date" if
+// this process actually is.
+// ---------------------------------------------------------------------------
+function coordinate() {
+  log.debug('Entering coordinate().');
+  if (!enabled()) {
+    log.debug('Leaving coordinate(). Nothing is being persisted.');
+    return Promise.resolve({ coordinating: false });
+  }
+  return replication.start(driver, {
+    directory: applyDirectoryChange,
+    realms: applyRealmsChange,
+    appconfig: applyAppconfigChange,
+    keys: applyKeysChange,
+    // A FUNCTION WITH A `prepare` ON IT. The applier contract is a function —
+    // `replication.js` checks `typeof applier === 'function'` — and `prepare`
+    // is an optional property it looks for beside it, so this stays one
+    // applier rather than becoming a second shape every kind has to adopt. It
+    // is what turns a page of minted changes into ONE read; see
+    // persistence_minted.js's prefetch().
+    // BOTH KINDS THROUGH ONE APPLIER. `minted-own` differs only in whether a
+    // reader waits for it (see the driver's latestBlockingChangeSeq); applying
+    // it is identical, and a second applier would be a second place to keep
+    // that in step.
+    'minted-own': Object.assign(
+      function (change) { return minted.applyChange(change); },
+      { prepare: function (rows) { return minted.prefetch(rows); },
+        done: function () { return minted.endPrefetch(); } }),
+    minted: Object.assign(
+      function (change) { return minted.applyChange(change); },
+      { prepare: function (rows) { return minted.prefetch(rows); },
+        done: function () { return minted.endPrefetch(); } })
   });
 }
 
@@ -994,12 +1445,34 @@ function status() {
     // Said here rather than only in a CLAUDE.md, because this is what an
     // operator reads and the sentence is the difference between a correct
     // deployment and a puzzling one.
-    coordinates: false,
-    note: 'Persistence is not coordination. Two processes pointed at one ' +
-          'store each hold their own copy of the directory in memory and ' +
-          'will not see each other\'s writes until they restart. Sessions, ' +
-          'tokens, codes, artifacts, Kerberos tickets and the signing key ' +
-          'are never persisted in any mode.'
+    coordinates: replication.status().coordinating,
+    // ONE REPORT, from the module that does the work. The page and the API
+    // both draw this, so they cannot disagree about what is being written
+    // down — rule 7's shape applied to a report rather than to an action.
+    minted: minted.status(),
+    // AND WHAT IT SHARES WITH OTHER PROCESSES. One report from the module that
+    // does the work, for the same reason as the line above.
+    replication: replication.status(),
+    note: (replication.status().coordinating
+            ? 'Processes against this store COORDINATE: every change is ' +
+              'written to a monotonic log inside the transaction that made ' +
+              'it, and each process applies what the others committed. The ' +
+              'LISTEN/NOTIFY nudge only makes that prompt — the log is the ' +
+              'contract, so a missed notification costs latency and never a ' +
+              'change. What is NOT shared is sockets: the KDC, the LDAP ' +
+              'listeners, the TLS ports and SPIFFE\'s four are per process, ' +
+              'and the replay caches converge rather than synchronise. '
+            : 'Persistence is not coordination in this configuration. Two ' +
+              'processes pointed at one store each hold their own copy in ' +
+              'memory and will not see each other\'s writes until they ' +
+              'restart. Set persistence.coordinate on a postgres store to ' +
+              'change that. ') +
+          'What this service MINTS — sessions, tokens, codes, artifacts, ' +
+          'Kerberos tickets, the counters and the audit log — is persisted ' +
+          'in PRODUCT mode on a postgres store, encrypted under the same ' +
+          'key-encryption key as the signing keys, and in no other ' +
+          'configuration: development mode regenerates the signing key on ' +
+          'every start, so a restored token would verify against nothing.'
   };
   shadow.forEach(function (rows) { out.entriesTracked += rows.size; });
   log.debug('Leaving status().');
@@ -1089,8 +1562,26 @@ config.setOverrideStore(function (realmId) {
 
 // realms.js's event. Fired by create(), update(), remove(), setOverride() and
 // clearOverride() — every door through which a realm row can change.
-realms.onChange(function () {
+realms.onChange(function (id, what) {
   realmsChanged();
+  // ---------------------------------------------------------------------
+  // AND THE DIRECTORY NEEDS A FULL WALK AFTER A REALM IS REMOVED (2026-09-08).
+  //
+  // `diff()` finds a removed realm's rows by comparing the shadow against a
+  // SNAPSHOT of what is live — and since this same day it only builds that
+  // snapshot when there is no journal to work from, because building one per
+  // write is what made a create cost more the more entries there already were.
+  // A removal writes no journal entry (there is nothing left to name), so
+  // without this the deletes would simply never be emitted and the realm's
+  // rows would outlive it in the store.
+  //
+  // Marked for ANY realm change rather than only a removal: `changed()` is the
+  // one door every path goes through, the events are rare (a realm is created,
+  // updated or removed by hand), and one full walk after one of them is a cost
+  // nobody can measure. Getting this narrow would be optimising the rarest
+  // event in the service at the risk of the only one that loses data.
+  // ---------------------------------------------------------------------
+  directoryChanged();
 });
 
 module.exports = {
@@ -1106,5 +1597,43 @@ module.exports = {
   directoryChanged: directoryChanged,
   realmsChanged: realmsChanged,
   configChanged: configChanged,
+  mintedChanged: mintedChanged,
+  // The minted half, for `server.js`'s third startup step. It is re-exported
+  // rather than required over there directly so that `server.js` has ONE
+  // persistence module to talk to, which is what it has always had.
+  restoreMinted: function () { return minted.restore(); },
+  // THE MINTED FLUSH, for `common/request_worker.js`'s commit-before-answer.
+  // The store's flush and this one are two schedulers, and a caller that
+  // awaited only the first would leave everything this service MINTS exactly
+  // as racy as it was — which is most of what a browser flow writes.
+  flushMinted: function () { return minted.flush(); },
+  // THE SEQUENCE THIS PROCESS'S LAST COMMIT REACHED, for
+  // `common/request_worker.js`'s commit announcement. It is the STORE's answer
+  // and not this process's `applied`: what a reader has to wait for is the
+  // sequence the write actually landed at, which only the store knows.
+  // Whether this process has written any change rows — read either side of a
+  // flush to tell "I wrote" from "I had nothing to write", with no query.
+  changeRowsWritten: function () {
+    if (!driver || typeof driver.changeRowsWritten !== 'function') {
+      return 0;
+    }
+    return driver.changeRowsWritten();
+  },
+
+  latestChangeSeq: function () {
+    if (!enabled() || !driver || typeof driver.latestChangeSeq !== 'function') {
+      return Promise.resolve(0);
+    }
+    return Promise.resolve(driver.latestChangeSeq()).then(function (seq) {
+      return Number(seq) || 0;
+    });
+  },
+  mintedStatus: function () { return minted.status(); },
+  coordinate: coordinate,
+  replicationStatus: function () { return replication.status(); },
+  // THE READ BARRIER, for `common/request_pool.js`. Re-exported here rather
+  // than reached for directly so that a caller has ONE persistence module to
+  // talk to — the same reason restoreMinted() is re-exported above.
+  syncNow: function () { return replication.syncNow(); },
   status: status
 };

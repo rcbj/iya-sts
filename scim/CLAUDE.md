@@ -224,6 +224,36 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    (where a person's entry goes, what counts as a group) stay in the one module
    that already owns them.
 
+   **AND SINCE 2026-09-06 IT ALSO OWNS THE PROJECTION THAT PUBLISHES THE TABLE,
+   BECAUSE TWO EXISTED AND HAD ALREADY DRIFTED.** `GET /scim` rendered the
+   mapping through a projection in `scim.js` and `/admin/scim` and
+   `GET /admin-api/scim` through one in `admin.js`, and the two carried
+   different members — one had `required`, `schema` and `note`, the other did
+   not. So one service published one table at two endpoints and described it
+   differently depending on which you asked. **Nothing failed, because nothing
+   read either of them**: they were documentation, and documentation that
+   disagrees with itself is exactly the shape of defect this repository's "one
+   copy of each fact" rule is for.
+
+   What turned it up was a READER.
+   `tests/vendored/sts_directory_bulk_load_scim.js` builds every resource it
+   sends out of the published mapping rather than out of a copy — a copy in a
+   test would drift, and the drift would show up as five thousand creates
+   quietly dropping an attribute, which no status code reports. To do that it
+   needs `type`, `parent` and `extension`, and neither projection had them: two
+   rows both map to `phoneNumbers` and only `type` tells `telephoneNumber` from
+   `mobile`, five rows are members of one `addresses` entry and only `parent`
+   says so, and an extension member goes under the enterprise URN rather than at
+   the top level. Adding them to one projection would have left the other still
+   unusable and a reader unable to say which endpoint was right.
+
+   `describeRow()` and `describeMapping()` are now the one projection, here
+   beside the table, and both endpoints call them. **`type` and `parent` are
+   `null` rather than absent** where a row has none, so a client can tell "this
+   mapping has no type" from "this document does not report types" — which is
+   the question that job has to answer about the version of the service it is
+   running against.
+
    **THE SPELLINGS ARE CHECKED AGAINST THE CATALOGUE, NOT COPIED FROM IT.**
    `checkSpellings()` runs at require time and WARNS where a row disagrees with
    `vc_claims.js` — the same rule `learnName()` follows, one module earlier, and
@@ -294,3 +324,122 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   still right — an anonymous caller, and POST. A member naming nothing is
   ACCEPTED, because refusing it would make the
   dangling-member state `/admin/groups` exists to report impossible to produce.
+
+## There is no test for this in either repository, and it is the cheapest one left to write
+
+**By the root `CLAUDE.md`'s rule it belongs in the PARENT project's suite** —
+every assertion below is made by driving the running service over HTTP.
+It is plain JSON over HTTP with no browser, no signature and
+no XML, its whole surface is seventeen routes, and the interesting half is
+negatives that are hard to provoke from a permissive server and are deliberately
+reachable here: `invalid` as a userName, a duplicate userName, an unevaluable
+filter, a `.search` body with no schema URN, `/Me`. What a test would also pin
+down is the property the feature exists for and no single request demonstrates —
+that a `POST /scim/v2/Users` and an `ldapsearch` see ONE entry, that a PUT leaves
+`schacDateOfBirth` alone, and that `entryDN` is never written.
+
+## A SCIM CREDENTIAL NOW STARTS A SESSION, AND THE POLICY IS ASKED ABOUT IT (2026-09-06)
+
+Both happen in `authenticate()` and nowhere else, which is that function's whole
+reason to exist: it is the ONE place a SCIM credential is accepted, so an
+endpoint added tomorrow gets both without its author knowing they exist. Eleven
+route handlers would be ten that do and one that does not.
+
+**THE SESSION IS `authn.startSession()` AND NOT A REGISTER OF THIS DIRECTORY'S.**
+`common/CLAUDE.md` carries the argument and it is not repeated here; the short
+form is that a second store would be a second answer to *is somebody signed in*.
+Two things about it are SCIM's own:
+
+* **The key is the SCHEME AND THE PRINCIPAL, not the credential.** This module
+  never keeps what was presented — a bearer token reaching a register would be
+  a second place to steal one from — so there is nothing here to hash. And the
+  right unit is the CLIENT: one that refreshes its token mid-run is the same
+  client on the same surface, and keying on the token would give it a second
+  row and leave the first until it expired.
+* **An anonymous decision gets no session**, which is not a special case:
+  `scim.authRequired` off, or the open ServiceProviderConfig, means nobody
+  authenticated and a session recording that they had would be untrue.
+
+**THE POLICY RUNS AFTER THE SCOPE CHECK AND NOT INSTEAD OF IT.** RFC 7644
+section 2's mapping from an authenticated client to an access policy is this
+file's own and is unchanged — the OAuth schemes still need `scim:read` or
+`scim:write`, and one still does not imply the other. The gate is the layer
+ABOVE that, so a deployment can narrow this surface by policy and an unedited
+one behaves exactly as it did: the built-in document asks for a role only where
+somebody has required one. A refusal from it says outright that the credential
+WAS accepted, because "you may not" and "authenticate" are different
+instructions to a client and this endpoint already distinguishes them.
+
+## TWO CONSOLE PAGES SINCE 2026-09-06, AND WHERE THE LINE BETWEEN THEM IS
+
+`/admin/scim` was the only one, and it answered two questions that turned out
+to want different readers. **`/admin/scim/monitor` is the second, and the
+console files it under MONITORING rather than under Protocols &rarr; SCIM.**
+
+**The filing is decided by the QUESTION and never by the path or the module.**
+That is the rule `/admin/xacml/monitor` established a day earlier and it is the
+same rule here: `/admin/scim` answers *what is this surface* — the six schemes,
+the endpoints, the four things it will not do, the five things you can make
+fail, which LDAP attribute each SCIM member is, and the eighteen `scim.*`
+settings. The monitor answers *how much traffic is there, from whom, and how
+much of it is failing*, which is what somebody asks when a provisioning client
+is misbehaving rather than when it is being set up. Both are drawn by
+`admin-ui/admin.js` and both live under `/admin/scim`; `SECTIONS` is the only
+place placement is stated.
+
+**ONE STORE, TWO VIEWS, AND THAT IS WHY THEY CANNOT DISAGREE.**
+`common/admin_stats.js` holds one set of counters and offers
+`scimSnapshot()` — the summary `/admin/scim` keeps, because a page about a
+surface with no evidence anything ever called it is a page about a hypothesis —
+and `scimMonitorSnapshot()`, which is everything. There is no second tally
+anywhere and there must never be one.
+
+**WHAT THE MONITOR COUNTS THAT NOTHING DID BEFORE** is the traffic's SHAPE:
+the outcome, latency and bytes of each operation rather than a bare count; the
+status CLASS beside the exact codes; who is calling; and the last fifty requests
+individually, because an aggregate cannot answer *what did the call that just
+failed look like*. The measurement points are unchanged — `handle()` stamps the
+request on the way in and `sendScim()`/`sendScimError()` count it on the way
+out, which is the funnel argument this file already makes about the gate: one
+place, not eighteen, and the eighteenth is the one that would have been missed.
+
+Four things about it are this module's own and are easy to get wrong:
+
+* **A CLIENT IS AN AUTHENTICATED PRINCIPAL, NOT A CONNECTION.** SCIM is
+  stateless HTTP — no session, no registration, nothing to be connected — so
+  the only honest reading of "how many clients" is how many distinct names have
+  successfully authenticated since the process started. The figure never goes
+  down: a client that has stopped calling is indistinguishable from one that is
+  between calls. The name is `authenticate()`'s `principal`, which is the same
+  unit the session it starts is keyed on and for the same reason.
+* **A CALLER THE GATE REFUSED IS NOT A CLIENT.** Basic and Digest both put a
+  name on the wire and the gate can still turn it away; those calls are counted
+  in `refused` and appear in no client row. Attributing traffic to an identity
+  this service declined to believe is the one mistake this page could make that
+  would matter, and `tests/scim_monitor.js` provokes it deliberately by passing
+  a principal WITH a refusal.
+* **AN ABSENT MEASUREMENT IS NULL AND NEVER ZERO.** A success rate of 100% on
+  no requests, and an average of 0.0ms over no samples, are the two most
+  misleading numbers this page could print: both look like a healthy service.
+* **THE OPERATION COUNTS DO NOT SUM TO THE CALL TOTAL**, on purpose and for the
+  reason `/admin/scim`'s table already gives: one `POST /scim/v2/Bulk` carrying
+  five creates is one `bulk` AND five `create`s, because each of the five really
+  is performed.
+
+**THE COUNTERS ARE PER TRUST REALM AND WERE NOT UNTIL THIS PAGE WAS WRITTEN.**
+`scimCounts` was a plain object beside a file in which everything else is
+`realms.map()`, `realms.arr()` or `realms.obj()` — the third store found
+process-wide for a reason that had stopped being true. `/scim/v2` is
+realm-prefixed and writes into a directory that has been a subtree per realm
+since 2026-08-25, so a client provisioning under `/realm/acme` created entries
+in acme and was counted in the default realm's totals, beside a directory count
+that was correctly partitioned. The guard is in `tests/realm_isolation.js`,
+beside the other two stores, because that file's header asks for a third one
+there rather than in a file of its own.
+
+**THERE IS NO RESET BUTTON AND IT WAS REFUSED RATHER THAN FORGOTTEN.**
+`resetScimForTests()` exists and nothing on the console calls it. A console that
+could zero its own monitoring would make every number on the page a number
+somebody might have zeroed, and the audit log — which is the durable record of
+what SCIM was ASKED to do, with the actor and the target — cannot be reset
+either.

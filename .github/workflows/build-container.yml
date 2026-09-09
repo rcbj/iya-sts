@@ -69,6 +69,17 @@ jobs:
       # uses, so the smoke test below can run it. Without it buildx leaves the
       # image in its own cache and `docker run rcbj/sts` would pull from Docker
       # Hub instead — a stale published image passing for the one just built.
+      #
+      # THE TWO BUILD ARGUMENTS STAMP THE IMAGE'S VERSION (M.N.O). The build
+      # number is fixed here rather than at startup — see CLAUDE.md,
+      # *Versioning* — and CI is the one place where the run number is a better
+      # build number than the UTC instant: it is what a failure report names, so
+      # a version that carries it points straight back at the run that produced
+      # the image. GIT_COMMIT has to be passed because `.dockerignore` excludes
+      # `.git`, so the build context carries no history for `git rev-parse` to
+      # read. Neither is required — omit them and the version is the build
+      # instant with no commit — which is what keeps a plain `docker build`
+      # working unchanged.
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -76,6 +87,9 @@ jobs:
           tags: rcbj/sts:ci
           load: true
           push: false
+          build-args: |
+            BUILD_NUMBER=${{ github.run_number }}
+            GIT_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -146,6 +160,37 @@ jobs:
             https://localhost:8081/admin/sts-metadata)
           echo "sts-metadata: ${code}"
           test "${code}" = "200"
+
+      # THE IMAGE REPORTS THE BUILD IT WAS STAMPED WITH, which is the only
+      # place that claim can be checked at all: the stamp is written during the
+      # image build, and every other test in this repository runs against a
+      # service started from a checkout, where there IS no stamp and the number
+      # is computed at startup. So `stamped: true` and the run number reaching
+      # the version are exactly what no other test can see.
+      #
+      # It also catches the specific way this goes quietly wrong: a `--stamp`
+      # that failed, or a `version.json` that ended up in the wrong directory,
+      # leaves a container computing its version at startup and reporting a
+      # perfectly plausible number that changes on every restart.
+      #
+      # `/admin-api` rather than the front page: it answers JSON, it is not
+      # gated, and it carries `build` and `stamped` as fields rather than as
+      # something to be parsed out of HTML.
+      - name: Check the image reports the build it was stamped with
+        run: |
+          body=$(curl -fsSk https://localhost:8081/admin-api)
+          echo "${body}" | head -8
+          echo "${body}" | grep -q '"build": "${{ github.run_number }}"' || {
+            echo "The image did not report BUILD_NUMBER=${{ github.run_number }}." >&2
+            echo "The Dockerfile's --stamp step did not reach the image." >&2
+            exit 1
+          }
+          echo "${body}" | grep -q '"stamped": true' || {
+            echo "The container computed its version at startup rather than" >&2
+            echo "reading a stamp, so its build number would change on every" >&2
+            echo "restart." >&2
+            exit 1
+          }
 
       # if: always() — when a step above fails, the container's log is the only
       # place the reason exists (a MODULE_NOT_FOUND, a context file that was not

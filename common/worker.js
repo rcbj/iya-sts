@@ -75,6 +75,7 @@
 require('./config_file').resolveConfigFile();
 
 const bunyan = require('bunyan');
+const nodeCrypto = require('crypto');
 const config = require('./config');
 const pqJose = require('./pq_jose');
 
@@ -139,6 +140,43 @@ const JOBS = {
     const pair = pqJose.generate(job.alg);
     log.debug('Leaving pq.generate(). pub=' + pair.pub.length + ' bytes.');
     return { pub: pair.pub, priv: pair.priv };
+  },
+
+  // -------------------------------------------------------------------------
+  // ONE scrypt DERIVATION, AND IT IS THE FIRST JOB HERE THAT IS NOT
+  // POST-QUANTUM. It earns its place on the same measurement the others do:
+  // `crypto.js` sets N to 2^15 deliberately, so a single password hash or
+  // verification measured 68ms on this machine — and this process answers
+  // NOBODY for those 68ms, on the sign-in screen, at an LDAP bind, at SCIM
+  // Basic, at WS-Trust and on the portal's password form. That is not seconds
+  // like an SLH-DSA signature, but it is on every authentication rather than
+  // on the few a client points at a post-quantum algorithm.
+  //
+  // **IT IS A PRIMITIVE AND HOLDS NO POLICY, WHICH IS WHAT LETS IT BE HERE AT
+  // ALL.** `crypto.js` is the one place this service decides what the cost
+  // parameters are, what the stored form looks like, how it is parsed and how
+  // the comparison is made — and NONE of that is in this file. Every parameter
+  // travels in the job, exactly as `pq.sign` is handed the key it is to use.
+  //
+  // The reason it must be that way round is a hard constraint rather than a
+  // preference: `crypto.js` requires `worker_pool.js` (that require is what
+  // arms the pool), so a worker that required `crypto.js` back would reach the
+  // line at the foot of `worker_pool.js` and start forking children OF ITS OWN.
+  // See the header there. So the derivation is written out against node's own
+  // crypto, which this file may require freely because it is a leaf.
+  //
+  // It returns a Buffer, which crosses the channel whole under
+  // `serialization: 'advanced'` — the same reason `pq.sign` hands back bytes
+  // rather than base64.
+  // -------------------------------------------------------------------------
+  'scrypt.derive': function (job) {
+    log.debug('Entering scrypt.derive(). N=' + job.N);
+    const derived = nodeCrypto.scryptSync(
+      String(job.plaintext == null ? '' : job.plaintext),
+      Buffer.from(job.salt), job.keylen,
+      { N: job.N, r: job.r, p: job.p, maxmem: job.maxmem });
+    log.debug('Leaving scrypt.derive(). ' + derived.length + ' bytes.');
+    return { derived: derived };
   }
 };
 

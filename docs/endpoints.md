@@ -82,7 +82,7 @@ them can drift from what the service does:
 | `GET /.well-known/oauth-authorization-server` | The RFC 8414 document |
 | `GET /oauth2/rfc9700` | Every Security BCP requirement, with what is and is not enforced |
 | `GET /admin-api/openapi.json` | The management API, generated from its operation table |
-| `GET /admin-api/docs` | The same, in a small explorer that also shows the `curl` line |
+| `GET /admin/api-explorer` | The same, in a small explorer that also shows the `curl` line. A page of the **admin console** since 2026-09-09, behind its session and roles — it was `GET /admin-api/docs` until that API began requiring an access token a browser cannot carry |
 | `GET /spiffe` | The trust domain, the four sockets, and all 42 SPIRE methods with a reason for each of the six that are unimplemented |
 | `GET /admin/ldap/service` | The directory's state, both listeners separately, and the fact that it is schemaless |
 | `GET /federation` | Every configured federation relationship in both directions, and the URL to give each partner |

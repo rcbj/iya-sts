@@ -224,8 +224,9 @@ registry exists to hold.
 Node runs this service's six listener families on ONE THREAD, so a synchronous
 computation does not slow it down, it STOPS it. Post-quantum signing is that
 computation — stalls of 14.6, 15.4, 17.8 and 23.3 seconds were measured on
-2026-08-29 — and the root `CLAUDE.md` has the argument, the table and the five
-things to know. This is the module-level half.
+2026-08-29 — and the root `CLAUDE.md` has the cross-cutting argument and the
+table of those stalls. Everything else about the pool is here, including the
+five things to know, which used to be over there.
 
 **`worker.js` is the child process AND the job table**, and it is one file for
 that reason: the table it exports is what the pool runs in THIS process when
@@ -233,7 +234,8 @@ that reason: the table it exports is what the pool runs in THIS process when
 bytes" is true by construction rather than by a test that happens to pass. The
 wiring that makes a process a worker is guarded on `require.main === module`, so
 requiring this file to reach the table does not turn the requiring process into
-a worker. Three jobs: `pq.sign`, `pq.verify`, `pq.generate`. Each is
+a worker. FOUR jobs since 2026-09-07: `pq.sign`, `pq.verify`, `pq.generate`
+and `scrypt.derive`. Each is
 **synchronous on purpose** — blocking is what a worker is for, and a table of
 promises would invite a second job onto a process that is already computing,
 which does not make it finish sooner and makes the pool's idea of "least loaded"
@@ -287,6 +289,163 @@ service verifies RS256 in microseconds and has nothing to gain from a promise.
 `finishVerification()` so that both entry points run the same reading of the
 token and refuse in the same ORDER — a token whose `alg` is not in the caller's
 list is refused for that and never for its signature, whichever was used.
+
+### `scrypt.derive` is the fourth job and the first that is not post-quantum (2026-09-07)
+
+It earns its place on the same measurement the other three do, with a different
+shape. `crypto.js` sets scrypt's N to 2^15 deliberately, so **one password hash
+or one verification measured 68ms on this machine** — and for those 68ms this
+process answers nobody: not the next HTTP caller, not the KDC on port 88, not
+the LDAP socket. That is not the 14.6 seconds an SLH-DSA signature costs, and it
+is paid FAR more often: **once per authentication, in five protocols** — the
+sign-in screen, an LDAP bind, SCIM Basic, WS-Trust and the portal's password
+form — rather than on the few signatures a client points at a post-quantum
+algorithm.
+
+Measured with ten hashes back to back, with a 5ms heartbeat running: the
+synchronous path took 616ms wall and **the event loop ticked zero times**; the
+pooled path took 154ms and it ticked 29. The wall-clock difference is the five
+workers computing at once; the tick count is the whole point.
+
+**THE JOB IS A PRIMITIVE AND HOLDS NO POLICY, AND THAT IS WHAT LETS IT BE THERE
+AT ALL.** `crypto.js` remains the one place this service decides the cost
+parameters, the stored form, how it is parsed and how the comparison is made,
+and NONE of that is in `worker.js`. Every parameter travels in the job, exactly
+as `pq.sign` is handed the key it is to use.
+
+**The reason it must be that way round is a hard constraint rather than
+tidiness.** `crypto.js` requires `worker_pool.js` — that require is what arms
+the pool — so a worker that required `crypto.js` back would reach the line at
+the foot of `worker_pool.js` and **start forking children of its own**. So the
+derivation is written out in `worker.js` against node's own crypto, which that
+file may require freely because it is a leaf. It is also why `crypto.js` hands
+the pool this job DIRECTLY rather than through `pq_jose.js`: a scrypt
+derivation is not a JOSE operation, and routing it there would have put a
+password in a file about post-quantum signing.
+
+### The four scrypt functions are one implementation with two doors
+
+`hashSecret` / `hashSecretAsync` and `verifySecret` / `verifySecretAsync` in
+`crypto.js`, and `verify` / `verifyAsync` in `credentials.js`. **This is the
+same split `verifyCompactJws()` already makes** — `prepareVerification()` /
+`verifyBytes()` / `finishVerification()`, described above — and it is made for
+the same reason: so that both entry points run one reading of the input and
+refuse in the same ORDER.
+
+In `crypto.js` the shared halves are `encodeStoredSecret()` and
+`decodeStoredSecret()`, so `$scrypt$N$r$p$salt$hash` has one definition and a
+value written through either door verifies through either door. In
+`credentials.js` the shared halves are `verifyPrepare()` and `verifyFinish()`:
+**everything decidable without computing scrypt is decided in the first** — the
+reserved refusal, development mode, a missing name, a missing store, a store
+that threw, nobody by that name, a stored form this service did not write — and
+those are the overwhelming majority of refusals, none of which costs 68ms. An
+async door with its own copy of those seven refusals is exactly the shape that
+file exists to prevent: `verify()` is the one place a presented password is
+checked, and two copies of "when do we say no" would eventually say it in two
+different sets of circumstances.
+
+**THE SYNC DOORS ARE KEPT AND ARE NOT DEPRECATED.** `workers.count = 0` is a
+supported configuration, the parent project loads this tree in process, and a
+caller that cannot be made asynchronous is better off blocking than wrong.
+
+**WHAT IS NOT DONE YET, SAID PLAINLY: no protocol surface calls the async door.**
+Eleven call sites still reach the synchronous one — `scim/scim_auth.js`,
+`authn/authn.js`, `ldap/ldap_server.js`, `ws-trust/wstrust.js`, `portal/portal.js`
+(three) and `admin-ui/admin.js` (four) — and every one of them needs its
+enclosing handler chain made asynchronous first. That is not incidental: it is
+the same prerequisite the whole move-request-processing-to-workers plan needs,
+so it is phase 1 of that plan rather than eleven separate conversions, and
+converting some of them now would leave one policy behaving two ways across
+five protocols.
+
+### Five things to know before touching any of it
+
+**These moved here from the root `CLAUDE.md` when that file was broken up.** The
+root keeps what is genuinely cross-cutting — that this process owns six listener
+families on one thread, and the stalls that measured — and this is the rest.
+
+1. **NOTHING IS FORKED UNTIL THE FIRST POST-QUANTUM JOB.** A process that never
+   signs one never pays for a pool, which is what keeps the parent project's
+   in-process Kerberos jobs, this repository's own `npm test` and
+   `node env/generate_defaults.js` free of children they would never use and
+   would then have to wait for. It also makes `workers.count` genuinely runtime:
+   the pool is reconciled with the setting on the NEXT job, so raising it forks
+   the difference and setting it to 0 drains the pool and computes here.
+
+2. **`workers.count = 0` IS A SUPPORTED CONFIGURATION AND PRODUCES THE SAME
+   BYTES.** The pool runs the SAME job table in this process — `worker.js`
+   exports it, and the child wiring below it is guarded on
+   `require.main === module` — so "a pooled signature and an unpooled one agree"
+   is true by construction rather than by a test that happens to pass. Nine of
+   the eleven algorithms sign deterministically and `tests/worker_pool.js`
+   asserts byte equality for those; the three composite ECDSA ones cannot be
+   equal (node's ECDSA is randomized, and it must be) and are held to
+   cross-verification instead.
+
+3. **REQUIRING `common/worker_pool.js` IS WHAT ARMS `common/pq_jose.js`.** The
+   pool requires `worker.js`, which requires `pq_jose.js`, so pq_jose.js cannot
+   require the pool back without closing a cycle (rule 2) — the reference is
+   handed DOWN, from the foot of worker_pool.js. That also means **a worker
+   process is never armed**, because a child requires worker.js and worker.js
+   does not require the pool: `signAsync()` inside a worker computes in the
+   worker, which is what a worker is for and what stops a child forking a pool
+   of its own. `common/crypto.js` filled that slot for one afternoon, and a
+   process that required pq_jose.js WITHOUT crypto.js then computed everything
+   in itself while reporting no pool and no error.
+
+4. **FOUR CALL PATHS ARE ASYNCHRONOUS BECAUSE OF THIS AND NO OTHERS.** They are
+   the four a CLIENT can point at a post-quantum algorithm: the ID Token
+   (`id_token_signed_response_alg`), the signed UserInfo response
+   (`userinfo_signed_response_alg`), a `private_key_jwt` client assertion, and
+   an OID4VCI proof of possession — plus the JWKS, which is where a realm's
+   eleven post-quantum keys are GENERATED. Everything else still signs and
+   verifies synchronously on purpose: an RS256 signature is microseconds, and an
+   IPC round trip to save that would be a cost with no saving. The token
+   endpoint and `issueAuthorizationResponse()` became `async` as a consequence,
+   and the token endpoint is now registered through **a wrapper that catches** —
+   express 4 does not look at what a handler returns, so an `async` handler's
+   throw is an unhandled rejection and a request that hangs where it used to be
+   a 500.
+
+5. **A REALM MAY NOT CARRY `workers.count`.** It is the first setting marked
+   `perProcess`, which is a SECOND rule beside the `realms.*` prefix rather than
+   the same one spelt twice: a pool belongs to the OS process, and one realm
+   resizing it would resize every other realm's too. Both ends go through
+   `config.isPerProcess()` — the reading end in `config.js`'s `realmFor()` and
+   the writing end in `realms.js`'s `checkRealmOverride()` — because the two
+   ends of the `realms.*` rule were written separately and disagreed within the
+   hour.
+
+**A REALM'S ELEVEN KEYS ARE MADE WHEN THE REALM IS**, and that is the pool's
+second consequence rather than a sixth thing to know about it. One of the
+eleven is expensive out of all proportion: an SLH-DSA-SHAKE-128s KEY GENERATION
+is about 5.1 of the 5.8 seconds the whole set takes, and it is one indivisible
+job that no pool size divides. That put a realm's first JWKS fetch a little
+over five seconds — and `federation.outboundTimeoutMs` is FIVE, deliberately,
+because a browser is waiting on that request.
+
+It never failed, and why it never failed is the part worth keeping: while the
+generation was SYNCHRONOUS it blocked this process's event loop, so the timer
+enforcing that budget could not fire until the keys were already made. **The
+response won a race the timeout was never allowed to run in.** The moment the
+computation moved to a worker and the loop stayed free, the timer fired
+correctly at five seconds and aborted a fetch three tenths of a second from
+finishing — one federated sign-in in the parent project's suite, reporting
+"the JWKS could not be fetched", which is a sentence about a service that was
+working perfectly.
+
+So `helpers.js` warms a realm's post-quantum keys on `realms.onChange`'s
+`create`, through `stsKeysFor.of(id)` because a watcher has no ambient realm.
+That was not affordable before — eager generation meant 5.8 seconds of a
+stopped service per realm, which is exactly why they were lazy — and it is the
+point rather than a workaround: **the pool does not merely move the cost off
+the request that pays it, it makes paying it EARLY free.** Measured: a realm
+created through `/admin-api/realms/create` answers its first JWKS in 8ms.
+
+`tests/worker_pool.js` has the four contracts and the measurement that shows the
+loop is free.
+
 
 ## `realms.js`: several logical copies of this service, in one process
 
@@ -346,6 +505,57 @@ added in. `app.js`'s call log and audit row are written from `res.on('finish')`,
 so that handler re-enters `req.realm` EXPLICITLY. It is not belt and braces:
 without it the statistics land in whichever realm the process happened to be in,
 which under load is a different one.
+
+### A store becomes per realm at its DECLARATION, and "everything it is made of" is the test
+
+**This moved here from the root `CLAUDE.md` when that file was broken up.**
+
+**A store becomes per realm at its declaration and nowhere else** —
+`const sessions = realms.map()` in place of `new Map()`, and its hundred
+readers are unchanged and correct. About thirty-five stores were converted
+this way. **The ones left process-wide were left because the DIRECTORY was
+shared, and that reason expired on 2026-08-25** when the directory became a
+subtree per realm: `admin_stats.js`'s identity register and its revocation
+set were converted on 2026-08-25 for exactly that reason, and until they
+were, every realm's `/admin/users` listed every other realm's people beside a
+directory reader that reported each of them missing. A store still declared
+`new Map()` today needs an argument that does not rest on the directory —
+`tests/realm_isolation.js` is the guard, and the reasoning is the
+section above.
+
+**TWO MORE WERE FOUND ON 2026-08-28 AND BOTH WERE THE SAME MISTAKE MADE TWO
+WAYS.** `admin_stats.js`'s `CLAIM_SETS` was still a plain object, so a custom
+claim added at `/realm/acme/admin/claims` was added to the ONE table and
+carried by every access token this process minted — the DEFAULT realm's
+included — while each realm's console showed it as that realm's own
+configuration. It is `realms.obj()` now. And `claim_attributes.js`'s
+`selections` was already a `realms.obj()` and was SEEDED AFTER THE CALL,
+which seeds exactly one partition: every other realm got an empty object, so
+the three `attributes` actions on all three claim-set doors refused every
+set in every realm — with a sentence that listed the set it was refusing,
+because the list comes from the process-wide table and the lookup did not.
+It is seeded by the FACTORY now. **The lesson is that the two halves of ONE
+claim set were held in two modules and only one of them was per realm**, so
+the rule to check a converted store against is not "is it `realms.map()`"
+but "is everything this thing is made of". This repository's own
+`tests/vendored/sts_admin_api_operations.js` is the guard for both: it mints
+a token in a realm and looks for the claim in the default realm's.
+
+**A THIRD WAS FOUND ON 2026-09-06 AND IT IS THE SAME EXPIRED REASON AGAIN.**
+`admin_stats.js`'s `scimCounts` was a plain object beside every other store in
+that file. `/scim/v2` is realm-prefixed like every other endpoint here and
+writes into the directory that became a subtree per realm on 2026-08-25, so a
+provisioning client working in `/realm/acme` created entries in acme and was
+counted in the DEFAULT realm's totals — one page reporting traffic that happened
+somewhere else, beside a directory count that was correctly partitioned, which
+is the identity register's leak exactly. It is `realms.obj(freshScimCounts)`
+now, and `tests/realm_isolation.js` holds it both ways round and across a
+purge, because that file's header asks for a third such store to go there
+rather than into a file of its own. **It surfaced because `/admin/scim/monitor`
+draws the counters and the directory side by side**, which is worth noting on
+its own: the leak had been visible across two tabs for twelve days and nobody
+had a reason to hold them next to each other.
+
 
 ### Rule 3m: the realm's overrides are an inverted hook into `config.js`
 
@@ -1446,12 +1656,45 @@ with `Cannot find module` naming a file the operator never mentioned.
    there is a container, and the reason it cannot live in that file's `seed()`,
    which builds the tree and does not know this schema. It is seeded ONLY WHERE
    THE IDENTIFIER IS FREE (`spiffe_registry.js`'s rule: an operator who deleted
-   one meant it). Nothing serves `/admin/callback` and the API's two scopes
-   grant nothing — the console's gate is a sign-on session and two directory
-   groups, `/admin-api` is not gated at all, and both facts are on the entry
-   rather than in a comment because an `ldapmodify` of them is a configuration
-   change. And `applications.seedInternal` turns it off, restart-only because
-   this runs once at require time.
+   one meant it). And `applications.seedInternal` turns it off, restart-only
+   because this runs once at require time.
+
+   **THERE ARE THREE OF THEM SINCE 2026-09-06, AND TWO OF THEM ARE NOW
+   LOAD-BEARING RATHER THAN DESCRIPTIVE.** `sts-user-portal` joined the pair,
+   and — the change that matters — **`/admin` and `/portal` AUTHENTICATE
+   THROUGH THESE ENTRIES**. They are relying parties of this service's own
+   authorization server: an unauthenticated request is sent to
+   `/oauth2/authorize` as the client below, comes back to the redirect URI
+   below with a code, and the code is redeemed at `/oauth2/token` with the
+   secret below. `common/oidc_rp.js` is the client and argues the whole of it.
+   This paragraph used to say *nothing serves `/admin/callback` … the console's
+   gate is a sign-on session and two directory groups*; the ROLES half of that
+   is unchanged and the AUTHENTICATION half has moved onto the protocol.
+
+   Four consequences worth knowing before editing one of these rows:
+
+   * **DELETING ONE TAKES ITS SURFACE OFFLINE UNTIL A RESTART**, with a refusal
+     that names the entry rather than a redirect into a flow that cannot
+     complete. That is the seeding rule (*an operator who deleted one meant
+     it*) finally having an observable consequence.
+   * **`realmScope` decides where each is seeded**, and the three answers are
+     three different arguments — argued on the rows themselves. The console's
+     client is the DEFAULT realm's alone, because its gate accepts that realm's
+     session wherever the console is reached; the portal's is in EVERY realm,
+     because `/portal` reads the ambient realm's session; the management API's
+     is a description of a caller rather than a client anything signs in as.
+   * **BOTH CARRY `oauthGlobalConsent`.** `oauth2.consentRequired` is on by
+     default and is the only policy here that is, so without it a person
+     signing in to look at their own account would first be asked to consent to
+     this service reading their own profile — a question with one sensible
+     answer, in front of every sign-in, whose Deny button makes the surface
+     unreachable. It is an ATTRIBUTE rather than an exemption in `consent.js`,
+     so an operator who wants the screen removes the values and gets it.
+   * **The redirect URI on the entry is LEARNT as well as seeded.** The seeded
+     value names `localhost:<port>`, because it is written before any request
+     exists; the first flow through a different base ADDS that base's callback,
+     since RFC 9700 mode matches `redirect_uri` by exact string and a service
+     reached by a container name would otherwise refuse itself.
 
    **TWO ATTRIBUTES HOLD CREDENTIALS IN THE CLEAR** — `oauthClientSecret` and
    `appRegistrationAccessToken` — which is the `/krb5/principals` decision about
@@ -2349,3 +2592,598 @@ is a subtree per realm, and `applications.js`'s registry is that subtree's
 `ou=applications`. So a consent agreed in `acme` is invisible in the default
 realm without one line in this file mentioning a realm — which is the property
 to check a new store against, answered here by having no store.
+
+## `roles.js` and `issuance_gate.js`: the fourth register, and the leaf that asks about it
+
+Rules 3u and 3v. They arrived together on 2026-09-05 and they are two files
+rather than one for a reason worth stating before anything else: **one of them
+holds the answer and the other one holds nothing at all.**
+
+`roles.js` is the register — who HOLDS a role. `issuance_gate.js` is an empty
+shell that nine issuance sites ask before this service issues anything, and
+whose decider is filled by `xacml/xacml_role_pep.js` at 23c. A process that
+never loaded the XACML family has no decider installed and every call answers
+`allowed`, which is what keeps `npm test`, the parent project's in-process
+Kerberos jobs and the remote PEP container a SMALLER service rather than a
+broken one.
+
+### It is the one register a USER, a GROUP and an APPLICATION are all in
+
+`delegation.js` records what an application DID; `app_permissions.js` configures
+what one MAY do; `consent.js` holds what a PERSON agreed to. This is the fourth,
+and what makes it different is that all three kinds of directory object are
+first-class members of one role.
+
+**The third one is the unusual one and it is the point.** A `client_credentials`
+grant has no person in it at all, so until an application could hold a role
+there was nothing to decide about one — the subject of that decision is the
+CLIENT, and a register that only knew about people could not have answered it.
+
+### The two relations are kept apart, and collapsing them is the mistake
+
+|  | Stored on | Edited at | Means |
+|---|---|---|---|
+| MEMBERSHIP | the ROLE entry, `ou=roles` | `/admin/roles` | who HOLDS the role |
+| REQUIREMENT | the APPLICATION entry, `appRequiredRole` | the application's own page | what it DEMANDS before anything is issued |
+
+An application appears in both and means opposite things in each: in the first
+it holds the role, in the second it demands it. That is why `ou=roles` is only
+half the feature and why `/admin/ldap/roles` says so at the top — a reader
+looking in that container for the reason somebody was refused is one container
+across from the answer.
+
+### `EVERYBODY` is what makes this off by default without being absent
+
+Six roles are BUILT IN, computed from the context of the decision, and in no
+container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
+`ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,
+`ALL_AUTHENTICATED_APPLICATIONS`, `ALL_UNAUTHENTICATED_APPLICATIONS`.
+
+**THERE ARE EIGHT NOW, AND THE LAST TWO ARE A DIFFERENT SHAPE.** The six above
+read `kind` and `authenticated` and touch no store. `REMOTE_PEPS` (2026-09-06)
+and `XACML_USER` (beside it) are held by whoever is in one named GROUP —
+`roles.remotePepGroup` and `roles.xacmlUserGroup` — which makes them hybrids,
+and the hybrid is argued at each of them in `roles.js`. The short version is
+that both guard a surface that has to be guarded in a realm nobody has
+configured: **a configured role is absent until somebody makes it, `ou=roles`
+is per realm, and a role seeded once in the default realm leaves every later
+realm with a gate nobody chose the state of.** A built-in role is computed, so
+it exists in the realm most deployments only ever have.
+
+**THEY ARE TWO ROLES AND MUST NOT BECOME ONE.** `REMOTE_PEPS` reaches
+`/xacml/pep/*` and `POST /xacml/pip` — the documents this service enforces its
+own access with, and a named person's directory attributes. `XACML_USER`
+reaches the four XACML endpoints proper. One group granting both would make
+admitting a caller to the demonstration surface silently admit it to those,
+which is the collapse the split exists to prevent.
+
+**A PERSON IS GRANTED ONE BY GOING IN THE GROUP**, not by a role entry: the
+role is computed, so `uid=alice` added to `cn=xacml-users` holds `XACML_USER`
+on the very next request, because membership is resolved at DECISION TIME.
+`ldap_server.js` seeds both groups and an identity in each — `cn=remote-pep-1`
+and `cn=xacml-user-1` — because the party holding one is normally a certificate
+DN that does not exist until a launcher mints it, and a gate whose grant
+appears the moment somebody knocks is not a gate.
+
+An application that names no required role requires `EVERYBODY`; everybody holds
+`EVERYBODY`; the decision is Permit and the service behaves exactly as it did
+before any of this existed. **That is a better default than "no roles configured
+means do not ask"**, because the machinery is then always running and always
+visible: the console shows the decision, the audit log records it, and turning
+enforcement on for an application is NARROWING A LIST rather than switching on a
+subsystem that has never run.
+
+The consequence for a reader is the sentence `/admin/ldap/roles` and
+`GET /admin-api/ldap/roles` both carry: **an empty `ou=roles` is the ordinary
+state of a service refusing nobody**, not a sign that the feature failed to
+load.
+
+### `roles.js` is a LEAF and must stay one
+
+It requires `helpers.js` and `config.js` and nothing else here, which is what
+lets `admin_stats.js` require it in the ORDINARY DIRECTION for the roles claim
+rather than being offered a fifth inverted hook. Rule 3e is explicit that a slot
+is what you reach for when a require would close a cycle or move a route, and
+that a fifth must not be added by analogy with the fourth: here a plain require
+works, so a plain require is what is used. **Do not make this file require
+`admin_stats.js`** — the moment it does, that argument is gone and a slot is the
+only way back.
+
+The DIRECTORY arrives through a slot pointing the other way, as
+`group_claims.js`, `applications.js` and `xacml_store.js` do it: only
+`ldap/ldap_server.js` can answer what is in `ou=roles`, and it is required at 21.
+
+### An empty decider means ISSUE, and the fail-closed case is not in this file
+
+`issuance_gate.js` is absent-safe on purpose, and the reason is about failure
+rather than about tests: this service exists to be exercised, and an
+authorization subsystem that could brick every protocol family by being
+half-loaded would be the worst possible thing to put in front of a mock.
+
+**Where enforcement must fail CLOSED it does so in the PEP**, which knows
+whether anybody actually asked for a restriction — an application that names no
+required role costs nothing when the policy is missing, and one whose entry
+names `staff` is refused, because somebody deliberately asked for that. Both
+halves are argued in `xacml/CLAUDE.md`. This file's job is to be absent-safe; it
+is not the file that decides what a restriction means.
+
+`ISSUANCE` is a VOCABULARY and not a list of call sites: its nine values become
+the XACML `action-id` of the request, so adding one is adding a word a policy
+author can match on, and RENAMING one silently stops every policy that named the
+old word from matching — which is a policy that permits nothing rather than an
+error. The nine are spread over eight `gate.check()` calls in seven modules,
+because the two SAML profiles both issue `issue-saml-assertion` and `oauth2.js`
+asks twice.
+
+### The six built-in roles became reachable on 2026-09-05, and three of them were not before
+
+`BUILT_IN` has held six rows since this file was written, and `holds()` on each
+is a pure function of the context it is handed. That made three of them
+unreachable in practice, because the contexts the nine issuance sites built
+were partly CONSTANTS:
+
+| Role | Before 2026-09-05 | Now |
+|---|---|---|
+| `EVERYBODY` | always held | unchanged — `holds()` is `return true` |
+| `ALL_AUTHENTICATED_USERS` | always held by a person | held when the SESSION says somebody authenticated |
+| `ALL_UNAUTHENTICATED_USERS` | **held by nobody, ever** | held by an unauthenticated session |
+| `ALL_APPLICATIONS` | held under `client_credentials` | unchanged |
+| `ALL_AUTHENTICATED_APPLICATIONS` | always held by a client | held when the client PROVED who it is on this request |
+| `ALL_UNAUTHENTICATED_APPLICATIONS` | **held by nobody, ever** | held by a public client, and by a confidential one that presented nothing |
+
+**The roles did not change. The facts underneath them did**, in three modules,
+and it is worth knowing which because they are three different kinds of answer:
+
+* **A USER's answer belongs to the SESSION**, and `authn.js` now puts
+  `authenticated` on the session object rather than six call sites assuming it.
+  See that directory's file for the unauthenticated session and the third
+  button that starts one.
+* **It has to TRAVEL to the token endpoint**, which is a back channel with no
+  cookie on it — so the authorization code carries `session_authenticated`
+  frozen at the moment it was minted, and `admin_stats.js`'s token registry
+  carries the same thing for a REFRESH. Both are `!== false` at the read, so a
+  record made before the field existed goes on meaning what it meant.
+* **AN APPLICATION's answer belongs to the REQUEST**, because client
+  authentication is something a client does every time it calls. It is
+  `oauth2_bcp.observeClientAuthentication()`, deliberately not mode-gated —
+  see `oauth-oidc/CLAUDE.md`.
+
+**A computed role and a configured one exercise different halves of this
+file**, and that is the lesson the bug in `authn.js`'s sign-in gate taught: a
+suite that narrows applications only to CONFIGURED roles cannot see a wrong
+answer in `holds()` at all, because `configuredRolesOf()` answers those the
+same whatever the context says. `tests/vendored/sts_roles.js` is the configured
+half and `tests/vendored/sts_roles_builtin.js` is the computed one, and neither
+substitutes for the other.
+
+**`EVERYBODY` HAS NO NEGATIVE CASE AND THAT IS A PROPERTY OF THE ROLE.** Its
+`holds()` is `return true`, so an application requiring it can refuse nobody —
+which is exactly what makes this feature off-by-default without being absent.
+The test asserts that rather than leaving the missing negative to be noticed: it
+checks the catalogue still describes `EVERYBODY` as the DEFAULT requirement, so
+that anybody who gives it a `holds()` that can answer false fails there.
+
+## `setId` IS THE THIRD THING THE TOKEN REGISTRY IS TOLD OUT OF BAND (2026-09-05)
+
+`recordJwt()` keeps three facts that are on no token as a claim, and all three
+arrive the same way — through `signJwt()`'s third parameter, from the call site
+that built the thing:
+
+| Field | What states it | Why it cannot be read off the payload |
+|---|---|---|
+| `sessionId` | the issuance site | no token carries a session identifier, and inventing one to make a console page easier would change what every client receives |
+| `sessionAuthenticated` | the issuance site | the refresh grant has no session and no cookie, so what it can say about the person is what this registry remembers |
+| `setId` | the issuance site | **two replies can agree on every other field in this record** |
+
+That last row is the whole argument for the third one. **OAuth 2.0 and OIDC are
+the only families this service speaks that hand back several credentials at
+once**, and `/admin/tokens` lists what came back TOGETHER — so something has to
+say which credentials those are. Two people redeeming two authorization codes at
+the same client in the same millisecond produce six records agreeing on `sub`,
+`username`, `client_id`, `scope`, `grant` and `issuedAt`: every field a heuristic
+could read. A grouping derived from those would report a credential handover
+that never happened, which is worse than the ungrouped list it replaced.
+
+So the ISSUER states it. `oauth-oidc/CLAUDE.md` argues the two call sites; what
+matters here is that **a caller that says nothing is stating that this credential
+was issued alone**, which is true of the credential issuer, the OID4VP Request
+Object and WS-Trust's JWT, and `issuedSets()` draws each as a set of one.
+
+**It is in no token, no client ever sees it, and it is not a claim** — unlike
+`sid`, which is a claim precisely because OpenID Connect Front-Channel Logout
+section 3 requires the OP to send one. That is the bar a new claim has to clear
+here, and this does not try to.
+
+### `issuedSets()` beside `issuedList()`, and the three derived fields
+
+The merged list stays what it was; the grouping is a second reading of it. Three
+of the set's own fields are not what a reader first expects, and each is a
+refusal to average:
+
+* **`state`** is the state every member shares, or `mixed`. An access token
+  expires in fifteen minutes and the refresh token beside it in a day, so most
+  sets are neither valid nor expired within the hour — and choosing one would be
+  this function deciding which member matters.
+* **`expiresAtMs`** is the EARLIEST member's, when the set starts to come apart;
+  `lastExpiresAtMs` is when it is finished. A member stating no expiry is skipped
+  on both ends rather than counted as zero, which is the 1970 bug `expiresAtMs`
+  already warns about, met from the other direction.
+* **`setKey`** is what a page addresses a set BY, and it is not `setId`: a row
+  with no set id needs a handle too, so it gets `one:` and this service's own key
+  for that row.
+
+**That last one is why `recordArtifact()` now stamps a `key`.** A Kerberos ticket
+carries no identifier anybody can quote — the protocol gives it none and the KDC
+keeps no handle on it — so without a row handle of this service's own there
+would be nothing to address its row by at all. It is deliberately kept apart from
+`identifier`: that is what somebody can quote back at this service and what
+`credential_graph.js` looks a lineage up by; this is only ever a way of naming
+one row of the issued register. `nums.artifactsRecorded` counts what has EVER
+been recorded and is not `artifacts.length`, which falls back as the cap shifts.
+
+### And one ordering fix that is easy to read past
+
+`issuedList()` now stamps an ordinal before it sorts, and ties break on it.
+Members of one reply are minted well inside one millisecond, so sorting on
+`issuedAt` alone left them in whatever order the sort happened to be stable in —
+and the set page would have printed the refresh token above the access token
+issued before it. `tests/issued_sets.js` asserts the order explicitly for that
+reason.
+
+## `keystore.js` AND `secrets.js`: WHERE THE SIGNING KEYS LIVE, AND WHAT OPENS THEM (2026-09-06)
+
+Two files, one for each half of a question this service did not previously have:
+**what happens to a signing key when the process stops.**
+
+Development mode's answer is still "it dies", and that is a feature rather than
+a limitation — `makeStsKeys()`'s own comment explains that the `kid` is derived
+from the key material precisely so two instances cannot publish one name over
+two keys. Product mode's answer has to be "it does not", because a token issued
+yesterday must verify today.
+
+### `keystore.js` — the material
+
+* **Loaded once, served synchronously, and that shape is forced.**
+  `stsKeysFor` is a `realms.keyed()` factory reached through a PROXY — eight
+  modules do `STS.privateKey` on a property read — so it cannot await anything,
+  and reading a secret from AWS can only be asynchronous. The two are reconciled
+  the way `persistence.js` already reconciles opening a connection pool:
+  everything asynchronous happens in `start()`, before the listener binds, and
+  what is left is a map lookup.
+* **A realm created at RUNTIME is the case that does not fit**, and it is
+  handled honestly: keys are generated on the spot and written asynchronously
+  afterwards.
+* **What is stored is PEM and a JWK, never a derived value.** `privateKey` is a
+  parsed `KeyObject` rebuilt from `privateKeyPem`, and every `kid` is recomputed
+  from the public material — storing a derived value is how a store comes to
+  disagree with itself after a change to the derivation.
+* **What is NOT stored, and each is a decision**: the eleven post-quantum keys
+  per realm (generated on the worker pool because generating them is expensive,
+  and cached by `pq_jose.js`), the TLS server certificate, and the SPIFFE
+  authorities. All three are named in `mode.js`'s `NOT_YET`.
+* **Rotation is destructive and says so.** There is no overlap — this service
+  publishes one key per realm per algorithm — so everything signed with the old
+  key stops verifying the moment the new one is in use. Overlapping keys in JWKS
+  are the obvious next increment.
+
+### WHAT IS RESIDENT IS THE CIPHERTEXT (2026-09-06)
+
+The bullets above are about the key AT REST, and until this date they were the
+whole story — which meant a store encrypted under a key from a cloud secret
+manager sat behind a process that held every realm's private key in the clear
+from `start()` until it exited. The encryption protected the disk and nothing
+else.
+
+Now `material` holds `{ cipher, createdAt, plain, parsed, timer }` per realm.
+`storedFor()` decrypts on demand, `purgeFor()` drops the result, and
+`keys.plaintextRetention` decides when:
+
+| Word | What it does |
+|---|---|
+| `timed` (default) | drop it once it has gone `keys.plaintextTtlS` unused — an IDLE clock, restarted on every use, so a busy realm keeps its key and a quiet one lets it go |
+| `per-use` | drop it at the end of the turn of the event loop that needed it |
+| `resident` | keep it for the life of the process — what this service did before the setting existed |
+
+**THREE WORDS AND NOT A FLAG**, for `oauth2.tokenExchangeRefreshToken`'s reason:
+a boolean could only have reached two of the three, and the interesting bug is
+usually on the side a boolean would have hidden.
+
+Six things are load-bearing, and the first is the one that decides whether any
+of the rest is worth having.
+
+* **THE CLAIM IS ABOUT A WINDOW AND NOTHING ELSE, and every surface says so.**
+  The key-encryption key is resident too — it has to be — so an attacker who can
+  read this process's memory at a moment of their choosing waits for the next
+  signature. What narrows is exposure to a SNAPSHOT: a core dump, a heap dump, a
+  swapped page, a `/proc/<pid>/mem` read, a debugger attached for a moment. That
+  is the realistic exposure for material that used to sit there for weeks, and
+  it is the whole benefit. Anything stronger needs the key somewhere this
+  process cannot read at all — an HSM, or a KMS that signs on your behalf —
+  which is in `mode.js`'s `NOT_YET`.
+* **A JAVASCRIPT STRING CANNOT BE WIPED.** The Buffer the decrypt produces IS
+  zeroed; the strings `JSON.parse()` makes out of it and the copy OpenSSL keeps
+  inside a `KeyObject` are RELEASED, because there is no other verb available
+  from here. Saying so is the point: a feature like this is worth exactly
+  nothing if somebody reads it as "the key is not in memory".
+* **THE PARSED `KeyObject` PURGES WITH THE PLAINTEXT, and that is not
+  pedantry.** `privateMaterialFor()` caches the parsed key on the same entry and
+  `purgeFor()` clears both, so the parsed key can never outlive the string it
+  came from. A KeyObject cache with a lifetime of its own would make the purge
+  cosmetic — and `report()` counts a realm as held when EITHER field is set, so
+  a purge that forgot one is reported rather than looking like success.
+  `tests/key_residency.js` mutation-tests exactly that.
+* **`helpers.js`'s KEY SET HOLDS THE PUBLIC HALF AND GETS THE PRIVATE HALF.**
+  `lazyKeySet()` is the other half of the feature and without it the first half
+  buys nothing: the kid, the certificate and every curve key's public JWK are
+  ordinary properties, and `privateKeyPem`, `privateKey` and each
+  `extraKeys[].privateKey` are GETTERS that ask the keystore afresh. So the JWKS
+  endpoint walking every key on every fetch decrypts nothing, and the eight
+  modules that do `STS.privateKey` are untouched — a property read of a getter
+  is a property read, which is the second thing the `STS` proxy has paid for.
+  **Nothing in that function may close over the plaintext blob it was built
+  from**; each getter captures the realm id and, for a curve key, its `kid`.
+* **THE UNIT OF `per-use` IS THE TURN OF THE EVENT LOOP AND NOT THE OPERATION.**
+  This is reached through a property read, so when `storedFor()` returns, the
+  caller has the key and has not signed with it yet; a synchronous purge would
+  hand back a key and destroy it before use. It is a `setImmediate`, which for a
+  synchronous signature is exactly the operation and for one that awaits the
+  worker pool is the tick it was dispatched on. Stated rather than rounded off.
+* **THE PURGE TIMER IS `unref()`d.** Without it a service holding a decrypted
+  key keeps the event loop alive for the whole TTL after everything else has
+  finished — so `npm test` hangs for five minutes at the end, and the cause is a
+  key that was purged correctly.
+
+**IT ONLY APPLIES WHERE KEYS PERSIST**, which is not squeamishness about
+development mode: a service that generates its key in memory has no ciphertext
+to fall back to, so there is nothing to purge TO. `/admin/keys` says that in as
+many words rather than drawing an empty table, and the setting's own description
+says it too.
+
+**`/admin/keys` GAINED A REPORT AND DELIBERATELY NO CONTROL.** It names the
+policy and the realms whose key is decrypted right now — a number a reader can
+watch change, which is the only way to tell the feature is working rather than
+configured. A *Purge now* button was refused: that page's one POST answers with
+a FILE rather than a page, so a second action would be the one form in this
+console whose two buttons answer in two different shapes, and it would shorten a
+window the timer shortens anyway. **The same change fixed two sentences on that
+page that had been false since the keystore landed** — `regeneratedEveryStart`
+was the constant `true`, and the warning that makes handing a private key to a
+browser defensible said these keys die with the process. Both are computed now.
+
+### `secrets.js` — the key-encryption key
+
+Five providers behind one `read()`. **`file` is the default because it needs
+nothing**: Kubernetes mounts a Secret as a file, Docker mounts a secret as a
+file, and every other provider here is that same idea with somebody else's
+access control in front of it.
+
+**The four cloud adapters lazily `require()` their official SDK, and that is a
+dependency decision.** This service is a mock first — the debugger suite installs
+it, CI installs it — and four cloud SDKs to use none of them would be carried by
+every one of those installs. So they are **optional PEER dependencies**, not
+`optionalDependencies`: that field means "install it, but do not fail if you
+cannot", npm installs them by default, and `.npmrc`'s `omit=dev` does not touch
+them — so it would have carried all five while the comment claimed otherwise. A
+peer marked `optional: true` is not installed automatically, which is what the
+prose actually describes.
+
+**They are not hand-rolled over REST**, which was the first instinct and the
+wrong one: signing an AWS request is SigV4, and the failure mode of getting it
+subtly wrong is a service that cannot read its own signing key on a Tuesday. The
+SDKs also carry the credential chains — instance roles, workload identity,
+managed identity — which is most of what makes a secret manager usable.
+
+**A missing SDK is reported as the package to install**, never as
+`Cannot find module`, which names a file nobody chose.
+
+### The encryption, in `crypto.js`
+
+AES-256-GCM and **not** CBC, and the difference is the one that matters: GCM is
+authenticated, so a ciphertext somebody altered fails to decrypt instead of
+yielding a subtly different key. A signing key that decrypted to the wrong bytes
+would produce signatures nothing can verify, and the failure would surface at a
+relying party as "the signature is invalid" — as far from the cause as it is
+possible to get.
+
+**A per-record subkey, derived with HKDF.** The KEK never encrypts anything
+directly: each record uses HKDF-SHA256(KEK, random salt, purpose), so the same
+KEK protects the whole store without any record's IV mattering to any other —
+and a single key encrypting many records under many IVs is one IV-reuse bug away
+from catastrophic in GCM.
+
+**A KEK shorter than 32 bytes is refused rather than stretched.** Stretching
+would let a four-character password protect every signing key this service holds
+while the log said AES-256, which is the kind of comfortable lie this repository
+refuses everywhere else. Hex is tried before base64, because a 64-character hex
+string is also valid base64 and reading it that way produces 48 different bytes.
+
+## `credentials.js` GENERATES A PASSWORD IN ONE PLACE, AND `set-password` FINALLY EXISTS (2026-09-06)
+
+Two small changes made when `/admin/users/new` gave the console a way to set a
+credential at all, and both are the same rule read twice.
+
+**`generatePassword()` IS THE ONE PLACE THIS SERVICE INVENTS A PASSWORD**, in
+the file that is already the one place it verifies or sets one. It is 32 bytes
+of `randomBytes` as base64url — not derived from the username, not a word list,
+not shortened for typing, because a generated credential guessable from
+anything on the screen it was shown on is worse than no generator. `bootstrap()`
+had that line inline; it calls this now, so the account a fresh product-mode
+service is reachable through and the password an operator generates on the
+console are the same strength by construction rather than by both happening to
+say 32.
+
+**AND `POST /admin-api/users/set-password` NOW EXISTS.** This file NAMED it
+twice — in the sentence a refused sign-in gets, and in the bootstrap banner that
+tells an operator to change the generated password — and the operation had never
+been written, so anybody who followed either instruction got a 404 naming an
+endpoint this service documents. **A message that names an endpoint is a
+promise**, and it was easier to keep than to notice: nothing in the code, the
+tests or the console reads these strings, so nothing could have shown it. It is
+an arm of `admin.js`'s `usersAction()`, which means the console and the API
+reach one function.
+
+Both are worth reading beside *ALL FIVE GATED SURFACES* above: the gap there was
+an enum documenting itself as done, and the gap here was an error message doing
+the same thing.
+
+## ALL FIVE GATED SURFACES ASK THE POLICY, AND THEY ALL SIGN IN THROUGH ONE STORE (2026-09-06)
+
+`common/access_gate.js` declared five resources from the day it was written and
+**two of them asked** — the admin console and the User Portal. The management
+API, SCIM and the SPIRE Server API were entries in an enum that nothing
+consulted, and the prose in `xacml/xacml.js`, `xacml/xacml_admin.js`,
+`mgmt-api/admin_api_spec.js` and two test files said all five did.
+
+**THAT IS WORSE THAN AN UNFINISHED LIST AND IS THE LESSON WORTH KEEPING.** An
+unimplemented item on a list is visible. A five-entry enum with prose asserting
+five callers is a to-do that documents itself as done: nothing in the code, the
+tests or the console could show the gap, and the console was telling operators
+something untrue. It is the failure the drift checks exist to prevent, committed
+in the prose those checks do not read.
+
+All five ask now. Each asks **after its own check and never instead of it** —
+the console's two roles, SCIM's six RFC 7644 schemes and SPIRE's per-method
+table all still decide first, so a refusal a caller sees is the most specific
+one available and an unedited service behaves exactly as it did.
+
+| Surface | Where it asks | What decided first |
+|---|---|---|
+| `admin-console` | `admin-ui/admin.js`'s gate | the two console roles |
+| `user-portal` | `portal/portal.js`'s `requireSignIn()` | a sign-on session |
+| `scim` | `scim/scim_auth.js`'s `authenticate()` funnel | six RFC 7644 schemes, then the scope |
+| `spire-server-api` | `spiffe/spiffe_grpc.js`'s `prepareCall()` | SPIRE's own per-method table |
+| `management-api` | `mgmt-api/admin_api.js`'s middleware, **product mode only** | the two console roles |
+| `xacml-pep-api` | `xacml/xacml.js`'s `pepAccess()` | a VERIFIED client certificate resolved to a directory entry |
+| `xacml-api` | `xacml/xacml.js`'s `xacmlAccess()` | the same chain, with `XACML_USER` on the end |
+
+**THE TWO XACML ROWS ARE NOT LIKE THE FIVE ABOVE THEM, AND THE DIFFERENCE IS
+THE DEFAULT.** The five are surfaces an operator NARROWS: they require
+`EVERYBODY` until somebody says otherwise, which is what kept this layer from
+changing behaviour the day it was added. The two XACML ones carry their
+requirement in the REQUEST and are restricted out of the box, because a gate
+that is permissive until configured is a gate that is open on every deployment
+nobody has configured. It is still a POLICY decision either way — one
+`access-control` document decides all seven, and `xacml.enforceAccess` is the
+one switch that stops it deciding.
+
+**THE MANAGEMENT API IS THE ONE ASYMMETRY AND IT IS ARGUED RATHER THAN
+INHERITED.** That surface is open in development by design — it is what the
+tests drive and the way back in when nobody holds a role — so there is no
+credential, no session and no subject. Asking a policy whose built-in document
+refuses an unauthenticated subject would close the recovery path. **A policy
+layer must not be the thing that removes the way back in.**
+
+### The session is `authn.startSession()`, and a second register was the wrong answer
+
+Three of the five authenticate PER REQUEST — a bearer token, a Basic header, an
+X509-SVID over mutual TLS — and held no session at all: nothing on
+`/admin/sessions`, nothing for a global sign-out to end, no subject with a
+session behind it for the policy.
+
+The obvious fix was a register of API sessions. **It is the mistake rule 3m
+exists to prevent**: `authn.js`'s map is where a session lives, `logout.js`
+reads it, the console draws it and CAEP observes it, and a second store beside
+it would be a second answer to *is somebody signed in* — with the wrong half
+being whichever surface a reader happened to open. So it is one store and two
+fields on the record:
+
+* **`detail.key`** — a fingerprint of what was presented. A call whose key
+  matches a live session TOUCHES it instead of minting one, so a provisioning
+  client doing a thousand PATCHes leaves one row. The key is the SCHEME AND THE
+  PRINCIPAL rather than the credential, for two reasons pointing the same way:
+  nothing here keeps what was presented (a bearer token in a register is a
+  second place to steal one from), and the right unit is the CLIENT — an agent
+  that rotates its SVID mid-run is the same agent, and keying on the
+  certificate would give it a second row and leave the first until it expired.
+* **`detail.cookie: false`** — a SCIM client is not a browser, and handing one
+  a session cookie would invite a client to use it as a credential: a second
+  way into that surface none of its own rules would ever see. Opt-OUT, because
+  every caller that existed before this field is a browser.
+
+**ONE STORE DOES NOT MEAN ONE KIND OF ROW.** `logout.js` branches on
+`credentialKey` — the one predicate that decides — so an API session is drawn
+by its own surface, carries the FOURTH expiry rule (`SESSION_EXPIRY_RULES.api`,
+the only one **extended by use**, because these exist only while a client is
+calling where a browser holds a cookie that outlives its own use), and reports
+CALLS rather than the relying parties a browser session carries. A SCIM client
+drawn as a "Browser sign-on session" would be that page saying something untrue
+about the one thing it exists to report.
+
+**ENDING ONE REVOKES NOTHING, and the rule says so where it is read.** The
+token, password or certificate behind it is accepted without consulting any
+register, so the next call authenticates again and the row comes back. What
+ending it buys is what a sign-out buys everywhere else: the record stops saying
+somebody is using the surface, and a global sign-out can say what it reached.
+
+`tests/api_sessions.js` pins all of it, including — last, so that nothing above
+could pass by making every session an API session — that a browser session is
+exactly what it was.
+
+## `version.js`: M.N.O, and why the build number is not computed at startup (2026-09-06)
+
+**It is a PORT of the parent project's `client/version.js`, not an invention**,
+and the whole reason to say so first is that this repository is a submodule of
+that one: its container is built beside that project's two, and a reader who
+has learnt to read one version string should not have to learn a second. What
+changed in the port is written down in this file's own header — four things,
+each with its reason — and is not repeated here. The scheme, the surfaces it
+reaches and the one number this repository cannot reconcile with the parent are
+in the root `CLAUDE.md` under *Versioning*.
+
+What belongs here is the four properties that make it a `common/` module rather
+than a script.
+
+**IT IS A LEAF AND MUST STAY ONE (rule 3).** It registers no route and requires
+NOTHING from this repository — not `helpers.js`, not `config.js`, not even the
+logger. So its position in the require order is not a position, and it can never
+close a cycle. That matters more here than it did in the parent project:
+`server.js`, `home/home.js` (6a), `admin-ui/admin.js` (18),
+`mgmt-api/admin_api.js` (19), `portal/portal.js` and `sts_metadata.js` (24) all
+read it, which is six modules spread across the whole require order — including
+the two whose positions are the most constrained in the file. **A version module
+that could drag a route would be a version module that decided where routes
+go.**
+
+**ITS `log` IS CONSOLE-BACKED AND THAT IS THE SECOND HALF OF THE SAME
+DECISION.** The Entering/Leaving convention applies to it like everything else,
+and `helpers.js` owns the logger — so the convention is met with the same call
+shape over `console` rather than by requiring the thing that would break the
+paragraph above. The parent had a different reason for the same code (this file
+can run before any install has happened, at build time); both hold, and the
+stronger one here is the leaf rule.
+
+**EVERY CALLER READS IT ONCE, AT REQUIRE TIME.** The version cannot change while
+the process runs — it is stamped into the artifact or computed once at startup —
+so `const APP_VERSION = version.load()` at module scope is not a
+micro-optimisation but the correct statement of what the value is. The console's
+shell is the one that would have cost something: reading a file on every page
+render, in the module that renders the most pages, to learn something fixed for
+the life of the process.
+
+**A VERSION MAY NEVER STOP THIS SERVICE STARTING**, and this is the one place in
+`common/` where a read failure is deliberately survivable. An unreadable
+`VERSION` falls back to `0.0` with a message on stderr; a corrupt `version.json`
+falls back to a computed record. Compare `keystore.js` two sections up, where a
+key that cannot be read is FATAL and the argument for that is spelt out: a wrong
+version misinforms a reader, and a wrong key invalidates every token this
+service has ever issued. The two files are the two ends of that judgement and it
+is worth reading them together.
+
+**THE PACKAGE ROOT IS FOUND, NOT ASSUMED, AND THAT IS WHAT LETS ONE COPY SERVE
+TWO IMAGES.** `findRoot()` probes for the directory holding the `VERSION` file:
+one level above `common/` here, and this file's OWN directory in the
+`xacml-pep/` image, where the Dockerfile copies it to the container root as
+`version.js` with `VERSION` beside it. A hard-coded `__dirname/..` there would
+be `/usr/src` — `--stamp` would write a `version.json` nothing reads and
+`load()` would find none, and the PEP would silently report a computed number
+that changed on every restart. See `xacml-pep/CLAUDE.md` for why the copy goes
+to the container root rather than beside the shim.
+
+**`userAgent()` LIVES HERE FOR THE REASON THE MODULE DOES.** This service makes
+four outbound requests and three of them reach somebody else's server —
+federation's, SSF's RFC 8935 push, and XACML's change nudge. Each says
+`mock-sts/<M.N.O> (<component>)` in RFC 9110 product form, built from one copy
+of the product token, because three hand-written strings in three modules is
+three places for a rename to reach two of. It is not a claim about HTTP living
+in a version module: it is the one string in this service that is *made of* the
+version.

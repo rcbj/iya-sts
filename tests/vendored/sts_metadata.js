@@ -45,6 +45,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
+const consoleSignIn = require("./console_signin.js");
 var appconfig = require(process.env.CONFIG_FILE);
 
 var bunyan = require("bunyan");
@@ -79,43 +80,17 @@ const CONSOLE_USER = "sts-metadata-test";
 // pass: no redirect means no session is needed and everything below works as it
 // did before the page moved.
 // ---------------------------------------------------------------------------
+// **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06.** The console
+// became a relying party of this service's own authorization server on that
+// date, so reaching it is five hops and two cookies rather than three fetches
+// and one — and `admin_api.js` needs the same walk. That file argues every hop.
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
-  const gated = await fetch(issuerBase + "/admin/sts-metadata",
-                            { redirect: "manual" });
-  if (gated.status !== 302) {
-    log.info("[console] admin.authRequired is off (GET /admin/sts-metadata " +
-             "answered " + gated.status + " with no redirect), so the reads " +
-             "below need no session.");
-    log.debug("Leaving signInToTheConsole(). The gate is off.");
-    return null;
-  }
-  const where = gated.headers.get("location") || "";
-  const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
-  assert.ok(authn,
-    "a console GET with no session should be sent to the sign-in screen " +
-    "carrying the id of the request waiting there, and it went to \"" +
-    where + "\". Without that id the screen has nothing to sign in FOR and " +
-    "refuses the POST.");
-  const signedIn = await fetch(issuerBase + "/authn/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "authn_id=" + encodeURIComponent(authn) +
-          "&username=" + encodeURIComponent(CONSOLE_USER) +
-          "&password=" + encodeURIComponent(CONSOLE_USER),
-    redirect: "manual",
-  });
-  const setCookie = signedIn.headers.get("set-cookie") || "";
-  const session = (setCookie.match(/(sts_mock_session=[^;]+)/) || [])[1];
-  assert.ok(session,
-    "signing in at /authn/login should set the session cookie; the reply was " +
-    signedIn.status + " and its Set-Cookie is \"" + setCookie + "\". This " +
-    "service checks no password, so a refusal here is about the request " +
-    "rather than the credential.");
-  log.info("[console] signed in as " + CONSOLE_USER + ". " +
-           "admin.authRequired is on.");
-  log.debug("Leaving signInToTheConsole(). Holding a session.");
-  return session;
+  const cookie = await consoleSignIn.signInToTheConsole(issuerBase,
+                                                        CONSOLE_USER, log);
+  log.debug("Leaving signInToTheConsole(). " +
+            (cookie ? "Holding a session." : "The gate is off."));
+  return cookie;
 }
 
 // One read of the page, carrying the session when there is one.
@@ -222,9 +197,37 @@ function theConsoleChromeIsThere(page) {
       "the sidebar should link " + path + ", or the navigation this page was " +
       "moved for is not there.");
   });
-  assert.ok(/<li><span class="here">Service metadata<\/span><\/li>/.test(page),
+  // THE ATTRIBUTES ARE NOT PINNED, AND THAT IS THE POINT OF THE CHANGE.
+  //
+  // This was an exact-string match on `<li><span class="here">Service
+  // metadata</span></li>`, and it broke on 2026-09-05 when the active item
+  // grew `tabindex="-1" autofocus aria-current="page"` — the autofocus is what
+  // scrolls the sidebar so the page you are on is visible in it, and the
+  // console has no script to do that with. The assertion's INTENT survived
+  // that change untouched: the active item is TEXT and not a link. So what is
+  // asserted is the intent, and the attributes are free to grow.
+  assert.ok(/<li><span class="here"[^>]*>Service metadata<\/span><\/li>/.test(page),
     "and it should mark THIS page as the one being read — the sidebar item " +
     "for the active page is drawn as text rather than as a link.");
+  // AND THE TWO THINGS THAT MAKE THAT MARK REACHABLE, which are now part of
+  // the contract rather than decoration: `aria-current` is what tells a screen
+  // reader which item is the current page, and `autofocus` is the whole
+  // mechanism that scrolls a 1200px-overflowing sidebar to reveal it. Pinned
+  // because both are invisible — nothing about the rendered page looks wrong
+  // if either is dropped, and the sidebar would quietly go back to starting at
+  // the top on every navigation.
+  const activeItem = /<li><span class="here"([^>]*)>Service metadata<\/span><\/li>/
+    .exec(page);
+  assert.ok(activeItem && /aria-current="page"/.test(activeItem[1]),
+    "the active sidebar item should carry aria-current=\"page\"; it had " +
+    JSON.stringify(activeItem && activeItem[1]));
+  assert.ok(activeItem && /\bautofocus\b/.test(activeItem[1]) &&
+            /tabindex="-1"/.test(activeItem[1]),
+    "and autofocus with tabindex=\"-1\" — the browser scrolls a focused " +
+    "element into view, which is how this console reveals the current page " +
+    "in a sidebar that overflows, with no script anywhere. tabindex=\"-1\" " +
+    "keeps it focusable without putting the page you are already on into the " +
+    "tab order. It had " + JSON.stringify(activeItem && activeItem[1]));
   assert.ok(/<p class="crumb"><a href="\/admin">Admin console<\/a>/.test(page),
     "the breadcrumb should start at the console, since that is the trail " +
     "every other console page draws.");
@@ -268,7 +271,13 @@ function theConsoleChromeIsThere(page) {
 function theProtocolListIsHonest(doc, page) {
   log.debug("Entering theProtocolListIsHonest().");
   log.info("=== The protocol list ===");
-  const expected = ["OAuth2 / OIDC", "Federation", "Shared Signals",
+  const expected = ["OAuth2 / OIDC",
+                    // NOT A PROTOCOL, and it has a card because this page
+                    // refuses to report an endpoint group no card claims —
+                    // paying that here is cheaper than making the rule
+                    // conditional on whether a group is a protocol.
+                    "User portal",
+                    "XACML", "Federation", "Shared Signals",
                     "SAML 2.0", "SAML 1.1",
                     "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",
                     "SCIM", "LDAP", "PKI / X.509", "WebAuthn / CTAP",
@@ -299,8 +308,19 @@ function theProtocolListIsHonest(doc, page) {
   doc.protocols.forEach(function (p) {
     assert.ok(p.what && p.what.length > 40, p.name +
       " should say what this service does with it, in more than a phrase.");
-    assert.ok(Array.isArray(p.specs) && p.specs.length, p.name +
-      " should name the specifications it implements.");
+    // **A CARD MAY NAME NO SPECIFICATION ONLY BY SAYING SO.** Every protocol
+    // family here implements something written down, and a card with an empty
+    // list is either undocumented or invented — which is what this assertion
+    // is for. The exemption is a FIELD on the card (`notAProtocol`) rather
+    // than a name in a list here, so the reason travels with the thing it
+    // excuses and a second one has to be declared deliberately.
+    //
+    // There is exactly one today: the User Portal, which is an application
+    // rather than a protocol and has a card only because this page refuses to
+    // report an endpoint group no card claims.
+    assert.ok(Array.isArray(p.specs) && (p.specs.length || p.notAProtocol),
+      p.name + " should name the specifications it implements, or declare " +
+      "`notAProtocol` to say why it names none.");
     p.specs.forEach(function (id) {
       assert.ok(ids.has(id), p.name + " cites specification id " + id +
                 ", which the page does not define.");
@@ -432,9 +452,41 @@ async function theMethodsShownActuallyAnswer(doc) {
       ":state": "no-such-state",
                           "*": "probe" };
   let checked = 0;
+  let skipped = 0;
   for (const e of doc.endpoints) {
     let path = e.path;
     if (path === "*") continue;              // the CORS preflight answers every path
+    // ---------------------------------------------------------------------
+    // AND THE ONE ENDPOINT THAT IS UNGATED AND DESTRUCTIVE (2026-09-06).
+    //
+    // The block above says no session is carried here so that a bodyless POST
+    // to a console form is refused 401 rather than being a real action against
+    // a mock every other job is reading. **That argument holds for everything
+    // BEHIND A GATE and for nothing in front of one**, and
+    // `POST /tls/trust/clear` is in front of one: it needs no credential, it
+    // succeeds, and it empties the client truststore.
+    //
+    // **THAT BROKE EVERY LATER JOB THAT NEEDS A CLIENT CERTIFICATE TO VERIFY,
+    // AND IT WAS INVISIBLE UNTIL 2026-09-06.** Before that date nothing did:
+    // a certificate was a turnstile, and `/xacml/pep/policies` needed none. It
+    // is load-bearing now — the remote PEP container's pull, its heartbeat and
+    // its PIP queries all resolve a VERIFIED chain to a directory entry — so a
+    // run where this job happened to come first left that container
+    // authenticating as nobody for the rest of the run, reporting
+    // UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor the launcher had
+    // posted correctly before anything started.
+    //
+    // **IT IS A LIST OF ONE AND SHOULD STAY THAT WAY.** The test for adding a
+    // second is not "this changes something" — every POST here changes
+    // something, which is why the walk asserts only that a handler ANSWERED.
+    // It is: *this endpoint needs no credential AND destroys state another job
+    // depends on.* Anything gated is already refused 401, which is a handler
+    // answering and is the whole of what this check asks.
+    // ---------------------------------------------------------------------
+    if (path === "/tls/trust/clear") {
+      skipped++;
+      continue;
+    }
     Object.keys(substitutions).forEach(function (token) {
       path = path.replace(token, substitutions[token]);
     });
@@ -475,7 +527,9 @@ async function theMethodsShownActuallyAnswer(doc) {
     }
   }
   log.info("[methods] OK — " + checked +
-           " method/path pairs reached a handler.");
+           " method/path pairs reached a handler" +
+           (skipped ? ", and " + skipped + " ungated destructive one(s) were " +
+                      "deliberately not called" : "") + ".");
   log.debug("Leaving theMethodsShownActuallyAnswer().");
 }
 

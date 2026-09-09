@@ -95,8 +95,16 @@ const pqJose = require('./pq_jose');
 // This module is where the line belongs because this module is what routes an
 // `alg` to pq_jose.js in the first place — every path that can reach a
 // post-quantum signature comes through here.
+//
+// **THE VALUE IS KEPT NOW, AND WAS DISCARDED UNTIL 2026-09-07.** The effect
+// above is still the reason the line is here, but `hashSecretAsync()` below
+// hands the pool a job DIRECTLY rather than through pq_jose.js — a scrypt
+// derivation is not a JOSE operation and routing it through that module would
+// have put a password in a file about post-quantum signing. Requiring it twice
+// would be the same module object either way; naming it says that this file
+// uses the pool as well as arming it.
 // ---------------------------------------------------------------------------
-require('./worker_pool');
+const workerPool = require('./worker_pool');
 const xmldom = require('@xmldom/xmldom');
 
 const log = bunyan.createLogger({
@@ -2497,6 +2505,408 @@ function constantTimeEquals(a, b) {
   return nodeCrypto.timingSafeEqual(left, right);
 }
 
+// ---------------------------------------------------------------------------
+// PASSWORD AND CLIENT-SECRET HASHING (2026-09-06).
+//
+// **THIS SERVICE STORED NO SECRET IT COULD VERIFY UNTIL PRODUCT MODE ARRIVED,
+// AND ONE IT COULD NOT HIDE.** `userPassword` was a name in the directory's
+// attribute list that nothing ever wrote; `oauthClientSecret` was a real value
+// held IN THE CLEAR, which is why the pages that dump every attribute had to be
+// moved behind the console's gate on 2026-09-01. Both are hashed now, and they
+// go through the same pair for the reason everything cryptographic in this
+// service goes through this file: one place that decides the algorithm, the
+// parameters and the comparison.
+//
+// **SCRYPT, NOT A DIGEST.** A password is low-entropy and a fast hash over one
+// is a wordlist away from being the password. Node has scrypt built in, it is
+// memory-hard, and RFC 7914 is the specification — so there is no dependency to
+// add and nothing to get wrong beyond the parameters, which are named below
+// rather than left at defaults so that a reader can see what they are.
+//
+// **THE STORED FORM CARRIES ITS OWN PARAMETERS.** `$scrypt$N$r$p$salt$hash`,
+// modelled on the Modular Crypt Format every Unix password file uses, so that
+// raising the cost later does not invalidate what is already stored: an old
+// value verifies against the parameters IT names, and is rewritten at the next
+// successful sign-in if a caller asks for that. A bare hash with the parameters
+// in a constant somewhere is the version of this that cannot be changed.
+//
+// **THE COMPARISON IS CONSTANT-TIME** — `constantTimeEquals()` above, the same
+// one every other secret comparison here uses. A byte-by-byte early return on a
+// password check is a timing oracle, and it is the kind that gets written by
+// accident because `===` is right for everything else.
+//
+// WHAT CANNOT BE HASHED, and the distinction is the one thing to get right
+// before reaching for these functions: **a secret this service VERIFIES is
+// hashed, and a secret it must PRESENT cannot be.** An application's client
+// secret is verified here, so it is hashed and is shown to an operator exactly
+// once, at the moment it is created — which is what every real identity
+// provider does and is now forced rather than chosen. A FEDERATION
+// relationship's `fedClientSecret` is the opposite case: this service sends it
+// to somebody else's token endpoint, so it has to be recoverable and hashing it
+// would simply break the relationship. `federation/CLAUDE.md` carries that.
+// ---------------------------------------------------------------------------
+
+// RFC 7914's parameters. N is the cost, r the block size, p the parallelism.
+// 2^15 keeps a single verification around 100ms on the machines this runs on,
+// which is the usual trade: slow enough to be expensive in bulk, fast enough
+// that a sign-in does not feel broken.
+const SCRYPT_N = 32768;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_KEYLEN = 32;
+const SCRYPT_SALT_BYTES = 16;
+// scrypt needs memory proportional to 128 * N * r, and node's default limit is
+// below what N=2^15 wants — so it is raised here explicitly rather than left to
+// fail at the first hash with an error about memory that says nothing about
+// passwords.
+const SCRYPT_MAXMEM = 128 * SCRYPT_N * SCRYPT_R * 2;
+
+// ---------------------------------------------------------------------------
+// ENCRYPTING KEY MATERIAL AT REST (2026-09-06). AES-256-GCM under a
+// key-encryption key this service never generates and never stores.
+//
+// **THIS IS THE OTHER HALF OF PRODUCT MODE'S KEY STORY.** Development mode
+// generates a signing key on every start and keeps it in memory, which is what
+// makes a mock disposable; product mode generates it ONCE, writes it to the
+// persistence store, and reads it back on the next start — so a token issued
+// yesterday still verifies today. What is written down is a PRIVATE KEY, and a
+// private key in a database in the clear is the whole system's security in
+// whatever protects that database.
+//
+// **AES-256-GCM AND NOT AES-256-CBC**, and the difference is the one that
+// matters here: GCM is authenticated, so a ciphertext somebody altered fails to
+// decrypt instead of yielding a subtly different key. A signing key that
+// decrypts to the wrong bytes would produce signatures nothing can verify, and
+// the failure would surface at a relying party as "the signature is invalid" —
+// as far from the cause as it is possible to get.
+//
+// **THE KEK IS NEVER GENERATED HERE AND NEVER WRITTEN ANYWHERE.** It comes from
+// `common/secrets.js` — a file mounted into the container, AWS Secrets Manager,
+// GCP Secret Manager, Azure Key Vault or HashiCorp Vault — and this file only
+// ever receives it as an argument. That is the same rule every other function
+// in this module follows (see the header: every function takes the key it is to
+// use as a parameter) and it is what keeps the question "where does the master
+// key live" answerable in one place rather than in this one too.
+//
+// **A PER-RECORD SUBKEY, DERIVED WITH HKDF.** The KEK itself never encrypts
+// anything: each record is encrypted under HKDF-SHA256(KEK, salt, info), where
+// the salt is 16 random bytes stored with the record. Two reasons, and the
+// second is the operational one: a single key encrypting many records under
+// many IVs is one IV-reuse bug away from catastrophic in GCM, and a derived
+// subkey per record means the same KEK can protect the whole store without any
+// record's IV mattering to any other. The `info` string pins the PURPOSE, so a
+// ciphertext from this store cannot be decrypted by a future caller deriving
+// for something else.
+//
+// **THE STORED FORM IS SELF-DESCRIBING**, modelled on `hashSecret()` above and
+// for the same reason: `$aesgcm$1$salt$iv$tag$ciphertext`, all base64. A
+// version at the front so the scheme can change without a migration that has to
+// guess what it is reading, and every parameter beside the data rather than in
+// a constant somewhere that a later build might disagree about.
+// ---------------------------------------------------------------------------
+
+const KEK_INFO = 'mock-sts key material v1';
+const KEK_SALT_BYTES = 16;
+const KEK_IV_BYTES = 12;      // NIST SP 800-38D's recommended GCM nonce length.
+const KEK_KEY_BYTES = 32;     // AES-256.
+
+// The KEK as bytes, however it arrived. A provider may hand back raw bytes, hex
+// or base64 — a human pasting a secret into a vault writes text — so the shape
+// is decided here, once, rather than by each of the five adapters.
+//
+// **A KEK SHORTER THAN 32 BYTES IS REFUSED RATHER THAN PADDED OR STRETCHED.**
+// Stretching a short secret would let a four-character password protect every
+// signing key this service holds while the log said AES-256, which is exactly
+// the kind of comfortable lie this repository refuses everywhere else.
+function kekBytes(value) {
+  log.debug('Entering kekBytes().');
+  if (Buffer.isBuffer(value)) {
+    if (value.length < KEK_KEY_BYTES) {
+      throw new Error('the key-encryption key is ' + value.length + ' bytes ' +
+                      'and at least ' + KEK_KEY_BYTES + ' are required');
+    }
+    log.debug('Leaving kekBytes(). Raw bytes.');
+    return value;
+  }
+  const text = String(value == null ? '' : value).trim();
+  if (!text) {
+    throw new Error('the key-encryption key is empty');
+  }
+  // Hex and base64 are TRIED IN THAT ORDER and only when the whole string is
+  // one of them: a 64-character hex string is also valid base64, and reading it
+  // as base64 would produce 48 different bytes. Hex first means the
+  // unambiguous reading wins.
+  if (/^[0-9a-fA-F]+$/.test(text) && text.length >= KEK_KEY_BYTES * 2) {
+    log.debug('Leaving kekBytes(). Hex.');
+    return Buffer.from(text, 'hex');
+  }
+  if (/^[A-Za-z0-9+/_-]+={0,2}$/.test(text)) {
+    const decoded = Buffer.from(text, 'base64');
+    if (decoded.length >= KEK_KEY_BYTES) {
+      log.debug('Leaving kekBytes(). Base64.');
+      return decoded;
+    }
+  }
+  const raw = Buffer.from(text, 'utf8');
+  if (raw.length < KEK_KEY_BYTES) {
+    throw new Error('the key-encryption key decodes to ' + raw.length +
+                    ' bytes and at least ' + KEK_KEY_BYTES + ' are required. ' +
+                    'Generate one with `openssl rand -base64 32`.');
+  }
+  log.debug('Leaving kekBytes(). Raw text.');
+  return raw;
+}
+
+function encryptWithKek(kek, plaintext) {
+  log.debug('Entering encryptWithKek().');
+  const master = kekBytes(kek);
+  const salt = nodeCrypto.randomBytes(KEK_SALT_BYTES);
+  const subkey = nodeCrypto.hkdfSync('sha256', master, salt,
+                                     Buffer.from(KEK_INFO, 'utf8'),
+                                     KEK_KEY_BYTES);
+  const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(subkey), iv);
+  const body = Buffer.concat([cipher.update(Buffer.from(String(plaintext), 'utf8')),
+                              cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const out = '$aesgcm$1$' + salt.toString('base64') + '$' +
+              iv.toString('base64') + '$' + tag.toString('base64') + '$' +
+              body.toString('base64');
+  log.debug('Leaving encryptWithKek(). ' + body.length + ' byte(s) of ciphertext.');
+  return out;
+}
+
+function isEncryptedWithKek(stored) {
+  return /^\$aesgcm\$/.test(String(stored || ''));
+}
+
+function decryptWithKek(kek, stored) {
+  log.debug('Entering decryptWithKek().');
+  const parts = String(stored || '').split('$');
+  // `$aesgcm$1$salt$iv$tag$body` splits to ['', 'aesgcm', '1', s, i, t, b].
+  if (parts.length !== 7 || parts[1] !== 'aesgcm') {
+    throw new Error('this is not a record encrypted by this service');
+  }
+  if (parts[2] !== '1') {
+    throw new Error('the record names encryption version "' + parts[2] +
+                    '", which this build does not know how to read');
+  }
+  const master = kekBytes(kek);
+  const salt = Buffer.from(parts[3], 'base64');
+  const iv = Buffer.from(parts[4], 'base64');
+  const tag = Buffer.from(parts[5], 'base64');
+  const body = Buffer.from(parts[6], 'base64');
+  const subkey = nodeCrypto.hkdfSync('sha256', master, salt,
+                                     Buffer.from(KEK_INFO, 'utf8'),
+                                     KEK_KEY_BYTES);
+  const decipher = nodeCrypto.createDecipheriv('aes-256-gcm',
+                                               Buffer.from(subkey), iv);
+  decipher.setAuthTag(tag);
+  // THROWS ON A BAD TAG, and that is the whole point of GCM here: the caller
+  // gets an error rather than the wrong key. `keystore.js` turns it into a
+  // fatal at startup, because a service that cannot read its own signing key
+  // must not come up generating a new one and silently invalidating every token
+  // it ever issued.
+  const out = Buffer.concat([decipher.update(body), decipher.final()]);
+  log.debug('Leaving decryptWithKek(). ' + out.length + ' byte(s).');
+  return out.toString('utf8');
+}
+
+// ---------------------------------------------------------------------------
+// THE FOUR FUNCTIONS BELOW ARE ONE IMPLEMENTATION WITH TWO DOORS, and the
+// split is the same one `signJws()` and `signJwsAsync()` above make: the
+// POLICY — the cost parameters, the stored form, how it is parsed, how the
+// comparison is made — is here and is written once, and the only thing that
+// differs between the sync and async door is WHICH PROCESS runs the one
+// expensive line.
+//
+// **WHY THERE IS AN ASYNC DOOR AT ALL.** N is 2^15 on purpose, so one hash or
+// one verification measured 68ms on this machine — and node runs this
+// service's six listener families on ONE THREAD, so for those 68ms it answers
+// nobody: not the next HTTP caller, not the KDC on port 88, not the LDAP
+// socket. That is not the 14.6 seconds an SLH-DSA signature costs, but it is
+// paid on EVERY authentication — the sign-in screen, an LDAP bind, SCIM
+// Basic, WS-Trust, the portal's password form — rather than on the few a
+// client points at a post-quantum algorithm. See common/worker.js.
+//
+// The sync door is kept and is not deprecated: `workers.count = 0` is a
+// supported configuration, the parent project loads this tree in process, and
+// a caller that cannot be made asynchronous is better off blocking than
+// wrong. Both doors produce the same stored form, because there is one
+// definition of it.
+// ---------------------------------------------------------------------------
+
+// The stored form. `$scrypt$N$r$p$salt$hash`, self-describing so that raising
+// the cost later does not invalidate what is already stored — see the block
+// above the parameters.
+function encodeStoredSecret(n, r, p, salt, derived) {
+  return '$scrypt$' + n + '$' + r + '$' + p + '$' +
+         salt.toString('base64') + '$' + derived.toString('base64');
+}
+
+// The same string read back, or null for anything this file did not write.
+// NULL RATHER THAN A THROW, and both verification doors depend on it: this
+// runs on a sign-in, and one malformed value on one entry must not be able to
+// take the door down for everybody.
+function decodeStoredSecret(stored) {
+  log.debug('Entering decodeStoredSecret().');
+  const text = String(stored || '');
+  if (!text) {
+    log.debug('Leaving decodeStoredSecret(). Nothing is stored.');
+    return null;
+  }
+  const parts = text.split('$');
+  // `$scrypt$N$r$p$salt$hash` splits to ['', 'scrypt', N, r, p, salt, hash].
+  if (parts.length !== 7 || parts[1] !== 'scrypt') {
+    log.debug('Leaving decodeStoredSecret(). Not a form this file writes.');
+    return null;
+  }
+  const n = parseInt(parts[2], 10);
+  const r = parseInt(parts[3], 10);
+  const p = parseInt(parts[4], 10);
+  let salt;
+  let expected;
+  try {
+    salt = Buffer.from(parts[5], 'base64');
+    expected = Buffer.from(parts[6], 'base64');
+  } catch (e) {
+    // A stored value that is not base64 where it must be.
+    log.warn('crypto: a stored secret is not decodable and is being treated ' +
+             'as no match: ' + e.message);
+    log.debug('Leaving decodeStoredSecret(). Undecodable.');
+    return null;
+  }
+  if (!isFinite(n) || !isFinite(r) || !isFinite(p) || !expected.length) {
+    log.debug('Leaving decodeStoredSecret(). The parameters do not parse.');
+    return null;
+  }
+  log.debug('Leaving decodeStoredSecret(). N=' + n + '.');
+  return { N: n, r: r, p: p, salt: salt, expected: expected,
+           keylen: expected.length, maxmem: 128 * n * r * 2 };
+}
+
+function hashSecret(plaintext) {
+  log.debug('Entering hashSecret().');
+  const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
+  const derived = nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
+                                    salt, SCRYPT_KEYLEN,
+                                    { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P,
+                                      maxmem: SCRYPT_MAXMEM });
+  const out = encodeStoredSecret(SCRYPT_N, SCRYPT_R, SCRYPT_P, salt, derived);
+  log.debug('Leaving hashSecret().');
+  return out;
+}
+
+// The one line that goes to a worker, and the only place either async door
+// differs from its sync twin. `opts.session` is the pool's routing hint and
+// may be omitted — see worker_pool.js; it is a preference and never a
+// correctness requirement, because a worker remembers nothing.
+function deriveAsync(plaintext, spec, opts) {
+  log.debug('Entering deriveAsync(). N=' + spec.N);
+  return workerPool.run('scrypt.derive', {
+    plaintext: String(plaintext == null ? '' : plaintext),
+    salt: Buffer.from(spec.salt), keylen: spec.keylen,
+    N: spec.N, r: spec.r, p: spec.p, maxmem: spec.maxmem
+  }, opts).then(function (result) {
+    log.debug('Leaving deriveAsync(). ' + result.derived.length + ' bytes.');
+    return Buffer.from(result.derived);
+  });
+}
+
+function hashSecretAsync(plaintext, opts) {
+  log.debug('Entering hashSecretAsync().');
+  const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
+  const spec = { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, salt: salt,
+                 keylen: SCRYPT_KEYLEN, maxmem: SCRYPT_MAXMEM };
+  log.debug('Leaving hashSecretAsync(). Handed to the pool.');
+  return deriveAsync(plaintext, spec, opts).then(function (derived) {
+    return encodeStoredSecret(SCRYPT_N, SCRYPT_R, SCRYPT_P, salt, derived);
+  }, function (e) {
+    // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block on
+    // deriveAsync() below for why that is the right answer rather than a
+    // fallback that hides something.
+    log.warn('crypto: the worker pool could not derive a password hash and it ' +
+             'is being computed in this process instead: ' + e.message);
+    return hashSecret(plaintext);
+  });
+}
+
+// Whether a stored value is one of ours. A directory this service did not seed
+// may hold a `userPassword` in any of the forms RFC 4519 permits — including
+// plaintext — and a verification that treated one of those as a scrypt string
+// would refuse a correct password rather than saying it cannot read the value.
+function isHashedSecret(stored) {
+  return /^\$scrypt\$/.test(String(stored || ''));
+}
+
+function verifySecret(plaintext, stored) {
+  log.debug('Entering verifySecret().');
+  const spec = decodeStoredSecret(stored);
+  if (!spec) {
+    log.debug('Leaving verifySecret(). Nothing readable is stored.');
+    return false;
+  }
+  let derived;
+  try {
+    derived = nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
+                                spec.salt, spec.keylen,
+                                { N: spec.N, r: spec.r, p: spec.p,
+                                  maxmem: spec.maxmem });
+  } catch (e) {
+    // Parameters this node cannot satisfy — a value stored by a build with a
+    // higher cost, say. Reported rather than thrown, for decodeStoredSecret()'s
+    // reason.
+    log.warn('crypto: a stored secret names scrypt parameters this process ' +
+             'cannot compute and is being treated as no match: ' + e.message);
+    log.debug('Leaving verifySecret(). Uncomputable.');
+    return false;
+  }
+  const same = constantTimeEquals(derived, spec.expected);
+  log.debug('Leaving verifySecret(). ' + (same ? 'It matches.' : 'It does not.'));
+  return same;
+}
+
+// The same verification off this process's thread. It RESOLVES false for a
+// value that does not match and for one it cannot read, and rejects for
+// nothing — the sync twin returns false in both cases, and a door that threw
+// where the other returned would be two answers to one question.
+function verifySecretAsync(plaintext, stored, opts) {
+  log.debug('Entering verifySecretAsync().');
+  const spec = decodeStoredSecret(stored);
+  if (!spec) {
+    log.debug('Leaving verifySecretAsync(). Nothing readable is stored.');
+    return Promise.resolve(false);
+  }
+  log.debug('Leaving verifySecretAsync(). Handed to the pool.');
+  return deriveAsync(plaintext, spec, opts).then(function (derived) {
+    return constantTimeEquals(derived, spec.expected);
+  }, function (e) {
+    // ---------------------------------------------------------------------
+    // THE POOL FAILED, SO THE COMPARISON IS MADE HERE, and the alternative
+    // that was written first is worth recording because it looked right.
+    //
+    // Answering `false` matches the sync twin's return shape — it answers
+    // false for a stored value it cannot recompute — so it read as the
+    // consistent choice. It is not: the sync twin has no worker to lose, so
+    // `false` there always means "this password does not match this value",
+    // while `false` here would ALSO mean "a child process died". That is a
+    // person told their correct password is wrong, counted against the
+    // sign-in rate limiter, on a service that is working.
+    //
+    // Computing it here is the answer the pool's own design already gives.
+    // A worker holds no state, so a job it did not finish can simply be run
+    // again — `workers.count = 0` runs every job in this process and is a
+    // SUPPORTED configuration producing identical bytes, so this is that
+    // configuration for one job. It blocks for 68ms, which is the cost of
+    // being right.
+    // ---------------------------------------------------------------------
+    log.warn('crypto: the worker pool could not recompute a stored secret, so ' +
+             'the comparison is being made in this process instead: ' +
+             e.message);
+    return verifySecret(plaintext, stored);
+  });
+}
+
 module.exports = {
   // --- XML digital signature ---
   PLACEMENT: PLACEMENT,
@@ -2551,6 +2961,15 @@ module.exports = {
   jwkThumbprint: jwkThumbprint,
   certificateThumbprint: certificateThumbprint,
   constantTimeEquals: constantTimeEquals,
+  hashSecret: hashSecret,
+  hashSecretAsync: hashSecretAsync,
+  encryptWithKek: encryptWithKek,
+  decryptWithKek: decryptWithKek,
+  isEncryptedWithKek: isEncryptedWithKek,
+  kekBytes: kekBytes,
+  verifySecret: verifySecret,
+  verifySecretAsync: verifySecretAsync,
+  isHashedSecret: isHashedSecret,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,

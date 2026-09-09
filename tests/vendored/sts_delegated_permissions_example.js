@@ -50,10 +50,12 @@
 // DELIBERATE — WHICH MAKES THIS THE ONE JOB IN THIS DIRECTORY THAT BREAKS THE
 // CONVENTION `sts_admin_api_operations.js` ARGUES AT LENGTH.
 //
-// That job does everything inside a throwaway realm and removes it in a
-// `finally`, because a realm left behind is a realm every later `GET /realms`
-// can see. The reasoning is right and it does not reach this file, because
-// what this file produces is not a side effect of a test — IT IS THE POINT.
+// That job does everything inside a throwaway realm of its own, so that a test
+// which writes to what every other job reads reaches nothing. (It used to
+// REMOVE that realm in a `finally`; since 2026-09-06 no job here removes one,
+// because a realm a run created is what a person reads when the run went red.)
+// The reasoning is right and it does not reach this file, because what this
+// file produces is not a side effect of a test — IT IS THE POINT.
 // The example exists to be READ: `/admin/delegation/allowed`, which carries
 // both the register and the picture drawn from it — `?format=svg` on that same
 // path is the drawing on its own — and each entry's own drill-down on

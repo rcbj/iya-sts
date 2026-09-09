@@ -449,7 +449,34 @@ async function handleSignIn(req, res) {
     summary: username + ' was signed in with a Kerberos ticket over SPNEGO'
   };
   const session = authn.startSession(res, username, factors.amr, factors.acr,
-                                     VIA, detail);
+                                     VIA,
+                                     Object.assign({ request: req,
+                                                     application: record ? (record.application || '') : '' },
+                                                   detail));
+  // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06). A null is how
+  // `startSession()` says so; it never throws, because two of its callers wrap
+  // it in a `try` that treats a failure as bookkeeping.
+  //
+  // **THE TICKET WAS REAL AND THE REFUSAL IS NOT ABOUT IT**, which is the one
+  // thing this page has to get across: `/authn/spnego` is the surface where
+  // this service verifies a credential properly, so "your ticket did not
+  // verify" and "you may not have a session" must not read alike. The Kerberos
+  // half succeeded; the policy declined.
+  if (!session) {
+    log.info('krb5-spnego-authn: the issuance policy refused a session for ' +
+             username + ' after a valid ticket from ' + verdict.client + '.');
+    res.status(403).type('html').set('Cache-Control', 'no-store').send(
+      page('Not permitted',
+        '<h1>403 &mdash; the issuance policy refused this sign-in</h1>' +
+        '<div class="err">Your Kerberos ticket verified. This service will ' +
+        'not start a session for this identity.</div>' +
+        '<p>That is a POLICY decision rather than anything wrong with the ' +
+        'ticket, the KDC or the service principal &mdash; presenting it again ' +
+        'will not change it. The role an application requires is on ' +
+        '<code>/admin/roles</code> and the document that decides is on ' +
+        '<code>/admin/xacml</code>.</p>'));
+    return undefined;
+  }
   log.info('krb5-spnego-authn: ' + username + ' signed in as ' + verdict.client +
     ' over ' + spnego.mechName(verdict.selected) +
     (verdict.micVerified ? ', mechListMIC verified' : '') +

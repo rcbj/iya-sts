@@ -84,7 +84,13 @@
 // ---------------------------------------------------------------------------
 
 const app = require('../common/app');
-const { log, parseBody, baseUrlOf } = require('../common/helpers');
+const { log, parseBody, baseUrlOf, STS } = require('../common/helpers');
+// BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
+// cannot move one or join a cycle. `crypto.js` is THE one place this service
+// verifies a signature, and `roles.js` is what turns an access token's scopes
+// into the roles the access policy asks for — see the gate below.
+const stsCrypto = require('../common/crypto');
+const roles = require('../common/roles');
 const admin = require('../admin-ui/admin');
 // The setting table, for the two narrow doors' request schemas: their
 // properties are BUILT from the keys those doors refuse against, and the
@@ -109,14 +115,272 @@ const stats = require('../common/admin_stats');
 // family that call would refuse.
 const applications = require('../common/applications');
 const spec = require('./admin_api_spec');
+
+// ---------------------------------------------------------------------------
+// THE DOCUMENT IS THE VALIDATOR (2026-09-06).
+//
+// Every action in the table below already carries a `requestBody` — a real
+// JSON Schema with `properties`, `required` and `additionalProperties: false`
+// — and `admin_api_spec.js` publishes it verbatim in the OpenAPI document.
+// **Until now nothing checked a request against it.** The document described
+// what to POST and the handlers read whatever arrived, so the two could
+// disagree for as long as anybody liked and the only way to find out was to
+// read both.
+//
+// ajv compiles THE SAME OBJECT the document publishes. Not a copy of it, not a
+// second description of it in another notation — the identical value, reached
+// through the identical table — which is what makes "the document is accurate"
+// a property of the code rather than a claim somebody has to re-check. That is
+// the same argument `sts_metadata.js` makes about the router and
+// `crypto_metadata.js` makes about the algorithm tables, applied to request
+// bodies.
+//
+// **WHY ajv HERE AND zod EVERYWHERE ELSE.** `common/validation.js` is zod
+// because a protocol endpoint's rules are written in prose in an RFC and have
+// to be expressed somewhere. This surface is the opposite case: the rules are
+// ALREADY written down, as JSON Schema, because the document has to publish
+// them. A zod schema here would be a second spelling of an existing artefact —
+// the "one copy of each fact" rule, broken on purpose, in the one place the
+// fact is already machine-readable.
+//
+// `strict: false` because these are OpenAPI schemas: they carry `examples` and
+// `description` members that ajv's strict mode reports as unknown keywords.
+// `allErrors` so a caller fixing a body sees everything wrong with it at once
+// — the opposite of `common/validation.js`'s first-issue-only rule, and for a
+// reason: this is a developer with a document open, not a browser mid-sign-in.
+// ---------------------------------------------------------------------------
+const Ajv = require('ajv');
+const addFormats = require('ajv-formats');
+
+const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false });
+addFormats(ajv);
+
+// ---------------------------------------------------------------------------
+// THE COMPONENTS THE DOCUMENT DEFINES, SO A `$ref` INTO THEM RESOLVES.
+//
+// Three request schemas here refer to a shared definition rather than
+// repeating it — `replaceClaims`, `replaceUserInfoClaims` and
+// `replaceSamlAttributes` all take a list of `#/components/schemas/ClaimEntry`,
+// which is exactly the reuse the components section exists for.
+//
+// **A JSON POINTER STARTING `#/` IS RESOLVED AGAINST THE ROOT OF THE SCHEMA
+// BEING COMPILED**, and a `requestBody` compiled on its own is its own root —
+// so the pointer looks for `components` INSIDE the request body and finds
+// nothing. The first version of this registered the components as a separate
+// schema under `$id: '#'` and it made no difference for exactly that reason.
+//
+// So each schema is compiled wrapped in a root that carries the components
+// beside it. `components` is not a JSON Schema keyword and ajv ignores it under
+// `strict: false` — what it is there for is to be POINTED AT. Nothing about the
+// published document changes: `admin_api_spec.js` still emits `requestBody`
+// verbatim, and this wrapper exists only for the length of the compile.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// **WHAT IS ENFORCED IS STRUCTURE. `required` AND `enum` ARE STRIPPED FROM THE
+// COMPILED COPY AND KEPT IN THE DOCUMENT.**
+//
+// The rule is the one this file rests on: *the validator adds the checks
+// nothing else makes, and never duplicates a check the handler already makes
+// better.* Two of the four JSON Schema assertions here fall on each side, and
+// the suite decided it rather than taste.
+//
+// ENFORCED, because nothing else in this service checks them:
+//
+//   * `additionalProperties: false` — a member the operation does not define.
+//     This is the one that catches the silently ignored field, which is the
+//     failure a passing test cannot see. It found four in this repository's own
+//     suite on the day it was written: `acs` and `binding` on the SAML 2.0
+//     resource, `target` on SAML 1.1, and a `name` that should have been
+//     `label` on the authorization-server create — every one of them a member
+//     the handler never read and the job asserted nothing about.
+//   * `type` — a number or an array where a string belongs.
+//
+// NOT ENFORCED, because a handler already answers them and says more:
+//
+//   * `enum` — `applicationsAction()` refuses an unknown kind by NAMING the
+//     kinds and COUNTING them, and `sts_admin_api_operations.js` asserts all
+//     three properties, because that list and the one
+//     `GET /applications/new` publishes are one table read through two doors.
+//   * `required` — `logoutAction()` answers a sign-out with no identity with
+//     *Name the identity ... in `user`*, and the same job asserts that wording
+//     SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
+//
+// In both cases ajv runs first, so enforcing would replace a sentence a caller
+// can act on with "must be equal to one of the allowed values" — and switch off
+// an assertion in the same stroke. That is the opposite of the point.
+//
+// **Both stay in the published document**, where they are exactly right:
+// documentation of the valid set and the mandatory members. What this decides
+// is only WHICH LAYER refuses, and the answer is the layer that can explain
+// itself. Stripped recursively, because these schemas nest — an array's `items`
+// and a `$ref`'d `ClaimEntry` each carry their own.
+// ---------------------------------------------------------------------------
+const NOT_ENFORCED_HERE = ['enum', 'required'];
+
+function structureOnly(node) {
+  if (Array.isArray(node)) {
+    return node.map(structureOnly);
+  }
+  if (!node || typeof node !== 'object') {
+    return node;
+  }
+  const out = {};
+  Object.keys(node).forEach(function (key) {
+    if (NOT_ENFORCED_HERE.indexOf(key) >= 0) {
+      return;
+    }
+    out[key] = structureOnly(node[key]);
+  });
+  return out;
+}
+
+function compilable(schema) {
+  return Object.assign({}, structureOnly(schema),
+                       { components: { schemas: structureOnly(spec.SCHEMAS) } });
+}
+
+// Compiled once at require time, keyed by the operation the request will reach.
+// A schema that will not compile is a MAINTAINER's mistake rather than a
+// caller's, so it is logged loudly and that operation is left unvalidated
+// rather than taking the whole service down at require time — the same
+// judgement `ldap_server.js` makes about a listener that will not bind.
+const validators = new Map();
+
+function validatorKeyOf(route, action) {
+  return route + '\u0000' + (action || '');
+}
+
+function compileRequestSchemas() {
+  log.debug("Entering compileRequestSchemas().");
+  let built = 0;
+  ROUTES.forEach(function (entry) {
+    const route = entry.route || entry.path;
+    const rows = entry.actions || [];
+    rows.forEach(function (action) {
+      if (!action.requestBody) {
+        return;
+      }
+      try {
+        validators.set(validatorKeyOf(route, action.action),
+                       ajv.compile(compilable(action.requestBody)));
+        built = built + 1;
+      } catch (e) {
+        // A schema this repository wrote that ajv will not compile. Logged by
+        // operation so it names the row to fix; the operation goes on working
+        // unvalidated, because a management API that would not start is worse
+        // than one operation whose body is unchecked.
+        log.error('admin-api: the request schema for ' + action.operationId +
+                  ' would not compile and that operation is unvalidated: ' +
+                  e.message);
+      }
+    });
+    if (entry.requestBody) {
+      try {
+        validators.set(validatorKeyOf(route, ''), ajv.compile(compilable(entry.requestBody)));
+        built = built + 1;
+      } catch (e) {
+        log.error('admin-api: the request schema for ' + (entry.operationId || route) +
+                  ' would not compile and that operation is unvalidated: ' +
+                  e.message);
+      }
+    }
+  });
+  log.debug("Leaving compileRequestSchemas(). " + built + " validator(s).");
+  return built;
+}
+
+// ---------------------------------------------------------------------------
+// Turn ajv's errors into the `{ ok: false, errors: [...] }` shape every refusal
+// on this API already uses, so a caller parses one thing.
+//
+// `instancePath` is a JSON Pointer (`/redirect_uris/0`); the leading slash is
+// dropped and the rest is written with dots, because a caller is reading it
+// beside a body they typed rather than resolving a pointer.
+// ---------------------------------------------------------------------------
+function errorsFromAjv(errors) {
+  log.debug("Entering errorsFromAjv().");
+  const out = (errors || []).map(function (e) {
+    const where = String(e.instancePath || '').replace(/^\//, '').replace(/\//g, '.');
+    const missing = e.params && e.params.missingProperty;
+    const extra = e.params && e.params.additionalProperty;
+    if (missing) {
+      return '"' + missing + '" is required.';
+    }
+    if (extra) {
+      return '"' + extra + '" is not a member of this request. The operation\'s ' +
+             'schema in the OpenAPI document lists what is.';
+    }
+    return (where ? '"' + where + '" ' : 'the request ') + e.message + '.';
+  });
+  log.debug("Leaving errorsFromAjv(). " + out.length + " message(s).");
+  return out.length ? out : ['The request body did not match this operation\'s schema.'];
+}
+
+// ---------------------------------------------------------------------------
+// The check itself, run before a handler sees the request.
+//
+// **`action` IS REMOVED BEFORE VALIDATING, and that is not a loophole.** Every
+// action resource here is `/<resource>/:action`, so the action is a PATH
+// segment and the schemas describe the body WITHOUT it — they carry
+// `additionalProperties: false`, so leaving it in would refuse every request on
+// this API. A caller that also puts `action` in the body is ignored exactly as
+// it was before: `withAction()` takes the path parameter and overwrites.
+// ---------------------------------------------------------------------------
+function checkRequestBody(req) {
+  log.debug("Entering checkRequestBody().");
+  const route = req.__adminApiRoute || '';
+  const action = String((req.params && req.params.action) || '');
+  if (req.__adminApiHandlerOwnsBody) {
+    // A NARROW DOOR: the handler validates the WHOLE body and refuses an
+    // unknown member by naming the ones it accepts. See `handlerOwnsBody` on
+    // the route table.
+    log.debug("Leaving checkRequestBody(). The handler owns this body.");
+    return { ok: true };
+  }
+  const validate = validators.get(validatorKeyOf(route, action)) ||
+                   validators.get(validatorKeyOf(route, ''));
+  if (!validate) {
+    // No schema for this operation — a GET, an unknown action the handler is
+    // about to refuse by name, or a row that carries none. Not this function's
+    // business to invent one.
+    log.debug("Leaving checkRequestBody(). No schema for this operation.");
+    return { ok: true };
+  }
+  const body = parseBody(req);
+  const subject = Object.assign({}, body);
+  delete subject.action;
+  if (validate(subject)) {
+    log.debug("Leaving checkRequestBody(). Accepted.");
+    return { ok: true };
+  }
+  log.debug("Leaving checkRequestBody(). Refused with " +
+            (validate.errors || []).length + " error(s).");
+  return { ok: false, errors: errorsFromAjv(validate.errors) };
+}
 const docs = require('./admin_api_docs');
 // The trust realm this call arrived in — for the explorer, which is the one
 // page in this service that builds its URLs in a script and therefore cannot
 // have its markup rewritten. See docs.page().
 const realms = require('../common/realms');
-const VERSION = require('../package.json').version;
+// THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
+// from this repository, so it cannot move a route or join a cycle.
+//
+// **IT USED TO BE `require('../package.json').version`**, which is M.N.0 — the
+// manifest's placeholder patch, not the build number. So the index and the
+// OpenAPI document's `info.version` both named a release and no build, and two
+// containers built a month apart reported the same string. See
+// common/version.js.
+const version = require('../common/version');
+const APP_VERSION = version.load();
+const VERSION = APP_VERSION.version;
 
 const BASE = '/admin-api';
+// THE ACCESS GATE, armed by `xacml/xacml_access_pep.js` at 23c. A LEAF
+// (rule 3): with no decider installed `check()` answers "allowed", so a
+// process without the XACML family behaves exactly as this file did before.
+const accessGate = require('../common/access_gate');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 
 // Every reply here is JSON, is never cached, and is pretty-printed. The last of
 // those is not decoration: the caller of a mock's admin API is usually a person
@@ -607,19 +871,43 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'directory entries and nothing else), the trust realm ' +
                  'registry, and the runtime appconfig overrides that ' +
                  '`POST /admin-api/config/set` writes.\n\n' +
-                 'NOTHING THIS SERVICE MINTS EVER PERSISTS, in any mode: ' +
-                 'sessions, access tokens, ID Tokens, refresh tokens, ' +
-                 'authorization codes, pre-authorized codes, SAML artifacts, ' +
-                 'Kerberos tickets, the replay caches, the statistics and the ' +
-                 'audit log all go with the process. The signing key is ' +
-                 'regenerated on every start, so a token restored from a disk ' +
-                 'would verify against nothing.\n\n' +
-                 'PERSISTENCE IS NOT COORDINATION. Two processes pointed at ' +
-                 'one Postgres database each hold their own copy of the ' +
-                 'directory in memory and will not see each other\'s writes ' +
-                 'until they restart. `status.coordinates` is `false` and ' +
-                 'says so; running several copies against one store is not ' +
-                 'yet a way to scale this service.\n\n' +
+                 'AND, IN PRODUCT MODE ON A POSTGRES STORE SINCE ' +
+                 '2026-09-06, WHAT THIS SERVICE MINTS: sessions, access ' +
+                 'tokens, ID Tokens, refresh tokens, authorization codes, ' +
+                 'pre-authorized codes, SAML artifacts, Kerberos ' +
+                 'principals and tickets, the replay caches, the ' +
+                 'statistics and the audit log — each row encrypted under ' +
+                 'the same key-encryption key that protects the signing ' +
+                 'keys, so a dump of the table is not a set of usable ' +
+                 'credentials. `status.minted` reports it.\n\n' +
+                 'IN DEVELOPMENT MODE NONE OF THAT PERSISTS, and the ' +
+                 'reason is the one the rule always rested on: the ' +
+                 'signing key is regenerated on every start there, so a ' +
+                 'token restored from a disk would verify against ' +
+                 'nothing. Product mode keeps its keys — which is why it ' +
+                 'requires a store — and that single fact is what makes ' +
+                 'restoring the rest of it honest. The ldif store holds ' +
+                 'no minted state in either mode: it writes whole files ' +
+                 'per flush, which is right for a directory somebody ' +
+                 'types into and wrong for a session table that changes ' +
+                 'on every request.\n\n' +
+                 'PROCESSES AGAINST ONE POSTGRES STORE COORDINATE SINCE ' +
+                 '2026-09-06, and this paragraph said the opposite before ' +
+                 'it. Every change is written to a monotonic log inside ' +
+                 'the transaction that made it, and each process applies ' +
+                 'what the others committed — the directory, the realms, ' +
+                 'the settings and the minted rows alike. A LISTEN/NOTIFY ' +
+                 'nudge only makes that prompt: the LOG is the contract, ' +
+                 'so a missed notification costs latency and never a ' +
+                 'change. `status.coordinates` and `status.replication` ' +
+                 'report it; `persistence.coordinate` turns it off.\n\n' +
+                 'IT SHARES STATE AND NOT SOCKETS. The KDC, both LDAP ' +
+                 'listeners, the two TLS ports and SPIFFE\'s four are ' +
+                 'bound per process. And the replay caches and DPoP jti ' +
+                 'sets CONVERGE rather than synchronise: between a write ' +
+                 'in one process and its arrival in another there is a ' +
+                 'window the size of persistence.pollInterval in which a ' +
+                 'proof one process refused is accepted by another.\n\n' +
                  'FIVE OF THE SIX SETTINGS ARE RESTART-ONLY, because the ' +
                  'store is opened and read before the HTTP listener binds. ' +
                  '`persistence.databaseUrl` is never echoed back in `status` ' +
@@ -775,8 +1063,28 @@ const ROUTES = [
       sendJson(res, 200, {
         name: 'mock STS management API',
         version: VERSION,
+        // THE PROVENANCE OF THAT NUMBER, BROKEN OUT rather than left as a
+        // string to be parsed. A test asserting "this stack is running the
+        // build it just made" wants the build number on its own, and a report
+        // saying which commit an instance is on wants the commit — splitting
+        // them here is the difference between a client reading a field and a
+        // client writing a regular expression over `version`.
+        //
+        // `stamped` is the one that is easy to leave out and worth most: false
+        // means this process computed its own number at startup because nothing
+        // stamped an artifact, so the build number is the moment it STARTED and
+        // comparing it with another instance's says nothing.
+        build: APP_VERSION.build,
+        commit: APP_VERSION.commit || undefined,
+        builtAt: APP_VERSION.builtAt,
+        stamped: APP_VERSION.stamped === true,
         openapi: base + BASE + '/openapi.json',
-        docs: base + BASE + '/docs',
+        // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09 and this field
+        // still names it, because a client that read it wants to know
+        // where the explorer IS rather than which path space it is in.
+        // It moved when this API began requiring a token a browser has
+        // no way to carry.
+        docs: base + '/admin/api-explorer',
         console: base + '/admin',
         protected: false,
         operations: operationSummaries()
@@ -1006,50 +1314,87 @@ const ROUTES = [
         responseSchema: { $ref: '#/components/schemas/KeyExport' } }
     ] },
 
-  { method: 'GET', path: BASE + '/docs', tag: 'Service',
-    operationId: 'getDocs',
-    summary: 'The explorer: every operation, with a form that calls it',
-    description: 'A page that reads the document above and renders one form ' +
-                 'per operation. It is this repository\'s own rather than ' +
-                 'Swagger UI, and the reason is the service it lives in: ' +
-                 'swagger-ui-dist is 11.7 MB with an install-time telemetry ' +
-                 'dependency, in a service that is deliberately ' +
-                 'dependency-light and must build offline. It does the same ' +
-                 'job — read the spec, fill a form, see the response.',
-    mirrors: 'GET /admin',
-    responseDescription: 'The explorer page.',
-    responseType: 'text/html',
-    responseSchema: { type: 'string' },
-    handler: function (req, res) {
-      log.debug("Entering the API explorer page.");
-      // The one place in this service that relaxes the Content-Security-Policy
-      // app.js sets, and it relaxes exactly one clause: this page has a script
-      // and every other page here has none. It is served from a file of its
-      // own rather than inline precisely so that `'self'` is enough and
-      // `'unsafe-inline'` is not needed — see the note in admin_api_docs.js.
-      res.setHeader('Content-Security-Policy', docs.CONTENT_SECURITY_POLICY);
-      res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         .send(docs.page(baseUrlOf(req), BASE, VERSION, realms.currentPrefix()));
-      log.debug("Leaving the API explorer page.");
+  // ---------------------------------------------------------------------
+  // THE EXPLORER USED TO BE HERE — `GET /admin-api/docs` and
+  // `/admin-api/docs/explorer.js` — AND MOVED TO THE CONSOLE ON 2026-09-09.
+  //
+  // It is `/admin/api-explorer`, built by `admin-ui/api_explorer.js` at 19a.
+  // The move happened because of the change three sections up: this API began
+  // requiring an OAuth 2.0 access token, and a browser navigating to a URL
+  // carries none — so the one page in this service written to be opened in a
+  // browser had become the one page a browser could not open. The console
+  // linked to it and the link answered 401.
+  //
+  // **THE OPERATION BELOW IS WHAT RULE 7 ASKS FOR NOW.** A console page gets an
+  // operation here that names it, and this is that page's — it reports what the
+  // explorer is reading and what the caller's roles would let them do, without
+  // repeating the document, which `GET /admin-api/openapi.json` above already
+  // is.
+  //
+  // Two things did NOT move and are worth saying so nobody goes looking:
+  // `admin_api_docs.js` and `admin_api_explorer.js` are still in this
+  // directory, because the style, the script and the realm-prefix argument
+  // belong to this API's document rather than to the console's shell. The
+  // console requires them.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/api-explorer', tag: 'Service',
+    operationId: 'getApiExplorer',
+    summary: 'What the console\'s API explorer reads, and what you may drive',
+    description: 'The explorer is a page of the ADMIN CONSOLE at ' +
+                 '`/admin/api-explorer` — it was `/admin-api/docs` until ' +
+                 '2026-09-09, when this API began requiring an access token a ' +
+                 'browser cannot carry. This operation reports where the ' +
+                 'document is, how many paths and operations it describes, ' +
+                 'and the audience a token for this API must name. It does ' +
+                 'NOT repeat the document: `GET ' + BASE + '/openapi.json` ' +
+                 'is the document.\n\nThe `scope` member is what the ' +
+                 'CONSOLE SESSION\'s roles would grant — it is what the page ' +
+                 'puts in the token it mints for the person reading it, so a ' +
+                 'reader holding Admin Read alone sees `admin:read` and knows ' +
+                 'before pressing anything that a write would be refused. ' +
+                 '**It is EMPTY when this operation is called with an access ' +
+                 'token rather than read off the page**, which is the ordinary ' +
+                 'case here: there is no console session on such a request, ' +
+                 'and reporting the token\'s own scopes back to the caller ' +
+                 'that sent them would be telling somebody what they just ' +
+                 'said.',
+    mirrors: 'GET /admin/api-explorer',
+    responseDescription: 'Where the explorer reads from, and what the caller ' +
+                         'may drive.',
+    responseSchema: { type: 'object', properties: {
+      page: { type: 'string', description: 'The console page.' },
+      api: { type: 'string', description: 'The API it drives.' },
+      document: { type: 'string',
+                  description: 'Where the page reads the OpenAPI document ' +
+                               'from — a console path, so that it arrives on ' +
+                               'the session the page was drawn with.' },
+      version: { type: 'string', description: 'This build, M.N.O.' },
+      paths: { type: 'integer', description: 'Paths in the document.' },
+      operations: { type: 'integer', description: 'Operations in it.' },
+      scope: { type: 'string',
+               description: 'The scopes this caller\'s roles grant.' },
+      audience: { type: 'string',
+                  description: 'What a token for this API must name in `aud`. ' +
+                               'Computed outside any realm, because the ' +
+                               'credential is service-wide.' },
+      tokenInReply: { type: 'boolean',
+                      description: 'Always false, and named so that its ' +
+                                   'absence is a statement rather than an ' +
+                                   'omission: the console page is handed a ' +
+                                   'token because it has already ' +
+                                   'authenticated the person reading it, and ' +
+                                   'this reply is read by scripts.' }
     } },
-
-  { method: 'GET', path: BASE + '/docs/explorer.js', tag: 'Service',
-    operationId: 'getDocsScript',
-    summary: 'The explorer\'s script',
-    description: 'The only script this service serves. It is a separate ' +
-                 'resource rather than an inline block so that the page can ' +
-                 'be allowed `script-src \'self\'` instead of ' +
-                 '`\'unsafe-inline\'`.',
-    mirrors: 'GET /admin',
-    responseDescription: 'The script.',
-    responseType: 'application/javascript',
-    responseSchema: { type: 'string' },
     handler: function (req, res) {
-      log.debug("Entering the API explorer script endpoint.");
-      res.setHeader('Content-Security-Policy', docs.CONTENT_SECURITY_POLICY);
-      res.status(200).type('application/javascript')
-         .set('Cache-Control', 'no-store').send(docs.SCRIPT);
-      log.debug("Leaving the API explorer script endpoint.");
+      log.debug("Entering the API explorer operation.");
+      // LAZILY REQUIRED, and it is the one lazy require in this file. That
+      // module is loaded at 19a — after this one — because it needs the route
+      // table below to build its document; a require at the top of this file
+      // would be a cycle, and one in the other direction would move routes.
+      // The same arrangement `xacml.js` and `xacml_admin.js` have.
+      sendJson(res, 200,
+               require('../admin-ui/api_explorer').explorerJson(req));
+      log.debug("Leaving the API explorer operation.");
     } },
 
   { method: 'GET', path: BASE + '/status', tag: 'Service',
@@ -1152,8 +1497,66 @@ const ROUTES = [
       log.debug("Leaving the management API users endpoint.");
     } },
 
+  // RULE 7 FOR /admin/users/new, and it earns its place beyond the parity for
+  // the same reason `getNewApplicationForm` does one resource along: what it
+  // answers is the CLOSED CATALOGUE `createUser()` validates `attributes`
+  // against. A caller that reads this cannot construct a create the service
+  // will refuse with "a person here does not have an attribute called ...",
+  // and it learns the list from the service rather than from a copy of it in a
+  // document.
+  //
+  // THERE IS NO POST BESIDE IT, which is rule 7 read exactly rather than by
+  // shape: that page's controls post `action=create` and `action=fill`, the
+  // first is `createUser` below and already exists, and the second creates
+  // nothing — it fills a FORM in for a person to edit, and the values it writes
+  // are the ones `invent: true` on a create has always written directly. An
+  // operation that returned form values to nobody would be an operation with no
+  // act behind it.
+  { method: 'GET', path: BASE + '/users/new', tag: 'Users',
+    operationId: 'getNewUserForm',
+    summary: 'Every attribute a person may be created with, and the four ways ' +
+             'they can be given a way in',
+    description: 'The ATTRIBUTE CATALOGUE a create takes in `attributes` — one ' +
+                 'row per attribute a person in this directory may carry, each ' +
+                 'naming the claim it reaches in an issued token or credential ' +
+                 'and the document its name comes from — plus the container DN ' +
+                 'the entry would land in, the realm, and the four `credential` ' +
+                 'options.\n\n**It creates nobody**: the create is `POST ' +
+                 '/admin-api/users/create`. This is the list that call ' +
+                 'validates against, and an attribute name that is not on it is ' +
+                 'REFUSED rather than dropped — so a caller that reads this ' +
+                 'first cannot be told afterwards that half of what it sent was ' +
+                 'ignored.\n\n**`uid` and `userPassword` are deliberately not ' +
+                 'on it.** `uid` is the username, sent as `username`, and a ' +
+                 'second way to set it would allow an entry at `uid=alice` ' +
+                 'whose uid attribute says `bob`. A password goes through ' +
+                 '`credential`, so that `credentials.js` hashes it — an ' +
+                 'attribute door that took `userPassword` would write one in ' +
+                 'the clear.\n\n**The container is THIS REALM\'S.** The ' +
+                 'embedded directory is per trust realm, so ' +
+                 '`/realm/acme/admin-api/users/new` answers with acme\'s ' +
+                 '`ou=users` and a person created there is invisible to every ' +
+                 'other realm.',
+    mirrors: 'GET /admin/users/new',
+    responseDescription: 'The attribute catalogue, the credential options, the ' +
+                         'container and the realm.',
+    responseSchema: { $ref: '#/components/schemas/NewUserForm' },
+    handler: function (req, res) {
+      log.debug("Entering the management API new-user endpoint.");
+      sendJson(res, 200, admin.newUserView(req).json);
+      log.debug("Leaving the management API new-user endpoint.");
+    } },
+
   { method: 'POST', route: BASE + '/users/:action', tag: 'Users',
-    mirrors: 'POST /admin/users',
+    // TWO CONSOLE PATHS, AND BOTH ARE NAMED. One resource legitimately mirrors
+    // several controls — /admin-api/xacml/{action} names three — and this
+    // action switch is reached from the Users list and from /admin/users/new,
+    // which posts to itself rather than to the list so that a generated
+    // password and an activation link can be answered in a page body rather
+    // than in a 303's query string. Naming only the first would leave the
+    // console suite unable to tell that page's Create button from a control
+    // that reaches nothing.
+    mirrors: 'POST /admin/users and POST /admin/users/new',
     handler: function (req, res) {
       log.debug("Entering the management API users action endpoint.");
       const body = parseBody(req);
@@ -1162,6 +1565,42 @@ const ROUTES = [
       log.debug("Leaving the management API users action endpoint.");
     },
     actions: [
+      { action: 'issue-activation', operationId: 'issueActivationLink',
+        summary: 'Issue a one-time activation link for a provisioned person',
+        description: 'How somebody created through POST /admin-api/users/create, ' +
+                     'SCIM or an LDAP add comes to have a way in. They are ' +
+                     'provisioned with no credential; this mints a single-use, ' +
+                     'time-limited URL at which they choose a password, a ' +
+                     'security key, or both.\n\n**THE URL IS RETURNED ONCE ' +
+                     'AND NEVER AGAIN.** What is stored is a scrypt hash, so ' +
+                     'this service cannot produce it a second time — only ' +
+                     'replace it, which is what calling this again does. Treat ' +
+                     'it as the credential it is: anybody holding it can ' +
+                     'complete the account setup, so a leaked link is an ' +
+                     'account takeover.\n\nIt expires after ' +
+                     '`security.activationTtlMinutes` and is spent the moment ' +
+                     'the setup FINISHES — not when the link is opened, ' +
+                     'because a link burned by a mail scanner or a browser ' +
+                     'prefetch would strand the person it was for.\n\nThere ' +
+                     'is deliberately no self-service version: with no mail ' +
+                     'channel here it would have to show the link on screen, ' +
+                     'which is an account takeover with a username as the ' +
+                     'only input.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description: 'The person, as /admin-api/users names them. ' +
+                                 'They must already exist.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The activation URL, ONCE, and when it expires.' },
+
       { action: 'create', operationId: 'createUser',
         summary: 'Put a person in the directory before they authenticate',
         description: 'An entry under `ou=users` usually appears because ' +
@@ -1181,12 +1620,24 @@ const ROUTES = [
                      'than `uid=<name>,ou=users`. An `ldapadd` under ' +
                      '`ou=users` gets the same refusal as ' +
                      'LDAP_ENTRY_ALREADY_EXISTS (68), because all three call ' +
-                     'one function.\n\n**No password is set** — none is ever ' +
-                     'checked here, in this protocol or any other. Creating ' +
+                     'one function.\n\n**No password is set unless one is ' +
+                     'ASKED FOR** through `credential` below. That default is ' +
+                     'what this operation has always done and is right in ' +
+                     'development mode, where no password is checked here in ' +
+                     'this protocol or any other; in product mode a person ' +
+                     'with no credential cannot sign in, and `activation` is ' +
+                     'how they are given one. Creating ' +
                      'the entry does not put the name in `GET ' +
                      '/admin-api/users`: that lists identities this service ' +
                      'has SEEN authenticate, and this writes what the ' +
-                     'directory HOLDS.',
+                     'directory HOLDS.\n\n**SINCE 2026-09-06 IT TAKES THE ' +
+                     'PERSON\'S DETAILS AND A CREDENTIAL**, which is what the ' +
+                     'console\'s /admin/users/new form posts. `attributes` are ' +
+                     'checked against the catalogue `GET /admin-api/users/new` ' +
+                     'publishes and an unknown name is REFUSED rather than ' +
+                     'dropped; `invent` decides whether the rest are made up, ' +
+                     'and it DEFAULTS TO TRUE so that a caller written before ' +
+                     'this gets exactly what it always got.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -1204,13 +1655,152 @@ const ROUTES = [
                     description: 'Optional. What the entry\'s `description` ' +
                                  'says about why it exists; the default says ' +
                                  'it was created by hand rather than by ' +
-                                 'authenticating.' }
+                                 'authenticating. An `attributes.description` ' +
+                                 'wins over it, because an operator\'s own ' +
+                                 'sentence about a person is the more useful ' +
+                                 'one and two values would be the entry ' +
+                                 'answering the question twice.' },
+            attributes: {
+              type: 'object',
+              description: 'What is known about them, as `{attribute: value}`. ' +
+                           'The names are the catalogue `GET ' +
+                           '/admin-api/users/new` publishes, in that document\'s ' +
+                           'own spelling, and they are the names the entry ' +
+                           'carries — so an `ldapsearch` shows exactly what was ' +
+                           'sent.\n\n**A NAME THAT IS NOT ON THE CATALOGUE IS ' +
+                           'REFUSED and the whole create fails**, rather than ' +
+                           'the value being ignored: silently dropping it would ' +
+                           'answer "created" to a request asking for something ' +
+                           'this did not do. `userPassword` is refused by that ' +
+                           'rule — use `credential` — and so is `uid`, which is ' +
+                           '`username`.\n\nAn empty string is the same as ' +
+                           'sending nothing: the attribute is absent from the ' +
+                           'entry rather than present and empty.',
+              additionalProperties: true
+            },
+            invent: {
+              type: 'boolean',
+              description: 'Whether to MAKE UP the attributes not sent. ' +
+                           '**Defaults to TRUE**, which is what this operation ' +
+                           'has always done and what its own description above ' +
+                           'promises: `vc_claims.js` invents a consistent ' +
+                           'person per username, so the entry and any ' +
+                           'credential issued for them agree from the ' +
+                           'start.\n\nSend `false` for an entry carrying ' +
+                           'ONLY what you sent — its object classes, its uid, a ' +
+                           'description and your attributes. That is what the ' +
+                           'console\'s form does. It is not a promise the ' +
+                           'entry stays that way: the Populate button on ' +
+                           '/admin/vc fills every missing SELECTED attribute on ' +
+                           'every person, and does not know which were typed.'
+            },
+            credential: {
+              type: 'string',
+              description: 'How they first get in. `none` (the default, and ' +
+                           'what this operation did before there were any — in ' +
+                           'development mode it is enough, since no password is ' +
+                           'checked anywhere here); `password`, hashing the ' +
+                           '`password` field onto the entry; `generate`, ' +
+                           'making one up and RETURNING IT ONCE in `password`; ' +
+                           '`activation`, issuing a single-use link and ' +
+                           'returning it ONCE in `activationUrl` for you to ' +
+                           'send them, at which they choose a password, a ' +
+                           'security key or both.\n\n**A CREDENTIAL STEP THAT ' +
+                           'FAILS DOES NOT UNDO THE CREATE.** A password can ' +
+                           'only be written onto an entry that exists, so the ' +
+                           'person is there either way; the reply is `ok: true` ' +
+                           'with `credentialError` set and says so, because ' +
+                           'answering `ok: false` would send a caller to create ' +
+                           'them again and meet "that username is taken".',
+              enum: ['none', 'password', 'generate', 'activation']
+            },
+            password: { type: 'string',
+                        description: 'Read only when `credential` is ' +
+                                     '`password`. Hashed with scrypt by ' +
+                                     'credentials.js and never stored or ' +
+                                     'logged in the clear; nothing in this ' +
+                                     'service can show it again.' },
+            passwordConfirm: { type: 'string',
+                               description: 'Optional, and CHECKED WHERE SENT: ' +
+                                            'the console\'s form always sends ' +
+                                            'it, because a mistyped password ' +
+                                            'nobody can read back is a person ' +
+                                            'who cannot sign in and nobody who ' +
+                                            'can say why. An API caller with ' +
+                                            'one value has nothing to mistype ' +
+                                            'against and may omit it.' }
           },
           required: ['username'],
-          examples: [{ username: 'rcbj' }],
+          examples: [{ username: 'rcbj' },
+                     { username: 'dana', invent: false,
+                       attributes: { givenName: 'Dana', sn: 'Okafor',
+                                     mail: 'dana@example.com',
+                                     employeeNumber: 'E004417' },
+                       credential: 'activation' }],
           additionalProperties: false
         },
-        responseDescription: 'The entry as created, in `entry`, with its `dn`.' }
+        responseDescription: 'The entry as created, in `entry`, with its `dn`; ' +
+                             '`typed` naming the attributes you sent and ' +
+                             '`invented` whether the rest were made up. A ' +
+                             'generated password is in `password` and an ' +
+                             'activation link in `activationUrl` — EACH ' +
+                             'RETURNED ONCE, because what is stored is a hash ' +
+                             'and this service cannot produce either again.' },
+
+      // THE OPERATION THAT WAS DOCUMENTED BEFORE IT EXISTED (2026-09-06).
+      // `common/credentials.js` names `POST /admin-api/users/set-password`
+      // twice — in the sentence a refused sign-in gets, and in the banner the
+      // product-mode bootstrap prints telling an operator to change the
+      // generated password — and no such operation had ever been written.
+      // Somebody following either instruction got a 404 naming an endpoint
+      // this service documents.
+      { action: 'set-password', operationId: 'setUserPassword',
+        summary: 'Set or replace somebody\'s password',
+        description: 'Hashed with scrypt by `credentials.js`, which is the one ' +
+                     'place in this service a password is ever verified or ' +
+                     'set, and written to `userPassword` on their directory ' +
+                     'entry. **It cannot be read back by anything** — not this ' +
+                     'API, not the console, not an `ldapsearch`, which sees the ' +
+                     'hash — so a lost password is replaced rather than ' +
+                     'recovered.\n\nSend `password`, or `generate: true` to ' +
+                     'have one made up and RETURNED ONCE. The person must ' +
+                     'already exist; this creates nobody.\n\n**IN ' +
+                     'DEVELOPMENT MODE THIS CHANGES ALMOST NOTHING AND IS ' +
+                     'STILL WORTH DOING.** Nothing here checks a password in ' +
+                     'development — every one is accepted — so setting one ' +
+                     'does not make a sign-in work that would otherwise fail. ' +
+                     'What it does is put the attribute on the entry, which is ' +
+                     'what an LDAP client reads, what `hasPassword()` counts, ' +
+                     'and what product mode would need. In PRODUCT mode it is ' +
+                     'the credential.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description: 'The person, as /admin-api/users names them. ' +
+                                 'They must already exist.' },
+            username: { type: 'string', description: 'Accepted for `user`.' },
+            password: { type: 'string',
+                        description: 'The password to set. Required unless ' +
+                                     '`generate` is true.' },
+            passwordConfirm: { type: 'string',
+                               description: 'Optional, checked where sent.' },
+            generate: { type: 'boolean',
+                        description: 'Make one up instead — 32 bytes of ' +
+                                     'randomBytes, base64url, the same ' +
+                                     'generator the product-mode bootstrap ' +
+                                     'account uses. It is RETURNED ONCE in ' +
+                                     '`password` and never again.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice', generate: true }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether it was set, and — only where it was ' +
+                             'GENERATED — the password, once. A password you ' +
+                             'sent is never echoed back: you already hold it, ' +
+                             'and returning it would put it in a second place.' }
     ] },
 
   // ---------------------------------------------------------------------
@@ -1529,9 +2119,13 @@ const ROUTES = [
                  'client can delete or rename one through the protocol ' +
                  'between one call and the next, and that is the interesting ' +
                  'case rather than a routing problem.\n\nA GROUP HERE GRANTS ' +
-                 'NOTHING: no token, assertion, ticket or PAC this service ' +
-                 'issues carries a group from this directory, and no ' +
-                 'endpoint reads one.',
+                 'NOTHING, with two exceptions: no endpoint in this service ' +
+                 'decides anything on a group, and the only two that do are ' +
+                 '`admin.readGroup` and `admin.writeGroup`, which say who may ' +
+                 'use the console. A token CAN carry one — `groups.claim` is ' +
+                 'on by default and puts the subject\'s groups in every access ' +
+                 'token, ID Token and SAML assertion — and carrying a fact is ' +
+                 'not acting on one.',
     mirrors: 'GET /admin/groups',
     parameters: [
       { name: 'group', in: 'query', required: false,
@@ -1562,6 +2156,157 @@ const ROUTES = [
       sendJson(res, 200, admin.groupsView(req).json);
       log.debug("Leaving the management API groups endpoint.");
     } },
+
+  // ---------------------------------------------------------------------------
+  // AND THE TWO WRITES (2026-09-06), WHICH CLOSED A HOLE RATHER THAN ADDING A
+  // FEATURE.
+  //
+  // Until today `/admin-api/groups` was a READ and so was `/admin/groups`, and
+  // the only two doors onto a group in this directory were an `ldapadd` on the
+  // raw socket and `POST /scim/v2/Groups`. So this API could put a PERSON in
+  // the directory (`/users/create`) and could not put them in a GROUP, and the
+  // console could report a dangling member, a claimed membership and the two
+  // groups that decide who may use it without being able to create any of them.
+  //
+  // **RULE 7 COULD NOT HAVE CAUGHT IT AND THAT IS THE INTERESTING PART.** That
+  // rule is a parity check between the console and this API — every control
+  // there has an operation here, every operation here names a control there —
+  // and it is satisfied exactly when both are missing. It reports drift, not
+  // absence. What found this was a load test that had to reach for SCIM to make
+  // fifty groups on a service whose own management API creates users five
+  // thousand at a time.
+  //
+  // THE ACTION SWITCH IS IN `admin.groupsAction()` and not here, exactly as the
+  // users one is: two doors onto one action must not be two readings of what
+  // was sent.
+  // ---------------------------------------------------------------------------
+  { method: 'POST', route: BASE + '/groups/:action', tag: 'Groups',
+    mirrors: 'POST /admin/groups',
+    handler: function (req, res) {
+      log.debug("Entering the management API groups action endpoint.");
+      const body = parseBody(req);
+      const result = admin.groupsAction(withAction(req, body));
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API groups action endpoint.");
+    },
+    actions: [
+      { action: 'create', operationId: 'createGroup',
+        summary: 'Put a group in the directory',
+        description: 'An entry under `ou=groups`, as a `groupOfNames` — so it ' +
+                     'is counted as a group by BOTH of the rules ' +
+                     '/admin/groups applies, its placement and its object ' +
+                     'class, and stays one if a client moves it.\n\n**The ' +
+                     'name becomes the `cn` AND the RDN**, so it is refused ' +
+                     'if it carries a character RFC 4514 section 2.4 reserves ' +
+                     'in a DN (one of `, = + < > # ; " \\`) — the same rule ' +
+                     'a username is refused by, and refused rather than ' +
+                     'escaped for the same reason: an `ldapadd` can still ' +
+                     'create such an entry with the escaping written out. A ' +
+                     'DN sent here is refused too, because what it would ' +
+                     'create is a group whose name is another group\'s ' +
+                     'DN.\n\n**A member that names nothing is WRITTEN, not ' +
+                     'refused.** This directory does no referential integrity ' +
+                     'in either direction — deleting a person leaves their DN ' +
+                     'in every group that listed them — so a create that ' +
+                     'refused a dangling member would make the state ' +
+                     '/admin/groups exists to report impossible to produce ' +
+                     'from this door. They come back in `dangling`.\n\n**An ' +
+                     'empty group is allowed and RFC 4519 says it should not ' +
+                     'be** (`member` is MUST on `groupOfNames`). SCIM already ' +
+                     'creates one; a management API stricter than SCIM about ' +
+                     'the same store would be two doors disagreeing about ' +
+                     'what this directory holds.\n\n**IT GRANTS NOTHING.** ' +
+                     'No endpoint here decides anything on a group. The two ' +
+                     'that do are `admin.readGroup` and `admin.writeGroup`, ' +
+                     'and they are granted at POST /admin-api/rbac rather ' +
+                     'than by creating a group with the right name — though ' +
+                     'creating one with the right name and adding somebody ' +
+                     'to it does the same thing, because those two ARE ' +
+                     'ordinary groups in this directory.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            group: { type: 'string',
+                     description: 'The `cn`. Not a DN — this puts it under ' +
+                                  '`ou=groups` in the realm the call is made ' +
+                                  'in.' },
+            displayName: { type: 'string',
+                           description: 'Accepted for `group`, spelt the way ' +
+                                        'SCIM spells it.' },
+            note: { type: 'string',
+                    description: 'What the entry\'s `description` says about ' +
+                                 'why it exists. Defaults to a sentence ' +
+                                 'saying it was created by hand rather than ' +
+                                 'by a directory client.' },
+            members: {
+              description: 'Who is in it, as an array of user names or DNs — ' +
+                           'a group can hold another group, and no user name ' +
+                           'names one. A form sends one string, split on ' +
+                           'newlines and commas. A bare name resolves to that ' +
+                           'person\'s OWN entry wherever it is, because ' +
+                           'somebody seeded by a client certificate is at ' +
+                           '`cn=<name>,ou=users` and a value written in the ' +
+                           '`uid=` form would dangle beside the entry it ' +
+                           'meant to name.',
+              oneOf: [{ type: 'array', items: { type: 'string' } },
+                      { type: 'string' }]
+            }
+          },
+          required: ['group'],
+          examples: [{ group: 'developers', note: 'the people who write it',
+                       members: ['alice', 'bob'] }],
+          additionalProperties: false
+        },
+        responseDescription: 'The DN it was created at, the membership values ' +
+                             'written, and which of them name nothing.' },
+
+      { action: 'add-member', operationId: 'addGroupMember',
+        summary: 'Put somebody in a group that already exists',
+        description: 'One membership value onto one group. `group` is its ' +
+                     '`cn` or its whole DN; `member` is a user name or any ' +
+                     'DN.\n\n**IT IS IDEMPOTENT.** Adding somebody already ' +
+                     'listed answers `ok: true` with `changed: false` rather ' +
+                     'than an error, so a script that adds on every run does ' +
+                     'not fail on its second one. Membership is asked across ' +
+                     '`member`, `uniqueMember` and `memberUid` together, ' +
+                     'which is how /admin/groups and the groups claim ask it ' +
+                     '— an add that could not see a `memberUid` would write a ' +
+                     'second value for one membership.\n\n**It writes onto ' +
+                     '`member`** whatever else the entry carries, rather than ' +
+                     'extending whichever convention the group already uses: ' +
+                     'this service\'s groups claim, the console and RFC 4519 ' +
+                     'all read `member` first, and guessing which of three ' +
+                     'attributes was meant would be this operation deciding ' +
+                     'something the caller did not say.\n\n**It does not ' +
+                     'create the group as a side effect.** A typo in the name ' +
+                     'would then be a new group rather than an error. And it ' +
+                     'writes nothing onto the PERSON: `memberOf` is ' +
+                     'maintained by nothing here — it is not even a standard ' +
+                     'attribute — and a value written there is one no other ' +
+                     'door in this service can take away.\n\n**Removing one ' +
+                     'is not here.** It is an `ldapmodify` or a SCIM `PATCH`, ' +
+                     'and POST /admin-api/rbac for the two groups that grant ' +
+                     'the console.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            group: { type: 'string',
+                     description: 'The group\'s `cn` or its whole DN.' },
+            member: { type: 'string',
+                      description: 'A user name, or the DN of any entry.' },
+            user: { type: 'string', description: 'Accepted for `member`.' },
+            username: { type: 'string', description: 'Accepted for `member`.' }
+          },
+          required: ['group', 'member'],
+          examples: [{ group: 'developers', member: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether anything changed, the value written, ' +
+                             'and whether it resolves to an entry this ' +
+                             'directory holds.' }
+    ] },
 
   // --- The directory itself, entry by entry --------------------------------
   //
@@ -1729,7 +2474,118 @@ const ROUTES = [
       log.debug("Leaving the management API directory SPIFFE endpoint.");
     } },
 
-  // LAST OF THE FIVE, and it is the one that answers about the SOCKETS rather
+  // ---------------------------------------------------------------------
+  // THE THREE ADDED ON 2026-09-05, and they are here for rule 7 rather than
+  // by analogy: `ou=roles`, `ou=policies` and `ou=peps` each gained a console
+  // page that day, and every page of the console has an operation. What made
+  // the pages worth writing is that all three modules already PUBLISHED a
+  // schema whose comment claimed a page under `/admin/ldap/*` and none of
+  // them had one — `common/roles.js` from that afternoon,
+  // `xacml/xacml_store.js` from XACML phase two, `xacml/xacml_pep_registry.js`
+  // from phase five.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/ldap/roles', tag: 'LDAP',
+    operationId: 'getDirectoryRoles',
+    summary: 'The role entries as the directory holds them, and their schema',
+    description: 'THIS CONTAINER IS HALF THE FEATURE. A role has two ' +
+                 'relations and they are stored apart on purpose: ' +
+                 'MEMBERSHIP — who holds it — is here on the role entry, and ' +
+                 'the REQUIREMENT — which roles an application demands before ' +
+                 'anything is issued for it — is `appRequiredRole` on the ' +
+                 'APPLICATION entry, under a different container. So nothing ' +
+                 'in this reply refuses anybody by itself, and a caller ' +
+                 'looking for the reason somebody was turned away wants `GET ' +
+                 '/admin-api/roles`, which resolves both halves.\n\n**THE SIX ' +
+                 'BUILT-IN ROLES ARE IN NO CONTAINER.** They are computed ' +
+                 'from the context of the decision being made, so `EVERYBODY` ' +
+                 'has no entry here and never will — which is why an empty ' +
+                 '`roles` array is the ORDINARY state of a service refusing ' +
+                 'nobody rather than a sign that the feature is not ' +
+                 'loaded.\n\nTHE ENTRIES ARE THE REGISTER: nothing caches ' +
+                 'them, so an `ldapmodify` adding a value to `roleMemberUser` ' +
+                 'is answered by the very next issuance decision.',
+    mirrors: 'GET /admin/ldap/roles',
+    parameters: [
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of a role name, a DN, or any value on the ' +
+                     'entry — which includes its members, so this is how to ' +
+                     'find the roles one person holds by name.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The page of role entries, the six built-in names ' +
+                         'and the schema.',
+    responseSchema: { $ref: '#/components/schemas/DirectoryRoleList' },
+    handler: function (req, res) {
+      log.debug("Entering the management API directory roles endpoint.");
+      sendJson(res, 200, admin.directoryPageJson('roles', req));
+      log.debug("Leaving the management API directory roles endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/ldap/policies', tag: 'LDAP',
+    operationId: 'getDirectoryPolicies',
+    summary: 'The policy repository as the directory holds it, and its schema',
+    description: '`ou=policies` IS the XACML policy repository, the way ' +
+                 '`ou=federations` is the federation register. One entry per ' +
+                 'policy or policy set, holding the document itself, with ' +
+                 'exactly one of them the root — a PDP evaluates one document ' +
+                 'and reaches the rest through ' +
+                 'PolicyIdReference.\n\n**A WRITE HERE SKIPS THE ' +
+                 'TYPECHECKER, and that is the one thing this operation says ' +
+                 'that `GET /admin-api/xacml/policies` does not.** Every ' +
+                 'write through the console and through /admin-api/xacml ' +
+                 'parses the document and statically typechecks it, so a ' +
+                 'policy that does not typecheck is refused at WRITE time ' +
+                 'rather than going Indeterminate on every request. An ' +
+                 '`ldapmodify` of `xacmlPolicyDocument` reaches the entry ' +
+                 'directly and skips all of it, and nothing caches these ' +
+                 'entries.',
+    mirrors: 'GET /admin/ldap/policies',
+    parameters: [
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of a policy name, a DN, or any value on the ' +
+                     'entry — the DOCUMENT included, so this finds the policy ' +
+                     'that names a particular resource.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The page of policy entries and the schema.',
+    responseSchema: { $ref: '#/components/schemas/DirectoryPolicyList' },
+    handler: function (req, res) {
+      log.debug("Entering the management API directory policies endpoint.");
+      sendJson(res, 200, admin.directoryPageJson('policies', req));
+      log.debug("Leaving the management API directory policies endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/ldap/peps', tag: 'LDAP',
+    operationId: 'getDirectoryPeps',
+    summary: 'The registered remote PEPs as the directory holds them, and ' +
+             'their schema',
+    description: 'ALMOST EVERYTHING IN THIS CONTAINER IS A RECORD rather ' +
+                 'than configuration, which is what it has in common with ' +
+                 '`ou=agents` next door. A PEP registers itself, and its ' +
+                 'identity is taken from the CLIENT CERTIFICATE it presented ' +
+                 'and never from the body it sent.\n\nTwo attributes are ' +
+                 'not a record and an `ldapmodify` of either is a real ' +
+                 'change: `xacmlPepEnabled` is an administrator\'s decision ' +
+                 'and a PEP that reconnects does not clear it, and ' +
+                 '`xacmlPepNotifyUrl` is one of the three addresses this ' +
+                 'service will dial.\n\n**AN EMPTY `peps` ARRAY IS NOT A ' +
+                 'FEATURE THAT IS OFF.** A remote PEP pulls `GET ' +
+                 '/xacml/pep/policies` and converges without registering at ' +
+                 'all; registering is what buys it the change nudge and a row ' +
+                 'on the console.',
+    mirrors: 'GET /admin/ldap/peps',
+    parameters: [
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of a PEP name, a DN, or any value on the ' +
+                     'entry — a certificate subject or a notify URL included.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The page of registered PEPs and the schema.',
+    responseSchema: { $ref: '#/components/schemas/DirectoryPepList' },
+    handler: function (req, res) {
+      log.debug("Entering the management API directory PEPs endpoint.");
+      sendJson(res, 200, admin.directoryPageJson('peps', req));
+      log.debug("Leaving the management API directory PEPs endpoint.");
+    } },
+
+  // LAST OF THE EIGHT, and it is the one that answers about the SOCKETS rather
   // than about what is in the store. It is deliberately not `GET
   // /admin-api/ldap`, which is the SETTINGS: that one says what the ports and
   // the base DN are SET to, and this one says what actually happened when the
@@ -1913,14 +2769,28 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
     operationId: 'getIssued',
-    summary: 'Everything issued: JWTs, SAML assertions and Kerberos tickets',
+    summary: 'Everything issued, grouped into what came back in one reply',
     description: 'One list, newest first, filtered and paged. Claims and ' +
                  'facts only — the signed token, the assertion XML and the ' +
                  'ticket are never kept, and the `jti` is all any operation ' +
-                 'here needs.\n\nOID4VCI credentials are NOT in this list. ' +
-                 'They are counted on /admin-api/metrics and listed nowhere, ' +
-                 'which is a gap rather than a principle and is said here so ' +
-                 '"everything issued" is read as the three families it says.',
+                 'here needs.\n\n**AN ENTRY IS ONE ISSUANCE AND NOT ONE ' +
+                 'CREDENTIAL, since 2026-09-05.** OAuth 2.0 and OIDC are the ' +
+                 'only families here that hand back several credentials at ' +
+                 'once — an access token, a refresh token and an ID Token ' +
+                 'out of one code redemption — so those arrive as one entry ' +
+                 'in `sets` carrying its `members`. Every other family ' +
+                 'issues one credential per act, so a SAML assertion, a ' +
+                 'Kerberos ticket and an SVID are each a set of one.\n\n' +
+                 '`issued` is the same credentials flattened out of `sets`, ' +
+                 'so a caller written against the older per-credential shape ' +
+                 'reads exactly what it read. What changed under it is the ' +
+                 'paging: a page is a whole number of replies, so `page`, ' +
+                 '`pages`, `matched` and `shown` count SETS while `held` and ' +
+                 '`matchedCredentials` count credentials.\n\nOID4VCI ' +
+                 'credentials are NOT in this list. They are counted on ' +
+                 '/admin-api/metrics and listed nowhere, which is a gap ' +
+                 'rather than a principle and is said here so "everything ' +
+                 'issued" is read as the four families it says.',
     mirrors: 'GET /admin/tokens',
     parameters: [
       { name: 'family', in: 'query', required: false,
@@ -1930,12 +2800,23 @@ const ROUTES = [
       { name: 'kind', in: 'query', required: false, schema: { type: 'string' },
         description: 'One kind. ANDed with `family`, so a kind from another ' +
                      'family matches nothing — which is what an empty list ' +
-                     'then means.' },
+                     'then means.\n\n**EVERY FILTER HERE MATCHES A SET WHEN ' +
+                     'ANY MEMBER MATCHES.** Asking for `id_token` answers ' +
+                     'with the replies that CONTAIN one — the access token ' +
+                     'and the refresh token that came back with it are still ' +
+                     'in `members`, because they are part of the same reply. ' +
+                     'A caller that wants only the matching credentials ' +
+                     'filters `issued` itself; a filter that hid the ' +
+                     'neighbours would be the old per-credential list ' +
+                     'wearing this one\'s name.' },
       { name: 'state', in: 'query', required: false,
         schema: { type: 'string',
                   enum: ['valid', 'expired', 'revoked', 'not yet valid',
                          'no expiry stated'] },
-        description: 'One state.' },
+        description: 'One state, matched against any member — so a set ' +
+                     'holding an expired access token and a valid refresh ' +
+                     'token is found by both, and its own `state` reads ' +
+                     '`mixed` rather than picking one.' },
       { name: 'session', in: 'query', required: false,
         schema: { type: 'string' },
         description: 'Only what was issued UNDER one browser sign-on ' +
@@ -1948,12 +2829,42 @@ const ROUTES = [
                      'construction rather than missing. That is a fact about ' +
                      'the credential and not a gap in the recording.' }
     ].concat(pagingParameters()),
-    responseDescription: 'The matching rows, with the paging that found them.',
+    responseDescription: 'The matching sets, with the paging that found them ' +
+                         'and their credentials flattened beside them.',
     responseSchema: { $ref: '#/components/schemas/IssuedList' },
     handler: function (req, res) {
       log.debug("Entering the management API issued-list endpoint.");
       sendJson(res, 200, admin.tokensView(req.query).json);
       log.debug("Leaving the management API issued-list endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/tokens/set', tag: 'Tokens',
+    operationId: 'getIssuedSet',
+    summary: 'One issuance, and every credential it carried',
+    description: 'What `GET /admin-api/tokens` groups, opened up. Every entry ' +
+                 'in that reply\'s `sets` carries the `setKey` this takes, ' +
+                 'so a caller walks the list and opens one entry without ' +
+                 'having to know whether it holds three credentials or ' +
+                 'one.\n\nIt is addressed by `setKey` and never by the ' +
+                 'issuer\'s `setId`: a set of one has no issuance id at all, ' +
+                 'and its key is `one:<row handle>` so that the key space ' +
+                 'covers every row of that table. A key nothing holds ' +
+                 'answers 200 with `found: false` rather than 404 — a set ' +
+                 'dropped to the registry\'s cap is the ordinary end of a ' +
+                 'set\'s life and not a caller\'s mistake, and `why` says ' +
+                 'which of the two happened.',
+    mirrors: 'GET /admin/tokens/set',
+    parameters: [
+      { name: 'id', in: 'query', required: true, schema: { type: 'string' },
+        description: 'The `setKey` off a row of GET /admin-api/tokens.' }
+    ],
+    responseDescription: 'The set and its members, or `found: false` and the ' +
+                         'reason.',
+    responseSchema: { $ref: '#/components/schemas/IssuedSetDetail' },
+    handler: function (req, res) {
+      log.debug("Entering the management API issued-set endpoint.");
+      sendJson(res, 200, admin.tokenSetView(req.query).json);
+      log.debug("Leaving the management API issued-set endpoint.");
     } },
 
   { method: 'POST', route: BASE + '/tokens/:action', tag: 'Tokens',
@@ -2015,6 +2926,139 @@ const ROUTES = [
         },
         responseDescription: 'Restored, or it was not revoked — both are ' +
                              '`ok`.' },
+
+      { action: 'revoke-artifact', operationId: 'revokeIssuedArtifact',
+        summary: 'Disown one assertion, ticket or SVID (RECORD ONLY)',
+        description: '**THIS CHANGES NOTHING OUTSIDE THIS SERVICE AND THAT IS ' +
+                     'NOT A DEFECT.** A relying party validates a SAML ' +
+                     'assertion\'s signature and its Conditions and asks ' +
+                     'nobody; a Kerberos service decrypts a ticket with a key ' +
+                     'it already holds; an X509-SVID chains to a bundle. None ' +
+                     'of them will ever consult this service, so the ' +
+                     'credential goes on working until it expires and the ' +
+                     'holder is not told.\n\nWhat it does is record that ' +
+                     'THIS IDENTITY PROVIDER HAS DISOWNED the credential, ' +
+                     'which is a different claim and a useful one: it is what ' +
+                     'a global sign-out can report, what CAEP transmits to a ' +
+                     'receiver that subscribed, and what SAML Single Logout ' +
+                     'carries for an assertion issued through a browser ' +
+                     'profile. A WS-Trust assertion has neither channel and ' +
+                     'the mark is the whole of what exists for it.\n\nUntil ' +
+                     '2026-09-05 this was impossible and every surface said ' +
+                     'so. What changed is the recognition that what this ' +
+                     'service KNOWS and what a relying party will HONOUR are ' +
+                     'two claims, and only the second was ever out of reach. ' +
+                     'Every row of GET /admin-api/tokens carries ' +
+                     '`revocationReach` to keep them apart.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            artifact: { type: 'string',
+                        description: 'The `key` off a row of ' +
+                                     'GET /admin-api/tokens. This service\'s ' +
+                                     'own handle and NOT the protocol\'s — a ' +
+                                     'Kerberos ticket carries no identifier ' +
+                                     'anybody can quote, so `identifier` ' +
+                                     'cannot address every row and this can.' },
+            key: { type: 'string', description: 'Accepted for `artifact`.' }
+          },
+          required: ['artifact'],
+          examples: [{ artifact: 'artifact-12' }],
+          additionalProperties: false
+        },
+        responseDescription: 'What was marked, and a sentence saying the ' +
+                             'holder was not told.' },
+
+      { action: 'restore-artifact', operationId: 'restoreIssuedArtifact',
+        summary: 'Stop disowning one assertion, ticket or SVID (NON-SPEC)',
+        description: 'The opposite of `revoke-artifact`, and NON-SPEC for the ' +
+                     'reason every restore here is. It is a smaller act than ' +
+                     'the others, because what it takes back never reached ' +
+                     'anybody: the credential was working throughout.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            artifact: { type: 'string',
+                        description: 'The `key` off a row of ' +
+                                     'GET /admin-api/tokens.' },
+            key: { type: 'string', description: 'Accepted for `artifact`.' }
+          },
+          required: ['artifact'],
+          examples: [{ artifact: 'artifact-12' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether it had been disowned.' },
+
+      { action: 'revoke-set', operationId: 'revokeIssuedSet',
+        summary: 'Revoke every revocable credential in one issuance',
+        description: 'One act instead of one call per credential. It writes ' +
+                     'NOWHERE NEW: each member goes through the same ' +
+                     'revocation `/oauth2/revoke` performs, one at a time, ' +
+                     'into the same set of revoked `jti`s — so a token ' +
+                     'revoked here immediately introspects as inactive, is ' +
+                     'refused by UserInfo with `invalid_token`, and fails ' +
+                     'the refresh grant with `invalid_grant`.\n\nWhat it ' +
+                     'saves is the mistake this whole resource was reshaped ' +
+                     'to prevent: revoking two credentials of three and ' +
+                     'believing the grant is dead, when the refresh token ' +
+                     'left behind mints a new access token on request.\n\n' +
+                     'THE MEMBERS ARE RE-READ AT THE MOMENT OF THE CALL and ' +
+                     'never taken from the caller — the body carries a ' +
+                     '`setKey` and nothing else — so a list drawn an hour ' +
+                     'ago cannot revoke a `jti` that has since been ' +
+                     'forgotten to the cap while missing one issued ' +
+                     'since.\n\nA set holding nothing revocable is REFUSED ' +
+                     'with 400 rather than answered with "revoked 0": ' +
+                     'nothing consults this service about a SAML assertion, ' +
+                     'a Kerberos ticket or an SVID, so a success would be a ' +
+                     'claim about the world that is not true. That is the ' +
+                     'same answer `revoke-kind` gives for an unrevocable ' +
+                     'kind.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: { type: 'string',
+                   description: 'The `setKey` off a row of ' +
+                                'GET /admin-api/tokens.' },
+            setKey: { type: 'string', description: 'Accepted for `set`.' }
+          },
+          required: ['set'],
+          examples: [{ set: 'set:a1b2c3d4e5f6' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many were revocable, how many actually ' +
+                             'moved, and which kinds they were. A member ' +
+                             'already revoked is counted as revocable and ' +
+                             'not as moved, so `revoked: 0` on an `ok` reply ' +
+                             'means the set was already dead.' },
+
+      { action: 'restore-set', operationId: 'restoreIssuedSet',
+        summary: 'Un-revoke every revocable credential in one issuance ' +
+                 '(NON-SPEC)',
+        description: 'The opposite of `revoke-set`, and NON-SPEC for the ' +
+                     'reason `restore` is: no real authorization server can ' +
+                     'undo a revocation, because a resource server may ' +
+                     'already have cached the refusal. It is here because ' +
+                     'otherwise getting back to a working grant means ' +
+                     'restarting the service.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: { type: 'string',
+                   description: 'The `setKey` off a row of ' +
+                                'GET /admin-api/tokens.' },
+            setKey: { type: 'string', description: 'Accepted for `set`.' }
+          },
+          required: ['set'],
+          examples: [{ set: 'set:a1b2c3d4e5f6' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many were revocable and how many were ' +
+                             'actually put back.' },
 
       { action: 'revoke-kind', operationId: 'revokeTokensByKind',
         summary: 'Revoke every token of one kind',
@@ -2505,6 +3549,24 @@ const ROUTES = [
     } },
 
   { method: 'POST', route: BASE + '/token-lifetimes/:action',
+    // ---------------------------------------------------------------------
+    // A NARROW DOOR: THE HANDLER OWNS THE WHOLE BODY, so the ajv wrapper at
+    // the foot of this file stands aside for it.
+    //
+    // **REFUSING AN UNKNOWN KEY BY NAME IS THE ENTIRE REASON THIS RESOURCE
+    // EXISTS BESIDE `/config/set-many`**, which ignores one on purpose — so a
+    // narrow door that stopped refusing would be two operations over one
+    // function with nothing to tell them apart. The handler's refusal names
+    // the key it refused AND lists the ones it sets, and
+    // `sts_admin_api_operations.js` asserts both halves.
+    //
+    // A schema error cannot say either thing: `additionalProperties: false`
+    // answers "not a member of this request" and stops. Letting ajv go first
+    // would replace a refusal a caller can act on with a worse one and switch
+    // off the assertion that guards it, which is the same judgement
+    // `structureOnly()` makes about `enum` and `required` one level up.
+    // ---------------------------------------------------------------------
+    handlerOwnsBody: true,
     tag: 'Token lifetimes',
     mirrors: 'POST /admin/token-lifetimes',
     handler: function (req, res) {
@@ -2647,6 +3709,24 @@ const ROUTES = [
     } },
 
   { method: 'POST', route: BASE + '/saml-assertions/:action',
+    // ---------------------------------------------------------------------
+    // A NARROW DOOR: THE HANDLER OWNS THE WHOLE BODY, so the ajv wrapper at
+    // the foot of this file stands aside for it.
+    //
+    // **REFUSING AN UNKNOWN KEY BY NAME IS THE ENTIRE REASON THIS RESOURCE
+    // EXISTS BESIDE `/config/set-many`**, which ignores one on purpose — so a
+    // narrow door that stopped refusing would be two operations over one
+    // function with nothing to tell them apart. The handler's refusal names
+    // the key it refused AND lists the ones it sets, and
+    // `sts_admin_api_operations.js` asserts both halves.
+    //
+    // A schema error cannot say either thing: `additionalProperties: false`
+    // answers "not a member of this request" and stops. Letting ajv go first
+    // would replace a refusal a caller can act on with a worse one and switch
+    // off the assertion that guards it, which is the same judgement
+    // `structureOnly()` makes about `enum` and `required` one level up.
+    // ---------------------------------------------------------------------
+    handlerOwnsBody: true,
     tag: 'SAML assertions',
     mirrors: 'POST /admin/saml-assertions',
     handler: function (req, res) {
@@ -3028,8 +4108,15 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { attribute: { type: 'string' } },
-          required: ['attribute'],
+          properties: {
+            attribute: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `attribute`; `vcAction()` reads ' +
+                                 '`body.attribute || body.name`, so both ' +
+                                 'spellings have always worked and only one ' +
+                                 'was published.' }
+          },
+          anyOf: [{ required: ['attribute'] }, { required: ['name'] }],
           examples: [{ attribute: 'title' }],
           additionalProperties: false
         },
@@ -3044,8 +4131,15 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { attribute: { type: 'string' } },
-          required: ['attribute'],
+          properties: {
+            attribute: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `attribute`; `vcAction()` reads ' +
+                                 '`body.attribute || body.name`, so both ' +
+                                 'spellings have always worked and only one ' +
+                                 'was published.' }
+          },
+          anyOf: [{ required: ['attribute'] }, { required: ['name'] }],
           examples: [{ attribute: 'title' }],
           additionalProperties: false
         },
@@ -3145,8 +4239,14 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { claim: { type: 'string' } },
-          required: ['claim'],
+          properties: {
+            claim: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `claim`; `vpConfigAction()` reads ' +
+                                 '`body.claim || body.name`, so both spellings ' +
+                                 'have always worked and only one was published.' }
+          },
+          anyOf: [{ required: ['claim'] }, { required: ['name'] }],
           examples: [{ claim: 'birthdate' }],
           additionalProperties: false
         },
@@ -3159,8 +4259,14 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { claim: { type: 'string' } },
-          required: ['claim'],
+          properties: {
+            claim: { type: 'string' },
+            name: { type: 'string',
+                    description: 'An alias for `claim`; `vpConfigAction()` reads ' +
+                                 '`body.claim || body.name`, so both spellings ' +
+                                 'have always worked and only one was published.' }
+          },
+          anyOf: [{ required: ['claim'] }, { required: ['name'] }],
           examples: [{ claim: 'birthdate' }],
           additionalProperties: false
         },
@@ -3192,7 +4298,11 @@ const ROUTES = [
             format: { type: 'string',
                       description: 'A format id. `GET ' +
                                    '/admin-api/verifier-request` lists them ' +
-                                   'under `formats`.' }
+                                   'under `formats`.' },
+            name: { type: 'string',
+                  description: 'An alias for `claim`; `vpConfigAction()` reads `body.claim || body.name`, so both spellings have always worked and only one was published.' },
+            name: { type: 'string',
+                  description: 'An alias for `claim`; `vpConfigAction()` reads `body.claim || body.name`, so both spellings have always worked and only one was published.' }
           },
           required: ['format'],
           examples: [{ format: 'dc+sd-jwt' }],
@@ -3845,9 +4955,12 @@ const ROUTES = [
           properties: {
             profile: { type: 'string', description: 'The profile id.' },
             member: { type: 'string', description: 'Any metadata member name.' },
-            value: { description: 'JSON if it parses as JSON, otherwise the string.' }
+            value: { description: 'JSON if it parses as JSON, otherwise the string.' },
+            id: { type: 'string',
+                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
           },
-          required: ['profile', 'member'],
+          required: ['member'],
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1',
                        member: 'code_challenge_methods_supported',
                        value: ['S256'] }],
@@ -3868,9 +4981,12 @@ const ROUTES = [
           type: 'object',
           properties: {
             profile: { type: 'string' },
-            member: { type: 'string' }
+            member: { type: 'string' },
+            id: { type: 'string',
+                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
           },
-          required: ['profile', 'member'],
+          required: ['member'],
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1',
                        member: 'code_challenge_methods_supported' }],
           additionalProperties: false
@@ -3886,9 +5002,12 @@ const ROUTES = [
           type: 'object',
           properties: {
             profile: { type: 'string' },
-            member: { type: 'string' }
+            member: { type: 'string' },
+            id: { type: 'string',
+                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
           },
-          required: ['profile', 'member'],
+          required: ['member'],
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1', member: 'token_endpoint' }],
           additionalProperties: false
         },
@@ -3903,8 +5022,14 @@ const ROUTES = [
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { profile: { type: 'string' } },
-          required: ['profile'],
+          properties: {
+            profile: { type: 'string' },
+            id: { type: 'string',
+                  description: 'An alias for `profile`; `asAction()` reads ' +
+                               '`body.profile || body.id`, so both spellings ' +
+                               'have always worked and only one was published.' }
+          },
+          anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1' }],
           additionalProperties: false
         },
@@ -4394,6 +5519,1765 @@ const ROUTES = [
   // `ssf/ssf_http.js` spends its header bounding — so the console has no
   // create form either, and the parity holds because there is no control to
   // mirror.
+  // ---------------------------------------------------------------------
+  // XACML. THREE READS AND ONE WRITE, and the write is the whole PAP: the
+  // console's two POST endpoints (`/admin/xacml/policies` and
+  // `/admin/xacml/editor`) are ONE action function here, because a caller
+  // should not have to work out which page owns "enable". The console keeps
+  // two because a form posts back to the page it came from.
+  //
+  // RULE 7 IS WHY THIS IS IN THE SAME COMMIT AS THE PAGES. Every control the
+  // console grows owes an operation here, and the one that is easiest to
+  // forget is not the protocol's own endpoint — it is exactly this.
+  { method: 'GET', path: BASE + '/xacml', tag: 'XACML',
+    operationId: 'getXacml',
+    summary: 'The Policy Decision Point: whether it is on, what it decides ' +
+             'with, and where the attributes come from',
+    description: 'Everything /admin/xacml draws, as JSON.\n\nTHIS IS THE ' +
+                 'ONLY FAMILY ON THIS SERVICE THAT ANSWERS A QUESTION ABOUT ' +
+                 'SOMEBODY ELSE\'S BOUNDARY. Every other protocol here ' +
+                 'authenticates or provisions a person; this one is handed a ' +
+                 'subject who was authenticated somewhere else and asked ' +
+                 'whether they may.\n\n`pepBias` is the embedded Policy ' +
+                 'ENFORCEMENT point\'s setting and not the PDP\'s. ' +
+                 'Deny-biased and permit-biased agree on every Permit and ' +
+                 'every Deny and differ on Indeterminate and NotApplicable, ' +
+                 'which is exactly the case nobody tests.',
+    mirrors: 'GET /admin/xacml',
+    responseDescription: 'The PDP, its repository and its PIP.',
+    responseSchema: { $ref: '#/components/schemas/Xacml' },
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML endpoint.");
+      sendJson(res, 200, admin.xacmlView(req));
+      log.debug("Leaving the management API XACML endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/xacml/policies', tag: 'XACML',
+    operationId: 'getXacmlPolicies',
+    summary: 'The policy repository, with the type-check problems of each',
+    description: 'Everything /admin/xacml/policies draws.\n\nTHE STORE IS ' +
+                 '`ou=policies` IN THE EMBEDDED DIRECTORY — that container ' +
+                 'IS the repository rather than a copy of one, so an ' +
+                 '`ldapmodify` of `xacmlPolicyDocument` changes what the PDP ' +
+                 'decides on the next request.\n\nEXACTLY ONE POLICY IS THE ' +
+                 'ROOT. A PDP evaluates one document and reaches the rest ' +
+                 'through PolicyIdReference, so the root is where evaluation ' +
+                 'starts; a repository with none decides nothing and reports ' +
+                 '`root: null`.\n\n`templates` is what POST ' +
+                 '/admin-api/xacml/create-from-template will build, with the ' +
+                 'parameters each takes.',
+    mirrors: 'GET /admin/xacml/policies',
+    responseDescription: 'The policies, the root, and the templates.',
+    responseSchema: { $ref: '#/components/schemas/XacmlPolicies' },
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML policies endpoint.");
+      sendJson(res, 200, admin.xacmlPoliciesView(req));
+      log.debug("Leaving the management API XACML policies endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/xacml/editor', tag: 'XACML',
+    operationId: 'getXacmlEditor',
+    summary: 'One policy as an editable tree, with what may legally be added ' +
+             'at each node',
+    description: 'Everything /admin/xacml/editor draws. `?policy=<name>` ' +
+                 'chooses one; without it, the root.\n\nEach node in `tree` ' +
+                 'carries `options.additions` — the elements XACML allows AT ' +
+                 'THAT POINT, computed against the real function library by ' +
+                 'the same code that validates the result. That is what ' +
+                 'makes this usable as an API and not only as a page: a ' +
+                 'caller can walk the tree, read the legal moves, and POST ' +
+                 'one, without a second copy of the grammar.',
+    mirrors: 'GET /admin/xacml/editor',
+    responseDescription: 'The policy as a tree of editable nodes, with the ' +
+                         'stored XML and the same policy rendered as ALFA.',
+    responseSchema: { $ref: '#/components/schemas/XacmlEditor' },
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML editor endpoint.");
+      sendJson(res, 200, admin.xacmlEditorView(req));
+      log.debug("Leaving the management API XACML editor endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/xacml/decide', tag: 'XACML',
+    operationId: 'getXacmlDecision',
+    summary: 'Ask the PDP about somebody and see the decision, which ' +
+             'policies applied, and what the embedded PEP would do with it',
+    description: 'Everything /admin/xacml/decide draws. `subject`, `action` ' +
+                 'and `resource` are query parameters; with none of them it ' +
+                 'answers `asked: false` rather than deciding about ' +
+                 'nobody.\n\nTHE DECISION AND THE ENFORCEMENT ARE TWO ' +
+                 'DIFFERENT ANSWERS and both are here, which is the whole ' +
+                 'point of the page: the PDP says Permit, Deny, ' +
+                 'NotApplicable or Indeterminate, and the PEP then applies ' +
+                 'its bias and the obligation rule to get to allowed or ' +
+                 'refused. When a policy "is not working" it is nearly ' +
+                 'always because only one of those was being looked ' +
+                 'at.\n\nThis is NOT POST /xacml/pdp. That endpoint takes ' +
+                 'a JSON Profile request and is what a PEP calls; this ' +
+                 'builds a three-category request out of three parameters ' +
+                 'and is what a person asks.',
+    mirrors: 'GET /admin/xacml/decide',
+    responseDescription: 'The decision, what applied, and what the embedded ' +
+                         'PEP would do.',
+    responseSchema: { $ref: '#/components/schemas/XacmlDecision' },
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML decision endpoint.");
+      sendJson(res, 200, admin.xacmlDecideView(req));
+      log.debug("Leaving the management API XACML decision endpoint.");
+    } },
+
+  // THE ONLY XACML OPERATION ABOUT TRAFFIC. The other six describe the
+  // repository — what policies exist, what one says, what the PDP would decide
+  // about a subject you name. This one answers what is actually HAPPENING, and
+  // it is the operation somebody reaches for when authorization is
+  // misbehaving rather than when it is being set up.
+  //
+  // NO POST BESIDE IT, and that is rule 7 read exactly rather than by shape:
+  // the page it mirrors has no control. A reset was refused rather than
+  // forgotten — a console that could zero its own monitoring would make every
+  // number on it a number somebody might have zeroed, and the audit log, which
+  // is the durable record, cannot be reset either.
+  { method: 'GET', path: BASE + '/xacml/monitor', tag: 'XACML',
+    operationId: 'getXacmlMonitor',
+    summary: 'How many authorization decisions are being made, by which ' +
+             'enforcement point, and how many are refusals',
+    description: 'Everything /admin/xacml/monitor draws: the global figures ' +
+                 '— policies, enforcement points, decisions, allows, ' +
+                 'declines — and then every PEP with its own counts, ' +
+                 'EMBEDDED and REMOTE in one list.\n\n**A DECISION IS NOT ' +
+                 'AN ENFORCEMENT.** XACML has four decisions (Permit, Deny, ' +
+                 'NotApplicable, Indeterminate) and a PEP has two outcomes, ' +
+                 'and what maps between them is the PEP\'s BIAS: a ' +
+                 'deny-biased PEP refuses a NotApplicable that a ' +
+                 'permit-biased one allows, from the same decision on the ' +
+                 'same request. An obligation the PEP cannot discharge also ' +
+                 'turns a Permit into a refusal (section 7.2) — the one ' +
+                 'enforcement outcome that looks like a bug from the client ' +
+                 'side and is the specification working. So `allowed` is not ' +
+                 '`permit`, and both are reported.\n\n**WHAT THIS SERVICE ' +
+                 'SAW IS NOT WHAT IT WAS TOLD.** `decisions.here` was ' +
+                 'counted by this process as it happened; `decisions.remote` ' +
+                 'is what registered PEPs REPORT on their heartbeats, ' +
+                 'cumulative in their own memory, and a PEP that restarts ' +
+                 'makes it go down. `decisions.combined` adds the two, which ' +
+                 'is the figure a deployment wants and is arithmetic over ' +
+                 'two kinds of evidence rather than a ' +
+                 'measurement.\n\n**THE EMBEDDED PEPS ARE NOT ' +
+                 '"REGISTERED" AND CANNOT BE.** They are compiled into this ' +
+                 'process, so their existence is a fact about the build. A ' +
+                 'remote PEP registers because it has no other way to be ' +
+                 'known about — and even that is not a permission: an ' +
+                 'unregistered PEP can pull GET /xacml/pep/policies and ' +
+                 'enforce perfectly, and appears here nowhere. This is every ' +
+                 'enforcement point the service KNOWS ABOUT, which is a ' +
+                 'smaller claim than every one that exists.\n\nThe ' +
+                 'counters are IN MEMORY, start with the process (`since`) ' +
+                 'and are per trust realm. The durable record of a refusal ' +
+                 'is GET /admin-api/audit, which has the reason as well as ' +
+                 'the count.',
+    mirrors: 'GET /admin/xacml/monitor',
+    responseDescription: 'The global figures, and one row per enforcement ' +
+                         'point.',
+    responseSchema: { $ref: '#/components/schemas/XacmlMonitor' },
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML monitor endpoint.");
+      sendJson(res, 200, admin.xacmlMonitorView(req));
+      log.debug("Leaving the management API XACML monitor endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/xacml/peps', tag: 'XACML',
+    operationId: 'getXacmlPeps',
+    summary: 'The REMOTE Policy Enforcement Points that pull this ' +
+             'repository, and whether they are deciding with the same ' +
+             'policy this service holds',
+    description: 'Everything /admin/xacml/peps draws.\n\nA REMOTE PEP runs ' +
+                 'in another process, holds its own copy of the engine and ' +
+                 'PULLS the enabled policies from GET /xacml/pep/policies. ' +
+                 'The pull is the contract; the nudge this service sends to ' +
+                 '`notifyUrl` when the repository changes is an optimisation ' +
+                 'over the polling interval and never a replacement for it, ' +
+                 'so a PEP that is never nudged still converges.\n\n' +
+                 'REGISTERING IS NOT A PERMISSION. An unregistered PEP can ' +
+                 'pull and enforce exactly as well — GET /xacml/pep/policies ' +
+                 'requires no credential, because a policy is a rule and a ' +
+                 'rule nobody can read is a rule nobody can check. What a ' +
+                 'row buys is this listing and an address for the ' +
+                 'nudge.\n\n`current` is a COMPARISON this service ' +
+                 'performs between `syncToken` on the row and the ' +
+                 'repository\'s own, not a claim the PEP makes; `stale` is ' +
+                 'how long since it was last heard from against ' +
+                 'xacml.pepStaleAfterS and changes nothing this service ' +
+                 'does. The decision counts are the PEP\'s own, cumulative ' +
+                 'in its process — this service saw none of those ' +
+                 'decisions, which is what a remote PEP is — so a PEP that ' +
+                 'restarts makes them go down.',
+    mirrors: 'GET /admin/xacml/peps',
+    responseDescription: 'The register, and what each PEP last reported.',
+    responseSchema: { $ref: '#/components/schemas/XacmlPeps' },
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML remote PEPs endpoint.");
+      sendJson(res, 200, admin.xacmlPepsView(req));
+      log.debug("Leaving the management API XACML remote PEPs endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/xacml/:action', tag: 'XACML',
+    mirrors: 'POST /admin/xacml/policies, POST /admin/xacml/editor and ' +
+             'POST /admin/xacml/peps',
+    handler: function (req, res) {
+      log.debug("Entering the management API XACML action endpoint.");
+      const body = parseBody(req);
+      const result = admin.xacmlAction(withAction(req, body));
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API XACML action endpoint.");
+    },
+    actions: [
+      { action: 'create-from-template', operationId: 'createXacmlPolicy',
+        summary: 'Create a policy from a template',
+        description: 'A template is a working, valid, evaluable policy in a ' +
+                     'shape people actually write — the first twenty clicks ' +
+                     'of the editor already made. `template` names one (see ' +
+                     'GET /admin-api/xacml/policies), `name` names the ' +
+                     'directory entry, and each parameter is sent as ' +
+                     '`p_<name>`; anything omitted takes the template\'s own ' +
+                     'default, so a call with only `template` produces the ' +
+                     'documented example.\n\n`blank` is the one template ' +
+                     'that is not an example: it builds an EMPTY Policy, or ' +
+                     'an empty PolicySet with `p_kind=policyset` — which is ' +
+                     'the only way to create one of those without ALFA. An ' +
+                     'empty deny-unless-permit document DENIES rather than ' +
+                     'answering NotApplicable, so build it before making it ' +
+                     'the root.\n\nA template BUILDS THE MODEL and ' +
+                     'the writer serializes it, rather than substituting ' +
+                     'into XML text — so a role called `a"b` cannot produce ' +
+                     'a document that will not parse.\n\nThe FIRST policy in ' +
+                     'an empty repository becomes the root, because a ' +
+                     'repository with a policy and no root decides nothing.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            template: { type: 'string',
+                      description: 'Which template. GET ' +
+                                   '/admin-api/xacml/policies lists them with ' +
+                                   'the parameters each takes.' },
+            name: { type: 'string',
+                      description: 'Names the DIRECTORY ENTRY. The PolicyId ' +
+                                   'inside the document is a separate ' +
+                                   'identifier and may be any URI.' }
+          },
+          required: ['template'],
+          examples: [{
+            template: 'rbac',
+            name: 'example-rbac'
+          }],
+          additionalProperties: true
+        } },
+      { action: 'import-alfa', operationId: 'importXacmlAlfa',
+        summary: 'Create a policy from ALFA',
+        description: 'ALFA — the Abbreviated Language For Authorization — is ' +
+                     'the readable syntax for XACML: forty lines of XML are ' +
+                     'eight of ALFA. Send it as `alfa` and a name as ' +
+                     '`name`.\n\nIT IS PARSED, CONVERTED AND STORED AS ' +
+                     'XACML XML. The repository holds ONE representation, ' +
+                     'because two would be two documents that could disagree ' +
+                     '— GET /admin-api/xacml/editor renders the ALFA back ' +
+                     'from the model whenever you want to read it.\n\nEVERY ' +
+                     'ATTRIBUTE MUST BE DECLARED BEFORE IT IS USED. That is ' +
+                     'ALFA\'s own rule and it is the most useful refusal in ' +
+                     'the parser: a typo in an attribute name is otherwise a ' +
+                     'policy that quietly matches nothing, which looks ' +
+                     'exactly like a policy that is working and denying ' +
+                     'you.\n\nALFA IS AN OASIS COMMITTEE SPECIFICATION ' +
+                     'DRAFT, not a ratified standard — no conformance suite, ' +
+                     'no schema, no second implementation to disagree with. ' +
+                     'The contract offered is the one that can be kept: ' +
+                     'anything this service EMITS as ALFA it reads back, and ' +
+                     'the policy decides identically either way.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            alfa: { type: 'string',
+                      description: 'The ALFA source. Parsed, converted and ' +
+                                   'stored as XACML XML — the repository holds ' +
+                                   'ONE representation.' },
+            name: { type: 'string',
+                      description: 'Names the directory entry.' }
+          },
+          required: ['alfa', 'name'],
+          examples: [{
+            name: 'example-alfa',
+            alfa: 'namespace example {\n' +
+              '    attribute employeeType {\n' +
+              '        id = "employeeType"\n' +
+              '        type = "string"\n' +
+              '        category = subjectCat\n' +
+              '    }\n' +
+              '    policy exampleAlfa {\n' +
+              '        apply denyUnlessPermit\n' +
+              '        rule allowStaff {\n' +
+              '            permit\n' +
+              '            target clause employeeType == "staff"\n' +
+              '        }\n' +
+              '    }\n' +
+              '}'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'enable', operationId: 'enableXacmlPolicy',
+        summary: 'Put a policy back into the decision',
+        description: 'Sets `xacmlEnabled` on its directory entry.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The policy\'s directory entry name.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'my-policy'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'disable', operationId: 'disableXacmlPolicy',
+        summary: 'Take a policy out of the decision without deleting it',
+        description: 'The point of having this separate from delete: a ' +
+                     'disabled policy is still there to be read, edited and ' +
+                     'put back, which is what you want while working on it — ' +
+                     'the editor is LIVE, so a policy being edited is a ' +
+                     'policy the PDP is deciding with unless it is off.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The policy\'s directory entry name.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'my-policy'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'set-root', operationId: 'setXacmlRootPolicy',
+        summary: 'Choose the policy the PDP starts from',
+        description: 'Clears the flag on the incumbent first, because the ' +
+                     'store refuses a second root. Done in that order ' +
+                     'deliberately: a failure then leaves the repository ' +
+                     'with NO root rather than with two, which is the ' +
+                     'recoverable one of the two bad states.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The policy\'s directory entry name.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'my-policy'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'delete', operationId: 'deleteXacmlPolicy',
+        summary: 'Remove a policy from the repository',
+        description: 'Deleting the ROOT leaves the repository deciding ' +
+                     'nothing, and the reply says so rather than letting it ' +
+                     'be discovered by a Deny.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The policy\'s directory entry name.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'my-policy'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'edit-policy', operationId: 'editXacmlPolicy',
+        summary: 'Change a policy\'s id, description or combining algorithm',
+        description: 'The combining algorithm is the single most ' +
+                     'consequential line in a policy, which is why it is ' +
+                     'here rather than only in the document.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            id: { type: 'string',
+                      description: 'A new PolicySetId or PolicyId. Any URI.' },
+            description: { type: 'string',
+                      description: 'The document\'s own <Description>.' },
+            combiningAlgId: { type: 'string',
+                      description: 'One of the rule-combining algorithms this ' +
+                                   'editor offers; anything else is refused ' +
+                                   'rather than written. THE SINGLE MOST ' +
+                                   'CONSEQUENTIAL LINE IN A POLICY.' }
+          },
+          required: ['policy'],
+          examples: [{
+            policy: 'my-policy',
+            path: '',
+            id: 'urn:example:policy:staff'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-rule', operationId: 'addXacmlRule',
+        summary: 'Add a rule to a policy',
+        description: 'Every element this editor adds arrives COMPLETE AND ' +
+                     'VALID — a new rule has a Target, an Effect and an id. ' +
+                     'An editor that produced half-built elements would hold ' +
+                     'a document that could not be saved, and a document ' +
+                     'that cannot be saved cannot be evaluated, which is ' +
+                     'when you most want to look at it.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            effect: { type: 'string',
+                      description: 'Permit or Deny. Defaults to Permit.' }
+          },
+          required: ['policy'],
+          examples: [{
+            policy: 'my-policy',
+            path: '',
+            effect: 'Permit'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'edit-match', operationId: 'editXacmlMatch',
+        summary: 'Change a Match\'s function, value or attribute',
+        description: 'THE DATATYPE FOLLOWS THE FUNCTION. A Match whose ' +
+                     'literal is a string and whose designator is an integer ' +
+                     'does not type-check, so choosing the function sets ' +
+                     'both sides rather than letting them be picked ' +
+                     'independently and refused later.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            matchId: { type: 'string',
+                      description: 'The match function. Defaults to ' +
+                                   'string-equal. THE DATATYPE FOLLOWS IT on ' +
+                                   'both sides, so choosing the function ' +
+                                   'settles the literal\'s type and the ' +
+                                   'designator\'s together.' },
+            value: { type: 'string',
+                      description: 'The literal to test against.' },
+            category: { type: 'string',
+                      description: 'The attribute category. Defaults to ' +
+                                   'access-subject.' },
+            attributeId: { type: 'string',
+                      description: 'The attribute to read. A bare name or the ' +
+                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   'reaches the directory through the PIP; ' +
+                                   'anything else must be in the request.' },
+            mustBePresent: { type: 'boolean',
+                      description: 'Whether an absent attribute is an empty ' +
+                                   'bag (false) or makes the whole expression ' +
+                                   'Indeterminate (true).' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'target.anyOf.0.allOf.0.matches.0',
+            matchId: 'urn:oasis:names:tc:xacml:1.0:function:string-equal',
+            value: 'staff',
+            attributeId: 'employeeType'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'remove', operationId: 'removeXacmlNode',
+        summary: 'Remove any node from a policy',
+        description: 'By `path`, which is the address GET ' +
+                     '/admin-api/xacml/editor gave you. A path is only valid ' +
+                     'against the document it was read from: remove rule 0 ' +
+                     'and every path naming rule 1 now means rule 0. Re-read ' +
+                     'the tree after each edit rather than reusing paths.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0'
+          }],
+          additionalProperties: false
+        } },
+      // ---------------------------------------------------------------
+      // THE REST OF THE EDITOR, AND THE REASON THESE NINETEEN ARRIVED LATE.
+      //
+      // Phase three documented ten of the twenty-nine actions and shipped.
+      // Rule 7 says a control added to the console gets an operation in the
+      // same commit, and `tests/vendored/sts_admin_api_operations.js` is the
+      // check — it compares the actions this document DECLARES against the
+      // ones the handler's refusal sentence NAMES, in both directions,
+      // because that sentence is what `admin_api.js`'s parity check reads to
+      // find out what a resource can do. Nineteen actions the sentence named
+      // and the document did not meant nineteen console controls that could
+      // have lost their operation with nothing failing.
+      //
+      // It went unnoticed until phase five because that job is this
+      // repository's own and had not been run against this branch.
+      //
+      // EVERY ONE OF THESE TAKES A `path`, which is the address
+      // GET /admin-api/xacml/editor gave you, and every one of them is only
+      // valid against the document that reply was read from — remove rule 0
+      // and every path naming rule 1 now means rule 0. Re-read the tree after
+      // each edit rather than reusing paths.
+      // ---------------------------------------------------------------
+      { action: 'add-target-anyof', operationId: 'addXacmlTargetClause',
+        summary: 'Add a Target clause to a policy, a rule or a Target',
+        description: 'A `<Target>` is a list of clauses and **every one of ' +
+                     'them must match** — they are ANDed. Inside a clause ' +
+                     'the alternatives are ORed and inside an alternative ' +
+                     'the Matches are ANDed again, so the quantifier flips ' +
+                     'at each of the three levels.\n\nThat is why the ' +
+                     'element names read backwards from what they do: ' +
+                     '`AnyOf` holds `AllOf` holds `Match`, and the ' +
+                     '`AnyOf`s themselves are ANDed. Getting it wrong ' +
+                     'produces a policy that applies to more or less than ' +
+                     'was meant and never an error.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            matchId: { type: 'string',
+                      description: 'The match function. Defaults to ' +
+                                   'string-equal. THE DATATYPE FOLLOWS IT on ' +
+                                   'both sides, so choosing the function ' +
+                                   'settles the literal\'s type and the ' +
+                                   'designator\'s together.' },
+            value: { type: 'string',
+                      description: 'The literal to test against.' },
+            category: { type: 'string',
+                      description: 'The attribute category. Defaults to ' +
+                                   'access-subject.' },
+            attributeId: { type: 'string',
+                      description: 'The attribute to read. A bare name or the ' +
+                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   'reaches the directory through the PIP; ' +
+                                   'anything else must be in the request.' }
+          },
+          required: ['policy'],
+          examples: [{
+            policy: 'my-policy',
+            path: '',
+            matchId: 'urn:oasis:names:tc:xacml:1.0:function:string-equal',
+            value: 'staff',
+            category: 'urn:oasis:names:tc:xacml:1.0:subject-category:access-subject',
+            attributeId: 'employeeType'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-allof', operationId: 'addXacmlAlternative',
+        summary: 'Add an alternative to a Target clause',
+        description: 'ANY of a clause\'s alternatives matching satisfies it ' +
+                     '— they are ORed. Within one alternative every Match ' +
+                     'must hold.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            matchId: { type: 'string',
+                      description: 'The match function. Defaults to ' +
+                                   'string-equal. THE DATATYPE FOLLOWS IT on ' +
+                                   'both sides, so choosing the function ' +
+                                   'settles the literal\'s type and the ' +
+                                   'designator\'s together.' },
+            value: { type: 'string',
+                      description: 'The literal to test against.' },
+            category: { type: 'string',
+                      description: 'The attribute category. Defaults to ' +
+                                   'access-subject.' },
+            attributeId: { type: 'string',
+                      description: 'The attribute to read. A bare name or the ' +
+                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   'reaches the directory through the PIP; ' +
+                                   'anything else must be in the request.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'target.anyOf.0',
+            matchId: 'urn:oasis:names:tc:xacml:1.0:function:string-equal',
+            value: 'admin',
+            attributeId: 'employeeType'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-match', operationId: 'addXacmlMatch',
+        summary: 'Add a Match to an alternative',
+        description: 'One attribute tested against one value. It arrives ' +
+                     'COMPLETE AND VALID — a function, a literal and a ' +
+                     'designator — because an editor that produced ' +
+                     'half-built elements would hold a document that cannot ' +
+                     'be saved, and a document that cannot be saved cannot ' +
+                     'be evaluated, which is when you most want to look at ' +
+                     'it. Use edit-match to change any of the three.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            matchId: { type: 'string',
+                      description: 'The match function. Defaults to ' +
+                                   'string-equal. THE DATATYPE FOLLOWS IT on ' +
+                                   'both sides, so choosing the function ' +
+                                   'settles the literal\'s type and the ' +
+                                   'designator\'s together.' },
+            value: { type: 'string',
+                      description: 'The literal to test against.' },
+            category: { type: 'string',
+                      description: 'The attribute category. Defaults to ' +
+                                   'access-subject.' },
+            attributeId: { type: 'string',
+                      description: 'The attribute to read. A bare name or the ' +
+                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   'reaches the directory through the PIP; ' +
+                                   'anything else must be in the request.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'target.anyOf.0.allOf.0',
+            matchId: 'urn:oasis:names:tc:xacml:1.0:function:string-equal',
+            value: 'GET',
+            attributeId: 'actionId'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'edit-rule', operationId: 'editXacmlRule',
+        summary: 'Change a rule\'s id, effect or description',
+        description: 'The EFFECT is the consequential one: it is what this ' +
+                     'rule contributes to the combining algorithm when its ' +
+                     'Target and Condition hold, and flipping it between ' +
+                     'Permit and Deny changes what the policy decides ' +
+                     'without changing anything a reader is looking at.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            id: { type: 'string',
+                      description: 'A new RuleId.' },
+            effect: { type: 'string',
+                      description: 'Permit or Deny.' },
+            description: { type: 'string',
+                      description: 'The rule\'s own description.' }
+          },
+          required: ['policy'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0',
+            effect: 'Deny'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-condition', operationId: 'addXacmlCondition',
+        summary: 'Add a Condition to a rule',
+        description: 'A boolean expression evaluated AFTER the Target ' +
+                     'matches. **At most one per rule** — the schema allows ' +
+                     'exactly one, and the editor stops offering this on a ' +
+                     'rule that has one rather than offering it and then ' +
+                     'refusing, because an option that is offered and ' +
+                     'refused teaches a caller that the menu is not to be ' +
+                     'trusted.\n\nIt must evaluate to EXACTLY ONE BOOLEAN. ' +
+                     'A condition returning a bag, or an integer, is a ' +
+                     'static type error and the policy is refused at write ' +
+                     'time rather than going Indeterminate on every ' +
+                     'request.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'set-expression-apply', operationId: 'setXacmlApply',
+        summary: 'Make an expression a function call',
+        description: 'Replaces whatever is at `path` with an `<Apply>` of ' +
+                     'the function named in `functionId`, with arguments ' +
+                     'the function\'s own signature requires. Every ' +
+                     'expression slot in a policy takes any of the four ' +
+                     'shapes, which is why these are four actions on one ' +
+                     'target rather than four kinds of node.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            functionId: { type: 'string',
+                      description: 'The function to apply. Its arguments are ' +
+                                   'PRE-BUILT to the declared arity and types, ' +
+                                   'so the expression typechecks the moment it ' +
+                                   'exists.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition',
+            functionId: 'urn:oasis:names:tc:xacml:1.0:function:string-equal'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'set-expression-value', operationId: 'setXacmlValue',
+        summary: 'Make an expression a literal',
+        description: 'An `<AttributeValue>` of `dataType` with `lexical` in ' +
+                     'it. The lexical form is parsed against the datatype ' +
+                     'when the policy is written, so `2026-13-01` as a date ' +
+                     'is refused there rather than becoming an ' +
+                     'Indeterminate at decision time.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            type: { type: 'string',
+                      description: 'The datatype URI. Defaults to xs:string.' },
+            lexical: { type: 'string',
+                      description: 'The value, in that datatype\'s lexical ' +
+                                   'form.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition.args.0',
+            type: 'http://www.w3.org/2001/XMLSchema#string',
+            lexical: 'staff'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'set-expression-designator',
+        operationId: 'setXacmlDesignator',
+        summary: 'Make an expression an attribute reference',
+        description: 'An `<AttributeDesignator>`: reads an attribute out of ' +
+                     'the REQUEST, or out of the directory through the PIP ' +
+                     'when the id is a bare name or carries the ' +
+                     '`urn:sts-mock:xacml:attribute:` prefix.\n\n**IT ' +
+                     'RETURNS A BAG**, always, even when it finds exactly ' +
+                     'one value — which is why `string-one-and-only` exists ' +
+                     'and why most functions need it wrapped. Nothing in ' +
+                     'this engine ever holds a bare value, so there is no ' +
+                     'code path where somebody has to remember to wrap ' +
+                     'one.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            category: { type: 'string',
+                      description: 'The attribute category. Defaults to ' +
+                                   'access-subject.' },
+            attributeId: { type: 'string',
+                      description: 'The attribute to read.' },
+            dataType: { type: 'string',
+                      description: 'The datatype URI. Defaults to xs:string.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition.args.1',
+            category: 'urn:oasis:names:tc:xacml:1.0:subject-category:access-subject',
+            attributeId: 'employeeType',
+            dataType: 'http://www.w3.org/2001/XMLSchema#string'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'set-expression-variable', operationId: 'setXacmlVariable',
+        summary: 'Make an expression a variable reference',
+        description: 'A `<VariableReference>` to a `<VariableDefinition>` ' +
+                     'in the same policy. The reference is checked at write ' +
+                     'time, so one naming a variable that is not there is ' +
+                     'refused rather than deciding Indeterminate.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            variableId: { type: 'string',
+                      description: 'The VariableDefinition to reference. It ' +
+                                   'must exist in the same policy — the ' +
+                                   'reference is checked at write time.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition.args.0',
+            variableId: 'v1'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-argument', operationId: 'addXacmlArgument',
+        summary: 'Add an argument to a function call',
+        description: 'Offered only on an `<Apply>` — every other expression ' +
+                     'is a leaf and may only be REPLACED, which the four ' +
+                     'set-expression actions already do. The argument ' +
+                     'arrives as a literal of the type the function expects ' +
+                     'in that position.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'edit-apply', operationId: 'editXacmlApply',
+        summary: 'Change which function a call applies',
+        description: 'THE ARGUMENTS ARE RESHAPED TO THE NEW SIGNATURE. A ' +
+                     'function taking two strings changed for one taking ' +
+                     'two integers cannot keep its arguments, and leaving ' +
+                     'them would hold a document that does not typecheck ' +
+                     'and therefore cannot be saved.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            functionId: { type: 'string',
+                      description: 'The function to apply instead. The ' +
+                                   'arguments are reshaped to the new ' +
+                                   'signature.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition',
+            functionId: 'urn:oasis:names:tc:xacml:1.0:function:string-equal'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'edit-value', operationId: 'editXacmlValue',
+        summary: 'Change a literal\'s datatype or lexical form',
+        description: 'The lexical form is parsed against the datatype, so a ' +
+                     'value that is not of its type is refused here rather ' +
+                     'than at decision time.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            type: { type: 'string',
+                      description: 'A new datatype URI.' },
+            lexical: { type: 'string',
+                      description: 'A new lexical form, parsed against that ' +
+                                   'datatype.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition.args.0',
+            lexical: 'admin'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'edit-designator', operationId: 'editXacmlDesignator',
+        summary: 'Change an attribute reference',
+        description: 'Its category, attribute id, datatype and ' +
+                     '`MustBePresent`. **`MustBePresent` is the one that ' +
+                     'surprises people**: with it false an absent attribute ' +
+                     'is an empty bag, and with it true the whole ' +
+                     'expression is Indeterminate — which the combining ' +
+                     'algorithms then treat quite differently from a Deny.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            category: { type: 'string',
+                      description: 'A new category.' },
+            attributeId: { type: 'string',
+                      description: 'A new attribute id.' },
+            dataType: { type: 'string',
+                      description: 'A new datatype URI.' },
+            mustBePresent: { type: 'boolean',
+                      description: 'False makes an absent attribute an empty ' +
+                                   'bag; true makes the whole expression ' +
+                                   'Indeterminate, which the combining ' +
+                                   'algorithms treat quite differently from a ' +
+                                   'Deny.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0.condition.args.1',
+            attributeId: 'department',
+            mustBePresent: false
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-rule-obligation', operationId: 'addXacmlRuleObligation',
+        summary: 'Add an obligation to a rule',
+        description: 'Fires when this RULE\'s Effect is the decision. An ' +
+                     'obligation is the half of a decision that says "yes, ' +
+                     'AND you must also do this", and section 7.2 makes it ' +
+                     'binding: a PEP that cannot discharge one MUST NOT ' +
+                     'grant the access. Both PEPs here implement that — the ' +
+                     'embedded one at /xacml/protected and the remote ' +
+                     'container — and it is the part implementations ' +
+                     'skip.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            on: { type: 'string',
+                      description: 'Permit or Deny — the effect this fires on. ' +
+                                   'Defaults to Permit. An obligation attached ' +
+                                   'to the wrong effect is silently never ' +
+                                   'discharged.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0',
+            on: 'Permit'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-policy-obligation',
+        operationId: 'addXacmlPolicyObligation',
+        summary: 'Add an obligation to a policy',
+        description: 'Fires on the POLICY\'s decision rather than on one ' +
+                     'rule\'s. Same binding force — see ' +
+                     'addXacmlRuleObligation.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            on: { type: 'string',
+                      description: 'Permit or Deny. Defaults to Permit.' }
+          },
+          required: ['policy'],
+          examples: [{
+            policy: 'my-policy',
+            path: '',
+            on: 'Deny'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-rule-advice', operationId: 'addXacmlRuleAdvice',
+        summary: 'Add advice to a rule',
+        description: 'Something the PEP MAY do. **It is allowed to ignore ' +
+                     'this, and that is the whole difference from an ' +
+                     'obligation** — advice a PEP drops is a PEP behaving ' +
+                     'correctly, where an obligation it drops is half a ' +
+                     'policy enforced and reported as success.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            on: { type: 'string',
+                      description: 'Permit or Deny. Defaults to Permit.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'rules.0',
+            on: 'Permit'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-policy-advice', operationId: 'addXacmlPolicyAdvice',
+        summary: 'Add advice to a policy',
+        description: 'On the policy\'s decision rather than on one rule\'s. ' +
+                     'See addXacmlRuleAdvice for why advice and an ' +
+                     'obligation are not the same thing.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            on: { type: 'string',
+                      description: 'Permit or Deny. Defaults to Permit.' }
+          },
+          required: ['policy'],
+          examples: [{
+            policy: 'my-policy',
+            path: '',
+            on: 'Permit'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'edit-obligation', operationId: 'editXacmlObligation',
+        summary: 'Change an obligation\'s or advice\'s id, or when it fires',
+        description: 'The FULFILL-ON is the consequential field: an ' +
+                     'obligation set to fire on Permit contributes nothing ' +
+                     'to a Deny, and one attached to the wrong effect is ' +
+                     'silently never discharged.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            id: { type: 'string',
+                      description: 'A new obligation or advice identifier.' },
+            on: { type: 'string',
+                      description: 'Permit or Deny — the effect it fires on.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'obligations.0',
+            id: 'urn:example:obligation:log',
+            on: 'Permit'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'add-assignment', operationId: 'addXacmlAssignment',
+        summary: 'Add an attribute assignment to an obligation or advice',
+        description: 'A value handed to the PEP along with the obligation ' +
+                     '— what to log, whom to notify, which record to ' +
+                     'stamp. Its expression takes any of the four shapes ' +
+                     'the set-expression actions produce.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{
+            policy: 'my-policy',
+            path: 'obligations.0'
+          }],
+          additionalProperties: false
+        } },
+      // ---------------------------------------------------------------
+      // THE POLICY SET, THE VARIABLES, THE SELECTORS AND THE FUNCTION
+      // REFERENCES.
+      //
+      // Everything below reaches a part of the XACML syntax the editor could
+      // not build before. Four of them are not new controls so much as a
+      // repair: `add-policy` exists because a PolicySet used to be offered
+      // `add-rule`, which the writer then discarded — an edit accepted,
+      // reported as done, and absent from the stored document.
+      //
+      // EVERY ONE TAKES A `path`, and it is only valid against the document
+      // GET /admin-api/xacml/editor returned. Re-read the tree after each
+      // edit rather than reusing paths.
+      // ---------------------------------------------------------------
+      { action: 'add-policy', operationId: 'addXacmlPolicyToSet',
+        summary: 'Add a Policy inside a PolicySet',
+        description: 'A PolicySet holds POLICIES; a Policy holds RULES. ' +
+                     'They are not two spellings of one thing, and asking ' +
+                     'for a rule on a policy set is refused rather than ' +
+                     'written somewhere it will not be read.\n\nThe new ' +
+                     'policy arrives with `deny-unless-permit` and no rules, ' +
+                     'which decides Deny. That is deliberate: this editor is ' +
+                     'LIVE, so a child added to the running root takes ' +
+                     'effect on the next request, and one that began ' +
+                     'permissive would be a hole opened by pressing Add.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy-set', path: '' }],
+          additionalProperties: false
+        } },
+      { action: 'add-policyset', operationId: 'addXacmlPolicySetToSet',
+        summary: 'Add a nested PolicySet inside a PolicySet',
+        description: 'There is no depth limit. It arrives with ' +
+                     '`deny-unless-permit` — the POLICY-combining spelling, ' +
+                     'which is a different URI from the rule-combining one ' +
+                     'of the same name.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy-set', path: '' }],
+          additionalProperties: false
+        } },
+      { action: 'add-policy-reference',
+        operationId: 'addXacmlPolicyReference',
+        summary: 'Reference a policy stored separately in the repository',
+        description: 'THIS IS HOW A PDP REACHES MORE THAN ONE DOCUMENT. ' +
+                     'Evaluation starts at the root policy and a ' +
+                     '`PolicyIdReference` is resolved against the ' +
+                     'repository WHEN A DECISION IS MADE, not when the ' +
+                     'document is loaded — so referencing a policy that has ' +
+                     'not been written yet is allowed and is not an error. ' +
+                     'An unresolved reference is reported on the decision ' +
+                     'instead, which is what keeps the order two policies ' +
+                     'are authored in from mattering.\n\nThe `ref` is the ' +
+                     'PolicyId INSIDE the other document, not its directory ' +
+                     'entry name.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            ref: { type: 'string',
+                      description: 'The PolicyId being referenced. Any URI.' },
+            version: { type: 'string',
+                      description: 'An optional version constraint. Omit for ' +
+                                   'no constraint.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy-set', path: '',
+                       ref: 'urn:example:policy:staff' }],
+          additionalProperties: false
+        } },
+      { action: 'add-policyset-reference',
+        operationId: 'addXacmlPolicySetReference',
+        summary: 'Reference a policy SET stored separately',
+        description: 'The same as add-policy-reference, naming a ' +
+                     'PolicySetId. The element name says which kind of ' +
+                     'document is being named, so the two are separate ' +
+                     'actions rather than one with a flag.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            ref: { type: 'string',
+                      description: 'The PolicySetId being referenced.' },
+            version: { type: 'string',
+                      description: 'An optional version constraint.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy-set', path: '',
+                       ref: 'urn:example:policyset:hr' }],
+          additionalProperties: false
+        } },
+      { action: 'edit-reference', operationId: 'editXacmlReference',
+        summary: 'Change what a policy reference names',
+        description: 'An empty `version` means NO version constraint, which ' +
+                     'is a different document from one naming a version — so ' +
+                     'it is written as absent rather than as an empty string.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            ref: { type: 'string',
+                      description: 'The PolicyId or PolicySetId to name.' },
+            version: { type: 'string',
+                      description: 'A version constraint, or empty for none.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy-set', path: 'children.0',
+                       ref: 'urn:example:policy:staff' }],
+          additionalProperties: false
+        } },
+      { action: 'add-variable', operationId: 'addXacmlVariable',
+        summary: 'Add a VariableDefinition to a policy',
+        description: 'Names an expression so several rules can share it — ' +
+                     'and so it is evaluated ONCE per request rather than ' +
+                     'once per use.\n\nITS SCOPE IS THE POLICY IT IS ON. A ' +
+                     'sibling policy in the same set cannot name it (section ' +
+                     '5.24), which is why GET /admin-api/xacml/editor is ' +
+                     'the only reliable source of what a VariableReference ' +
+                     'at a given path may legally name.\n\nIt arrives ' +
+                     'holding a designator, because a VariableDefinition ' +
+                     'with no expression is a document that will not load. ' +
+                     'Replace it with any of the set-expression actions.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            variableId: { type: 'string',
+                      description: 'The name. Defaults to the next free ' +
+                                   '`v<n>`. A duplicate is refused — the ' +
+                                   'reader rejects a document defining one ' +
+                                   'id twice, so allowing it here would ' +
+                                   'write a policy this service cannot load ' +
+                                   'back.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy', path: '',
+                       variableId: 'staffTypes' }],
+          additionalProperties: false
+        } },
+      { action: 'edit-variable', operationId: 'renameXacmlVariable',
+        summary: 'Rename a variable, and every reference with it',
+        description: 'EVERY `VariableReference` NAMING IT IS REWRITTEN. The ' +
+                     'alternative — refusing to rename one that is used — ' +
+                     'is safe and useless, since a variable nobody ' +
+                     'references is the only one nobody wants to rename; and ' +
+                     'a rename that left the references behind would produce ' +
+                     'a document that does not load, so the write would be ' +
+                     'refused and nothing would change. The reply says how ' +
+                     'many references moved.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            variableId: { type: 'string',
+                      description: 'The new name.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy', path: 'variables.v1',
+                       variableId: 'staffTypes' }],
+          additionalProperties: false
+        } },
+      { action: 'set-expression-selector',
+        operationId: 'setXacmlExpressionSelector',
+        summary: 'Replace an expression with an AttributeSelector',
+        description: 'An XPath over the `<Content>` of a request category, ' +
+                     'rather than a named attribute — and it returns a ' +
+                     'BAG exactly as a designator does, so most functions ' +
+                     'still need a `one-and-only` around it.\n\nThe ' +
+                     'namespace bindings its prefixes need TRAVEL WITH THE ' +
+                     'DOCUMENT: a prefix in the path means nothing without ' +
+                     'one, and an unresolvable prefix is an empty bag, which ' +
+                     'is NotApplicable, which looks exactly like a policy ' +
+                     'that decided you may not. Set them with edit-selector.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            category: { type: 'string',
+                      description: 'The request category whose content the ' +
+                                   'path runs over. Defaults to resource.' },
+            path_xpath: { type: 'string',
+                      description: 'Sent as `path` — but `path` is already ' +
+                                   'the node address on this endpoint, so ' +
+                                   'set the XPath with edit-selector ' +
+                                   'immediately afterwards. The selector ' +
+                                   'arrives with `//*`, which is complete ' +
+                                   'and valid.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy',
+                       path: 'rules.0.condition.args.0' }],
+          additionalProperties: false
+        } },
+      { action: 'edit-selector', operationId: 'editXacmlSelector',
+        summary: 'Change an AttributeSelector\'s path, category or bindings',
+        description: 'ONE NAMESPACE BINDING AT A TIME, because the console ' +
+                     'this mirrors has no JavaScript and cannot grow a row: ' +
+                     'send `namespacePrefix` with `namespaceUri` to add or ' +
+                     'change one, and `namespacePrefix` with an empty ' +
+                     '`namespaceUri` to remove it.\n\n' +
+                     '`ContextSelectorId` names an attribute holding the ' +
+                     'node the path starts from; absent means the whole ' +
+                     'content.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            path_xpath: { type: 'string',
+                      description: 'Sent as `path` collides with the node ' +
+                                   'address; this operation reads the XPath ' +
+                                   'from `path` ONLY when it is not the ' +
+                                   'address — see the console form, which ' +
+                                   'posts them separately.' },
+            category: { type: 'string',
+                      description: 'The category whose content is selected.' },
+            dataType: { type: 'string',
+                      description: 'The datatype of the bag it returns.' },
+            contextSelectorId: { type: 'string',
+                      description: 'An attribute naming the starting node, ' +
+                                   'or empty for the whole content.' },
+            mustBePresent: { type: 'string',
+                      description: '"true" or "false". Absent KEEPS the ' +
+                                   'current value rather than clearing it.' },
+            namespacePrefix: { type: 'string',
+                      description: 'A prefix to bind, rebind or remove.' },
+            namespaceUri: { type: 'string',
+                      description: 'What to bind it to. Empty removes it.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy',
+                       path: 'rules.0.condition.args.0',
+                       namespacePrefix: 'md',
+                       namespaceUri: 'http://www.medico.com/schemas/record' }],
+          additionalProperties: false
+        } },
+      { action: 'set-expression-function',
+        operationId: 'setXacmlExpressionFunction',
+        summary: 'Replace an expression with a Function reference',
+        description: 'A function named as a VALUE rather than applied: ' +
+                     '`<Function FunctionId="..."/>`, which is what the ' +
+                     'first argument of a higher-order function such as ' +
+                     '`any-of`, `all-of` or `map` takes.\n\nAPPLYING IT ' +
+                     'THERE INSTEAD is the commonest way to write one of ' +
+                     'those wrongly, and it is why choosing a higher-order ' +
+                     'function from set-expression-apply now builds this ' +
+                     'shape for you rather than an AttributeValue the ' +
+                     'validator refuses.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            functionId: { type: 'string',
+                      description: 'The function to name. Defaults to ' +
+                                   'string-equal.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy',
+                       path: 'rules.0.condition.args.0',
+                       functionId:
+                         'urn:oasis:names:tc:xacml:1.0:function:string-equal' }],
+          additionalProperties: false
+        } },
+      { action: 'edit-function', operationId: 'editXacmlFunctionReference',
+        summary: 'Change which function a Function reference names',
+        description: 'The whole content of the element is which function it ' +
+                     'names, so this is its only field.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            functionId: { type: 'string',
+                      description: 'Any identifier in the function library.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy',
+                       path: 'rules.0.condition.args.0',
+                       functionId:
+                         'urn:oasis:names:tc:xacml:1.0:function:integer-equal' }],
+          additionalProperties: false
+        } },
+      { action: 'edit-assignment', operationId: 'editXacmlAssignment',
+        summary: 'Change an attribute assignment\'s id, category or issuer',
+        description: 'The three attributes of an ' +
+                     '`AttributeAssignmentExpression`. Its VALUE is the ' +
+                     'expression underneath it, edited with the ' +
+                     'set-expression and edit-value actions at the ' +
+                     '`...assignments.<n>.expression` path.\n\nCategory and ' +
+                     'Issuer are OPTIONAL and empty means absent, not empty: ' +
+                     'an assignment with no category is a plain named value ' +
+                     'handed to the PEP.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            policy: { type: 'string',
+                      description: 'The directory entry name of the policy to ' +
+                                   'edit — the `cn` under ou=policies, not the ' +
+                                   'PolicyId inside the document.' },
+            path: { type: 'string',
+                      description: 'The node\'s address, from GET ' +
+                                   '/admin-api/xacml/editor. ONLY VALID ' +
+                                   'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
+                                   'remove rule 0 and every path naming rule 1 ' +
+                                   'now means rule 0.' },
+            attributeId: { type: 'string',
+                      description: 'The name the PEP receives it under.' },
+            category: { type: 'string',
+                      description: 'An optional category. Empty removes it.' },
+            issuer: { type: 'string',
+                      description: 'An optional issuer. Empty removes it.' }
+          },
+          required: ['policy', 'path'],
+          examples: [{ policy: 'my-policy',
+                       path: 'rules.0.obligations.0.assignments.0',
+                       attributeId: 'urn:example:notify' }],
+          additionalProperties: false
+        } },
+      { action: 'disable-pep', operationId: 'disableXacmlPep',
+        summary: 'Stop nudging a registered remote PEP',
+        description: 'IT DOES NOT STOP IT ENFORCING, and the reply says so ' +
+                     'rather than letting that be discovered. A remote PEP ' +
+                     'holds its own copy of the engine and its own copy of ' +
+                     'the policy; nothing in this API reaches into another ' +
+                     'process. What changes is that this service no longer ' +
+                     'dials it when the repository changes, so it converges ' +
+                     'only on its own polling interval.\n\nNamed with a ' +
+                     '`-pep` suffix rather than reusing `disable` because ' +
+                     'this endpoint dispatches on the action name across ' +
+                     'the whole family, and a second `disable` would be ' +
+                     'ambiguous between a policy and a PEP.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The registered PEP\'s name.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'pep-1'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'enable-pep', operationId: 'enableXacmlPep',
+        summary: 'Nudge a registered remote PEP again',
+        description: 'Puts it back into the set this service dials when the ' +
+                     'repository changes. A PEP that re-registers does NOT ' +
+                     'clear this by itself — a component an administrator ' +
+                     'stopped nudging must not be able to undo that by ' +
+                     'reconnecting.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The registered PEP\'s name, which is the ' +
+                                   'one its client certificate gave it.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'pep-1'
+          }],
+          additionalProperties: false
+        } },
+      { action: 'forget-pep', operationId: 'forgetXacmlPep',
+        summary: 'Remove a remote PEP from the register',
+        description: 'Removes the row in ou=peps. THE PROCESS IS ' +
+                     'UNAFFECTED: it may still be pulling and enforcing, ' +
+                     'and the next time it registers it simply appears ' +
+                     'again. Use it for a PEP that is genuinely gone; use ' +
+                     'disable-pep for one that is not.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The registered PEP\'s name.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'pep-1'
+          }],
+          additionalProperties: false
+        } }
+    ] },
+
   { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',
     operationId: 'getSsf',
     summary: 'The Shared Signals transmitter: its streams, their subjects, ' +
@@ -4410,7 +7294,8 @@ const ROUTES = [
                  'push, RFC 8936 poll) — and two events of its own, both ' +
                  'about the pipe. CAEP and RISC are the vocabularies spoken ' +
                  'over it; CAEP is implemented and its own register is at ' +
-                 'GET /admin-api/caep, and RISC is not here yet.\n\nTHE ' +
+                 'GET /admin-api/caep, and RISC has one of its own at ' +
+                 'GET /admin-api/risc.\n\nTHE ' +
                  'RECEIVER\'S `authorization_header` IS NOT IN THIS REPLY. ' +
                  'It is a credential belonging to somebody else\'s endpoint ' +
                  'and it goes back only to the receiver that set it, at ' +
@@ -4829,6 +7714,261 @@ const ROUTES = [
         responseDescription: 'How many rows were dropped.' }
     ] },
 
+  // ---------------------------------------------------------------------
+  // RISC. A GET, a second GET and a POST, on exactly the CAEP block's terms
+  // and for its reasons: /admin/risc and /admin/risc-accounts carry three
+  // controls between them — emit an event by hand, reset one account's RISC
+  // state, clear the register — and rule 7 is about controls.
+  //
+  // **THERE IS DELIBERATELY NO WAY TO DISABLE OR DELETE AN ACCOUNT FROM
+  // HERE**, which is the same reading of rule 7 that leaves CAEP without a
+  // way to end a session. Emitting an `account-disabled` says an account was
+  // disabled; it does not disable one, and a management API that did both
+  // would make "tell the receivers" and "deprovision this person" one act —
+  // which is exactly the conflation RISC exists to separate. The directory
+  // half is POST /admin-api/users and SCIM, and a write through either emits
+  // the event on its own when `risc.autoEmit` is on.
+  { method: 'GET', path: BASE + '/risc', tag: 'RISC',
+    operationId: 'getRisc',
+    summary: 'The RISC account register: what state each account is in and ' +
+             'how many events of which type have been sent about it',
+    description: 'Everything /admin/risc and /admin/risc-accounts draw, as ' +
+                 'JSON. Per account: who it is, the SSF subject a receiver ' +
+                 'was sent, and THREE states rather than one — the lifecycle ' +
+                 '(active, disabled, purged), the RISC section 2.8 opt-out ' +
+                 'state (opt-in, opt-out-initiated, opt-out) and whether a ' +
+                 'credential has been reported compromised. They move ' +
+                 'independently: an account can be opted out and perfectly ' +
+                 'healthy, or compromised and still enabled.\n\nTHE ' +
+                 'REGISTER OUTLIVES THE ACCOUNT, MORE STARKLY THAN THE CAEP ' +
+                 'ONE OUTLIVES A SESSION. A purged account is gone from the ' +
+                 'directory entirely, so the row whose lifecycle says ' +
+                 '`purged` is the only remaining evidence anywhere that this ' +
+                 'service ever told anybody it was.\n\nRISC IS A VOCABULARY ' +
+                 'AND NOT A FAMILY. Its events travel on SSF streams, are ' +
+                 'signed by the SSF signer and are delivered by the two SSF ' +
+                 'deliveries, so GET /admin-api/ssf is where the streams ' +
+                 'themselves are. `streams` here says only which of them ' +
+                 'would take a RISC event at all.\n\n`suppressed` is the one ' +
+                 'counter with no CAEP equivalent: events this transmitter ' +
+                 'built and did NOT send, because the account is in the ' +
+                 'opt-out state and `risc.honourOptOut` is on. It is the ' +
+                 'only number here that says a receiver heard nothing ON ' +
+                 'PURPOSE.',
+    mirrors: 'GET /admin/risc',
+    responseDescription: 'The register, the catalogue and the settings.',
+    responseSchema: { $ref: '#/components/schemas/Risc' },
+    handler: function (req, res) {
+      log.debug("Entering the management API RISC endpoint.");
+      sendJson(res, 200, admin.riscView(req));
+      log.debug("Leaving the management API RISC endpoint.");
+    } },
+
+  // THE SECOND RISC READ, for the reason the second CAEP read exists:
+  // /admin/risc-accounts is a page of the console and one operation cannot
+  // mirror two pages. `?account=` decides the shape, the list or the
+  // drill-down, because they are the same question at two scales.
+  { method: 'GET', path: BASE + '/risc/accounts', tag: 'RISC',
+    operationId: 'getRiscAccounts',
+    summary: 'The RISC account register, searched and paged — or one ' +
+             'account with everything that has been said about it',
+    description: 'What /admin/risc-accounts draws. Without `account` it is ' +
+                 'the register: one row per account this service has been ' +
+                 'told anything about, including ones that no longer exist, ' +
+                 'searched with `acctq` and paged with `accountsPage` and ' +
+                 '`per`. Beside it, `applications`: what this transmitter ' +
+                 'has said to each RECEIVER across every account, searched ' +
+                 'with `rappq`.\n\nWith `account` it is that one account ' +
+                 'opened out: the events actually sent about it, in order, ' +
+                 'with the jti and the stream each went out on and what the ' +
+                 'register noticed as it was applied, paged with ' +
+                 '`eventsPage`.\n\nTHE SEARCH REACHES IDENTIFIERS THE ' +
+                 'ACCOUNT NO LONGER HAS, and that is not thoroughness: ' +
+                 '`identifier-changed` is an event ABOUT the key, so the ' +
+                 'address a caller is holding — out of a log, off an event ' +
+                 'it is chasing — is routinely the superseded one. A search ' +
+                 'that matched only the current spelling would hide exactly ' +
+                 'the row somebody came to find.\n\nAn `account` that names ' +
+                 'nothing answers 200 with `account: null` rather than 404: ' +
+                 'this register is capped at `risc.maxAccountsTracked` and ' +
+                 'drops the oldest.',
+    mirrors: 'GET /admin/risc-accounts',
+    parameters: [
+      { name: 'acctq', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'Narrows the register to rows whose account id, ' +
+                     'username, `sub`, email address, telephone number, SSF ' +
+                     'subject, directory DN or any FORMER identifier ' +
+                     'contains this.' },
+      { name: 'account', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'One account id. The reply is then that account and ' +
+                     'its events rather than the list.' },
+      { name: 'accountsPage', in: 'query', required: false,
+        schema: { type: 'integer', minimum: 1 },
+        description: 'Which page of the register. Clamped, like every page ' +
+                     'parameter here.' },
+      { name: 'rappq', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'Narrows the per-receiver list to rows whose ' +
+                     'application name, identifier or stream `aud` contains ' +
+                     'this. It deliberately does NOT match event types: a ' +
+                     'receiver that takes none of the fourteen is exactly ' +
+                     'the row somebody is looking for when they ask why ' +
+                     'nothing arrived.' },
+      { name: 'rapplicationsPage', in: 'query', required: false,
+        schema: { type: 'integer', minimum: 1 },
+        description: 'Which page of the per-receiver list. It shares `per` ' +
+                     'with the register above it.' },
+      { name: 'eventsPage', in: 'query', required: false,
+        schema: { type: 'integer', minimum: 1 },
+        description: 'Which page of ONE account\'s events, with `account`.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The register, or one account and its events.',
+    responseSchema: { $ref: '#/components/schemas/Risc' },
+    handler: function (req, res) {
+      log.debug("Entering the management API RISC accounts endpoint.");
+      sendJson(res, 200, admin.riscAccountsView(req));
+      log.debug("Leaving the management API RISC accounts endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/risc/:action', tag: 'RISC',
+    mirrors: 'POST /admin/risc',
+    handler: function (req, res) {
+      log.debug("Entering the management API RISC action endpoint.");
+      const body = parseBody(req);
+      // AWAITS, like the CAEP handler above and for the same reason.
+      admin.riscAction(withAction(req, body)).then(function (result) {
+        sendJson(res, result.ok ? 200 : 400, result);
+        log.debug("Leaving the management API RISC action endpoint.");
+      }).catch(function (e) {
+        log.error('admin-api: the RISC action threw: ' + e.message);
+        sendJson(res, 500, { ok: false,
+          errors: ['The action failed: ' + e.message] });
+        log.debug("Leaving the management API RISC action endpoint. Threw.");
+      });
+    },
+    actions: [
+      { action: 'emit', operationId: 'emitRiscEvent',
+        summary: 'Send one RISC event about one account',
+        description: 'Builds the payload, composes the SUBJECT from the ' +
+                     'account in the format `risc.subjectFormat` names, and ' +
+                     'transmits it on every stream that both delivers the ' +
+                     'type and covers that subject.\n\nELEVEN OF THE ' +
+                     'FOURTEEN CARRY NO PAYLOAD MEMBERS AT ALL, so for those ' +
+                     'the subject is the entire message and `payload` is ' +
+                     'left empty. Only `credential-compromise` has a ' +
+                     'REQUIRED member, `credential_type`, which RISC defines ' +
+                     'by reference to CAEP\'s `credential-change` — the two ' +
+                     'lists are the same list.\n\nTEN OF THE FOURTEEN ARE ' +
+                     'ONLY EVER PRODUCED THIS WAY. No breach corpus is ' +
+                     'searched by this service and no recovery flow runs in ' +
+                     'it. The other four fire on their own when the ' +
+                     'DIRECTORY changes and `risc.autoEmit` is on — a person ' +
+                     'deleted, `active` going false or true, a mail address ' +
+                     'or telephone number moving.\n\nFOUR OF THEM CHANGE ' +
+                     'REAL STATE WHEN THEY GO. RISC section 2.8 defines each ' +
+                     'opt-out event as "the account is in this state" rather ' +
+                     'than as a report that it moved, so emitting `opt-out-' +
+                     'effective` here IS the transition — and the next event ' +
+                     'about that account is suppressed while ' +
+                     '`risc.honourOptOut` is on.\n\nAN ACCOUNT THIS SERVICE ' +
+                     'HAS NEVER HELD IS ACCEPTED, which is the opposite of ' +
+                     'what emitCaepEvent does with an unknown session. A ' +
+                     'session identifier this service never minted is one it ' +
+                     'can compose no subject from; an account is a person, ' +
+                     'and RISC is aimed ACROSS providers, so the account a ' +
+                     'receiver is warned about is usually one it has never ' +
+                     'seen.\n\nA TYPE NO STREAM TAKES IS NOT AN ERROR. The ' +
+                     'account\'s state is still updated and the reply says ' +
+                     'nothing was sent.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            account_id: { type: 'string',
+              description: 'The account it is about, from GET ' +
+                           '/admin-api/risc. A name no row carries is ' +
+                           'accepted and opens one.' },
+            type: { type: 'string',
+              description: 'The event type: a short name such as ' +
+                           '`account-disabled`, or the whole URI.' },
+            payload: { type: 'string',
+              description: 'The event-specific members, as JSON. Empty for ' +
+                           'a conforming specimen of the type, which is what ' +
+                           'eleven of the fourteen always are. Note the ' +
+                           'HYPHEN in `identifier-changed`\'s `new-value`: ' +
+                           'it is the only hyphenated member name in any of ' +
+                           'the three vocabularies, and `new_value` is ' +
+                           'carried and silently ignored by a receiver.' },
+            reason_admin: { type: 'string',
+              description: 'Why, for a log. Sent as an object keyed by ' +
+                           '`risc.reasonLanguage`. It reaches the wire for ' +
+                           'ONE of the fourteen types — RISC gives the ' +
+                           'reason members to `credential-compromise` and to ' +
+                           'nothing else — and is dropped by the catalogue ' +
+                           'on any other, rather than being sent as a member ' +
+                           'the specification does not define.' },
+            reason_user: { type: 'string',
+              description: 'The same, in words meant for the person. Same ' +
+                           'one type.' }
+          },
+          required: ['account_id', 'type'],
+          examples: [{ account_id: 'alice', type: 'account-disabled',
+            payload: '{"reason":"hijacking"}',
+            reason_admin: 'Credential seen in a breach corpus' },
+          { account_id: 'alice', type: 'identifier-changed',
+            payload: '{"new-value":"alice.roe@example.com"}' },
+          { account_id: 'alice', type: 'credential-compromise',
+            payload: '{"credential_type":"password"}' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many streams took it, why none did, or ' +
+                             'that the opt-out gate suppressed it.' },
+
+      { action: 'reset-account', operationId: 'resetRiscAccount',
+        summary: 'Put one account\'s RISC state back to where it started',
+        description: 'Clears the lifecycle, the opt-out state, the ' +
+                     'credential standing, the identifier history and every ' +
+                     'counter on one row, keeping the row.\n\nIT DISABLES ' +
+                     'AND DELETES NOBODY. This register is a record of what ' +
+                     'has been SAID about an account; resetting it forgets ' +
+                     'the record. The directory entry is untouched, which is ' +
+                     'the distinction this whole page rests on — and it is ' +
+                     'sharper here than for a session, because a row saying ' +
+                     '`purged` may describe a person who really is gone.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            account_id: { type: 'string', description: 'The account.' }
+          },
+          required: ['account_id'],
+          examples: [{ account_id: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Confirmation, or a refusal naming the id.' },
+
+      { action: 'clear', operationId: 'clearRiscAccounts',
+        summary: 'Drop every row in the RISC account register',
+        description: 'Forgets what has been said about every account. ' +
+                     'Nobody is disabled, nobody is deleted and no directory ' +
+                     'entry is touched.\n\nIt is worth knowing what this ' +
+                     'throws away: a row for an account that has been PURGED ' +
+                     'is the only evidence anywhere in this service that the ' +
+                     'account existed and that receivers were told it was ' +
+                     'deleted. The directory cannot supply it, because the ' +
+                     'entry is gone.',
+        requestBodyRequired: false,
+        requestBody: {
+          type: 'object',
+          properties: {},
+          examples: [{}],
+          additionalProperties: false
+        },
+        responseDescription: 'How many rows were dropped.' }
+    ] },
+
   { method: 'GET', path: BASE + '/scim', tag: 'SCIM',
     operationId: 'getScim',
     summary: 'The SCIM 2.0 provisioning surface, and what it has been asked to do',
@@ -4858,6 +7998,65 @@ const ROUTES = [
       log.debug("Entering the management API SCIM endpoint.");
       sendJson(res, 200, admin.scimJson(req));
       log.debug("Leaving the management API SCIM endpoint.");
+    } },
+
+  // WHAT THAT SURFACE IS ACTUALLY DOING, as opposed to what it is. The
+  // operation above mirrors /admin/scim, which is a page about the SURFACE;
+  // this one mirrors /admin/scim/monitor, which the console files under
+  // MONITORING because where a page goes is decided by the question it
+  // answers. Both read one set of counters in common/admin_stats.js through
+  // two functions, so there is no second tally for them to disagree over.
+  //
+  // NO POST BESIDE IT, and that is rule 7 read exactly rather than by shape:
+  // the page it mirrors has no control. A reset was refused rather than
+  // forgotten — a console that could zero its own monitoring would make every
+  // number on it a number somebody might have zeroed, and the audit log, which
+  // is the durable record, cannot be reset either.
+  { method: 'GET', path: BASE + '/scim/monitor', tag: 'SCIM',
+    operationId: 'getScimMonitor',
+    summary: 'How many SCIM calls there have been, from whom, of what kind, ' +
+             'and how many failed',
+    description: 'Everything /admin/scim/monitor draws: the call totals, one ' +
+                 'row per operation with its successes, failures, latency and ' +
+                 'bytes returned, one row per resource type, one row per ' +
+                 'authenticated client, the authentication schemes with the ' +
+                 'ones at zero included, what went back by status class, ' +
+                 'status and `scimType`, and the last fifty requests ' +
+                 'individually.\n\n**A CLIENT IS AN AUTHENTICATED ' +
+                 'PRINCIPAL, NOT A CONNECTION.** SCIM is stateless HTTP — no ' +
+                 'session, no registration, nothing to be connected — so ' +
+                 '`authentication.distinct` is how many different names have ' +
+                 'successfully authenticated since this process started. It ' +
+                 'never goes down: a provisioning client that has stopped ' +
+                 'calling is indistinguishable from one that is between ' +
+                 'calls.\n\n**A REFUSED CALLER IS NOT A CLIENT.** Calls the ' +
+                 'gate turned away are counted in `authentication.refused` ' +
+                 'and appear in no `clients` row, even when the credential ' +
+                 'carried a name — Basic and Digest both put one on the wire. ' +
+                 'Attributing traffic to an identity this service declined to ' +
+                 'believe is the one mistake this reply could make that would ' +
+                 'matter.\n\n**THE OPERATION COUNTS DO NOT SUM TO ' +
+                 '`calls`.** One `POST /scim/v2/Bulk` carrying five creates ' +
+                 'is one `bulk` AND five `create`s, because each of the five ' +
+                 'really is performed.\n\n**AN ABSENT MEASUREMENT IS NULL ' +
+                 'AND NOT ZERO.** `averageMs`, `maxMs` and `successRate` are ' +
+                 'null where nothing has been called: an average over no ' +
+                 'samples is absent, and a 100% success rate on zero requests ' +
+                 'is the most misleading number here.\n\nThe counters are ' +
+                 'IN MEMORY, start with the process (`since`) and are PER ' +
+                 'TRUST REALM, like the directory SCIM writes into. The ' +
+                 'durable record of what SCIM was asked to do is GET ' +
+                 '/admin-api/audit, which has the actor and the target as ' +
+                 'well as the count.',
+    mirrors: 'GET /admin/scim/monitor',
+    responseDescription: 'The call totals, the per-operation, per-resource, ' +
+                         'per-client and per-scheme breakdowns, and the ' +
+                         'recent requests.',
+    responseSchema: { $ref: '#/components/schemas/ScimMonitor' },
+    handler: function (req, res) {
+      log.debug("Entering the management API SCIM monitor endpoint.");
+      sendJson(res, 200, admin.scimMonitorJson(req));
+      log.debug("Leaving the management API SCIM monitor endpoint.");
     } },
 
   { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
@@ -5419,6 +8618,316 @@ const ROUTES = [
   // and those two are the pair a caller most needs kept apart, because removing
   // the wrong one asks the wrong people again.
   // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // ROLES. Three operations against `admin.rolesView()`, `admin.rolesPreview()`
+  // and `admin.rolesAction()` — the same three functions the console calls, so
+  // rule 7's parity is a property of the wiring rather than of two lists
+  // agreeing.
+  //
+  // **THE PREVIEW GETS AN OPERATION OF ITS OWN AND NOT A QUERY ON THE FIRST**,
+  // and that is the one decision here worth arguing. On the console it IS a
+  // query parameter, because a `<form method="get">` is what a page with no
+  // script has; over HTTP the two are different questions — one reads a
+  // register and the other asks the PDP — and a caller that got a decision by
+  // adding two parameters to a listing would have no way to discover it.
+  // ---------------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/roles', tag: 'Roles',
+    operationId: 'getRoles',
+    summary: 'Who holds a role, and what requires one',
+    description: 'The role register, both relations.\n\n**A role is a name ' +
+                 'somebody may hold, and holding one is what an ISSUANCE is ' +
+                 'decided on.** Three kinds of thing can be mapped into one — ' +
+                 'a person, a GROUP (so every member of it holds the role, ' +
+                 'resolved at decision time) and an APPLICATION, which is ' +
+                 'what a `client_credentials` grant is decided on where there ' +
+                 'is no person at all.\n\n**`roles` is MEMBERSHIP and ' +
+                 '`requiring` is REQUIREMENT, and they are opposite.** ' +
+                 'Membership is stored on the ROLE entry under `ou=roles` and ' +
+                 'is written through this resource. A requirement is ' +
+                 '`appRequiredRole` on an APPLICATION\'s own entry and is ' +
+                 'written through `POST /admin-api/applications/add` — one ' +
+                 'store, one door that writes it. It is READ here because ' +
+                 'this is the only surface that can resolve it: ' +
+                 '`requiring[].unknown` names a role an application demands ' +
+                 'that NOTHING defines, which refuses everybody, silently and ' +
+                 'correctly, and looks exactly like the application being ' +
+                 'broken.\n\n**Only NARROWED applications are in ' +
+                 '`requiring`.** An application that names no required role ' +
+                 'requires `EVERYBODY`, everybody holds `EVERYBODY`, and ' +
+                 'nothing is refused — which is how this service behaved ' +
+                 'before roles existed and is what makes the feature off by ' +
+                 'default without being absent.\n\n**The six `builtIn` roles ' +
+                 'are COMPUTED and in no container.** They cannot be created, ' +
+                 'edited or deleted, they have no members, and every one of ' +
+                 'them is answered from the CONTEXT of the decision being ' +
+                 'made. They are never in the roles claim either: `EVERYBODY` ' +
+                 'and `ALL_AUTHENTICATED_USERS` are true of almost every token ' +
+                 'this service issues, so carrying them would tell a relying ' +
+                 'party nothing it did not know from holding the token.\n\n' +
+                 '`gated: false` means the XACML family is not loaded in this ' +
+                 'process, so `common/issuance_gate.js` has no decider and ' +
+                 'every issuance is allowed whatever this register says. ' +
+                 '`enforced: false` means `roles.enforceIssuance` is off, ' +
+                 'which is the same outcome by a different route and is the ' +
+                 'way back if a policy edit locks something out.',
+    mirrors: 'GET /admin/roles',
+    responseDescription: 'The six built-in roles, every configured role with ' +
+                         'its three membership lists, every application that ' +
+                         'has been narrowed, and whether the decision is ' +
+                         'being asked for at all.',
+    responseSchema: { type: 'object',
+                      description: 'The role register, both relations.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API roles endpoint.");
+      sendJson(res, 200, admin.rolesView());
+      log.debug("Leaving the management API roles endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/roles/preview', tag: 'Roles',
+    operationId: 'previewRoleIssuance',
+    summary: 'Would this be issued?',
+    description: 'Asks the embedded PEP whether this service would issue ' +
+                 'something, without issuing it and without recording ' +
+                 'anything.\n\n**It is the SAME call the nine issuance sites ' +
+                 'make** — `common/issuance_gate.check()`, through ' +
+                 '`xacml/xacml_role_pep.js`, against the policy ' +
+                 '`xacml.issuancePolicy` names — so a preview that agreed ' +
+                 'with the enforcement only by coincidence is impossible. ' +
+                 'That is the only reason it is worth having.\n\nIt is not ' +
+                 '`POST /xacml/pdp`, which asks the same engine a different ' +
+                 'question: an arbitrary request against the repository ROOT, ' +
+                 'which is the policy about somebody else\'s boundary. Two ' +
+                 'questions, two documents.\n\n`available: false` means the ' +
+                 'XACML family is not loaded in this process: nothing is ' +
+                 'gated and every issuance is allowed.\n\n**`application` ' +
+                 'and `subject` are both needed and neither is declared ' +
+                 'required**, because this is a READ and a read with no ' +
+                 'question in it has nothing to refuse — it answers 200 with ' +
+                 '`answered: false` and says what was missing, exactly as a ' +
+                 'GET of /admin/roles with no parameters draws the form and ' +
+                 'no answer. **Read `answered` first.** There is deliberately ' +
+                 'no `decision` member on that reply: the gate ALLOWS a call ' +
+                 'that names no application, so an operation that fell ' +
+                 'through to it would hand back a Permit meaning "you did ' +
+                 'not ask".',
+    mirrors: 'GET /admin/roles',
+    parameters: [
+      { name: 'application', in: 'query',
+        schema: { type: 'string' },
+        description: 'What something would be issued FOR — a `client_id`, a ' +
+                     'wtrealm, a SAML entityID, an SPN. An application no ' +
+                     'entry names requires EVERYBODY, because this service ' +
+                     'registers one on first sight and refusing the first ' +
+                     'request from a new client is precisely the ' +
+                     'permissiveness it is for.' },
+      { name: 'subject', in: 'query',
+        schema: { type: 'string' },
+        description: 'Who it would be issued to — a username, or a client_id ' +
+                     'where `subjectKind` is `application`.' },
+      { name: 'subjectKind', in: 'query',
+        schema: { type: 'string', enum: ['user', 'application'] },
+        description: 'Whether the subject is a person or a client ' +
+                     'authenticating as itself. Defaults to `user`.' },
+      { name: 'kind', in: 'query',
+        schema: { type: 'string' },
+        description: 'Which issuance. It becomes the XACML `action-id`, so a ' +
+                     'policy may permit an access token and refuse a refresh ' +
+                     'token. `GET /admin-api/roles` lists the nine in ' +
+                     '`issuanceKinds`; the default is `issue-access-token`.' }
+    ],
+    responseDescription: 'The decision, the sentence explaining it, the roles ' +
+                         'the subject holds and the roles the application ' +
+                         'requires.',
+    responseSchema: { type: 'object',
+                      description: 'One issuance decision, made and thrown ' +
+                                   'away.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API role preview endpoint.");
+      const answer = admin.rolesPreview(req.query);
+      if (!answer) {
+        // NOTHING ASKED IS `answered: false` AND NOT A 400, and that is this
+        // operation MIRRORING ITS PAGE rather than being lenient. A GET of
+        // /admin/roles with no parameters draws the form and no answer, so
+        // this answers the same thing: it is a READ, and a read of this
+        // resource with no question in it has nothing to refuse.
+        //
+        // The hazard the other spelling was guarding against is gone by
+        // construction. `issuance_gate.check()` ALLOWS a call that names no
+        // application, so an operation that fell through to the gate would
+        // hand back a Permit meaning "you did not ask" — which is why there
+        // is no `decision` member on this reply at all, and why `answered` is
+        // the first thing to read.
+        sendJson(res, 200, {
+          answered: false, available: !!admin.rolesView().gated,
+          why: '`application` and `subject` are both needed. A decision ' +
+               'needs something being issued FOR and somebody it is being ' +
+               'issued TO, and an issuance named with neither is allowed by ' +
+               'definition rather than by policy — so nothing was asked and ' +
+               'there is no decision here to read.' });
+        log.debug("Leaving the management API role preview endpoint. Nothing asked.");
+        return;
+      }
+      sendJson(res, 200, Object.assign({ answered: true }, answer));
+      log.debug("Leaving the management API role preview endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/roles/:action', tag: 'Roles',
+    mirrors: 'POST /admin/roles',
+    handler: function (req, res) {
+      log.debug("Entering the management API roles action endpoint.");
+      const body = parseBody(req);
+      const result = admin.rolesAction(withAction(req, body), { via: 'api' });
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API roles action endpoint.");
+    },
+    actions: [
+      { action: 'create-role', operationId: 'createRole',
+        summary: 'Make a role',
+        description: 'Writes one entry under `ou=roles` with no members. ' +
+                     'Adding members is `add-member`; the two are separate ' +
+                     'because a role is worth creating before anybody holds ' +
+                     'it — an application can be narrowed to it first, and ' +
+                     'the register will then say so.\n\nThe name becomes an ' +
+                     'LDAP RDN and a value in a token claim, so it is up to ' +
+                     '64 characters of letters, digits, and `. _ : @ -` or a ' +
+                     'space. **It may not be one of the six built-in roles**: ' +
+                     'those are computed and answered first, so a stored role ' +
+                     'of the same name could never be reached.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            role: { type: 'string', description: 'The role\'s name.' },
+            description: { type: 'string',
+                           description: 'What it is for, for the next person.' }
+          },
+          required: ['role'],
+          examples: [{ role: 'staff', description: 'People who work here' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The role that was made.' },
+
+      { action: 'delete-role', operationId: 'deleteRole',
+        summary: 'Remove a role',
+        description: 'Deletes the entry. **Applications that still REQUIRE it ' +
+                     'are named in the reply and the delete still happens**, ' +
+                     'which is deliberate: refusing would mean a role could ' +
+                     'not be removed until every application naming it had ' +
+                     'been edited, and those entries are usually the thing ' +
+                     'somebody is in the middle of changing. Each of them now ' +
+                     'requires a role NOBODY holds and is therefore issued ' +
+                     'nothing at all — so the consequence is said at the ' +
+                     'moment it is created rather than discovered later as a ' +
+                     'service that stopped working.\n\nNothing already ISSUED ' +
+                     'is touched. A token minted while somebody held the role ' +
+                     'is still valid and still carries it in the roles claim.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            role: { type: 'string', description: 'The role to remove.' }
+          },
+          required: ['role'],
+          examples: [{ role: 'staff' }],
+          additionalProperties: false
+        },
+        responseDescription: 'What was removed, and which applications now ' +
+                             'require something nobody can hold.' },
+
+      { action: 'describe-role', operationId: 'describeRole',
+        summary: 'Change what a role says it is for',
+        description: 'Replaces the `description` and leaves the membership ' +
+                     'exactly as it was. It is an action of its own rather ' +
+                     'than a field on `create-role` because creating an ' +
+                     'existing role is refused: roles are edited in place.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            role: { type: 'string', description: 'The role.' },
+            description: { type: 'string',
+                           description: 'The new description. An empty string ' +
+                                        'clears it.' }
+          },
+          required: ['role'],
+          examples: [{ role: 'staff',
+                       description: 'Anybody with a desk in the building' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The role that was changed.' },
+
+      { action: 'add-member', operationId: 'addRoleMember',
+        summary: 'Give somebody a role',
+        description: 'Adds one value to the role entry. **Which of the three ' +
+                     'lists it goes in is `kind`, and the three are looked up ' +
+                     'in three different places**, so naming the wrong one ' +
+                     'succeeds and writes something that will never ' +
+                     'match:\n\n* `user` — a username. The person need not ' +
+                     'exist: this service creates a directory entry for any ' +
+                     'name on first sight, so a role can be granted before ' +
+                     'its holder has ever signed in.\n* `group` — a group in ' +
+                     '`ou=groups`. Every member holds the role, **resolved at ' +
+                     'DECISION TIME** rather than expanded on write, so an ' +
+                     '`ldapmodify` adding somebody to the group changes the ' +
+                     'very next token.\n* `application` — an application that ' +
+                     'holds the role AS ITSELF, which is what a ' +
+                     '`client_credentials` grant is decided on.\n\nIt is NOT ' +
+                     'the same relation as `appRequiredRole` on an ' +
+                     'application entry, which is what that application ' +
+                     'DEMANDS of others. An application appears in both and ' +
+                     'means opposite things in each.\n\nA BUILT-IN role is ' +
+                     'refused by name: those six are computed and have no ' +
+                     'membership to edit.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            role: { type: 'string', description: 'The role being given.' },
+            kind: { type: 'string', enum: ['user', 'group', 'application'],
+                    description: 'Which of the three lists the member goes ' +
+                                 'in.' },
+            member: { type: 'string',
+                      description: 'The person, group or application. Named ' +
+                                   '`member` rather than `name` on purpose: ' +
+                                   '`role` is the role\'s own name, and a ' +
+                                   'body that confused the two would succeed ' +
+                                   'and create something plausible.' }
+          },
+          required: ['role', 'kind', 'member'],
+          examples: [{ role: 'staff', kind: 'user', member: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Who now holds what.' },
+
+      { action: 'remove-member', operationId: 'removeRoleMember',
+        summary: 'Take a role away',
+        description: 'Removes one value from the role entry. Matched ' +
+                     'case-insensitively, for the reason the register gives: ' +
+                     'a username here arrives from a login form, a SAML ' +
+                     'subject, a Kerberos principal and a `client_id`, and ' +
+                     'this service has always treated those as one identity ' +
+                     'however they were typed.\n\n**Nothing already ISSUED is ' +
+                     'touched**, exactly as revoking a delegated permission ' +
+                     'does not re-judge a grant already made. The next ' +
+                     'issuance is decided without the role; a token minted a ' +
+                     'minute ago still carries it.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            role: { type: 'string', description: 'The role being taken away.' },
+            kind: { type: 'string', enum: ['user', 'group', 'application'],
+                    description: 'Which list to remove it from.' },
+            member: { type: 'string',
+                      description: 'The person, group or application.' }
+          },
+          required: ['role', 'kind', 'member'],
+          examples: [{ role: 'staff', kind: 'user', member: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Who no longer holds what.' }
+    ] },
+
   { method: 'GET', path: BASE + '/consent', tag: 'Delegation',
     operationId: 'getConsent',
     summary: 'What people agreed applications may ask for on their behalf',
@@ -6119,22 +9628,361 @@ function operationSummaries() {
 // One express route per row, which for the four action resources is one pattern
 // behind every action in it. Registering at require time is what every module
 // here does; see rule 1.
+// ---------------------------------------------------------------------------
+// THE GATE (2026-09-06), AND IT IS THE ONLY THING BETWEEN THIS API AND A TOTAL
+// AUTHENTICATION BYPASS IN PRODUCT MODE.
+//
+// **THIS RESOURCE IS UNGATED IN DEVELOPMENT AND THAT IS DELIBERATE** — it is
+// what the tests drive, and it is the way back in when nobody holds a role,
+// which a service that checks no password needs because there is otherwise no
+// way to bootstrap an administrator. `mgmt-api/CLAUDE.md` has argued that since
+// this API existed, and every word of it is still true of development mode.
+//
+// It cannot survive into a product. Anybody who can reach this port can grant
+// themselves both console roles through `POST /admin-api/rbac/grant`, so an
+// ungated management API is not "a convenience beside a secured console" — it
+// is the console's gate with a documented way around it.
+//
+// **ONE MIDDLEWARE RATHER THAN A CHECK PER HANDLER**, and the reason is this
+// file's shape: there are 232 operations behind 30-odd routes, and a check per
+// handler is 232 chances to add the 233rd without one. Registered BEFORE the
+// routes below, because express applies middleware only to routes added after
+// it — rule 1's other half.
+//
+// **THE EXPLORER AND ITS DOCUMENT ARE GATED TOO.** They describe every
+// operation this service offers, which is a map of the administrative surface;
+// a product deployment that served that to anybody would be handing out the
+// floor plan. They are HTML and JavaScript rather than JSON, so the refusal is
+// shaped for a browser.
+// ---------------------------------------------------------------------------
+// AND SINCE 2026-09-09 THE FIRST QUESTION IS AN ACCESS TOKEN, IN EVERY MODE.
+//
+// The paragraphs above are the record of what this surface used to be and are
+// kept because the argument they make is still the argument for the OFF
+// switch: `adminApi.authRequired` restores the open API exactly, and it is
+// the way back in when nobody can mint a token.
+//
+// What changed is the default. `/admin-api` is a MACHINE surface — no browser,
+// no session, no sign-in screen — so it is reached the way a machine reaches a
+// resource server: an OAuth 2.0 access token this service issued, audienced to
+// this API, carrying `admin:read` for a read and `admin:write` for anything
+// that changes state. Three things are checked and each refuses differently,
+// because they are three different mistakes:
+//
+//   * NO TOKEN, or one this service did not sign, or an expired one — 401 with
+//     a `WWW-Authenticate` header naming the scopes, which is what an OAuth
+//     client is built to read.
+//   * A TOKEN FOR SOMETHING ELSE — 403. An access token is a bearer
+//     credential, so one minted for another resource server must not be
+//     replayable here; that is the whole purpose of `aud` and it is the check
+//     most often left out.
+//   * A TOKEN WITHOUT THE SCOPE THE OPERATION NEEDS — 403 from the POLICY,
+//     not from this code. The scopes become the built-in ADMIN_READ and
+//     ADMIN_WRITE roles (see `common/roles.js`) and the XACML access-control
+//     document asks for the one the action requires, so what this surface
+//     demands is stated where every other access decision in this service is
+//     stated rather than in an `if` here.
+//
+// THE SCOPE IS NOT THE ROLE AND THE MAPPING IS DELIBERATE. A scope is what a
+// client asked for and the authorization server granted; a role is what a
+// policy names. Keeping them apart is what lets a deployment write "a read of
+// the management API needs ADMIN_READ" without the document knowing that OAuth
+// exists.
+// ---------------------------------------------------------------------------
+function bearerOf(req) {
+  const said = String((req.headers && req.headers.authorization) || '');
+  if (!/^bearer\s+/i.test(said)) {
+    return '';
+  }
+  return said.replace(/^bearer\s+/i, '').trim();
+}
+
+// What `aud` has to name. Empty configuration means this service's own
+// `/admin-api` under the host the request arrived on, which is exactly what a
+// client gets by asking `resource=<base>/admin-api` at the token endpoint.
+function wantedAudience(req) {
+  const pinned = String(config.value('adminApi.audience') || '').trim();
+  if (pinned) {
+    return pinned;
+  }
+  // COMPUTED OUTSIDE ANY REALM, for the reason the signing key is taken from
+  // the default realm below: this credential is service-wide. `baseUrlOf()`
+  // glues on `realms.currentPrefix()`, so under `/realm/acme` it would answer
+  // `https://host/realm/acme/admin-api` — a different audience per realm, and
+  // therefore a token per realm, which is exactly the per-realm administrator
+  // this service refuses to have. Running in the default realm gives the empty
+  // prefix and one audience everywhere.
+  return realms.run(realms.get(realms.DEFAULT_ID), function () {
+    return baseUrlOf(req);
+  }) + BASE;
+}
+
+function audienceAccepted(claims, req) {
+  const wanted = wantedAudience(req);
+  const held = Array.isArray(claims.aud) ? claims.aud
+    : (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
+  return held.map(String).indexOf(wanted) >= 0;
+}
+
+app.use(BASE, function (req, res, next) {
+  if (config.value('adminApi.authRequired')) {
+    const scopesWanted = req.method === 'GET' ? 'admin:read' : 'admin:write';
+    const presented = bearerOf(req);
+    if (!presented) {
+      res.set('WWW-Authenticate',
+              'Bearer realm="' + BASE + '", scope="admin:read admin:write"');
+      return sendJson(res, 401, { error: 'unauthorized', errors: [
+        'This API requires an OAuth 2.0 access token. Ask ' +
+        '/oauth2/token for one with `grant_type=client_credentials`, ' +
+        '`scope=admin:read admin:write` and `resource=' +
+        wantedAudience(req) + '`, then send it as `Authorization: Bearer`. ' +
+        'adminApi.authRequired turns this off.'] });
+    }
+    // ---------------------------------------------------------------------
+    // VERIFIED AGAINST THE DEFAULT REALM'S KEY, WHEREVER THIS IS REACHED.
+    //
+    // `STS` is a proxy over the AMBIENT realm's key set, so under
+    // `/realm/<id>/admin-api` it is that realm's — and a token minted at the
+    // default realm's token endpoint then fails to verify, which is a 401 on a
+    // perfectly good credential.
+    //
+    // Taking the default realm's key is not a workaround for that; it is the
+    // same rule the console's two roles already follow, for the same reason.
+    // Those are groups in the DEFAULT realm's directory, read there from every
+    // realm, "because a per-realm roster would mean anybody who can create a
+    // realm can make themselves an administrator of the service". A per-realm
+    // SIGNING KEY for this API is that hole with a different shape: anybody who
+    // could create a realm could mint themselves a token its own management API
+    // would believe. So the credential for this surface is service-wide, and
+    // what a realm still decides is what the operations reach.
+    //
+    // The AUDIENCE needs no such care: `baseUrlOf()` answers scheme and host
+    // with no path, so `<base>/admin-api` is the same string in every realm.
+    // ---------------------------------------------------------------------
+    let claims = null;
+    try {
+      const certPem = realms.run(realms.get(realms.DEFAULT_ID),
+                                 function () { return STS.certPem; });
+      claims = stsCrypto.verifyJws(presented, certPem);
+    } catch (e) {
+      claims = null;
+    }
+    if (!claims) {
+      res.set('WWW-Authenticate',
+              'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+      return sendJson(res, 401, { error: 'invalid_token', errors: [
+        'That access token was not issued by this service, or its signature ' +
+        'does not verify. Tokens are signed with the key at /oauth2/jwks and ' +
+        'that key is regenerated on every start in development mode.'] });
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.exp && Number(claims.exp) <= now) {
+      res.set('WWW-Authenticate',
+              'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+      return sendJson(res, 401, { error: 'invalid_token', errors: [
+        'That access token expired at ' +
+        new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
+    }
+    if (!audienceAccepted(claims, req)) {
+      return sendJson(res, 403, { error: 'forbidden', errors: [
+        'That access token is for a different audience. It carries ' +
+        JSON.stringify(claims.aud || null) + ' and this API answers to "' +
+        wantedAudience(req) + '". A bearer token minted for another resource ' +
+        'server must not be replayable here, which is what `aud` is for.'] });
+    }
+    const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
+    const who = String(claims.client_id || claims.sub || '(a client)');
+    const held = roles.rolesOf({ kind: 'application', name: who,
+                                 authenticated: true, scopes: scopes });
+    const policy = accessGate.check({
+      resource: accessGate.RESOURCE.MANAGEMENT_API,
+      action: req.method === 'GET' ? accessGate.ACTION.READ
+                                   : accessGate.ACTION.WRITE,
+      // THE REQUIREMENT IS STATED HERE AND ENFORCED THERE. `requiredRoles`
+      // travels in the REQUEST — the `access-control` document is written to
+      // take it from there, which is what lets one policy decide for every
+      // surface — so naming the role per action is the whole of encoding
+      // "a read needs ADMIN_READ and a write needs ADMIN_WRITE" in XACML.
+      // Nothing in this file decides the outcome; it decides the question.
+      requiredRoles: [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'],
+      subject: { name: who, authenticated: true, roles: held, sessionId: null },
+      context: { method: req.method, path: req.originalUrl || req.url }
+    });
+    if (!policy.allowed) {
+      log.info('admin-api: the access policy refused ' + req.method + ' ' +
+               (req.originalUrl || req.url) + ' for ' + who + '. ' +
+               policy.why);
+      return sendJson(res, 403, { error: 'forbidden', errors: [
+        'The access policy refused this request. ' + policy.why +
+        ' This token carries the scope(s) ' +
+        (scopes.length ? scopes.join(', ') : '(none)') + ', which is the ' +
+        'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. A ' +
+        (req.method === 'GET' ? 'read needs admin:read (ADMIN_READ)'
+                              : 'write needs admin:write (ADMIN_WRITE)') +
+        '. The document is on /admin/xacml and xacml.enforceAccess turns ' +
+        'the layer off.'] });
+    }
+    return next();
+  }
+  if (!mode.gatesManagementApi()) {
+    return next();
+  }
+  const gate = admin.gateStateFor(req);
+  // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET needs
+  // Admin Read and anything else needs Admin Write. Asking `admin.js` rather
+  // than re-deriving it is what stops this becoming a second answer to who may
+  // administer this service — the mistake `logout.js` exists to prevent one
+  // layer down.
+  const needed = req.method === 'GET' ? gate.read : gate.write;
+  if (needed) {
+    // -------------------------------------------------------------------
+    // AND THEN THE POLICY (2026-09-06), which is the layer ABOVE the roles
+    // and not a replacement for them.
+    //
+    // The two console roles decide who may administer this service and stay
+    // exactly where they are — `admin.gateStateFor()` is still the one answer
+    // to that, which is what stops this becoming a second one. What the gate
+    // adds is that a deployment can narrow this surface by POLICY, with the
+    // subject taken from the SESSION that got the caller through the check
+    // above and never from anything on the request.
+    //
+    // **IT RUNS ONLY WHERE THIS SURFACE IS GATED AT ALL**, which is the same
+    // `mode.gatesManagementApi()` branch three lines up. In development this
+    // API is open by design — there is no credential, so no session, so no
+    // subject — and asking a policy whose built-in document refuses an
+    // unauthenticated subject would close the door the tests drive and the
+    // door somebody locked out of the console gets back in through. A policy
+    // layer must not be the thing that removes the recovery path.
+    //
+    // On an unedited product deployment it permits: the built-in document
+    // asks for a role only where somebody has required one, and the caller
+    // has already been shown to hold Admin Read or Admin Write.
+    const policy = accessGate.check({
+      resource: accessGate.RESOURCE.MANAGEMENT_API,
+      action: req.method === 'GET' ? accessGate.ACTION.READ
+                                   : accessGate.ACTION.WRITE,
+      subject: { name: gate.username,
+                 authenticated: !!(gate.session &&
+                                   gate.session.authenticated !== false),
+                 roles: gate.roles || [],
+                 sessionId: gate.session ? gate.session.id : null },
+      context: { method: req.method, path: req.originalUrl || req.url }
+    });
+    if (!policy.allowed) {
+      log.info('admin-api: the access policy refused ' + req.method + ' ' +
+               (req.originalUrl || req.url) + ' for ' +
+               (gate.username || '(nobody)') + '. ' + policy.why);
+      return sendJson(res, 403, {
+        error: 'forbidden',
+        errors: ['The access policy refused this request. ' + policy.why +
+                 ' This is a POLICY decision rather than a missing role: ' +
+                 (gate.username || 'the caller') + ' holds ' +
+                 ((gate.roles && gate.roles.length)
+                   ? gate.roles.join(', ') : 'no role') +
+                 ' and passed the role check. The document is on ' +
+                 '/admin/xacml and xacml.enforceAccess turns the layer off.']
+      });
+    }
+    return next();
+  }
+  log.info('admin-api: product mode refused ' + req.method + ' ' +
+           (req.originalUrl || req.url) + ' — ' +
+           (gate.username ? gate.username + ' holds ' +
+              (gate.roles.length ? gate.roles.join(', ') : 'no role')
+            : 'nobody is signed in') + '.');
+  const wantsHtml = /html/i.test(String(req.headers.accept || ''));
+  if (wantsHtml) {
+    return res.status(403).type('html').send(
+      '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+      '<title>Forbidden</title></head><body><h1>403 Forbidden</h1>' +
+      '<p>This service is in <strong>product mode</strong>, where the ' +
+      'management API requires the same sign-in and roles the console does. ' +
+      '<a href="/admin">Sign in</a>.</p></body></html>');
+  }
+  return sendJson(res, gate.username ? 403 : 401, {
+    error: 'forbidden',
+    errors: ['This service is in product mode, where ' + BASE + ' requires ' +
+             'the same sign-in and the same two roles /admin does — ' +
+             (req.method === 'GET' ? gate.readGroup : gate.writeGroup) +
+             ' for a ' + req.method + '. ' +
+             (gate.username
+               ? 'You are signed in as ' + gate.username + ' and hold ' +
+                 (gate.roles.length ? gate.roles.join(', ') : 'no role') + '.'
+               : 'Nobody is signed in on this request.') +
+             ' In development mode this API is open, which is what the tests ' +
+             'drive and the way back in when nobody holds a role.']
+  });
+});
+
+compileRequestSchemas();
+
+// ---------------------------------------------------------------------------
+// REGISTRATION IS THE CHOKE POINT, and it has to be: there is no generic
+// dispatcher here. Every handler in the table above reads its own body with
+// `parseBody(req)` and refuses in its own words, so a check written inside them
+// would be a hundred and fifty-one checks and the hundred and fifty-second
+// would be forgotten. Here it is one wrapper, driven by the same table the
+// OpenAPI document is built from, so an operation cannot acquire a schema
+// without acquiring its enforcement.
+//
+// A GET is registered exactly as before. Nothing about a query string goes
+// through here — that is `common/validation.js`'s guard and the per-page
+// schemas.
+// ---------------------------------------------------------------------------
 ROUTES.forEach(function (entry) {
   const path = entry.route || entry.path;
   if (entry.method === 'GET') {
     app.get(path, entry.handler);
     return;
   }
-  app.post(path, entry.handler);
+  app.post(path, function (req, res) {
+    // The route this request matched, so the wrapper can find its schema
+    // without re-deriving the path from what express matched.
+    req.__adminApiRoute = path;
+    req.__adminApiHandlerOwnsBody = !!entry.handlerOwnsBody;
+    const checked = checkRequestBody(req);
+    if (!checked.ok) {
+      log.debug("The management API refused a request body against " +
+                (entry.operationId || path) + "'s schema.");
+      sendJson(res, 400, { ok: false, errors: checked.errors });
+      return undefined;
+    }
+    return entry.handler(req, res);
+  });
 });
 
+// WHAT THIS BANNER SAYS CHANGED ON 2026-09-08 AND THE OLD TEXT IS WORTH
+// RECORDING, because it was true for as long as this file existed and is now
+// exactly wrong: it read "It is NOT protected", and told a reader that this
+// was the surface to reach for when nobody holds a console role. Anybody
+// working from a log line from an older build will look for that sentence, so
+// the replacement contradicts it in the same place rather than going quiet.
+//
+// It is computed at require time and says "currently", because
+// `adminApi.authRequired` is changeable while running — a banner that stated
+// it as a fact would be a line in a log claiming something the operator turned
+// off ten minutes later.
 log.info('The management API is at ' + BASE + ': ' +
          operationSummaries().length + ' operations over the same functions ' +
          'the /admin console calls. Its OpenAPI document is at ' + BASE +
          '/openapi.json and an explorer that calls it is at ' + BASE +
-         '/docs. It is NOT protected — and the console now IS ' +
-         '(admin.authRequired), so this is the surface to reach for when ' +
-         'nobody holds a console role: POST ' + BASE + '/rbac/grant.');
+         '/docs. ' +
+         (config.value('adminApi.authRequired')
+           ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
+             'audience ' + (config.value('adminApi.audience') || BASE) + ', ' +
+             'scope admin:read to read and admin:write to write, checked as a ' +
+             'XACML access decision against the ADMIN_READ and ADMIN_WRITE ' +
+             'roles. Get one from the client_credentials grant as the seeded ' +
+             'application sts-management-api, whose secret is ' +
+             'adminApi.clientSecret. THAT SETTING IS THE BOOTSTRAP: this ' +
+             'surface used to be the way back in when nobody held a console ' +
+             'role, and it is only still that if the secret was pinned before ' +
+             'the start — a secret minted per start is readable only through ' +
+             'the API it unlocks.'
+           : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
+             'console IS (admin.authRequired), so this is the surface to ' +
+             'reach for when nobody holds a console role: POST ' + BASE +
+             '/rbac/grant.'));
 
 module.exports = {
   BASE: BASE,

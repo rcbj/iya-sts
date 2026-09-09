@@ -173,6 +173,10 @@ const { log, logArtifact, STS, xmlEscape, genId, iso, baseUrlOf, randomId,
 // Read per request rather than captured at require time, so that /admin/config
 // and /admin-api can change what the next response says and how it is signed.
 const config = require('../common/config');
+// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, so a
+// require from 10b moves no route and closes no cycle. See
+// `common/issuance_gate.js`; an unfilled decider answers "allowed".
+const gate = require('../common/issuance_gate');
 // The one assertion writer for this version. See decision 7.
 const { buildSaml11Assertion, CONFIRMATION_BEARER, CONFIRMATION_ARTIFACT,
         NAMEID_FORMAT_UNSPECIFIED } = require('./saml11');
@@ -315,7 +319,7 @@ const REQUEST_TTL_MS = 10 * 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingFlows = realms.map();
+const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows' });
 
 // Artifact -> the ASSERTION it stands for (decision 3), and the context needed
 // to build a Response around it later. Resolving one deletes it, so this map is
@@ -325,7 +329,7 @@ const pendingFlows = realms.map();
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const artifacts = realms.map();
+const artifacts = realms.map({ persist: 'saml11_sso.artifacts' });
 
 // AssertionID -> the assertion, for <samlp:AssertionIDReference>. It is a
 // SEPARATE map from the artifacts above and outlives them on purpose: an
@@ -342,7 +346,7 @@ const ASSERTION_CACHE_MAX = 500;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const assertionsById = realms.map();
+const assertionsById = realms.map({ persist: 'saml11_sso.assertionsById' });
 
 // ---------------------------------------------------------------------------
 // WHICH RELYING PARTY A REQUEST NAMES, which is decision 1's hardest
@@ -1265,6 +1269,44 @@ function interSiteTransfer(req, res) {
   // already signed in. Every arrival with a session is therefore either single
   // sign-on or that session's own sign-in coming back, which is exactly the
   // pair `notePresented()` tells apart.
+  // THE ROLE GATE, and its refusal is a PAGE for exactly the reason the
+  // cancellation branch above shows a page: this profile has no request
+  // message, so there is no `InResponseTo` to name and nothing to answer. SAML
+  // 2.0 sends a `RequestDenied` Response to the service provider; this one
+  // cannot, and that is a property of SAML 1.1 rather than a gap here. 403
+  // rather than 400: the request was fine and the answer is that this person
+  // may not have an assertion for this relying party.
+  const roleAnswer = gate.check({
+    application: rpId,
+    kind: gate.ISSUANCE.SAML_ASSERTION,
+    // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
+    //
+    // This was the constant `true` until unauthenticated sessions existed, and
+    // a constant is what it looked like: every session this service held had
+    // somebody behind it. `authenticated !== false` rather than a plain read,
+    // because a session object made before this field existed has no such
+    // property and must go on meaning what it always meant.
+    subject: { kind: 'user', name: String((session.user || {}).username || ''),
+               authenticated: session.authenticated !== false },
+    claims: null
+  });
+  if (!roleAnswer.allowed) {
+    log.info('saml11: the issuance policy refused an assertion for "' +
+             String((session.user || {}).username) + '" to "' + rpId + '". ' +
+             roleAnswer.why);
+    pendingFlows.delete(String(params.fid || ''));
+    log.debug("Leaving interSiteTransfer(). The issuance policy refused it.");
+    return samlError(res, 403, 'Refused by policy', roleAnswer.why,
+      '<p>The person is signed in. The XACML issuance policy would not let ' +
+      'this relying party have an assertion for them &mdash; the roles it ' +
+      'requires are on its application entry, and who holds a role is on ' +
+      '<a href="/admin/roles">/admin/roles</a>.</p>' +
+      '<p>The SAML 2.0 profile answers this with a ' +
+      '<code>&lt;samlp:Response&gt;</code> carrying <code>RequestDenied</code>, ' +
+      'delivered to the service provider. This one cannot, for the reason a ' +
+      'cancellation cannot be reported either: there is no request to answer.</p>');
+  }
+
   pendingFlows.delete(String(params.fid || ''));
   notePresented(session, 'SAML 1.1', req);
   issueSignIn(res, req, {

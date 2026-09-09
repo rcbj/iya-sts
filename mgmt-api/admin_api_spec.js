@@ -126,6 +126,25 @@ const ISSUED_RECORD = {
                    'there was one. Empty for anything issued with no human ' +
                    'behind it, a client-credentials token included.'
     },
+    setId: {
+      type: 'string',
+      description: 'WHICH REPLY THIS CAME BACK IN. OAuth 2.0 and OIDC are ' +
+                   'the only families here that hand back several ' +
+                   'credentials at once — an access token, a refresh token ' +
+                   'and an ID Token out of one code redemption — so this ' +
+                   'joins them, and every other family leaves it empty ' +
+                   'because each of them issues one credential per act.\n\n' +
+                   'It is stated by the ISSUER at the moment it builds the ' +
+                   'reply and is never derived: two clients redeeming two ' +
+                   'codes at the same client in the same millisecond produce ' +
+                   'six records agreeing on every other field here, so a ' +
+                   'heuristic would merge replies nobody ever received. It ' +
+                   'is in no token, no client ever sees it, and it is NOT a ' +
+                   'claim.\n\nA REFRESH GETS A NEW ONE. A set is one ' +
+                   'response, so the second generation of a grant is its own ' +
+                   'set; what joins the generations is the refresh lineage, ' +
+                   'which is a different relation.'
+    },
     jkt: { type: 'string',
            description: 'The DPoP key thumbprint, where the token is bound.' },
     grant: { type: 'string', description: 'The grant that issued it.' },
@@ -600,7 +619,40 @@ const SCHEMAS = {
     'What this API is, where its document is, and every operation it offers.',
     {
       name: { type: 'string' },
-      version: { type: 'string' },
+      version: {
+        type: 'string',
+        description: 'M.N.O — the release from the repo-root VERSION file ' +
+                     'and the build number this artifact was stamped with.'
+      },
+      build: {
+        type: 'string',
+        description: 'The O of M.N.O on its own: the UTC build instant as ' +
+                     'YYYYMMDDHHMMSS, or whatever BUILD_NUMBER was set to at ' +
+                     'build time.'
+      },
+      commit: {
+        type: 'string',
+        description: 'The first twelve characters of the commit this was ' +
+                     'built from. Absent when the build could not know it — ' +
+                     'the container build context carries no .git, so this is ' +
+                     'present only when GIT_COMMIT was passed in.'
+      },
+      builtAt: {
+        type: 'string', format: 'date-time',
+        description: 'When the build number was fixed. Read it with ' +
+                     '`stamped`: this is when the ARTIFACT was built, or when ' +
+                     'this PROCESS started if there is no artifact.'
+      },
+      stamped: {
+        type: 'boolean',
+        description: 'True when this version came off a record written at ' +
+                     'image build time, which is what a container reports. ' +
+                     'False means the process computed its own number at ' +
+                     'startup because nothing was ever built — a checkout ' +
+                     'being run — so the build number is the moment it ' +
+                     'started and comparing it against another instance says ' +
+                     'nothing.'
+      },
       openapi: { type: 'string', description: 'Where the document is.' },
       docs: { type: 'string', description: 'Where the explorer is.' },
       console: { type: 'string',
@@ -1484,6 +1536,87 @@ const SCHEMAS = {
       matched: { type: 'integer', description: 'How many the filter matched.' }
     })),
 
+  // THE SAME IDEA FOR A PERSON, and the same argument for publishing it: what
+  // `POST /admin-api/users/create` accepts in `attributes` is a CLOSED
+  // catalogue — the attributes vc_claims.js says a person in this directory
+  // has — and a name that is not on it is refused rather than dropped. A
+  // caller that reads this cannot construct a create the service will refuse.
+  //
+  // It is the same list the console's /admin/users/new form is drawn from, and
+  // that is the point rather than a coincidence: one catalogue read through two
+  // doors, so a field on the form and a field this document offers cannot come
+  // apart.
+  NewUserForm: openObject(
+    'Every attribute a person may be created with, where the entry would land, ' +
+    'and the four ways they can be given a way in. Mirrors GET ' +
+    '/admin/users/new, which is the console page built from exactly this list. ' +
+    'It creates nobody itself: the create is POST /admin-api/users/create.',
+    {
+      directory: {
+        type: 'boolean',
+        description: 'FALSE when no directory is loaded in this process, in ' +
+                     'which case there is no ou=users container and a create ' +
+                     'would be refused. The call still answers 200: the ' +
+                     'operation exists and the store does not, and those are ' +
+                     'different facts.'
+      },
+      container: { type: 'string',
+                   description: 'The DN a new person would be created under, IN ' +
+                                'THE REALM THIS CALL ARRIVED IN. The directory ' +
+                                'is per realm, so /realm/acme/admin-api/... ' +
+                                'answers with acme\'s ou=users and a person ' +
+                                'created there is invisible to every other ' +
+                                'realm, including to an ldapsearch that does ' +
+                                'not use that realm\'s base DN.' },
+      realm: openObject('The trust realm this call arrived in: `id` and `name`.', {}),
+      mode: { type: 'string',
+              description: 'development or product, from global.mode. It ' +
+                           'decides only whether EXAMPLE DATA is offered; what ' +
+                           'a create may write is the same in both.' },
+      offersExampleData: {
+        type: 'boolean',
+        description: 'Whether the console draws its *Fill with example data* ' +
+                     'button, which is development mode only. Published rather ' +
+                     'than left to be inferred from `mode`, so a caller need ' +
+                     'not know which predicate decides it. THERE IS NO API ' +
+                     'EQUIVALENT OF THAT BUTTON and there should not be: it ' +
+                     'fills a FORM for a person to edit, and the same invented ' +
+                     'values are what `invent: true` on a create writes ' +
+                     'directly — which is this operation\'s default and has ' +
+                     'been since before the button existed.'
+      },
+      fields: {
+        type: 'array',
+        description: 'THE CLOSED ATTRIBUTE CATALOGUE, in the order the console ' +
+                     'draws it: one row per attribute a person here may be ' +
+                     'given, each `{attribute, label, schema, claim, invented}`. ' +
+                     '`attribute` is the name to send as a key of `attributes` ' +
+                     'on a create AND the name the entry carries, so an ' +
+                     'ldapsearch shows exactly what was sent. `claim` is where ' +
+                     'the value lands in an issued token or credential. ' +
+                     '`schema` is the document the attribute name comes from, ' +
+                     'which matters because THIS DIRECTORY HAS NO SCHEMA and ' +
+                     'would refuse none of them anywhere. `invented` says ' +
+                     'whether this service can make a value up for it — one row ' +
+                     'cannot (`description`, which this service writes itself ' +
+                     'to say why the entry exists), so `invent: true` leaves ' +
+                     'that one alone.\n\n`uid` IS DELIBERATELY NOT ON THIS ' +
+                     'LIST: it is the username, sent as `username`, and a ' +
+                     'second way to set it would allow uid=alice whose uid says ' +
+                     'bob. `userPassword` is not on it either — a password goes ' +
+                     'through `credential`, so that it is hashed rather than ' +
+                     'written down.',
+        items: openObject('One attribute a person may be created with.', {})
+      },
+      credentials: {
+        type: 'array',
+        description: 'The four ways a person can be given a way in, each ' +
+                     '`{id, label}`. `id` is what a create sends as ' +
+                     '`credential`: none, password, generate, activation.',
+        items: openObject('One credential option.', {})
+      }
+    }),
+
   // WHAT A CREATE MAY SAY, answered by the service rather than described in
   // this document. The two vocabularies below are the closed lists
   // createApplication() validates against, so a caller that reads this cannot
@@ -1763,6 +1896,84 @@ const SCHEMAS = {
                         items: openObject('One attested agent.', {}) }
     }),
 
+  // THE THREE ADDED ON 2026-09-05. Each of these containers' owning modules
+  // published a SCHEMA whose comment said it was drawn under `/admin/ldap/*`,
+  // and for three of them no page had ever been written — the export was dead
+  // in `common/roles.js`, `xacml/xacml_store.js` and
+  // `xacml/xacml_pep_registry.js`. The pages exist now, so rule 7 owes each of
+  // them an operation here.
+  DirectoryRoleList: openObject(
+    'The MEMBERSHIP half of the role register as the directory holds it. The ' +
+    'other half is not in this container: which roles an application DEMANDS ' +
+    'is `appRequiredRole` on the application entry, so nothing here refuses ' +
+    'anybody by itself. `builtIn` names the six roles that are COMPUTED and ' +
+    'in no container at all, which is why an empty `roles` array is the ' +
+    'ordinary state rather than the feature being off.',
+    Object.assign({
+      baseDn: { type: 'string' },
+      container: { type: 'string', description: 'The ou=roles DN.' },
+      count: { type: 'integer' },
+      matched: { type: 'integer' },
+      shown: { type: 'integer' },
+      max: { type: 'integer', description: 'The cap, roles.maxRoles.' },
+      filter: openObject('What was asked for; null where nothing was.', {}),
+      sourceOfTruth: { type: 'string' },
+      builtIn: { type: 'array', items: { type: 'string' },
+                 description: 'The six built-in role names. They have no ' +
+                              'entry here and never will.' },
+      schema: openObject('The object classes and the attributes, read out of ' +
+                         'common/roles.js.', {}),
+      roles: { type: 'array', items: openObject('One role entry, whole.', {}) }
+    }, PAGING_PROPERTIES)),
+
+  DirectoryPolicyList: openObject(
+    'The XACML policy repository as the directory holds it — `ou=policies` IS ' +
+    'the repository. A WRITE HERE SKIPS THE TYPECHECKER, which is not true of ' +
+    'any other door into it: every write through /admin/xacml and ' +
+    '/admin-api/xacml is statically validated so that a policy which does not ' +
+    'typecheck is refused rather than answering Indeterminate on every ' +
+    'request, and an ldapmodify reaches the entry directly. Nothing caches ' +
+    'these entries.',
+    Object.assign({
+      baseDn: { type: 'string' },
+      container: { type: 'string', description: 'The ou=policies DN.' },
+      count: { type: 'integer' },
+      matched: { type: 'integer' },
+      shown: { type: 'integer' },
+      max: { type: 'integer', description: 'The cap, xacml.maxPolicies.' },
+      filter: openObject('What was asked for; null where nothing was.', {}),
+      sourceOfTruth: { type: 'string' },
+      schema: openObject('The object classes and the attributes, read out of ' +
+                         'xacml/xacml_store.js.', {}),
+      policies: { type: 'array',
+                  items: openObject('One policy entry, whole, including the ' +
+                                    'document itself.', {}) }
+    }, PAGING_PROPERTIES)),
+
+  DirectoryPepList: openObject(
+    'The remote Policy Enforcement Points that have registered with this PDP. ' +
+    'Almost every attribute is a RECORD this service wrote rather than ' +
+    'configuration somebody typed — an identity here was taken from the ' +
+    'CLIENT CERTIFICATE the PEP presented and never from the body it sent. ' +
+    'The two that are not a record are `xacmlPepEnabled`, which an ' +
+    'administrator sets and a reconnecting PEP does not clear, and ' +
+    '`xacmlPepNotifyUrl`. An empty `peps` array is not a feature that is off: ' +
+    'a PEP pulls the repository and converges without ever registering.',
+    Object.assign({
+      baseDn: { type: 'string' },
+      container: { type: 'string', description: 'The ou=peps DN.' },
+      count: { type: 'integer' },
+      matched: { type: 'integer' },
+      shown: { type: 'integer' },
+      max: { type: 'integer', description: 'The cap, xacml.maxPeps.' },
+      filter: openObject('What was asked for; null where nothing was.', {}),
+      sourceOfTruth: { type: 'string' },
+      schema: openObject('The object classes and the attributes, read out of ' +
+                         'xacml/xacml_pep_registry.js.', {}),
+      peps: { type: 'array',
+              items: openObject('One registered PEP, whole.', {}) }
+    }, PAGING_PROPERTIES)),
+
   DirectoryService: openObject(
     'What the embedded directory IS right now, as opposed to what it is SET ' +
     'to be — which is GET /admin-api/ldap. The two disagree on a host whose ' +
@@ -1915,17 +2126,163 @@ const SCHEMAS = {
       ldapsListening: { type: 'boolean' }
     }),
 
+  IssuedSet: openObject(
+    'ONE ISSUANCE — everything that came back in a single reply, which is ' +
+    'what `GET /admin-api/tokens` lists since 2026-09-05.\n\nOAuth 2.0 and ' +
+    'OIDC are the only families this service speaks that hand back several ' +
+    'credentials at once: redeeming an authorization code returns an access ' +
+    'token, a refresh token and an ID Token in one response, and ' +
+    '`response_type=id_token token` returns two in one fragment. Every other ' +
+    'family issues one credential per act, so a SAML assertion, a Kerberos ' +
+    'ticket and a SPIFFE SVID are each a set of one — `grouped` is false and ' +
+    '`members` has one entry.\n\nA SET IS ONE RESPONSE AND NOT ONE GRANT: ' +
+    'refreshing produces a new set beside the old one rather than a fourth ' +
+    'member of it, because a set has one issued instant and one grant and a ' +
+    'row that grew over an afternoon could have neither. What joins the ' +
+    'generations of a grant is the refresh lineage, which is a different ' +
+    'relation.',
+    {
+      setKey: {
+        type: 'string',
+        description: 'WHAT ADDRESSES THIS SET — the value `revoke-set`, ' +
+                     '`restore-set` and `GET /admin-api/tokens/set` take. ' +
+                     '`set:<id>` for a reply that carried several ' +
+                     'credentials, `one:<row handle>` for a set of one, so ' +
+                     'that every row of this list is addressable without a ' +
+                     'caller having to know which kind it holds.'
+      },
+      setId: {
+        type: 'string',
+        description: 'The issuer\'s own id for the reply, empty on a set of ' +
+                     'one. See `setId` on IssuedRecord for why it is stated ' +
+                     'rather than derived.'
+      },
+      grouped: {
+        type: 'boolean',
+        description: 'Whether more than one credential came back together. ' +
+                     'True only for OAuth 2.0 and OIDC.'
+      },
+      size: { type: 'integer', description: 'How many credentials are in it.' },
+      kinds: {
+        type: 'array', items: { type: 'string' },
+        description: 'The kinds it holds, in the order they were minted.'
+      },
+      families: { type: 'array', items: { type: 'string' } },
+      family: { type: 'string' },
+      state: {
+        type: 'string',
+        description: 'The state every member shares, or `mixed` when they ' +
+                     'differ — which is the ORDINARY case rather than a ' +
+                     'fault, since an access token and the refresh token ' +
+                     'issued with it have very different lifetimes. ' +
+                     'Reporting one of them would be this list deciding ' +
+                     'which member matters. `states` has the breakdown, and ' +
+                     'the `state` filter matches a set when ANY member holds ' +
+                     'the state asked for.'
+      },
+      states: openObject('How many members are in each state.', {}),
+      issuedAt: {
+        type: 'integer',
+        description: 'Milliseconds since the epoch — the earliest member\'s, ' +
+                     'which is when the reply was produced.'
+      },
+      expiresAtMs: {
+        type: 'integer',
+        description: 'The EARLIEST member\'s expiry: when the set starts to ' +
+                     'come apart, which is what somebody debugging a refused ' +
+                     'call has arrived to find. Zero when no member states ' +
+                     'an expiry.'
+      },
+      lastExpiresAtMs: {
+        type: 'integer',
+        description: 'The latest member\'s: when the set is finished. Equal ' +
+                     'to `expiresAtMs` when they agree.'
+      },
+      username: { type: 'string' },
+      sub: { type: 'string' },
+      client_id: { type: 'string' },
+      audience: {
+        type: 'string',
+        description: 'THE FIRST MEMBER\'S. The members of one reply do not ' +
+                     'share an audience and are not meant to — an ID Token ' +
+                     'is addressed to the client and the access token beside ' +
+                     'it to the resource server — so this is the access ' +
+                     'token\'s and `members` is where the rest are.'
+      },
+      scope: {
+        type: 'string',
+        description: 'THE ACCESS TOKEN\'S. The refresh token beside it ' +
+                     'deliberately carries a different one — what was ' +
+                     'AUTHORIZED rather than what this token can do — so a ' +
+                     'single value here would hide the one place the two ' +
+                     'halves of a grant differ on purpose.'
+      },
+      sessionId: { type: 'string' },
+      sessionAuthenticated: { type: 'boolean' },
+      grant: { type: 'string' },
+      revocableCount: {
+        type: 'integer',
+        description: 'How many members `revoke-set` would act on. Zero for ' +
+                     'every SAML assertion, Kerberos ticket and SVID, and ' +
+                     'that is what makes `revoke-set` REFUSE such a set ' +
+                     'rather than report revoking nothing.'
+      },
+      revokedCount: { type: 'integer' },
+      members: {
+        type: 'array',
+        description: 'The credentials themselves, in the order they were ' +
+                     'minted.',
+        items: ISSUED_RECORD
+      }
+    }),
+
+  IssuedSetDetail: openObject(
+    'One set, by its `setKey`. `found` is false and `set` is null for a key ' +
+    'nothing holds, which is the ORDINARY answer for a set old enough to ' +
+    'have been forgotten to the cap rather than an error — `why` says which ' +
+    'of the two happened.',
+    {
+      setKey: { type: ['string', 'null'],
+                description: 'The key that was asked for, echoed back.' },
+      found: { type: 'boolean' },
+      set: { anyOf: [{ $ref: '#/components/schemas/IssuedSet' },
+                     { type: 'null' }] },
+      why: { type: ['string', 'null'] }
+    }),
+
   IssuedList: openObject(
     'Everything issued and still remembered — every JWT, every SAML ' +
-    'assertion and every Kerberos ticket — in one list, newest first. ' +
-    'OID4VCI credentials are NOT in it; they are counted on ' +
-    '/admin-api/metrics. Walk the whole list with `page` and `pages` rather ' +
-    'than guessing where it ends.',
+    'assertion, every Kerberos ticket and every SPIFFE SVID — GROUPED INTO ' +
+    'WHAT CAME BACK IN ONE REPLY, newest first. OID4VCI credentials are NOT ' +
+    'in it; they are counted on /admin-api/metrics. Walk the whole list ' +
+    'with `page` and `pages` rather than guessing where it ends.\n\n' +
+    '**IT LISTS SETS SINCE 2026-09-05 AND LISTED CREDENTIALS BEFORE THAT.** ' +
+    'The grouped list is `sets`; `issued` is the same credentials flattened ' +
+    'out of it, so a caller written against the older shape reads exactly ' +
+    'what it read and the two can never disagree, because one is built from ' +
+    'the other. What did change under `issued` is the paging: a page is now ' +
+    'a whole number of REPLIES, so that array holds between `perPage` and ' +
+    'three times it rather than exactly `perPage`.\n\n' +
+    '`page`, `pages`, `matched` and `shown` COUNT SETS. `held`, ' +
+    '`matchedCredentials`, `shownCredentials` and `heldByFamily` count ' +
+    'credentials — `held` because it has meant that since this resource ' +
+    'existed and quietly changing an old name\'s unit is the worst kind of ' +
+    'breaking change, and `heldByFamily` so that it agrees with ' +
+    '/admin-api/metrics.',
     Object.assign({
-      held: { type: 'integer' },
-      matched: { type: 'integer' },
-      shown: { type: 'integer' },
-      heldByFamily: openObject('How much of each family is held.', {}),
+      held: { type: 'integer', description: 'Credentials held, in total.' },
+      heldSets: { type: 'integer', description: 'Sets held, in total.' },
+      matched: { type: 'integer', description: 'Sets matching the filter.' },
+      matchedCredentials: {
+        type: 'integer',
+        description: 'The credentials in those sets. Larger than `matched` ' +
+                     'wherever an OAuth reply carried more than one.'
+      },
+      shown: { type: 'integer', description: 'Sets on this page.' },
+      shownCredentials: { type: 'integer',
+                          description: 'The credentials in them.' },
+      heldByFamily: openObject('How much of each family is held, IN ' +
+                               'CREDENTIALS.', {}),
       filter: openObject('What was asked for; null where nothing was.', {}),
       families: {
         type: 'array',
@@ -1939,7 +2296,16 @@ const SCHEMAS = {
                      'ones any revocation here affects.'
       },
       revokedCount: { type: 'integer' },
-      issued: { type: 'array', items: ISSUED_RECORD }
+      sets: { type: 'array', items: { $ref: '#/components/schemas/IssuedSet' } },
+      issued: {
+        type: 'array',
+        description: 'The members of `sets`, flattened, in the same order. ' +
+                     'Derived from that array rather than gathered again, ' +
+                     'which is why the two cannot come to disagree about a ' +
+                     'revocation that happened between two walks of the ' +
+                     'register.',
+        items: ISSUED_RECORD
+      }
     }, PAGING_PROPERTIES)),
 
   Config: openObject(
@@ -2437,13 +2803,435 @@ const SCHEMAS = {
         'one.', {})
     }),
 
+  // -----------------------------------------------------------------------
+  // XACML. Three schemas, because the three GETs answer three different
+  // questions and one loose object covering all of them would document none.
+  // -----------------------------------------------------------------------
+  Xacml: openObject(
+    'The Policy Decision Point. THIS IS THE ONLY FAMILY ON THIS SERVICE THAT ' +
+    'ANSWERS A QUESTION ABOUT SOMEBODY ELSE\'S BOUNDARY: every other protocol ' +
+    'here authenticates or provisions a person, and this one is handed a ' +
+    'subject who was authenticated somewhere else and asked whether they may.',
+    {
+      enabled: { type: 'boolean',
+        description: 'Whether the /xacml endpoints answer. When off they ' +
+                     'stay REGISTERED and answer 501 rather than 404 — the ' +
+                     'feature being off and the URL being wrong are ' +
+                     'different sentences to a client.' },
+      pepBias: { type: 'string', enum: ['deny-biased', 'permit-biased'],
+        description: 'THE EMBEDDED PEP\'S SETTING, NOT THE PDP\'S. The two ' +
+                     'biases agree on every Permit and every Deny and differ ' +
+                     'on Indeterminate and NotApplicable.' },
+      policies: { type: 'integer',
+        description: 'How many are in ou=policies.' },
+      enabledPolicies: { type: 'integer' },
+      root: { type: ['string', 'null'],
+        description: 'The policy the PDP starts from. NULL means every ' +
+                     'decision is NotApplicable — a PDP evaluates ONE ' +
+                     'document and reaches the rest through ' +
+                     'PolicyIdReference.' },
+      pipAvailable: { type: 'boolean',
+        description: 'Whether the Policy Information Point has the embedded ' +
+                     'directory. Without it a decision sees only the ' +
+                     'attributes the REQUEST carried, which is the ' +
+                     'pure-XACML behaviour and is not a failure.' },
+      settings: { type: ['object', 'null'], additionalProperties: true,
+        description: 'The settings drawn on /admin/xacml.' }
+    }),
+
+  // ---------------------------------------------------------------------
+  // THE TWO POLICIES THAT DECIDE THIS SERVICE'S OWN BOUNDARIES AND ARE NOT IN
+  // THE REPOSITORY (2026-09-06).
+  //
+  // `role-issuance` gates the nine issuance sites and `access-control` gates
+  // surfaces `common/access_gate.js` guards. Both are BUILT IN — the
+  // template is called at decision time rather than seeded into `ou=policies`,
+  // because that container is per trust realm — so neither appears in
+  // `policies` above and neither is offered by the editor's chooser.
+  //
+  // It is DESCRIBED here rather than left to `additionalProperties: true`
+  // because the omission is the whole defect this member was added for: a
+  // caller reading `policies` and stopping would conclude that whatever is
+  // root there is what this service enforces, and on an ordinary service that
+  // is a seeded example which enforces nothing.
+  // ---------------------------------------------------------------------
+  XacmlServiceOwnPolicy: openObject(
+    'One policy this service decides its OWN boundaries with. Built in and ' +
+    'called at decision time rather than stored, so it is not in the ' +
+    'repository — a repository entry of the same name overrides it.',
+    {
+      key: { type: 'string', enum: ['issuance', 'access'] },
+      label: { type: 'string' },
+      name: { type: 'string',
+        description: 'The entry name an override must be given for the PEP ' +
+                     'to pick it up. It is what `setting` says, NOT the ' +
+                     'template id — those are the same word today and need ' +
+                     'not be.' },
+      setting: { type: 'string',
+        description: 'The config.js key that names it: `xacml.issuancePolicy` ' +
+                     'or `xacml.accessPolicy`.' },
+      template: { type: 'string',
+        description: 'The template the built-in document is built from, and ' +
+                     'the one an override should be created from so that the ' +
+                     'two start identical.' },
+      decides: { type: 'string' },
+      asked: { type: 'string',
+        description: 'Which gate asks it, and from how many sites.' },
+      entry: { type: 'boolean',
+        description: 'Whether a repository entry of that name EXISTS. A ' +
+                     'separate fact from `builtIn`: "nobody wrote an ' +
+                     'override" and "somebody wrote one and disabled it" are ' +
+                     'opposite situations that `builtIn` alone cannot tell ' +
+                     'apart.' },
+      enabled: { type: ['boolean', 'null'],
+        description: 'The entry\'s flag, or null when there is no entry.' },
+      builtIn: { type: 'boolean',
+        description: 'Whether the BUILT-IN document is what is deciding. A ' +
+                     'fact about the decision, where `entry` is a fact about ' +
+                     'the directory.' },
+      ok: { type: 'boolean',
+        description: 'Whether anything is being evaluated at all. False when ' +
+                     'an override exists and is disabled or will not load — ' +
+                     'neither policy falls back to the built-in one in that ' +
+                     'case, because a Disable button that quietly evaluated ' +
+                     'something else would be a lie.' },
+      why: { type: 'string',
+        description: 'Why not, when `ok` is false. Empty otherwise.' },
+      effect: { type: 'string',
+        description: 'One sentence naming what is deciding right now, which ' +
+                     'is what the console prints.' }
+    }),
+
+  XacmlPolicies: openObject(
+    'The policy repository, which IS ou=policies in the embedded directory ' +
+    'rather than a copy of one.',
+    {
+      root: { type: ['string', 'null'] },
+      policies: { type: 'array', items: openObject('One policy.', {
+        name: { type: 'string',
+          description: 'The directory entry\'s name. SEPARATE from the ' +
+                       'PolicyId inside the document, on purpose: a PolicyId ' +
+                       'is a URI and changes when a policy is re-issued, so ' +
+                       'naming the entry after it would make a version bump ' +
+                       'into a delete and a create.' },
+        policyId: { type: ['string', 'null'] },
+        kind: { type: 'string', enum: ['Policy', 'PolicySet'] },
+        version: { type: 'string' },
+        enabled: { type: 'boolean' },
+        isRoot: { type: 'boolean' },
+        combiningAlgId: { type: 'string' },
+        description: { type: 'string' },
+        problems: { type: 'array', items: { type: 'string' },
+          description: 'Static type-check problems. XACML is statically ' +
+                       'typed, so these are wrong for EVERY request rather ' +
+                       'than for some — a policy listed with problems will ' +
+                       'not load and the PDP reports Indeterminate.' }
+      }) },
+      serviceOwn: { type: 'array',
+        items: { $ref: '#/components/schemas/XacmlServiceOwnPolicy' },
+        description: 'The two policies deciding this service\'s own ' +
+                     'boundaries, which are NOT in `policies` above.' },
+      templates: { type: 'array', items: openObject(
+        'A starting point POST /admin-api/xacml/create-from-template will ' +
+        'build.', {
+          id: { type: 'string' },
+          label: { type: 'string' },
+          blurb: { type: 'string' },
+          what: { type: 'string' },
+          parameters: { type: 'array', items: openObject('One parameter.', {
+            name: { type: 'string',
+              description: 'Sent as `p_<name>`.' },
+            label: { type: 'string' },
+            help: { type: 'string' },
+            type: { type: 'string', enum: ['string', 'list'] },
+            dflt: { type: 'string' }
+          }) }
+        }) }
+    }),
+
+  XacmlEditor: openObject(
+    'One policy as an editable tree. Each node carries the elements XACML ' +
+    'allows AT THAT POINT — computed against the real function library by ' +
+    'the same code that validates the result, which is what lets a caller ' +
+    'walk the tree and POST a legal move without a second copy of the ' +
+    'grammar.',
+    {
+      policies: { type: 'array', items: { type: 'string' } },
+      serviceOwn: { type: 'array',
+        items: { $ref: '#/components/schemas/XacmlServiceOwnPolicy' },
+        description: 'The two policies deciding right now that this chooser ' +
+                     'cannot offer, because they are built in rather than ' +
+                     'stored. Carried so that a caller is not left believing ' +
+                     '`policies` is the whole answer — which is exactly what ' +
+                     'the PAGE used to leave a reader believing.' },
+      policy: { type: ['object', 'null'], additionalProperties: true },
+      problem: { type: ['string', 'null'] },
+      problems: { type: 'array', items: { type: 'string' } },
+      document: { type: 'string',
+        description: 'The XACML XML as stored. The document is the truth; ' +
+                     'everything else on the entry is derived from it.' },
+      alfa: { type: ['string', 'null'],
+        description: 'The same policy rendered as ALFA. EMITTED, not stored ' +
+                     '— ALFA is a view of the model here rather than a ' +
+                     'second copy of the policy, because a stored ALFA text ' +
+                     'and a stored XML one would be two documents that could ' +
+                     'disagree.' },
+      tree: { type: 'array', items: openObject('One node.', {
+        path: { type: 'string',
+          description: 'The node\'s address, e.g. ' +
+                       '`rules.0.target.anyOf.1.allOf.0.matches.2`. ONLY ' +
+                       'VALID AGAINST THE DOCUMENT IT WAS READ FROM — remove ' +
+                       'rule 0 and every path naming rule 1 now means rule ' +
+                       '0. Re-read the tree after each edit.' },
+        depth: { type: 'integer' },
+        kind: { type: 'string' },
+        label: { type: 'string' },
+        detail: { type: 'string' },
+        options: openObject('What may be done here.', {
+          kind: { type: 'string' },
+          removable: { type: 'boolean' },
+          additions: { type: 'array', items: openObject('One legal move.', {
+            action: { type: 'string',
+              description: 'POST this to /admin-api/xacml/{action} with the ' +
+                           'node\'s `path`.' },
+            label: { type: 'string' },
+            help: { type: 'string' }
+          }) }
+        })
+      }) }
+    }),
+
+  XacmlDecision: openObject(
+    'One question put to the PDP, and what the embedded PEP would do with ' +
+    'the answer. TWO DIFFERENT ANSWERS, both here on purpose — the PDP ' +
+    'returns one of four decisions and the PEP turns that into allowed or ' +
+    'refused using its bias and the obligation rule, and a policy that "is ' +
+    'not working" is nearly always one of those two being mistaken for the ' +
+    'other.',
+    {
+      asked: { type: 'boolean',
+        description: 'False when no subject and no resource were given. The ' +
+                     'endpoint does not decide about nobody.' },
+      subject: { type: 'string' },
+      action: { type: 'string' },
+      resource: { type: ['string', 'null'] },
+      decision: { type: 'string',
+        description: 'Permit, Deny, NotApplicable or Indeterminate — the ' +
+                     'four EXTERNAL values. The three Indeterminate ' +
+                     'variants the combining algorithms need are folded ' +
+                     'down once, inside the engine.' },
+      status: { type: 'object', additionalProperties: true },
+      obligations: { type: 'array', items: { type: 'string' } },
+      advice: { type: 'array', items: { type: 'string' } },
+      applicablePolicies: { type: 'array', items: { type: 'string' } },
+      enforcement: openObject('What the EMBEDDED PEP would do.', {
+        allowed: { type: 'boolean' },
+        bias: { type: 'string',
+          description: 'xacml.pepBias. The two biases agree on every Permit ' +
+                       'and every Deny and differ on Indeterminate and ' +
+                       'NotApplicable, which is the case nobody tests.' },
+        why: { type: 'string',
+          description: 'Including the section 7.2 case: a Permit carrying ' +
+                       'an obligation this PEP cannot discharge is a ' +
+                       'REFUSAL, because allowing it and dropping the ' +
+                       'obligation would enforce half a policy and report ' +
+                       'success.' }
+      })
+    }),
+
+  // WHAT AUTHORIZATION IS DOING, as opposed to what it is configured to do.
+  // Every other XACML schema here describes the repository; this one describes
+  // TRAFFIC, and the two things it is careful about are the two things a
+  // caller would otherwise get wrong.
+  XacmlMonitor: openObject(
+    'How many decisions this service\'s authorization is making, by which ' +
+    'enforcement point, and how many are refusals. Mirrors ' +
+    '/admin/xacml/monitor.\n\nTWO DISTINCTIONS RUN THROUGH IT. A DECISION ' +
+    'IS NOT AN ENFORCEMENT — XACML has four decisions and a PEP has two ' +
+    'outcomes, and what maps between them is the PEP\'s bias, so a ' +
+    'deny-biased PEP refuses a NotApplicable that a permit-biased one ' +
+    'allows; an obligation a PEP cannot discharge also turns a Permit into a ' +
+    'refusal (section 7.2). And WHAT THIS SERVICE SAW IS NOT WHAT IT WAS ' +
+    'TOLD — the embedded figures are things this process did and counted, ' +
+    'the remote ones are what another process reports on a heartbeat.',
+    {
+      policies: openObject('`total`, `enabled`, and the name of the `root`.', {}),
+      peps: openObject(
+        'How many enforcement points: `embedded` (compiled into this ' +
+        'process, always three), `remote` (registered in ou=peps) and their ' +
+        '`total`. **The PDP endpoint is deliberately not in the total** — it ' +
+        'is not a PEP, and counting it would answer one too many on a ' +
+        'service with none.', {}),
+      decisions: openObject(
+        'THREE TOTALS AND NOT ONE. `here` is what this process decided and ' +
+        'enforced, counted as it happened. `remote` is what registered PEPs ' +
+        'REPORT having done, cumulative in their own memory — this service ' +
+        'saw none of it, and a PEP that restarts makes this half go down. ' +
+        '`combined` is the two added up: the figure a deployment wants, and ' +
+        'arithmetic over two different kinds of evidence rather than a ' +
+        'measurement. Each carries `decisions`, `allowed`, `refused` and ' +
+        '`undischargeable`.', {}),
+      since: { type: 'string',
+               description: 'When the counters started, which is when this ' +
+                            'process did. They are IN MEMORY and are not ' +
+                            'persisted: these are observations, and the ' +
+                            'durable record of a refusal is the audit log, ' +
+                            'which carries the reason as well as the count.' },
+      enabled: { type: 'boolean',
+                 description: 'xacml.enabled. When false nothing is ' +
+                              'evaluated and the embedded PEPs answer ' +
+                              'ALLOWED without asking — which is counted, ' +
+                              'because it is what happened.' },
+      remotePepsEnabled: { type: 'boolean', description: 'xacml.remotePeps.' },
+      realm: openObject(
+        'The trust realm these counters are for. They are PER REALM, like ' +
+        'ou=policies itself: a decision made under /realm/acme was made ' +
+        'against acme\'s policies.', {}),
+      rows: {
+        type: 'array',
+        description: 'The askers of the PDP IN THIS PROCESS, in the order the ' +
+                     'console draws them: the three embedded PEPs and the ' +
+                     '`pdp` row, which is `POST /xacml/pdp` and is NOT a PEP ' +
+                     '— somebody else\'s enforcement point asked, and this ' +
+                     'service never saw what was done with the answer. On ' +
+                     'that row `allowed` and `refused` are **null rather ' +
+                     'than 0**, because zero would say it refused nothing.',
+        items: openObject('One asker: what it guards, its bias, and its counts.', {})
+      },
+      remoteRows: {
+        type: 'array',
+        description: 'The registered remote PEPs, summarised. Their ' +
+                     '`decisions`, `allowed` and `refused` are REPORTED BY ' +
+                     'THEM; the four PDP decisions are null, because only ' +
+                     'the process that evaluated knows which of them each ' +
+                     'enforcement was. GET /admin-api/xacml/peps has the ' +
+                     'sync tokens, the notify URLs and the controls.',
+        items: openObject('One remote PEP.', {})
+      }
+    }),
+
+  XacmlPeps: openObject(
+    'The REMOTE Policy Enforcement Points that pull this repository and ' +
+    'enforce it in another process. The question this answers is not ' +
+    'whether they are up but whether everybody is deciding with the SAME ' +
+    'policy — `current` is a comparison this service performs, not a claim ' +
+    'the PEP makes about itself.',
+    {
+      enabled: { type: 'boolean',
+        description: 'xacml.remotePeps. When false the three endpoints ' +
+                     'under /xacml/pep answer 501 and the register below is ' +
+                     'untouched.' },
+      syncToken: { type: 'string',
+        description: 'A digest over the documents of every ENABLED policy ' +
+                     'plus which one is the root — that is, over exactly ' +
+                     'the bytes GET /xacml/pep/policies would answer with. ' +
+                     'So a policy edited and edited back does NOT invalidate ' +
+                     'anybody\'s copy, and DISABLING one does.' },
+      staleAfterS: { type: 'integer',
+        description: 'xacml.pepStaleAfterS. How long since the last ' +
+                     'heartbeat before `stale` is true. It changes nothing ' +
+                     'this service does, deliberately: a PEP whose sync has ' +
+                     'stopped is still enforcing whatever it last pulled.' },
+      requiresCertificate: { type: 'boolean',
+        description: 'xacml.pepRequireCertificate. Whether REGISTERING ' +
+                     'needs a client certificate. Pulling policy never ' +
+                     'does.' },
+      current: { type: 'integer',
+        description: 'How many registered PEPs hold the current token.' },
+      stale: { type: 'integer' },
+      elsewhere: { type: 'array',
+        description: 'EVERY OTHER TRUST REALM THAT HOLDS A REGISTRATION, with ' +
+                     'how many. `ou=peps` is per realm, like the policy ' +
+                     'repository it serves, so an empty `peps` array above has ' +
+                     'TWO causes and this is what tells them apart: nothing ' +
+                     'anywhere, or nothing in the realm you asked. It is ' +
+                     'routinely the second — the suite that drives a real ' +
+                     'remote PEP does it in a throwaway realm, so a passing ' +
+                     'test run never leaves a registration in the default ' +
+                     'realm. Empty on a service with no realms defined.',
+        items: openObject('One realm that holds at least one registration.', {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          count: { type: 'integer' }
+        }) },
+      notify: openObject('The nudge, and its four bounds.', {
+        on: { type: 'boolean' },
+        allowedHosts: { type: 'array', items: { type: 'string' },
+          description: 'EMPTY MEANS ANY, which is the default.' },
+        allowInsecure: { type: 'boolean' },
+        timeoutMs: { type: 'integer' }
+      }),
+      peps: { type: 'array', items: openObject('One registered PEP.', {
+        name: { type: 'string',
+          description: 'Named from its CLIENT CERTIFICATE when it has one, ' +
+                       'through the same certificatePlan() naming every ' +
+                       'other certificate-borne identity here goes through. ' +
+                       'So one certificate is one row and a PEP that ' +
+                       'restarts updates rather than duplicating.' },
+        dn: { type: 'string' },
+        identity: { type: 'string',
+          description: 'The DN that naming rule produces. NO ENTRY IS ' +
+                       'CREATED THERE — a PEP is a component and ou=users ' +
+                       'counts people.' },
+        certificateSubject: { type: 'string' },
+        thumbprint: { type: 'string',
+          description: 'RFC 8705 x5t#S256, through the same function the ' +
+                       'token endpoint binds a certificate-bound token ' +
+                       'with.' },
+        authenticated: { type: 'boolean',
+          description: 'False when it registered with no client certificate ' +
+                       'because xacml.pepRequireCertificate was off. Such a ' +
+                       'row proved nothing and says so rather than looking ' +
+                       'like one that did.' },
+        notifyUrl: { type: 'string' },
+        notifyProblem: { type: ['string', 'null'],
+          description: 'Why this URL would be refused, computed on the ask ' +
+                       'rather than remembered — so changing the allowlist ' +
+                       'changes what is said about a PEP registered an hour ' +
+                       'ago.' },
+        lastNotify: { type: 'string',
+          description: 'What happened to the last nudge. THE ONLY PLACE A ' +
+                       'FAILED NUDGE IS RECORDED: it is invisible from the ' +
+                       'receiving end by definition.' },
+        bias: { type: 'string',
+          description: 'REPORTED BY THE PEP, never set from here. ' +
+                       'xacml.pepBias governs the EMBEDDED PEP at ' +
+                       '/xacml/protected and nothing else.' },
+        resource: { type: 'string' },
+        version: { type: 'string' },
+        description: { type: 'string' },
+        enabled: { type: 'boolean',
+          description: 'Whether this service NUDGES it. Not whether it is ' +
+                       'enforcing — nothing here can answer that.' },
+        registeredAt: { type: 'string' },
+        lastSeen: { type: 'string' },
+        syncToken: { type: 'string' },
+        policyCount: { type: 'integer' },
+        decisions: { type: 'integer',
+          description: 'The PEP\'s own cumulative count, in its process. A ' +
+                       'PEP that restarts makes this go down, which is ' +
+                       'honest.' },
+        allowed: { type: 'integer' },
+        refused: { type: 'integer' },
+        undischargeable: { type: 'integer',
+          description: 'Refusals that were a Permit carrying an obligation ' +
+                       'the PEP could not discharge (section 7.2) — the one ' +
+                       'enforcement outcome that looks like a bug from the ' +
+                       'client side and is the specification working.' },
+        current: { type: 'boolean' },
+        stale: { type: 'boolean' }
+      }) }
+    }),
+
   Ssf: openObject(
     'The Shared Signals transmitter: the streams it has agreed, who each one ' +
     'is about, what is queued for it, what a receiver refused, and what has ' +
     'been pushed AT this service. SSF is the PIPE and not the vocabulary — ' +
     'it defines two events of its own, both about the pipe, and CAEP and ' +
-    'RISC are the vocabularies spoken over it. CAEP is implemented and has ' +
-    'a register of its own at GET /admin-api/caep; RISC is not here yet.',
+    'RISC are the vocabularies spoken over it. Both are implemented and ' +
+    'each has a register of its own — GET /admin-api/caep for what has been ' +
+    'said about a SESSION, GET /admin-api/risc for what has been said about ' +
+    'an ACCOUNT.',
     {
       installed: {
         type: 'boolean',
@@ -2679,6 +3467,193 @@ const SCHEMAS = {
       }
     }),
 
+  Risc: openObject(
+    'The Risk Incident Sharing and Coordination profile: what state each ' +
+    'ACCOUNT is in and how many events of which type have been sent about ' +
+    'it. RISC is the SECOND vocabulary over Shared Signals and not a family ' +
+    'of its own — its events travel on SSF streams, are signed by the SSF ' +
+    'signer and are delivered by the two SSF deliveries — so the streams ' +
+    'themselves are at GET /admin-api/ssf and only their RISC-relevant half ' +
+    'is repeated here.\n\nWHAT SEPARATES IT FROM Caep IS THE SUBJECT OF ' +
+    'THE SENTENCE. CAEP says *this session is no longer trustworthy*; RISC ' +
+    'says *this account is no longer trustworthy*. A revoked session is one ' +
+    'sign-in at one relying party; a purged account is every session that ' +
+    'person has anywhere, for ever.',
+    {
+      installed: {
+        type: 'boolean',
+        description: 'Whether ssf/ssf.js is loaded in this process at all. A ' +
+                     'DIFFERENT question from `enabled`, and RISC cannot be ' +
+                     'installed without SSF: it has no transport of its own.'
+      },
+      enabled: {
+        type: 'boolean',
+        description: 'The `risc.enabled` setting. When false the fourteen ' +
+                     'event types are dropped from `events_supported`, so a ' +
+                     'stream asking for one gets it back MISSING from ' +
+                     '`events_delivered` — the only notice SSF gives. SSF ' +
+                     'and CAEP are unaffected.'
+      },
+      autoEmit: {
+        type: 'boolean',
+        description: 'The `risc.autoEmit` setting. With it on, a change to ' +
+                     'this service\'s own DIRECTORY sends a Security Event ' +
+                     'Token with nobody having asked — which is a DIFFERENT ' +
+                     'observer from CAEP\'s, watching the provisioning layer ' +
+                     'rather than the authentication one.'
+      },
+      autoEmitActs: {
+        type: 'array',
+        description: 'Which of the four observable acts emit on their own: ' +
+                     'a person deleted, `active` going false or true, and an ' +
+                     'identifier moving. The other ten event types describe ' +
+                     'things nothing here does — no breach corpus is ' +
+                     'searched by this service and no recovery flow runs in ' +
+                     'it — so they are only ever emitted by hand.',
+        items: { type: 'string' }
+      },
+      honourOptOut: {
+        type: 'boolean',
+        description: 'The `risc.honourOptOut` setting. RISC section 2.8 says ' +
+                     'an account in the final opt-out state is NOT ' +
+                     'participating in event exchange, so with this on its ' +
+                     'events are suppressed and counted in ' +
+                     '`accounts[].suppressed`.\n\nTHE FOUR OPT-OUT EVENTS ' +
+                     'ARE NEVER SUPPRESSED, and that exception is what makes ' +
+                     'the rule work: `opt-out-effective` is an event ' +
+                     'ANNOUNCING that there will be no more events, so ' +
+                     'gating it would enter the silent state without telling ' +
+                     'anybody — indistinguishable at the far end from a ' +
+                     'transmitter that has gone down — and `opt-in` is sent ' +
+                     'FROM that state by definition and is the only way a ' +
+                     'receiver learns the account came back.'
+      },
+      subjectFormat: {
+        type: 'string',
+        description: 'The `risc.subjectFormat` setting, and the most ' +
+                     'consequential one in this group. Eleven of the ' +
+                     'fourteen event types carry NO payload members at all, ' +
+                     'so the subject is the entire message. `iss_sub` is the ' +
+                     'identifier a receiver already holds; `email` is what a ' +
+                     'receiver keying on an address expects, and ' +
+                     '`identifier-recycled` exists precisely because that ' +
+                     'key is unsafe.\n\nThe two identifier events IGNORE ' +
+                     'it and use `email` regardless, because their subject ' +
+                     'carries the identifier that changed — and it carries ' +
+                     'the OLD value, which is the reverse of every other ' +
+                     'event in all three vocabularies.'
+      },
+      googleSubjectType: {
+        type: 'boolean',
+        description: 'The deliberate defect this profile\'s own ' +
+                     'specification asks for by name. RISC 1.0 section 3.1 ' +
+                     'records that a production RISC transmitter in the ' +
+                     'field spells a subject identifier\'s discriminator ' +
+                     '`subject_type` rather than `format`, says the usage is ' +
+                     'deprecated and that new services MUST NOT use it — and ' +
+                     'then tells relying parties they need code to work ' +
+                     'around it anyway. With this on, every RISC subject ' +
+                     'this service sends carries `subject_type`. CAEP and ' +
+                     'SSF events are untouched: their specifications never ' +
+                     'had the problem.'
+      },
+      omitEventTimestamp: {
+        type: 'boolean',
+        description: 'The `risc.omitEventTimestamp` setting. It reaches ONE ' +
+                     'of the fourteen types, because `credential-compromise` ' +
+                     'is the only one that defines the member — and RISC ' +
+                     'words it as when the transmitter DISCOVERED the ' +
+                     'compromise rather than when it happened, so a receiver ' +
+                     'reading it as an occurrence time dates the incident ' +
+                     'from the wrong end whether or not it is sent.'
+      },
+      tracked: {
+        type: 'integer',
+        description: 'How many accounts the register holds, capped by ' +
+                     '`risc.maxAccountsTracked` with the oldest going first.'
+      },
+      totals: {
+        type: 'object',
+        description: 'How many of each event type have been sent, across ' +
+                     'every account.'
+      },
+      applications: {
+        type: 'array',
+        description: 'WHAT THIS TRANSMITTER HAS SAID TO EACH RECEIVER, ' +
+                     'across every account. It is the CaepApplication shape ' +
+                     'with `accounts` where that one has `sessions`, and the ' +
+                     'same three rules hold: an application with no stream ' +
+                     'is a row rather than an omission, a row named `(no ' +
+                     'application …)` collects the streams agreed while ' +
+                     '`ssf.authRequired` was off, and `counts` is counted ' +
+                     'when the token is built and QUEUED rather than when it ' +
+                     'is delivered.',
+        items: { type: 'object' }
+      },
+      eventTypes: {
+        type: 'array',
+        description: 'The fourteen, with their short names — which is what ' +
+                     'the `emit` action and `risc.eventsSupported` both ' +
+                     'take. Each carries `deprecated` where its own ' +
+                     'specification deprecates it: one does, ' +
+                     '`sessions-revoked`, in favour of CAEP\'s ' +
+                     '`session-revoked`. The two names differ by one letter ' +
+                     'and mean different things — every session the account ' +
+                     'has, against the one the subject names.',
+        items: { type: 'object' }
+      },
+      catalogue: {
+        type: 'array',
+        description: 'The same fourteen opened out. Three things about them ' +
+                     'surprise a reader who knows CAEP: ELEVEN have no ' +
+                     'payload members at all and only one has a REQUIRED ' +
+                     'member; the claims CAEP gives all eight of its events ' +
+                     'are given here to ONE event and there are three of ' +
+                     'them rather than four (no `initiating_entity`); and ' +
+                     'one member name in the whole of Shared Signals uses a ' +
+                     'HYPHEN — `identifier-changed`\'s `new-value` — where ' +
+                     'everything else in all three vocabularies is ' +
+                     'snake_case, so `new_value` typed from habit produces ' +
+                     'an event that delivers and says nothing.',
+        items: { type: 'object' }
+      },
+      accounts: {
+        type: 'array',
+        description: 'One entry per account this service has been told ' +
+                     'anything about, INCLUDING ONES THAT NO LONGER EXIST — ' +
+                     'a purged account is gone from the directory entirely, ' +
+                     'so the row is the only remaining evidence that ' +
+                     'receivers were told.\n\nEach carries THREE states ' +
+                     'rather than one: `lifecycle` (active, disabled, ' +
+                     'purged), `optOut` (RISC section 2.8\'s three) and ' +
+                     '`credentialStanding`. They move independently — an ' +
+                     'account can be opted out and perfectly healthy, or ' +
+                     'compromised and still enabled — so folding them into ' +
+                     'one word would mean choosing which of three questions ' +
+                     'this resource answers.\n\n`formerIdentifiers` is ' +
+                     'every address the account has been known by, which is ' +
+                     'what keeps `identifier-changed` from splitting one ' +
+                     'person into two rows at the moment their identifier ' +
+                     'moves. `suppressed` counts events built and NOT sent ' +
+                     'because of the opt-out gate.',
+        items: { type: 'object' }
+      },
+      streams: {
+        type: 'array',
+        description: 'Which streams would take a RISC event at all. It is ' +
+                     'here rather than only on the Ssf resource because an ' +
+                     'account with a count of zero almost always means ' +
+                     'nobody asked for that type, and SSF gives a receiver ' +
+                     'no other notice of that.',
+        items: { type: 'object' }
+      },
+      settings: {
+        type: 'object',
+        description: 'The `RISC` setting group as /admin/risc draws it. ' +
+                     'Change one through POST /admin-api/config/set-many.'
+      }
+    }),
+
   Scim: openObject(
     'The SCIM 2.0 provisioning surface: what it has been asked to do, what it ' +
     'will and will not do, and which LDAP attribute each SCIM member is. It ' +
@@ -2885,6 +3860,209 @@ const SCHEMAS = {
             'RFC 7644 section 3.12 `scimType` to count. `(none)` is a ' +
             'refusal that carried no such code — a 404 has none — counted ' +
             'rather than dropped so that the failure tables agree.', {})
+        })
+    }),
+
+  // WHAT THE PROVISIONING SURFACE IS DOING, as opposed to what it is. `Scim`
+  // above describes the SURFACE and carries the headline counts; this one is
+  // the TRAFFIC, and the two are views over ONE set of counters rather than two
+  // tallies. Three things in here are easy to get wrong from the outside and
+  // each is written out rather than left open for that reason.
+  ScimMonitor: openObject(
+    'How much traffic the SCIM 2.0 endpoints have taken, from whom, of what ' +
+    'kind, and how much of it failed. Mirrors /admin/scim/monitor.\n\n**A ' +
+    'CLIENT IS AN AUTHENTICATED PRINCIPAL, NOT A CONNECTION.** SCIM is ' +
+    'stateless HTTP — no session, no registration, nothing to be connected — ' +
+    'so "how many clients" can only mean how many different names have ' +
+    'successfully authenticated since this process started. It never goes ' +
+    'down.\n\n**A REFUSED CALLER IS NOT A CLIENT.** Calls the gate turned ' +
+    'away are in `authentication.refused` and in no `clients` row, even when ' +
+    'the credential carried a name.\n\n**AN ABSENT MEASUREMENT IS NULL AND ' +
+    'NOT ZERO**, throughout: an average over no samples is absent, and a 100% ' +
+    'success rate on nothing is the most misleading number this reply could ' +
+    'carry.',
+    {
+      installed: {
+        type: 'boolean',
+        description: 'Whether the SCIM module is loaded in this process at ' +
+                     'all. A DIFFERENT question from `enabled`, and on this ' +
+                     'reply in particular it is what tells a zero call total ' +
+                     'meaning "no such endpoint" from one meaning "nobody has ' +
+                     'called".'
+      },
+      enabled: {
+        type: 'boolean',
+        description: 'The `scim.enabled` setting. When false every call under ' +
+                     '/scim/v2 is answered 501 — AND IS STILL COUNTED HERE, ' +
+                     'because it is a request this service answered. Totals ' +
+                     'that went flat while a client kept calling would hide ' +
+                     'the very thing somebody reads this for.'
+      },
+      baseUrl: { type: 'string' },
+      authRequired: { type: 'boolean',
+                      description: 'Whether the SCIM gate asks for a ' +
+                                   'credential at all — `mode.gatesScim()`, ' +
+                                   'which since 2026-09-06 is where ' +
+                                   '`scim.authRequired` went. When it is off, ' +
+                                   'callers are counted as anonymous rather ' +
+                                   'than as clients and `clients` stays empty ' +
+                                   'however much traffic there is. Note that ' +
+                                   'the gate being ON is not the same as the ' +
+                                   'credential being CHECKED: what ' +
+                                   '`global.mode` decides is ' +
+                                   '`verifiesCredentials()`, and the ' +
+                                   'turnstile is there in both modes.' },
+      schemes: {
+        type: 'array',
+        description: 'The authentication schemes the surface declares, from ' +
+                     'scim_auth.js\'s own table, so that the per-scheme ' +
+                     'counts can be read with the ones at ZERO included. A ' +
+                     'scheme that is off and unused is the most useful row ' +
+                     'there for somebody asking why a client cannot get in.',
+        items: openObject('One scheme.', {})
+      },
+      store: openObject(
+        'The embedded directory as it is NOW — not a counter. It is here ' +
+        'because a reply reporting four hundred successful creates beside a ' +
+        'directory holding three people is reporting something worth knowing. ' +
+        'The same figures GET /admin-api/users and /admin-api/groups are ' +
+        'drawn from; there is no second store.', {}),
+      counters: openObject(
+        'The traffic itself.',
+        {
+          calls: { type: 'integer',
+                   description: 'Every request the SCIM implementation had an ' +
+                                'opinion about, INCLUDING the ones its own ' +
+                                'gate refused: a 401 is a call this service ' +
+                                'answered, and a total that omitted them ' +
+                                'would be smaller than the access log for no ' +
+                                'stated reason.' },
+          ok: { type: 'integer' },
+          failed: { type: 'integer' },
+          successRate: { type: ['number', 'null'],
+                         description: 'Percent to one decimal, or NULL when ' +
+                                      'nothing has been called.' },
+          firstAt: { type: 'integer' },
+          lastAt: { type: 'integer' },
+          since: { type: 'integer',
+                   description: 'When the counting started, which is when ' +
+                                'this process did. The counters are in ' +
+                                'memory and are not persisted: these are ' +
+                                'observations, and the durable record of what ' +
+                                'SCIM was asked to do is the audit log.' },
+          latency: openObject(
+            '`totalMs` (a SUM, so any other statistic can still be computed ' +
+            'from it), `averageMs` (null when nothing has been called) and ' +
+            '`maxMs`.', {}),
+          bytesOut: { type: 'integer',
+                      description: 'The SCIM payload written back, headers ' +
+                                   'excluded. It answers one common question: ' +
+                                   'whether a client is listing the whole ' +
+                                   'directory on every poll.' },
+          authentication: openObject(
+            '`distinct` authenticated principals, split into `identities` and ' +
+            '`applications`; `anonymous`, calls nothing authenticated; ' +
+            '`refused`, calls the gate turned away and did NOT attribute to ' +
+            'anybody; `byScheme`, a plain tally keyed by scheme id; and ' +
+            '`capped`/`cap`, which say whether the per-client breakdown ' +
+            'stopped growing. Past the cap every total is still counted and ' +
+            'only the breakdown stops — said out loud rather than letting the ' +
+            'reply under-report quietly.', {}),
+          operations: {
+            type: 'array',
+            description: 'One row per operation THIS SERVER IMPLEMENTS, with ' +
+                         'the ones nothing has called at zero — a list of ' +
+                         'only what happened would answer "does this support ' +
+                         'PATCH" by omission. **These do not sum to `calls`**: ' +
+                         'one Bulk carrying five creates is one `bulk` AND ' +
+                         'five `create`s, because each of the five really is ' +
+                         'performed.',
+            items: openObject('One operation, with its outcome and cost.', {
+              operation: { type: 'string' },
+              label: { type: 'string' },
+              method: { type: 'string' },
+              what: { type: 'string' },
+              count: { type: 'integer' },
+              ok: { type: 'integer' },
+              failed: { type: 'integer' },
+              averageMs: { type: ['number', 'null'] },
+              maxMs: { type: ['number', 'null'] },
+              bytes: { type: 'integer' }
+            })
+          },
+          resourceTypes: {
+            type: 'array',
+            description: 'One row per SCIM resource type, zeroes included.',
+            items: openObject('One resource type, with its count.', {
+              resourceType: { type: 'string' },
+              count: { type: 'integer' }
+            })
+          },
+          byStatus: openObject('HTTP status code to count.', {}),
+          byStatusClass: openObject(
+            '`2xx`, `4xx`, `5xx` to count. Beside the exact codes because ' +
+            '"how much of this is failing" is the question somebody arrives ' +
+            'with, and summing eleven rows in their head is how they get it ' +
+            'wrong.', {}),
+          byScimType: openObject(
+            'RFC 7644 section 3.12 `scimType` to count. `(none)` is a ' +
+            'refusal that carried no such code — a 404 has none — counted ' +
+            'rather than dropped so that the failure tables agree.', {}),
+          clients: {
+            type: 'array',
+            description: 'One row per authenticated principal, busiest first ' +
+                         'and most recent as the tie-break. The name is ' +
+                         'whatever the credential carried: a username for the ' +
+                         'five user-bearing schemes, a `client_id` for a ' +
+                         'Bearer token minted for an application (`kind` is ' +
+                         'then `application`), an RFC 4514 subject DN for a ' +
+                         'client certificate.',
+            items: openObject('One client.', {
+              principal: { type: 'string' },
+              kind: { type: 'string', enum: ['identity', 'application'] },
+              calls: { type: 'integer' },
+              ok: { type: 'integer' },
+              failed: { type: 'integer' },
+              schemes: { type: 'array', items: { type: 'string' } },
+              resourceTypes: { type: 'array', items: { type: 'string' } },
+              firstAt: { type: 'integer' },
+              lastAt: { type: 'integer' },
+              lastOperation: { type: 'string' },
+              lastStatus: { type: 'string' }
+            })
+          },
+          recent: {
+            type: 'array',
+            description: 'The last few requests INDIVIDUALLY, newest first. ' +
+                         'Everything else here is an aggregate, and an ' +
+                         'aggregate cannot answer "what did the call that ' +
+                         'just failed look like". A ring of `recentCap`; ' +
+                         'anything older has been dropped and the durable ' +
+                         'record is the audit log. `principal` is empty where ' +
+                         'nothing authenticated, and `ms` is null where ' +
+                         'nothing was measured.',
+            items: openObject('One request, as it was answered.', {
+              at: { type: 'integer' },
+              operation: { type: 'string' },
+              resourceType: { type: 'string' },
+              status: { type: 'string' },
+              ok: { type: 'boolean' },
+              scimType: { type: 'string' },
+              scheme: { type: 'string' },
+              principal: { type: 'string' },
+              ms: { type: ['integer', 'null'] },
+              bytes: { type: 'integer' },
+              method: { type: 'string' },
+              path: { type: 'string' }
+            })
+          },
+          recentCap: { type: 'integer' },
+          realm: openObject(
+            'The trust realm these counters are for. They are PER REALM, like ' +
+            'the directory SCIM writes into: a client provisioning under ' +
+            '/realm/acme created entries in acme, and counting it in the ' +
+            'default realm would be one page reporting traffic that happened ' +
+            'in another.', {})
         })
     }),
 
@@ -3428,12 +4606,20 @@ const DESCRIPTION = [
   'username typed at its sign-in screen simply becomes the identity in every ' +
   'token it issues — so a console or an API with a credential on it would be ' +
   'a surface a test would have to hold a secret for, in a service whose ' +
-  'premise is that it authenticates nobody. Two surfaces are the exception ' +
-  'and neither is this one: the SCIM endpoints, which create and delete ' +
-  'accounts, and the SPIRE Server API, whose callers present an X509-SVID ' +
-  'over mutual TLS. Both are turnstiles rather than locks — anybody can get ' +
-  'the credential — and both exist so that a client\'s refusal paths can be ' +
-  'exercised at all. What follows is worth stating plainly: anyone who can reach ' +
+  'premise is that it authenticates nobody. Several surfaces are the ' +
+  'exception and none of them is this one. THREE ARE TURNSTILES — anybody ' +
+  'can get the credential — and each exists so that a client\'s refusal ' +
+  'paths can be exercised at all: the SCIM endpoints, which create and ' +
+  'delete accounts; the SPIRE Server API, whose callers present an X509-SVID ' +
+  'over mutual TLS; and the admin console, which needs a sign-on session and ' +
+  'one of two directory-group roles. THE XACML SURFACE IS NOT A TURNSTILE ' +
+  'and is worth knowing about before driving it: all eight /xacml endpoints ' +
+  'require a client certificate this service VERIFIED against an anchor in ' +
+  'its own truststore, whose subject DN resolves to a directory entry ' +
+  'holding a role — XACML_USER for the four endpoints proper and REMOTE_PEPS ' +
+  'for the three a remote enforcement point uses plus POST /xacml/pip. ' +
+  'xacml.enforceAccess is the one way past it, and it is settable HERE. ' +
+  'What follows is worth stating plainly: anyone who can reach ' +
   'this port can revoke every token this service has issued and change ' +
   'what the next one contains. That is fine on a laptop or a compose ' +
   'network and is not fine on a public address, which was already true of ' +
@@ -3580,6 +4766,14 @@ const TAG_DESCRIPTIONS = {
   Groups: 'The embedded LDAP directory\'s groups. A group here GRANTS ' +
           'NOTHING: no token, assertion, ticket or PAC carries one and no ' +
           'endpoint reads one.',
+  Roles: 'Who holds a role, and what requires one. A role is a name a ' +
+         'person, a GROUP or an APPLICATION can be mapped into, and holding ' +
+         'one is what an ISSUANCE is decided on — which is the whole ' +
+         'difference from Groups above, where a group grants nothing. The ' +
+         'decision is made by the XACML PDP against a policy, never by an ' +
+         '`if` in an issuance site, so a refusal is a document somebody can ' +
+         'read. It is not Admin roles either: those are two directory groups ' +
+         'that grant the /admin console and nothing else.',
   Tokens: 'What has been issued, and the revocation of the three kinds that ' +
           'can be revoked.',
   SCIM: 'The SCIM 2.0 provisioning endpoints under /scim/v2 — what they have ' +

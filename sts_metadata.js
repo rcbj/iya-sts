@@ -106,6 +106,14 @@ const authorizationServers = require('./oauth-oidc/authorization_servers');
 // guaranteed.
 // ---------------------------------------------------------------------------
 const cryptoMetadata = require('./admin-ui/crypto_metadata');
+// THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
+// from this repository, so requiring it from the module that must be required
+// LAST cannot move a route. This page is the one whose subject is what this
+// service IS, so which build of it you are reading belongs in the document as
+// well as in the console's footer — and a test that asserts an endpoint list is
+// a test that wants to say which build produced it. See common/version.js.
+const version = require('./common/version');
+const APP_VERSION = version.load();
 
 // ---------------------------------------------------------------------------
 // The specifications this service implements, and how far.
@@ -310,10 +318,37 @@ const SPECS = [
   // and is looking for the attribute characteristics, which are in 7643.
   // --- The Shared Signals Framework and the four IETF documents it is
   //     assembled from, plus CAEP. SSF is the PIPE; CAEP and RISC are the
-  //     vocabularies spoken over it, CAEP has been here since 2026-09-03 and
-  //     RISC is not, which is why RISC is not in this list — a specification
-  //     named here and not implemented is an IDLE CLAIM, and
-  //     tests/vendored/sts_metadata.js fails the page for one.
+  //     vocabularies spoken over it. CAEP has been here since 2026-09-03 and
+  //     RISC since 2026-09-04, so both are in this list now — and neither was
+  //     until it was real, because a specification named here and not
+  //     implemented is an IDLE CLAIM and tests/vendored/sts_metadata.js fails
+  //     the page for one.
+  { id: 'xacml30', name: 'OASIS XACML 3.0 (core)',
+    where: 'OASIS',
+    url: 'https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html',
+    coverage: 'full for the mandatory feature set: the policy language, the ' +
+              'seven decision values including the three extended ' +
+              'Indeterminates, target matching, conditions, variables, the ' +
+              'twelve combining algorithms, obligations and advice, policy ' +
+              'references, and the standard function library over all ' +
+              'seventeen datatypes. Held to the OASIS conformance suite — ' +
+              '454 of the 455 mandatory cases pass, and the one exception is ' +
+              'recorded with its argument in xacml/conformance/MANIFEST.js. ' +
+              'NOT covered: AttributeSelector and the XPath functions (a ' +
+              'policy using one is Indeterminate rather than silently empty), ' +
+              'the Multiple Decision and Hierarchical Resource profiles, and ' +
+              'administrative delegation.' },
+  { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
+    where: 'OASIS',
+    url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
+         'xacml-json-http-v1.1-os.html',
+    coverage: 'full for the request and response: the shorthand category ' +
+              'names, the short datatype names, datatype inference from the ' +
+              'JSON type (including the integer/double distinction, which is ' +
+              'read from the source text because JSON.parse has already ' +
+              'thrown it away), arrays as bags, obligations, advice and the ' +
+              'PolicyIdentifierList. The profile defines no policy syntax, so ' +
+              'policies stay XML.' },
   { id: 'ssf', name: 'OpenID Shared Signals Framework 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html',
@@ -385,6 +420,40 @@ const SPECS = [
               'to this service and no risk engine talks to it), so they are emitted by ' +
               'hand from /admin/caep or POST /admin-api/caep/emit; and the CAEP ' +
               'Interoperability Profile is a draft and nothing here claims it.' },
+
+  { id: 'risc', name: 'OpenID RISC Profile Specification 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-risc-1_0-final.html',
+    coverage: 'full for the transmitter half: all fourteen event types — account ' +
+              'credential change required, account purged, disabled and enabled, ' +
+              'identifier changed and recycled, credential compromise, the four opt-out ' +
+              'events, recovery activated, recovery information changed, and the ' +
+              'deprecated sessions-revoked — each with the members section 2 gives it. ' +
+              'ELEVEN OF THEM HAVE NO MEMBERS AT ALL and only credential-compromise has ' +
+              'a required one, so for most of this vocabulary the SUBJECT IS THE ENTIRE ' +
+              'MESSAGE, which is what makes risc.subjectFormat the consequential ' +
+              'setting. The three claims section 2.7 gives credential-compromise are on ' +
+              'that event and on NO OTHER — RISC gives three where CAEP gives four to ' +
+              'all eight of its own, and there is no initiating_entity — and ' +
+              'credential_type is defined by reference to CAEP\'s credential-change, so ' +
+              'the two lists are one list here rather than two alike ones. The two ' +
+              'identifier events carry an email or phone_number subject holding the OLD ' +
+              'value, which is the reverse of every other event in all three ' +
+              'vocabularies; a subject in another format is SENT with a warning rather ' +
+              'than refused, because it is perfectly deliverable and merely wrong. ' +
+              'FOUR OF THE FOURTEEN FIRE ON THEIR OWN when the DIRECTORY changes — a ' +
+              'person deleted, active going false or true, an identifier moving — which ' +
+              'is a different observer from CAEP\'s, watching provisioning rather than ' +
+              'authentication, and risc.autoEmit turns it off. Section 2.8\'s opt-out ' +
+              'state machine is enforced: an account in the final state has its events ' +
+              'SUPPRESSED (risc.honourOptOut) except for the four opt-out events ' +
+              'themselves, without which exception opt-out-effective could never be ' +
+              'delivered and opt-in could never bring an account back. Section 3.1\'s ' +
+              'Google compatibility note is reproducible at risc.googleSubjectType. NOT ' +
+              'covered: the other ten event types have no act here that could cause them ' +
+              '— no breach corpus is searched by this service and no recovery flow runs ' +
+              'in it — so they are emitted by hand from /admin/risc or POST ' +
+              '/admin-api/risc/emit.' },
 
   { id: 'rfc8936', name: 'RFC 8936 — Poll-Based Delivery of Security Event Tokens',
     where: 'IETF',
@@ -1141,6 +1210,48 @@ const ENDPOINTS = [
           'vocabulary, not a constraint, and one nothing would enforce is worth reading ' +
           'rather than inferring. Two attributes hold credentials in the clear, for the ' +
           'reason /krb5/principals prints the Kerberos passwords. Add ?format=json.' },
+  { path: '/admin/ldap/roles', group: 'LDAP', name: 'The role entries, and their schema',
+    specs: ['rfc4511', 'rfc4512', 'rfc4519'],
+    what: 'THE MEMBERSHIP HALF OF THE ROLE REGISTER, one entry per role under ou=roles, ' +
+          'and a person, a GROUP and an APPLICATION are all first-class members of one — ' +
+          'that third one is the unusual part and is the point, because a ' +
+          'client_credentials grant has no person in it and until an application could ' +
+          'hold a role there was nothing to decide about one. THE OTHER HALF IS NOT IN ' +
+          'THIS CONTAINER: which roles an application DEMANDS before anything is issued ' +
+          'for it is appRequiredRole on the application entry, so nothing here refuses ' +
+          'anybody by itself. The page also lists the SIX BUILT-IN ROLES, which are ' +
+          'computed from the context of the decision being made and are in no container ' +
+          'at all — which is why an empty ou=roles is the ordinary state of a service ' +
+          'deciding every issuance against EVERYBODY and refusing nobody, rather than a ' +
+          'sign that the feature is not loaded. And it publishes the SCHEMA, for the ' +
+          'reason every container page here does: this directory is schemaless. ' +
+          'Add ?format=json.' },
+  { path: '/admin/ldap/policies', group: 'LDAP', name: 'The policy repository, and its schema',
+    specs: ['rfc4511', 'rfc4512', 'xacml30'],
+    what: 'ou=policies IS the XACML policy repository, the way ou=federations is the ' +
+          'federation register: one entry per policy or policy set, holding the document ' +
+          'itself, with exactly one of them the ROOT because a PDP evaluates one document ' +
+          'and reaches the rest through PolicyIdReference. A WRITE HERE SKIPS THE ' +
+          'TYPECHECKER, which is not true of any other door into this repository — every ' +
+          'write through /admin/xacml and /admin-api/xacml parses the document and ' +
+          'statically typechecks it, so a policy that does not typecheck is refused at ' +
+          'WRITE time instead of answering Indeterminate on every request, and an ' +
+          'ldapmodify of xacmlPolicyDocument reaches the entry directly. Nothing caches ' +
+          'these entries, so the next request is decided against whatever was written. ' +
+          'Add ?format=json.' },
+  { path: '/admin/ldap/peps', group: 'LDAP', name: 'The registered PEP entries, and their schema',
+    specs: ['rfc4511', 'rfc4512', 'xacml30'],
+    what: 'THE REMOTE POLICY ENFORCEMENT POINTS that have registered with this PDP, under ' +
+          'ou=peps. Almost every attribute is a RECORD this service wrote as a PEP ' +
+          'registered, pulled or reported rather than configuration somebody typed, which ' +
+          'is what this container has in common with ou=agents next door: an identity here ' +
+          'was taken from the CLIENT CERTIFICATE the PEP presented and never from the body ' +
+          'it sent, which is the one defect in that family that would have been a security ' +
+          'bug. Two attributes are not a record and an ldapmodify of either is a real ' +
+          'change — xacmlPepEnabled, which a reconnecting PEP does not clear, and ' +
+          'xacmlPepNotifyUrl, one of the three addresses this service will dial. AN EMPTY ' +
+          'CONTAINER IS NOT A FEATURE THAT IS OFF: a PEP pulls GET /xacml/pep/policies and ' +
+          'converges whether or not it ever registers. Add ?format=json.' },
   { path: '/admin/ldap/directory', group: 'LDAP', name: 'Every entry in the directory',
     specs: ['rfc4511', 'rfc4514'],
     what: 'The whole store, DN by DN, with where each entry came from — seeded, added over ' +
@@ -1173,6 +1284,240 @@ const ENDPOINTS = [
   // so a conforming receiver discovers them and none of these names is
   // normative. They are here because this page walks the live router, and a
   // route that answers and is undescribed fails the drift check.
+  { path: '/xacml', group: 'XACML', name: 'What the XACML surface is',
+    specs: ['xacml30', 'xacmljson'],
+    what: 'The PDP, the repository and the embedded PEP, described, with a ' +
+          'Requires column saying which role each endpoint in this family ' +
+          'wants. ?format=json for the same thing as data. Answers while ' +
+          'xacml.enabled is OFF, so a client can discover that this service ' +
+          'speaks XACML and is not currently doing it — but it REQUIRES ' +
+          'XACML_USER like the three below it, so the discovery is for a ' +
+          'caller this service admits. An unadmitted one gets a 403 that ' +
+          'names the group and the setting, which is the part of this page ' +
+          'they need.' },
+  { path: '/xacml/pdp', group: 'XACML', name: 'A decision',
+    specs: ['xacml30', 'xacmljson'],
+    what: 'POST a JSON Profile request, get a JSON Profile response. TWO ' +
+          'IDENTITIES ARE INVOLVED AND THEY ARE NOT THE SAME ONE. The ' +
+          'CALLER is authenticated by a client certificate this service ' +
+          'verifies, resolved to a directory entry holding XACML_USER — ' +
+          'that decides who may drive the engine. The SUBJECT the decision ' +
+          'is ABOUT is in the request and nothing on the connection reaches ' +
+          'it: a PDP is not an authorization boundary, it answers a question ' +
+          'about somebody else\'s, and one that decided about whoever held ' +
+          'the certificate would be a different component. A malformed ' +
+          'request is a 400 rather than an Indeterminate — an Indeterminate ' +
+          'is an answer ABOUT a request and a 400 says there was no request ' +
+          'to answer about.' },
+  { path: '/xacml/policies', group: 'XACML', name: 'The policy repository',
+    specs: ['xacml30'],
+    what: 'Every policy as the PDP sees it, DOCUMENTS INCLUDED, with the ' +
+          'static type-check problems of each. The documents are shown ' +
+          'deliberately, unlike the secrets /admin/ldap/* hides: a policy is ' +
+          'a rule rather than a credential, and a rule nobody can read is a ' +
+          'rule nobody can check. WHO MAY READ IT IS A DIFFERENT QUESTION ' +
+          'FROM WHETHER IT IS REDACTED, and this requires XACML_USER: since ' +
+          'the access and issuance PEPs were embedded, these documents are ' +
+          'the ones this service decides its own admissions with, and ' +
+          'handing an anonymous caller the exact conditions under which it ' +
+          'lets people in is not the same act as publishing a demonstration ' +
+          'policy. The store is ou=policies in the embedded directory — ' +
+          'that container IS the repository.' },
+  { path: '/xacml/protected', group: 'XACML', name: 'The embedded PEP',
+    specs: ['xacml30'],
+    what: 'A resource this service guards with its own PDP. Takes subject, ' +
+          'resource and action as query parameters, asks the PDP, and ' +
+          'ENFORCES the answer — 200 or 403. It is where xacml.pepBias is ' +
+          'visible: deny-biased and permit-biased agree on every Permit and ' +
+          'every Deny and differ on Indeterminate and NotApplicable, which ' +
+          'is the case nobody tests. An obligation it cannot discharge turns ' +
+          'a Permit into a refusal (section 7.2), which is the part ' +
+          'implementations skip. TWO GATES, ABOUT TWO DIFFERENT PEOPLE: the ' +
+          'CALLER needs XACML_USER to drive it at all, and the SUBJECT named ' +
+          'in ?subject= is what the PEP then enforces about. Keeping them ' +
+          'apart is what lets an admitted caller ask about somebody the ' +
+          'policy refuses and watch it refuse — which is the whole ' +
+          'demonstration.' },
+  { path: '/xacml/pep/register', group: 'XACML',
+    name: 'A remote PEP registers', specs: ['xacml30'],
+    what: 'A Policy Enforcement Point in ANOTHER PROCESS says it exists, ' +
+          'over mutual TLS on this same port — server.js already sets ' +
+          'requestCert: true, so this needed no new listener. THE ONE ' +
+          'ENDPOINT IN THIS FAMILY THAT ASKS FOR A CREDENTIAL, and it asks a ' +
+          'different question from /xacml/pdp: not who the decision is ' +
+          'about, but WHICH PEP this is — because a registration writes an ' +
+          'entry and supplies an address this service will later dial. It ' +
+          'is a turnstile like every other gate here (the certificate need ' +
+          'not chain to anything, RFC 8705 section 3\'s argument) and it is ' +
+          'NOT what lets a PEP enforce: an unregistered one pulls and ' +
+          'decides just as well. xacml.pepRequireCertificate turns it off.' },
+  { path: '/xacml/pep/policies', group: 'XACML',
+    name: 'The repository, for a remote PEP to LOAD', specs: ['xacml30'],
+    what: 'Every ENABLED policy and which one is the root, plus a sync ' +
+          'token over exactly those bytes; ?since=<token> answers 304. THE ' +
+          'PULL IS THE CONTRACT — a remote PEP polls this on its own ' +
+          'interval and evaluates locally with its own copy of the engine, ' +
+          'because a PEP that asked per request would be /xacml/pdp with a ' +
+          'network hop in front of every access decision. Requires ' +
+          'REMOTE_PEPS — a DIFFERENT role from the XACML_USER the four ' +
+          'endpoints above want, and a different group, because this is the ' +
+          'endpoint that publishes the documents this service enforces its ' +
+          'own access with. A DISABLED policy is left out rather than sent ' +
+          'with a ' +
+          'flag, because a PEP that loaded one would enforce a policy this ' +
+          'service does not.' },
+  { path: '/xacml/pep/heartbeat', group: 'XACML',
+    name: 'What a remote PEP has enforced', specs: ['xacml30'],
+    what: 'Its cumulative counters and the sync token it holds — which is ' +
+          'what makes "current" a comparison this service performs rather ' +
+          'than a claim the PEP makes about itself. Those decisions happened ' +
+          'in another process and this service saw none of them, which is ' +
+          'the entire point of a remote PEP. It does NOT create a row: a ' +
+          'heartbeat from something that never registered is refused naming ' +
+          'the registration endpoint, because a row created here would carry ' +
+          'no certificate, no notify URL and no registration date.' },
+  { path: '/xacml/pip', group: 'XACML',
+    name: 'The Policy Information Point, over HTTP', specs: ['xacml30'],
+    what: 'XML in, XML out. POST a <PIPRequest> carrying the XACML <Request> ' +
+          'you are deciding and one <AttributeDesignator> per attribute ' +
+          'wanted; get <Attributes> back IN THE SHAPE A <Request> CARRIES ' +
+          'THEM. IT EXISTS BECAUSE A REMOTE PEP HOLDS THE ENGINE AND NOT THE ' +
+          'DIRECTORY: this service\'s PIP IS ou=users, so a policy ' +
+          'designating an attribute the request did not carry resolves to an ' +
+          'empty bag in another container and to a real value here — the ' +
+          'same policy deciding two ways in two enforcement points, which is ' +
+          'the drift a shared repository exists to prevent reappearing one ' +
+          'layer down. XACML DEFINES NO PIP PROTOCOL, so this invents as ' +
+          'little as possible: both directions are XACML\'s own XML, read ' +
+          'and written by xacml_xml.js rather than by anything new, and the ' +
+          'response is a REQUEST FRAGMENT a PEP splices into its own request ' +
+          '— after which its engine finds the values where a designator ' +
+          'looks for them, with no translation and no branch. It answers ' +
+          'through the SAME resolverFor() the embedded PDP is handed, so the ' +
+          'two cannot disagree, and it resolves the entry ONCE per call so a ' +
+          'batch of designators cannot see two different people. THREE ' +
+          'RULES: an unresolved designator is an ABSENT <Attribute> and ' +
+          'never an empty one or an error, because that is what a request ' +
+          'that never carried it looks like; MustBePresent is read and NOT ' +
+          'applied, because what an empty bag means is settled by the ' +
+          'designator and the function it is handed to, both in the ' +
+          'CALLER\'s engine; and only the access-subject category resolves. ' +
+          'The five reasons a bag can be empty come back in <Unresolved>, in ' +
+          'this service\'s OWN namespace so that a PEP reading only the ' +
+          'XACML core namespace never sees it. It requires REMOTE_PEPS ' +
+          'rather than the XACML_USER the rest of /xacml wants — the one ' +
+          'endpoint here whose role does not follow its path, because what ' +
+          'comes back is a person\'s own data rather than a rule anybody may ' +
+          'check.' },
+  { path: '/admin/xacml', group: 'XACML', name: 'The XACML console page',
+    specs: ['xacml30'],
+    what: 'Settings, and what the PDP currently decides with. The one ' +
+          'setting on it that is NOT the PDP\'s is xacml.pepBias, which ' +
+          'belongs to the embedded Policy ENFORCEMENT point.' },
+  { path: '/admin/xacml/policies', group: 'XACML',
+    name: 'The policy repository',
+    specs: ['xacml30'],
+    what: 'Enable, disable, choose the root, delete, and create from an ' +
+          'RBAC or ABAC template. The table IS ou=policies in the embedded ' +
+          'directory.' },
+  { path: '/admin/xacml/editor', group: 'XACML', name: 'The guided editor',
+    specs: ['xacml30'],
+    what: 'Every element offers exactly what XACML allows at that point, ' +
+          'computed on the server by the same code that validates the ' +
+          'result — so the editor cannot offer something that will then be ' +
+          'refused. NO JAVASCRIPT: this console is script-src \'none\', so ' +
+          'every control is a form POST and every choice is a round trip. ' +
+          'There is no draft state; the policy being edited is the one the ' +
+          'PDP is using.' },
+  { path: '/admin/xacml/peps', group: 'XACML',
+    name: 'The remote enforcement points', specs: ['xacml30'],
+    what: 'Which PEPs pull this repository, and whether they are deciding ' +
+          'with the SAME policy this service holds — which is the question ' +
+          'a distributed authorization deployment has and the one nothing ' +
+          'else in this console can answer. NOTHING ON IT REACHES INTO ' +
+          'ANOTHER PROCESS: "stop nudging" stops this service dialling a ' +
+          'PEP and does not stop it enforcing, because it already holds the ' +
+          'engine and the policy. The register is ou=peps in the embedded ' +
+          'directory.' },
+  { path: '/admin/xacml/monitor', group: 'XACML',
+    name: 'What authorization is doing', specs: ['xacml30'],
+    what: 'THE ONLY PAGE IN THIS FAMILY ABOUT TRAFFIC rather than ' +
+          'configuration, which is why it is filed under Monitoring in the ' +
+          'console rather than beside the five XACML pages it shares a path ' +
+          'space with: how many decisions are being made, by which ' +
+          'enforcement point, and how many are refusals. Two sections — the ' +
+          'global figures (policies, enforcement points, decisions, allows, ' +
+          'declines), then every PEP with its own counts, EMBEDDED and ' +
+          'REMOTE in one list. TWO DISTINCTIONS IT KEEPS AND A SINGLE ' +
+          'NUMBER WOULD LOSE. A decision is not an enforcement: XACML has ' +
+          'four decisions and a PEP has two outcomes, what maps between them ' +
+          'is the PEP\'s bias — a deny-biased PEP refuses a NotApplicable ' +
+          'that a permit-biased one allows — and an obligation a PEP cannot ' +
+          'discharge turns a Permit into a refusal (section 7.2). And what ' +
+          'this service SAW is not what it was TOLD: the embedded figures ' +
+          'were counted here as they happened, the remote ones are reported ' +
+          'by another process on a heartbeat, so the totals are given as ' +
+          'here, remote and the sum. The embedded PEPs are NOT registered ' +
+          'and cannot be — they are compiled in — and an unregistered remote ' +
+          'PEP enforces perfectly and appears nowhere, so this is every ' +
+          'enforcement point the service KNOWS ABOUT. The counters are in ' +
+          'memory, start with the process and are per realm; there is no ' +
+          'reset, deliberately. Add ?format=json.' },
+  { path: '/admin/xacml/decide', group: 'XACML', name: 'Try a decision',
+    specs: ['xacml30'],
+    what: 'Ask the PDP about somebody and see the decision, which policies ' +
+          'applied, and — separately — what the embedded PEP would do with ' +
+          'it. Those last two are different answers, and when a policy "is ' +
+          'not working" it is nearly always because only one was being ' +
+          'looked at.' },
+  { path: '/admin-api/xacml', group: 'XACML',
+    name: 'The XACML console page over JSON', specs: ['xacml30'],
+    what: 'What GET /admin/xacml draws, as data. Ungated, like the rest of ' +
+          '/admin-api.' },
+  { path: '/admin-api/xacml/policies', group: 'XACML',
+    name: 'The policy repository over JSON', specs: ['xacml30'],
+    what: 'Every policy with its static type-check problems, the root, and ' +
+          'the templates with the parameters each takes.' },
+  { path: '/admin-api/xacml/editor', group: 'XACML',
+    name: 'One policy as an editable tree', specs: ['xacml30'],
+    what: 'Each node carries the legal moves at that point, so a caller can ' +
+          'walk the tree and POST one without a second copy of the grammar.' },
+  { path: '/admin-api/xacml/decide', group: 'XACML',
+    name: 'Ask the PDP a question over JSON', specs: ['xacml30'],
+    what: 'What GET /admin/xacml/decide draws: the decision, which policies ' +
+          'applied, and — separately — what the embedded PEP would do with ' +
+          'it. NOT POST /xacml/pdp, which takes a JSON Profile request and ' +
+          'is what a PEP calls; this builds a request out of three query ' +
+          'parameters and is what a person asks.' },
+  { path: '/admin-api/xacml/peps', group: 'XACML',
+    name: 'The remote enforcement points over JSON', specs: ['xacml30'],
+    what: 'The register, and what each PEP last reported: whether it holds ' +
+          'the current repository, when it was last heard from, the bias it ' +
+          'says it is running with, and what happened to the last nudge — ' +
+          'which is the only place a failed nudge is recorded, because it ' +
+          'is invisible from the receiving end by definition.' },
+  { path: '/admin-api/xacml/monitor', group: 'XACML',
+    name: 'What authorization is doing, over JSON', specs: ['xacml30'],
+    what: 'What GET /admin/xacml/monitor draws: the global decision figures ' +
+          'and one row per enforcement point, embedded and remote. The ' +
+          'three totals are kept apart on purpose — `here` is what this ' +
+          'process counted as it happened, `remote` is what other processes ' +
+          'report on a heartbeat and goes DOWN when one restarts, and ' +
+          '`combined` is arithmetic over the two. On the `pdp` row ' +
+          '`allowed` and `refused` are null rather than 0, because this ' +
+          'service produced that decision and never saw the enforcement. ' +
+          'There is no POST beside it: the page has no control, and a reset ' +
+          'was refused rather than forgotten.' },
+  { path: '/admin-api/xacml/:action', group: 'XACML',
+    name: 'Change a policy, the repository or a remote PEP',
+    specs: ['xacml30'],
+    what: 'The console\'s three POST endpoints as ONE action resource — a ' +
+          'caller should not have to work out which page owns "enable". ' +
+          'The repository\'s, the editor\'s, and the three that end -pep, ' +
+          'which are spelt that way because this endpoint dispatches on the ' +
+          'action name and a second "disable" would be ambiguous between a ' +
+          'policy and an enforcement point. Rule 7 is why this exists in ' +
+          'the same commit as the pages.' },
   { path: '/.well-known/ssf-configuration', group: 'Shared Signals',
     name: 'Transmitter configuration metadata',
     specs: ['ssf'],
@@ -1630,6 +1975,28 @@ const ENDPOINTS = [
           'post-quantum and the key establishment is entirely classical. It ' +
           'publishes no private key and no secret. Add ?format=json, which ' +
           'is also what the Download button hands you.' },
+  { path: '/admin/api-explorer', group: 'Admin', name: 'API explorer',
+    specs: ['openapi'],
+    what: 'NON-SPEC. Every operation of the management API, read from the same ' +
+          'OpenAPI document that API publishes, with a form that calls it and ' +
+          'the equivalent curl line beside each. THE ONE PAGE IN THIS CONSOLE ' +
+          'WITH A SCRIPT: served under a policy that relaxes script-src to ' +
+          "'self' and adds connect-src, and nothing else. It was " +
+          '/admin-api/docs until 2026-09-09, when that API began requiring an ' +
+          'access token a browser has no way to carry — so it is behind the ' +
+          'console\'s session and roles now, and the calls it makes use a ' +
+          'token minted for the reader carrying exactly what those roles ' +
+          'grant.' },
+  { path: '/admin/api-explorer/openapi.json', group: 'Admin',
+    name: 'API explorer document', specs: ['openapi'],
+    what: 'NON-SPEC. The same OpenAPI document /admin-api/openapi.json serves, ' +
+          'on the console\'s own path so that it arrives on the session the ' +
+          'page was drawn with rather than needing a token of its own.' },
+  { path: '/admin/api-explorer/explorer.js', group: 'Admin',
+    name: 'API explorer script', specs: [],
+    what: 'NON-SPEC. The explorer\'s script, and the only script this service ' +
+          'serves. A separate resource rather than an inline block precisely so ' +
+          "that script-src 'self' suffices and 'unsafe-inline' is never needed." },
   { path: '/admin/sts-metadata', group: 'Admin', name: 'This page',
     specs: [],
     what: 'NON-SPEC. Every protocol this service speaks, every endpoint it ' +
@@ -1641,11 +2008,47 @@ const ENDPOINTS = [
           'the Download button on the page hands you. It moved here from ' +
           '/sts-metadata on 2026-08-24: it is a console page now, so it ' +
           'wears the console\'s chrome and is behind the console\'s gate.' },
+  { path: '/admin/callback', group: 'Admin',
+    name: 'The console\'s OIDC redirect URI', specs: ['oidc'],
+    what: 'WHERE THIS SERVICE\'S OWN ADMIN CONSOLE COMES BACK FROM ITS OWN ' +
+          'AUTHORIZATION SERVER (2026-09-06). The console is a REGISTERED ' +
+          'CLIENT — `sts-admin-console`, seeded under ou=applications — and ' +
+          'the gate that used to redirect straight to the sign-in screen now ' +
+          'sends a browser through /oauth2/authorize instead. **This is the ' +
+          'one path under /admin the console gate does not guard**, and it ' +
+          'cannot be: somebody arriving here has no console session yet, ' +
+          'which is what they are about to get. It grants nothing on its own ' +
+          '— the state must be one this service minted, it is single-use, the ' +
+          'code is redeemed with a client secret and a PKCE verifier, and the ' +
+          'ID Token is verified against the published JWKS before any session ' +
+          'exists. The flow runs in the DEFAULT realm wherever the console was ' +
+          'reached, for the reason the role roster lives there.',
+    coverage: 'full — the authorization code flow with PKCE and a confirmed ' +
+              'nonce, as a client. The refresh token is discarded and the ' +
+              'access token is never presented anywhere: the flow buys one ' +
+              'thing here, an ID Token saying who signed in.' },
+  { path: '/admin/signout', group: 'Admin',
+    name: 'Sign out of the console', specs: [],
+    effect: 'ends the console session and the sign-on session behind it',
+    what: 'NON-SPEC. The Sign out button at the top of every console page. It ' +
+          'ends TWO sessions and that is the whole of its design: the ' +
+          'console\'s own relying-party session, and the SIGN-ON session it ' +
+          'was derived from. Ending only the first would be a button that ' +
+          'does not sign anybody out — the next page runs the authorization ' +
+          'code flow, meets the sign-on session that is still live, and draws ' +
+          'the console again with nothing typed. **It is the one non-GET on ' +
+          'this console that does not need the Admin Write role**, because ' +
+          'ending your own session is the one act here that needs no ' +
+          'permission; the CSRF token is still required. It is NOT /logout: ' +
+          'that ends everything an identity holds in every protocol, and is ' +
+          'linked from the page this answers with.' },
   { path: '/admin', group: 'Admin', name: 'Admin console',
     specs: [],
     what: 'NON-SPEC. What the console is, what it can change about this service, and what it ' +
-          'deliberately cannot (it does not revoke assertions, tickets or credentials, because ' +
-          'nothing consults this service about those). It DOES end a sign-on session since ' +
+          'deliberately cannot (it cannot RECALL an assertion, a ticket or a credential, ' +
+          'because nothing consults this service about those — since 2026-09-05 it does ' +
+          'DISOWN them, which is this service\'s own record and not an enforcement). It DOES ' +
+          'end a sign-on session since ' +
           '2026-08-24, at /admin/logout, and this row used to say the opposite: the old ' +
           'argument was that wsignout1.0 has a cleanup to fan out and a third way to end a ' +
           'session would be a third way to get that wrong, which stopped being true when the ' +
@@ -1688,7 +2091,48 @@ const ENDPOINTS = [
           'POST creates a person in the embedded LDAP directory, refusing a username that is ' +
           'already there. The new entry does not appear in this page\'s own table until they ' +
           'authenticate — that list is who this service has SEEN, and the entry is what the ' +
-          'directory HOLDS.' },
+          'directory HOLDS. THE DRILL-DOWN HAS TWO MORE CONTROLS AND THEY ARE ' +
+          'NOT THE SAME ACT: one signs the person out of everything, through ' +
+          'the same terminate() /admin/logout uses, so every session ends, ' +
+          'every relying party is notified, codes and pre-authorized codes ' +
+          'are invalidated, LDAP connections close and the Kerberos sign-out ' +
+          'instant is stamped; the other revokes their JWTs and LEAVES THE ' +
+          'SESSION ALONE, which is what a revocation is and which means the ' +
+          'next authorization request mints a fresh set. The second was the ' +
+          'only one here until 2026-09-05, under a label that promised the ' +
+          'first.' },
+  { path: '/admin/users/new', group: 'Admin', name: 'New user',
+    // rfc4511 because what it writes is a directory entry, rfc4519 because
+    // inetOrgPerson and most of the attribute names on the form are that
+    // specification's. NOT rfc4512: this directory has no schema, and the
+    // catalogue these fields come from is published rather than registered —
+    // three of the twenty-five are SCHAC's or this service's own, which the
+    // form says on every row.
+    specs: ['rfc4511', 'rfc4519'],
+    what: 'NON-SPEC console page. THE CREATE FORM for /admin/users, on a page of its own — a ' +
+          'DRILL-DOWN of that page rather than a section of the console, so it has no row in ' +
+          'the sidebar and none in the Overview list: it is reached from the Create box on ' +
+          '/admin/users, which carries the typed name to it, and from *Create another* on its ' +
+          'own success page. It ' +
+          'REPLACED a one-box button that invented an entire person — a full name, an email ' +
+          'address, a date of birth, a street, a nationality — behind whatever username was ' +
+          'typed. Here every attribute a person in this directory may carry is a field, ONLY ' +
+          'THE USERNAME IS REQUIRED, and AN EMPTY BOX RECORDS NO VALUE rather than falling back ' +
+          'to an invented one. The invented person is still one press away as *Fill with ' +
+          'example data*, which writes what this service WOULD have made up into the boxes left ' +
+          'empty and touches nothing already typed, creating nobody — DEVELOPMENT MODE ONLY, ' +
+          'and the button is both undrawn and refused in product mode. It is computed on the ' +
+          'SERVER: this console is script-src \'none\'. IT IS ALSO WHERE SOMEBODY IS GIVEN A ' +
+          'WAY IN, which no screen here could do before: a password you type, one generated and ' +
+          'shown ONCE, a single-use time-limited activation link shown ONCE at which they ' +
+          'choose a password or a security key for themselves, or nothing at all — which is ' +
+          'the default and is enough in development mode, where no password is checked. A ' +
+          'generated password and an activation link are in the BODY of the response and never ' +
+          'in a redirect, because a value that exists once must not travel in a URL. IT IS NOT ' +
+          'A SECOND DOOR: the form calls the same createUser() an ldapadd, a SCIM create and ' +
+          'POST /admin-api/users/create reach, so one entry per person means the same thing at ' +
+          'all four. The entry lands in the ou=users container OF THE TRUST REALM THIS PAGE WAS ' +
+          'REACHED IN. Add ?format=json for the attribute catalogue and the credential options.' },
   { path: '/admin/applications', group: 'Admin', name: 'Applications',
     // rfc7591 because the client registrations this page shows ARE the entries under
     // ou=applications, and rfc4519 because applicationProcess — the one registered
@@ -1722,7 +2166,13 @@ const ENDPOINTS = [
     // creates is the shape a dynamic client registration lands in.
     specs: ['rfc4511', 'rfc4519', 'rfc7591'],
     what: 'NON-SPEC console page. THE CREATE FORM for /admin/applications, on a page of its ' +
-          'own: name a client_id, wtrealm, AppliesTo, entityID or service principal name that ' +
+          'own — a DRILL-DOWN of that page rather than a section of the console, so it has no ' +
+          'row in the sidebar and none in the Overview list: it is reached from the New ' +
+          'application BUTTON at the foot of /admin/applications, beside the short row that ' +
+          'takes an identifier and a name and nothing else. Both post to /admin/applications ' +
+          'with action=create and reach one createApplication(), so the sidebar had been ' +
+          'offering a tab for the longer of two forms on one page. It lets you ' +
+          'name a client_id, wtrealm, AppliesTo, entityID or service principal name that ' +
           'has never connected, optionally a kind, and TICK THE PROTOCOL FAMILIES the ' +
           'application is DECLARED for from a closed list of fourteen. The entry lands in the ' +
           'ou=applications container OF THE TRUST REALM THIS PAGE WAS REACHED IN — the ' +
@@ -1849,6 +2299,35 @@ const ENDPOINTS = [
           'store, which is why /admin-api needs no POST beside its GET. ' +
           'The bulk count deliberately does not tally with the rest — one Bulk of five ' +
           'creates is one bulk AND five creates. Add ?format=json.' },
+  { path: '/admin/scim/monitor', group: 'Admin', name: 'SCIM metrics',
+    // rfc7643 and rfc7644 because what it counts is calls to that surface;
+    // rfc7617, rfc7616, rfc6750 and rfc7486 because the per-scheme table is
+    // scim_auth.js's own list of the schemes RFC 7644 section 2 names, and a
+    // reader of this page is looking at those counts.
+    specs: ['rfc7643', 'rfc7644', 'rfc6750', 'rfc7617', 'rfc7616', 'rfc7486'],
+    what: 'NON-SPEC page. THE TRAFFIC HALF OF /admin/scim, and the reason it is ' +
+          'a page of its own is the same one /admin/xacml/monitor gives: where a ' +
+          'page is filed is decided by the QUESTION IT ANSWERS, so this is under ' +
+          'Monitoring in the console although it shares a path space with the ' +
+          'protocol page. How many API calls, how many succeeded, how many ' +
+          'failed, and WHO IS CALLING — one row per authenticated principal with ' +
+          'what it used, what it touched, and when it was first and last seen. ' +
+          'Broken down by API call type (with the latency and the bytes each ' +
+          'returned), by resource type, by authentication scheme with the ones at ' +
+          'zero included, and by what went back — status class, status and ' +
+          'scimType. Then the last fifty requests individually, because an ' +
+          'aggregate cannot say what the call that just failed looked like. ' +
+          'THREE THINGS IT KEEPS APART THAT ONE NUMBER WOULD LOSE. A client is an ' +
+          'AUTHENTICATED PRINCIPAL and not a connection — SCIM is stateless HTTP ' +
+          'and has nothing to be connected — so the figure never goes down. A ' +
+          'caller the gate REFUSED is not a client and is in no row, even when ' +
+          'the credential carried a name, because attributing traffic to an ' +
+          'identity this service declined to believe is the one mistake this page ' +
+          'could make that would matter. And the operation counts deliberately do ' +
+          'not sum to the call total: one Bulk of five creates is one bulk AND ' +
+          'five creates. The counters are in memory, per trust realm, and start ' +
+          'with the process; there is NO reset button and it was refused rather ' +
+          'than forgotten. Add ?format=json.' },
   { path: '/admin/ssf', group: 'Admin', name: 'Shared Signals',
     specs: ['ssf', 'rfc8417', 'rfc9493', 'rfc8935', 'rfc8936'],
     what: 'THE TRANSMITTER: every stream a receiver has agreed, its status, its ' +
@@ -1913,6 +2392,57 @@ const ENDPOINTS = [
           'caep.maxSessionsTracked and the clear button empties it, so a link coming back ' +
           'empty is an ordinary outcome and the page says which state it is in. One ' +
           'control, the same reset the table has, and it ends nothing. Add ?format=json.' },
+  { path: '/admin/risc', group: 'Admin', name: 'RISC',
+    specs: ['risc', 'ssf', 'rfc8417', 'rfc9493'],
+    what: 'THE SECOND VOCABULARY: RISC\'s fourteen ACCOUNT event types with every ' +
+          'member the specification gives each one — of which there are very few, ' +
+          'because ELEVEN OF THE FOURTEEN HAVE NO PAYLOAD MEMBERS AT ALL and the ' +
+          'subject carries the entire message. Only credential-compromise has a ' +
+          'required member and it is defined by reference to CAEP\'s credential-change. ' +
+          'Its ONE control is the form that emits an event by hand, and it exists ' +
+          'because TEN OF THE FOURTEEN describe things nothing here does: no breach ' +
+          'corpus is searched by this service and no recovery flow runs in it. Four of ' +
+          'those ten CHANGE REAL STATE when they go — RISC section 2.8 defines each ' +
+          'opt-out event as "the account is in this state" rather than as a report that ' +
+          'it moved. The other four fire on their own when the DIRECTORY changes, which ' +
+          'is a different observer from CAEP\'s: risc.autoEmit watches provisioning ' +
+          'where caep.autoEmit watches authentication. The eleven risc.* settings post ' +
+          'back to it, including risc.googleSubjectType — the only deliberate defect in ' +
+          'this service that a specification asks for by name (RISC section 3.1). Add ' +
+          '?format=json.' },
+  { path: '/admin/risc-accounts', group: 'Admin', name: 'RISC accounts',
+    specs: ['risc', 'ssf'],
+    what: 'THE MONITORING HALF: one row per account this service has been told anything ' +
+          'about, INCLUDING ACCOUNTS THAT NO LONGER EXIST, with THREE states rather ' +
+          'than one — the lifecycle (active, disabled, purged), RISC section 2.8\'s ' +
+          'opt-out state, and whether a credential has been reported compromised. They ' +
+          'move independently: an account can be opted out and perfectly healthy, or ' +
+          'compromised and still enabled, which is why they are three columns and not ' +
+          'one word. The register outliving the account is starker than the CAEP one ' +
+          'outliving a session: a purged account is gone from the directory entirely, ' +
+          'so the row is the only remaining evidence anywhere that receivers were told. ' +
+          'A SUPPRESSED column counts events built and deliberately NOT sent because ' +
+          'the account had opted out — the one number in this console that says a ' +
+          'receiver heard nothing on purpose. Beside it, which streams would take a ' +
+          'RISC event at all, and a per-APPLICATION table. Two controls and neither ' +
+          'disables or deletes anybody: reset one account\'s RISC state, and clear the ' +
+          'register. Searched and paged (?acctq=, ?accountsPage=, ?per=, ?rappq=), and ' +
+          'the search reaches identifiers the account NO LONGER HAS, because ' +
+          'identifier-changed is an event about the key itself. Add ?format=json.' },
+  { path: '/admin/risc-accounts/account', group: 'Admin',
+    name: 'RISC accounts — one account',
+    specs: ['risc', 'ssf', 'rfc8417'],
+    what: 'A DRILL-DOWN of /admin/risc-accounts, reached from every identifier in its ' +
+          'first column: everything this transmitter has said about ONE account, in ' +
+          'order, with the jti and the stream each event went out on and what the ' +
+          'register noticed as it was applied — beside the account\'s own facts (the ' +
+          'three states, the addresses it is and was known by, the identifier changes, ' +
+          'the compromised credentials) and its count per event type, which flags the ' +
+          'one type RISC itself deprecates. The event list is paged (?eventsPage=, ' +
+          '?per=). AN ACCOUNT THIS REGISTER NO LONGER HOLDS IS NOT A 404: the register ' +
+          'is capped at risc.maxAccountsTracked and the clear button empties it. One ' +
+          'control, the same reset the table has, and it changes nothing in the ' +
+          'directory. Add ?format=json.' },
   { path: '/admin/sessions', group: 'Admin', name: 'Live sessions',
     // rfc4120 and rfc4511 are what the other two kinds of session ARE — a TGT
     // and a bound connection — and oidc is cited for the browser one because
@@ -1951,12 +2481,207 @@ const ENDPOINTS = [
           'naming its family. POST revokes by jti or by pasted token, by kind, by subject, or ' +
           'everything. It is the SAME revocation set /oauth2/revoke writes to, so introspection, ' +
           'UserInfo and the refresh grant all honour it immediately. ONLY THE JWTs CAN BE REVOKED: ' +
-          'nothing consults this service about an assertion or a ticket, so those rows are listed ' +
-          'with the reason there is no button rather than with a button that would change a number ' +
-          'here and nothing out there. Restore is offered and is NON-SPEC: no authorization server ' +
+          'nothing consults this service about an assertion or a ticket. SINCE 2026-09-05 THOSE ' +
+          'ROWS HAVE A BUTTON ANYWAY and it is labelled (record only): it marks the credential ' +
+          'revoked in this service\'s own record, which is what a sign-out must be able to say, ' +
+          'what CAEP carries to a receiver that subscribed and what SAML Single Logout carries ' +
+          'for an assertion from a browser profile — and it reaches the HOLDER of the credential ' +
+          'not at all, which every surface says where the button is. `revocationReach` on every ' +
+          'row is the field that tells the two apart. Restore is offered and is NON-SPEC: no ' +
+          'authorization server ' +
           'can undo a revocation, and it is here so that getting back to a working token does not ' +
           'mean restarting the service. OID4VCI credentials are counted on /admin/metrics and are ' +
           'not in this table.' },
+  { path: '/portal', group: 'User portal',
+    name: 'A person\'s own account',
+    specs: [],
+    what: 'NON-SPEC. THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE ' +
+          'PERSON LOOKING AT IT. Every other browser surface here is for ' +
+          'somebody else — the sign-in screen is a step in another protocol\'s ' +
+          'flow, the consent screen asks one question and leaves, /admin is ' +
+          'for an operator and is gated on two roles. This shows a person what ' +
+          'this identity provider knows about them and lets them change how ' +
+          'they authenticate: their password, and their security keys and ' +
+          'whether each is a primary credential or a second factor. **IT IS ' +
+          'FOUR PAGES BEHIND A NAVIGATION COLUMN OF ITS OWN SINCE ' +
+          '2026-09-06** and this path is the OVERVIEW — who you are, a ' +
+          'summary of how you sign in, and the wider of the two sign-outs. ' +
+          'The password form and the security-key list moved to pages of ' +
+          'their own, and /portal/applications joined them. The column is ' +
+          'not the console\'s: that shell draws forty administrative pages, ' +
+          'a realm chooser and a gate asking whether this person holds Admin ' +
+          'Read, none of which belongs in front of somebody managing their ' +
+          'own account. IT IS A ' +
+          'SEPARATE APPLICATION FROM THE ADMIN CONSOLE and shares nothing with ' +
+          'it but the session, because there is one answer here to "who is ' +
+          'this browser" and a second would eventually disagree. THE IDENTITY ' +
+          'COMES FROM THE SESSION AND NEVER FROM THE REQUEST — no route here ' +
+          'takes a username, an id or a DN from a query string or a body, so ' +
+          'there is no parameter for anybody to change (OWASP A01). Every form ' +
+          'carries a CSRF token, changing a password requires the current one ' +
+          'even though the person is signed in, and both are rate limited.' },
+  { path: '/portal/activate', group: 'User portal',
+    name: 'Spend an activation link and set up a credential',
+    specs: [],
+    effect: 'sets a password and/or enrols a security key, and spends the link',
+    what: 'NON-SPEC. THE UNAUTHENTICATED HALF OF THE PORTAL, and the only ' +
+          'route on it that takes an identity from the request — because ' +
+          'nobody is signed in yet and what authorises it is the TOKEN, which ' +
+          'is a credential. Somebody provisioned through /admin-api, SCIM or ' +
+          'an LDAP add arrives with no way to authenticate; an administrator ' +
+          'issues them a single-use, time-limited URL and they choose a ' +
+          'password, a security key, or both — and for a key, whether it is a ' +
+          'primary credential or a second factor. The link is HASHED at rest ' +
+          'like a password, rate limited at both the GET and the POST, and ' +
+          'SPENT WHEN THE SETUP FINISHES rather than when it is opened, ' +
+          'because a link burned by a mail scanner or a browser prefetch would ' +
+          'strand the person it was for. IT DOES NOT SIGN ANYBODY IN: spending ' +
+          'it proves possession of a link, not of the credential just ' +
+          'configured, so the last step is to go and use it. Every way it can ' +
+          'fail answers the same sentence, so the page cannot be used to ' +
+          'discover which usernames have an activation outstanding.' },
+  { path: '/portal/callback', group: 'User portal',
+    name: 'The portal\'s OIDC redirect URI', specs: ['oidc'],
+    what: 'WHERE THE USER PORTAL COMES BACK FROM THIS SERVICE\'S OWN ' +
+          'AUTHORIZATION SERVER (2026-09-06). The portal is a REGISTERED ' +
+          'CLIENT — `sts-user-portal`, seeded under ou=applications in EVERY ' +
+          'realm, because the portal reads the ambient realm\'s session — and ' +
+          'it signs people in with the ordinary authorization code flow ' +
+          'rather than by reading the sign-on session directly. Code and ' +
+          'state arrive here, the code is redeemed at /oauth2/token with the ' +
+          'client secret and a PKCE verifier, the ID Token is verified ' +
+          'against /oauth2/jwks, and the session the portal then holds is ITS ' +
+          'OWN, in its own cookie, derived from the sign-on session and ended ' +
+          'with it. It grants nothing on its own: the state must be one this ' +
+          'service minted, it is single-use, and every refusal is drawn ' +
+          'rather than redirected.',
+    coverage: 'full — the authorization code flow with PKCE and a confirmed ' +
+              'nonce, as a client. The refresh token is discarded and the ' +
+              'access token is never presented anywhere: the flow buys one ' +
+              'thing here, an ID Token saying who signed in.' },
+  { path: '/portal/password', group: 'User portal',
+    name: 'Change your own password',
+    specs: [],
+    effect: 'replaces the password on the signed-in person\'s own entry',
+    what: 'NON-SPEC. A PAGE AND A HANDLER ON ONE PATH SINCE 2026-09-06: the ' +
+          'GET draws the form, which used to be a card on /portal, and the ' +
+          'POST answers it. One path rather than two because a form and the ' +
+          'handler that answers it living on separate addresses is a ' +
+          'distinction nobody could state a reason for. ' +
+          'Four controls in one handler and each is a different item ' +
+          'on the OWASP list: the CSRF token this session\'s forms carry, a ' +
+          'rate limit so the current-password check is not an oracle, ' +
+          'RE-AUTHENTICATION (the current password is required even though the ' +
+          'person is signed in, because a browser left open on a shared ' +
+          'machine must not be an account takeover), and the identity taken ' +
+          'from the session rather than the body.' },
+  { path: '/portal/applications', group: 'User portal',
+    name: 'Applications you can sign in to',
+    specs: ['rfc6749', 'oidc', 'saml2', 'ws-federation'],
+    what: 'NON-SPEC. THE FIRST PAGE IN THIS SERVICE TO PUT THE APPLICATION ' +
+          'REGISTRY AND THE ISSUANCE POLICY TOGETHER AND ANSWER A QUESTION A ' +
+          'PERSON RATHER THAN AN OPERATOR WOULD ASK (2026-09-06): where will ' +
+          'this identity provider actually sign me in? Every row was decided ' +
+          'by `common/issuance_gate.js` — THE SAME CALL the token endpoint, ' +
+          'both SAML profiles, WS-Federation, WS-Trust and the KDC make ' +
+          'before they issue anything — so this page and those endpoints ' +
+          'cannot disagree. Working the answer out here instead, from ' +
+          '`appRequiredRole` and the roles the person holds, would have been ' +
+          'a SECOND implementation of the rule and the first thing to ' +
+          'diverge the moment somebody edited the issuance policy on ' +
+          '/admin/xacml/policies. It asks once per application per distinct ' +
+          'issuance kind, because `kind` becomes the XACML action-id and a ' +
+          'policy may legitimately say something different about an ID Token ' +
+          'from what it says about a SAML assertion. IT LISTS WHAT THE ' +
+          'POLICY PERMITS AND NAMES NOTHING IT DOES NOT — the refused ' +
+          'entries are counted, and so are the registry entries that are not ' +
+          'sign-in destinations at all (a Shared Signals receiver, a SCIM ' +
+          'client, an LDAP binder, a SPIFFE workload). It is a DRY RUN and ' +
+          'says so to the PEP: nothing is issued, so nothing is written to ' +
+          'the audit log as a refusal and nothing is counted on ' +
+          '/admin/xacml/monitor as a decision this service acted on. ' +
+          'Paginated, and it stops at 1,000 entries — evaluating a policy ' +
+          'per row happens on the one thread that answers every socket this ' +
+          'service holds. THERE IS NO LAUNCH BUTTON, deliberately: this ' +
+          'service implements identity-provider-initiated sign-on in none of ' +
+          'the four browser profiles, so a link would have to invent a ' +
+          'request the application never asked for.',
+    coverage: 'full for what it claims — it reports the issuance decision and ' +
+              'does not start a sign-in. What it cannot show is an ' +
+              'application nobody has registered: this registry records an ' +
+              'application on FIRST SIGHT, so something no client has ever ' +
+              'presented an identifier for and no operator has created is ' +
+              'not there to be listed.' },
+  { path: '/portal/keys', group: 'User portal',
+    name: 'Your security keys',
+    specs: ['webauthn'],
+    what: 'NON-SPEC. The security-key list, which was a card on /portal until ' +
+          '2026-09-06 and is a page of its own now. It draws each enrolled ' +
+          'credential, whether it is a PRIMARY credential or a SECOND ' +
+          'FACTOR, and a Remove button per key that posts to ' +
+          '/portal/remove-key. THERE IS NO ENROL BUTTON and that is a rule ' +
+          'rather than a gap: /authn/webauthn is a STEP IN A SIGN-IN — it ' +
+          'draws the ceremony for a pending authentication record — so a ' +
+          'link to it from here would answer that the sign-in form has ' +
+          'expired, which is exactly the defect this portal\'s ' +
+          'account-ready page shipped with. A key is enrolled during a ' +
+          'sign-in or when an activation link is spent.' },
+  { path: '/portal/signout', group: 'User portal',
+    name: 'Sign out of the portal', specs: [],
+    effect: 'ends the portal session and the sign-on session behind it',
+    what: 'NON-SPEC. The Sign out button in the corner of every portal ' +
+          'page — the account pages\' own shell draws it — and ' +
+          'the same two-session act the console\'s is: this portal is a ' +
+          'relying party with a session of its own, so ending it alone would ' +
+          'leave the sign-on session live and the next page would sign the ' +
+          'person straight back in. It carries the CSRF token every form here ' +
+          'does, and a sign-out asked of a browser with no session is ' +
+          'answered rather than refused — somebody signed out already is in ' +
+          'the state they were asking for. **It is the narrower of the two ' +
+          'sign-outs on that page**: /logout, at the foot of it, ends every ' +
+          'session and credential this identity holds in every protocol.' },
+  { path: '/portal/remove-key', group: 'User portal',
+    name: 'Remove one of your own security keys',
+    specs: [],
+    effect: 'removes an enrolled WebAuthn credential from the person\'s entry',
+    what: 'NON-SPEC. The credential id comes from the body and the USERNAME ' +
+          'does not, which is what keeps it safe: the id is looked up among ' +
+          'this person\'s own keys, so one belonging to somebody else matches ' +
+          'nothing. IT REFUSES TO REMOVE THE LAST WAY IN — a person with no ' +
+          'password whose only primary key this is would be locked out by ' +
+          'their own click, and an identity provider that allows that has a ' +
+          'support queue rather than a security control.' },
+  { path: '/admin/tokens/set', group: 'Admin',
+    name: 'One issuance, and every credential it carried',
+    // rfc6749 and oidc because a SET only ever exists in those two: they are
+    // the only families here that hand back several credentials in one reply.
+    // rfc7009 because the button on this page is that revocation, one member
+    // at a time, into the one set of revoked jtis this service keeps.
+    specs: ['rfc6749', 'oidc', 'rfc7009'],
+    what: 'NON-SPEC PAGE, and the SECOND drill-down /admin/tokens has: every ' +
+          'row of that table showing more than one credential links here. ' +
+          'OAuth 2.0 and OIDC are THE ONLY PROTOCOLS THIS SERVICE SPEAKS ' +
+          'THAT ISSUE SEVERAL CREDENTIALS AT ONCE — an access token, a ' +
+          'refresh token and an ID Token out of one code redemption; two out ' +
+          'of one implicit response — so since 2026-09-05 that table draws a ' +
+          'row per REPLY rather than per credential, and this page opens one ' +
+          'up. Every other family issues one credential per act, so a SAML ' +
+          'assertion, a Kerberos ticket and an SVID are each a set of one ' +
+          'and link to their own lineage instead, because for one credential ' +
+          'this page would be a click that added nothing. THE GROUPING IS A ' +
+          'FACT THE ISSUER STATED and never a guess: the two OAuth issuance ' +
+          'sites mint one id per reply and hand it to every token they ' +
+          'produce, because two people redeeming two codes at the same ' +
+          'client in the same millisecond produce six credentials that agree ' +
+          'on every recorded field, and a heuristic would report a reply ' +
+          'nobody received. The set id is in NO TOKEN, no client ever sees ' +
+          'it, and it is not a claim. A REFRESH MAKES A NEW SET rather than ' +
+          'a bigger one — a set is one response, with one issued instant and ' +
+          'one grant — and what joins the generations of a grant is the ' +
+          'lineage on the page next door. Revoke set sends every revocable ' +
+          'member through the same act /oauth2/revoke performs; a set ' +
+          'holding nothing revocable is refused rather than answered ' +
+          '"revoked 0". Add ?format=json.' },
   { path: '/admin/tokens/credential', group: 'Admin',
     name: 'One credential, and every generation behind it',
     // rfc8693 is what a generation IS — every row above the last one is an
@@ -2058,6 +2783,32 @@ const ENDPOINTS = [
           'mechanism, kind, outcome, protocol and free text; paged; ' +
           '?format=json carries the acts, the distinct CHAINS among them (one ' +
           'per edge of the picture) and the policy.' },
+  { path: '/admin/roles', group: 'Admin', name: 'Roles',
+    // XACML because the decision is a XACML one, and rfc6749/oidc/saml because
+    // those are the issuances a role gates. NOT the delegation page's four:
+    // nothing here is an act, and [MS-SFU] has nothing to do with whether
+    // somebody may be issued a token.
+    specs: ['xacml30', 'rfc6749', 'oidc'],
+    what: 'NON-SPEC PAGE. Who holds a ROLE, and what requires one. A role is ' +
+          'a name a person, a GROUP or an APPLICATION can be mapped into — ' +
+          'and that third one is the unusual half and the point: a ' +
+          'client_credentials grant has no person in it, so until an ' +
+          'application could hold a role there was nothing to decide about ' +
+          'one. TWO RELATIONS AND THEY ARE OPPOSITE. MEMBERSHIP is stored on ' +
+          'the role entry under ou=roles and is edited here. REQUIREMENT is ' +
+          'appRequiredRole on an APPLICATION entry, edited on that ' +
+          'application\'s page, and drawn here read-only because this is the ' +
+          'only surface that can RESOLVE it — it says whether anything ' +
+          'defines each role an application demands, and a role nothing ' +
+          'defines refuses everybody while looking exactly like a broken ' +
+          'application. Absent means EVERYBODY, which everybody holds, so an ' +
+          'unedited service refuses nobody and the feature is off by default ' +
+          'without being absent. The six BUILT-IN roles are computed from the ' +
+          'context of each decision and are in no container. The preview asks ' +
+          'the SAME call the nine issuance sites make, so it cannot disagree ' +
+          'with the enforcement. It is NOT /admin/rbac, which is two ' +
+          'directory groups granting this console, and it is NOT ' +
+          '/admin/groups, where a group still grants nothing on its own.' },
   { path: '/admin/consent', group: 'Admin', name: 'Consent',
     // Two specifications and not the delegation page's four. Nothing here has
     // been PERFORMED, so [MS-SFU] and WS-Trust have nothing to do with it;
@@ -2769,20 +3520,13 @@ const ENDPOINTS = [
           'servers[0].url is this service as the request reached it, so a ' +
           'document fetched through a published port names an address the ' +
           'caller can use.' },
-  { path: '/admin-api/docs', group: 'Management API', name: 'API explorer',
-    specs: ['openapi'],
-    what: 'NON-SPEC. A page that reads the document above and renders one form ' +
-          'per operation, with the equivalent curl line beside each. It is this ' +
-          'repository\'s own rather than Swagger UI — 11.7 MB with an ' +
-          'install-time telemetry dependency, in a service that is deliberately ' +
-          'dependency-light and must build offline. THE ONE PAGE IN THIS SERVICE ' +
-          'WITH A SCRIPT: it is served under a policy that relaxes script-src to ' +
-          "'self' and adds connect-src, and nothing else." },
-  { path: '/admin-api/docs/explorer.js', group: 'Management API',
-    name: 'API explorer script', specs: [],
-    what: 'NON-SPEC. The explorer\'s script, and the only script this service ' +
-          'serves. A separate resource rather than an inline block precisely so ' +
-          "that script-src 'self' suffices and 'unsafe-inline' is never needed." },
+  { path: '/admin-api/api-explorer', group: 'Management API',
+    name: 'What the console\'s explorer reads', specs: [],
+    what: 'NON-SPEC. Where the explorer page reads its document from, how many ' +
+          'operations it describes, and the scopes the CALLER\'s roles grant. ' +
+          'It does not repeat the document — the operation above is the ' +
+          'document. Mirrors GET /admin/api-explorer, which is where the ' +
+          'explorer itself moved on 2026-09-09.' },
   { path: '/admin-api/status', group: 'Management API', name: 'Service status',
     specs: [],
     what: 'NON-SPEC. The issuer, when this process started, and the running ' +
@@ -2828,16 +3572,25 @@ const ENDPOINTS = [
   { path: '/admin-api/users/:action', group: 'Management API',
     name: 'User actions',
     specs: ['rfc4511', 'rfc4519'],
-    effect: 'creates an entry under ou=users in the embedded LDAP directory',
-    what: 'NON-SPEC path over the embedded directory. One URL behind the pattern: create, ' +
-          'which puts a person there BEFORE they authenticate — otherwise an entry appears ' +
-          'only when somebody presents a credential somewhere in this service. The entry ' +
-          'carries the invented person behind that name, so an issued credential and an ' +
-          'ldapsearch agree from the start. ONE ENTRY PER PERSON: a username already here is ' +
-          'refused, whatever protocol brought them and whichever attribute their entry is ' +
-          'named by, and an ldapadd under ou=users gets the same refusal as ' +
-          'LDAP_ENTRY_ALREADY_EXISTS (68) — all three doors call one function. NO PASSWORD IS ' +
-          'SET, because none is ever checked. Creating the entry does not put the name in GET ' +
+    effect: 'creates an entry under ou=users in the embedded LDAP directory, ' +
+            'and sets or issues the credential it is given',
+    what: 'NON-SPEC path over the embedded directory. THREE URLs behind the pattern. create ' +
+          'puts a person there BEFORE they authenticate — otherwise an entry appears only when ' +
+          'somebody presents a credential somewhere in this service — and takes the attributes ' +
+          'somebody knows about them, checked against the catalogue GET /admin-api/users/new ' +
+          'publishes, with an unknown name REFUSED rather than dropped. invent defaults to TRUE ' +
+          'and writes the invented person behind that name, which is what this operation has ' +
+          'always done; invent:false records only what was sent. ONE ENTRY PER PERSON: a ' +
+          'username already here is refused, whatever protocol brought them and whichever ' +
+          'attribute their entry is named by, and an ldapadd under ou=users gets the same ' +
+          'refusal as LDAP_ENTRY_ALREADY_EXISTS (68) — all the doors call one function. A ' +
+          'CREDENTIAL MAY BE SET IN THE SAME CALL: a password, one generated and returned ONCE, ' +
+          'or a single-use activation link returned ONCE; a credential step that fails does not ' +
+          'undo the create and says so rather than answering ok:false. set-password sets or ' +
+          'replaces one on somebody already here, hashed with scrypt and never readable back — ' +
+          'the operation credentials.js has named in two messages since it was written and ' +
+          'which did not exist until 2026-09-06. issue-activation mints a link for somebody ' +
+          'provisioned with no way in. Creating the entry does not put the name in GET ' +
           '/admin-api/users: that lists identities this service has SEEN authenticate, and ' +
           'this writes what the directory HOLDS. Mirrors POST /admin/users.' },
   { path: '/admin-api/groups', group: 'Management API', name: 'Directory groups',
@@ -2846,7 +3599,39 @@ const ENDPOINTS = [
           'the drill-down. A process with no directory answers 200 with ' +
           'directory:false and a group that is not there with found:false, ' +
           'because both are answers rather than errors. A GROUP HERE GRANTS ' +
-          'NOTHING. Mirrors GET /admin/groups.' },
+          'NOTHING, with two exceptions: no endpoint decides anything on a ' +
+          'group, and the only two that do are admin.readGroup and ' +
+          'admin.writeGroup, which say who may use the console. A token CAN ' +
+          'carry one — groups.claim is on by default — and carrying a fact is ' +
+          'not acting on one. Mirrors GET /admin/groups.' },
+  { path: '/admin-api/groups/:action', group: 'Management API',
+    name: 'Group actions',
+    specs: ['rfc4511', 'rfc4514', 'rfc4519'],
+    effect: 'creates an entry under ou=groups in the embedded LDAP directory, ' +
+            'and writes membership values onto one',
+    what: 'NON-SPEC path over the embedded directory, and NEW ON 2026-09-06 — ' +
+          'until then this API could put a PERSON in the directory and had no ' +
+          'way to put them in a GROUP, so the only two doors onto a group here ' +
+          'were an ldapadd on the raw socket and POST /scim/v2/Groups. TWO ' +
+          'URLs behind the pattern. create puts a groupOfNames at ' +
+          'cn=<name>,ou=groups, so it is counted as a group by BOTH of the ' +
+          'rules /admin/groups applies; the name becomes the cn AND the RDN, ' +
+          'so one carrying a character RFC 4514 section 2.4 reserves in a DN ' +
+          'is REFUSED rather than escaped, exactly as a username is. Members ' +
+          'may be given and each may be a user name or any DN, since a group ' +
+          'can hold another group. add-member writes ONE value onto an ' +
+          'existing group and is IDEMPOTENT — somebody already listed answers ' +
+          'ok with changed:false rather than an error — and it does not ' +
+          'create the group as a side effect, because a typo in a name would ' +
+          'then be a new group. A MEMBER THAT NAMES NOTHING IS WRITTEN AND NOT ' +
+          'REFUSED: this directory does no referential integrity in either ' +
+          'direction, and refusing here would make the dangling state ' +
+          '/admin/groups exists to report impossible to produce from this ' +
+          'door. Nothing is written onto the PERSON: memberOf is maintained by ' +
+          'nothing here and a value written there is one no other door can ' +
+          'take away. REMOVING a member is not here — it is an ldapmodify, a ' +
+          'SCIM PATCH, or POST /admin-api/rbac for the two groups that grant ' +
+          'the console. Mirrors POST /admin/groups.' },
   { path: '/admin-api/rbac', group: 'Management API', name: 'Admin console roles',
     specs: ['rfc4511', 'rfc4514', 'rfc4519'],
     what: 'NON-SPEC. The two console roles with every grant, the four settings behind the ' +
@@ -2891,27 +3676,58 @@ const ENDPOINTS = [
           'instant on the PRINCIPAL and still reaches no service ticket already in a cache. ' +
           'Mirrors POST /admin/sessions.' },
   { path: '/admin-api/tokens', group: 'Management API',
-    name: 'Issued tokens, assertions and tickets',
+    name: 'Issued tokens, assertions and tickets, grouped by issuance',
     specs: ['rfc7009', 'rfc7662', 'oidc', 'saml2', 'saml11', 'rfc4120'],
     what: 'NON-SPEC. Everything issued and still remembered — every JWT, every ' +
           'SAML assertion and every Kerberos ticket — in one list, newest first, ' +
           'filtered by family, kind and state and paged with ?page= and ?per=. ' +
-          'Claims and facts only, never the signed artifact. OID4VCI credentials ' +
-          'are counted on /admin-api/metrics and are not in this list. Mirrors ' +
-          'GET /admin/tokens.' },
+          'AN ENTRY IS ONE ISSUANCE rather than one credential since ' +
+          '2026-09-05: OAuth 2.0 and OIDC are the only families that hand back ' +
+          'several at once, so those arrive as one entry in `sets` carrying its ' +
+          '`members`, and every other family is a set of one. `issued` is the ' +
+          'same credentials flattened out of `sets`, so a caller written ' +
+          'against the older shape reads what it read; what changed under it ' +
+          'is that a page is a whole number of replies. `page`, `pages`, ' +
+          '`matched` and `shown` count SETS; `held` and `matchedCredentials` ' +
+          'count credentials. Claims and facts only, never the signed ' +
+          'artifact. OID4VCI credentials are counted on /admin-api/metrics and ' +
+          'are not in this list. Mirrors GET /admin/tokens.' },
+  { path: '/admin-api/tokens/set', group: 'Management API',
+    name: 'One issuance, and every credential it carried',
+    specs: ['rfc6749', 'oidc', 'rfc7009'],
+    what: 'NON-SPEC. What GET /admin-api/tokens groups, opened up: the one ' +
+          'reply a `setKey` names, and its members in the order they were ' +
+          'minted. Addressed by `setKey` and never by the issuer\'s set id, ' +
+          'because a set of one has no issuance id at all — its key is ' +
+          '`one:<row handle>`, so the key space covers every row of that list ' +
+          'and a caller need not know which kind it holds. A key nothing holds ' +
+          'answers 200 with `found: false` rather than 404: a set dropped to ' +
+          'the registry\'s cap is the ordinary end of its life and not a ' +
+          'caller\'s mistake. Mirrors GET /admin/tokens/set.' },
   { path: '/admin-api/tokens/:action', group: 'Management API',
     name: 'Token actions',
     specs: ['rfc7009', 'rfc7662', 'oidc'],
-    effect: 'revokes one token, a whole kind, everything for a subject or an ' +
-            'identity, or everything',
-    what: 'NON-SPEC path over an RFC 7009 operation. Six URLs behind one ' +
-          'pattern: revoke, restore, revoke-kind, revoke-subject, revoke-user, ' +
-          'revoke-all. It is the SAME revocation set /oauth2/revoke writes to, ' +
-          'so introspection, UserInfo and the refresh grant honour it ' +
-          'immediately. ONLY THE THREE JWT KINDS CAN BE REVOKED — nothing ' +
-          'consults this service about an assertion or a ticket. restore is ' +
-          'NON-SPEC even here: no real authorization server can undo a ' +
-          'revocation. Mirrors POST /admin/tokens.' },
+    effect: 'revokes one token, a whole issuance, a whole kind, everything for ' +
+            'a subject or an identity, or everything',
+    what: 'NON-SPEC path over an RFC 7009 operation. EIGHT URLs behind one ' +
+          'pattern: revoke, restore, revoke-set, restore-set, revoke-kind, ' +
+          'revoke-subject, revoke-user, revoke-all. It is the SAME revocation ' +
+          'set /oauth2/revoke writes to, so introspection, UserInfo and the ' +
+          'refresh grant honour it immediately. revoke-set acts on ONE REPLY ' +
+          'and writes nowhere new — each member goes through the same act, one ' +
+          'at a time — which is what stops somebody revoking two credentials ' +
+          'of three and believing the grant is dead while the refresh token ' +
+          'left behind mints another. TWO KINDS OF REVOCATION AND THE REPLY ' +
+          'SAYS WHICH: a JWT is refused at introspection, UserInfo and the ' +
+          'refresh grant, while revoke-artifact marks an assertion, a ticket ' +
+          'or an SVID in THIS SERVICE\'S OWN RECORD and reaches its holder ' +
+          'not at all, because nothing consults this service when one is ' +
+          'presented. `reachedProtocol` and `recordOnly` on a set revocation ' +
+          'report the split rather than folding it into one count. A set ' +
+          'holding only credentials with no identifier to act on is REFUSED ' +
+          'rather than answered "revoked 0". Every restore here is NON-SPEC: ' +
+          'no real authorization server can undo a revocation. Mirrors ' +
+          'POST /admin/tokens.' },
   { path: '/admin-api/applications/:action', group: 'Management API',
     name: 'Application actions',
     specs: ['rfc4511', 'rfc7591', 'rfc7592', 'rfc9700'],
@@ -2947,6 +3763,20 @@ const ENDPOINTS = [
           'which is refused with a list of what is editable. Note that ?kind= does not ' +
           'partition the list, since a record commonly carries two. Mirrors ' +
           'GET and POST /admin/applications.' },
+  { path: '/admin-api/users/new', group: 'Management API',
+    name: 'New user form', specs: ['rfc4511', 'rfc4519'],
+    what: 'NON-SPEC. THE CLOSED ATTRIBUTE CATALOGUE A CREATE TAKES, as JSON: every attribute a ' +
+          'person in this directory may be given, each naming the claim it reaches in an ' +
+          'issued token or credential and the document its name comes from — which matters ' +
+          'because this directory has NO SCHEMA and would refuse none of them anywhere — plus ' +
+          'the ou=users container a new person would land in (THIS REALM\'S, because the ' +
+          'directory is per realm) and the four ways they can be given a way in. uid is not on ' +
+          'the list because it IS the username, and userPassword is not because a password goes ' +
+          'through the credential option so that it is hashed rather than written down. IT ' +
+          'CREATES NOBODY: the create is POST /admin-api/users/create, and this is the list ' +
+          'that call validates against — an attribute name not on it is refused and the whole ' +
+          'create fails, so a caller that reads this first cannot be told afterwards that half ' +
+          'of what it sent was ignored. Mirrors GET /admin/users/new.' },
   { path: '/admin-api/applications/new', group: 'Management API',
     name: 'New application form', specs: ['rfc4511', 'rfc7591'],
     what: 'NON-SPEC. THE TWO CLOSED VOCABULARIES A CREATE TAKES, as JSON: the eight kinds and ' +
@@ -2976,6 +3806,42 @@ const ENDPOINTS = [
           '`remove` and `reset` are not the same operation: reset undoes an override, remove ' +
           'publishes an ABSENCE, and a client that cannot find a member learns nothing rather ' +
           'than learning the capability is missing. Mirrors POST /admin/authorization-servers.' },
+  { path: '/admin-api/risc', group: 'Management API', name: 'RISC',
+    specs: ['openapi', 'risc', 'ssf'],
+    what: 'GET /admin/risc and /admin/risc-accounts over JSON: the fourteen event ' +
+          'types opened out member by member, every account this service has been told ' +
+          'anything about with the THREE states RISC tracks and a count per event type, ' +
+          'and which streams would take a RISC event at all. The register outlives the ' +
+          'account it describes, which makes this the only place a PURGED account is ' +
+          'still visible — the directory cannot supply it, because the entry is gone.' },
+  { path: '/admin-api/risc/accounts', group: 'Management API',
+    name: 'RISC accounts', specs: ['openapi', 'risc', 'ssf'],
+    what: 'What /admin/risc-accounts draws, as JSON: the register searched with ?acctq= ' +
+          'and paged with ?accountsPage=, the per-RECEIVER statistics beside it ' +
+          '(?rappq=), or ONE account with ?account= — the events actually sent about it, ' +
+          'in order, with the jti and the stream each went out on. It exists because ' +
+          'that page is a page of the console and one operation cannot mirror two ' +
+          'pages; the GET above mirrors /admin/risc. The search reaches identifiers the ' +
+          'account NO LONGER HAS, because identifier-changed is an event about the key ' +
+          'itself and the address a caller is holding is routinely the superseded one. ' +
+          'Mirrors GET /admin/risc-accounts.' },
+  { path: '/admin-api/risc/:action', group: 'Management API',
+    name: 'Emit a RISC event, or reset an account\'s RISC state',
+    specs: ['openapi', 'risc', 'rfc8417', 'rfc9493'],
+    what: 'emit, reset-account and clear — the same three the console\'s forms post, ' +
+          'through the same action function, with the action taken from the URL instead ' +
+          'of a hidden input. `emit` composes the account subject in the format ' +
+          'risc.subjectFormat names and sends on every stream that both delivers the ' +
+          'type and covers it; a type no stream takes is NOT an error. AN ACCOUNT THIS ' +
+          'SERVICE HAS NEVER HELD IS ACCEPTED, which is the opposite of what the CAEP ' +
+          'emit does with an unknown session — a session identifier this service never ' +
+          'minted is one it can compose no subject from, and an account is a person, ' +
+          'and RISC is aimed ACROSS providers so the account a receiver is warned about ' +
+          'is usually one it has never seen. THERE IS DELIBERATELY NO WAY TO DISABLE OR ' +
+          'DELETE AN ACCOUNT FROM HERE: emitting an account-disabled SAYS an account ' +
+          'was disabled and does not disable one, and an API that did both would merge ' +
+          'the two acts RISC exists to separate. It awaits, because emitting signs a ' +
+          'JWS and then POSTs it.' },
   { path: '/admin-api/scim', group: 'Management API', name: 'SCIM',
     specs: ['rfc7643', 'rfc7644', 'openapi'],
     what: 'Everything /admin/scim shows, over JSON: the counters, the endpoint list, what ' +
@@ -2985,6 +3851,21 @@ const ENDPOINTS = [
           'holding: the console page carries no control either, because everything about ' +
           'SCIM that can be changed is a configuration row and POST /admin-api/config/set ' +
           'is already the operation for it.' },
+  { path: '/admin-api/scim/monitor', group: 'Management API',
+    name: 'SCIM traffic', specs: ['rfc7643', 'rfc7644', 'openapi'],
+    what: 'What GET /admin/scim/monitor draws: the call totals, one row per ' +
+          'operation with its successes, failures, latency and bytes, one row ' +
+          'per resource type, one row per authenticated client, the schemes ' +
+          'with the ones at zero, the status/scimType tables and the last ' +
+          'fifty requests. READ-ONLY, and the parity rule holding rather than ' +
+          'being broken: the page it mirrors has no control either, because a ' +
+          'reset was REFUSED — a console that could zero its own monitoring ' +
+          'would make every number on it a number somebody might have zeroed. ' +
+          'An absent measurement is null and never 0 throughout: `successRate`, ' +
+          '`averageMs` and `maxMs` are null where nothing has been called, ' +
+          'because an average over no samples is absent and a 100% success ' +
+          'rate on nothing is the most misleading figure this reply could ' +
+          'carry.' },
   { path: '/admin-api/ssf', group: 'Management API', name: 'Shared Signals',
     specs: ['openapi', 'ssf', 'rfc8417'],
     what: 'GET /admin/ssf over JSON: the streams, their subjects, their queues and ' +
@@ -3172,6 +4053,60 @@ const ENDPOINTS = [
           'rather than turned away. Removing a permission does not revoke the ' +
           'grants naming it — they become dangling, because tidying them ' +
           'would be one call writing to entries it did not name.' },
+  { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
+    specs: ['openapi', 'xacml30'],
+    what: 'NON-SPEC. The role register, both relations. `roles` is MEMBERSHIP ' +
+          '— one entry per role under ou=roles, with the users, groups and ' +
+          'applications that hold it — and is written through the resource ' +
+          'below. `requiring` is REQUIREMENT: appRequiredRole on an ' +
+          'application\'s own entry, READ here and written through ' +
+          'POST /admin-api/applications/add, because one store gets one door ' +
+          'that writes it. Only NARROWED applications are listed; every other ' +
+          'one requires EVERYBODY and refuses nobody. `requiring[].unknown` ' +
+          'names a role an application demands that nothing defines, which is ' +
+          'the one thing neither the application resource nor the role list ' +
+          'can say. `gated: false` means the XACML family is not loaded in ' +
+          'this process and nothing is decided at all; `enforced: false` is ' +
+          'the same outcome from roles.enforceIssuance being off. READ ONLY — ' +
+          'the five controls are on the resource below. Mirrors ' +
+          'GET /admin/roles.' },
+  { path: '/admin-api/roles/preview', group: 'Management API',
+    name: 'Would this be issued?',
+    specs: ['openapi', 'xacml30'],
+    what: 'NON-SPEC. One issuance decision, made and thrown away: nothing is ' +
+          'issued and nothing is recorded. It goes through the SAME call the ' +
+          'nine issuance sites make — issuance_gate.check(), the embedded PEP ' +
+          'and the PDP against the policy xacml.issuancePolicy names — so a ' +
+          'preview that agreed with the enforcement only by coincidence is ' +
+          'impossible, which is the only reason it exists. It is NOT ' +
+          'POST /xacml/pdp, which asks the same engine about the repository ' +
+          'ROOT: that document answers questions about somebody ELSE\'s ' +
+          'boundary and this one answers a question about this service. ' +
+          '`application` and `subject` are both required, because an issuance ' +
+          'named with neither is allowed by definition rather than by policy. ' +
+          '`kind` becomes the XACML action-id, so a policy may permit an ' +
+          'access token and refuse a refresh token. `available: false` means ' +
+          'the engine is not loaded here. Mirrors the dry run on ' +
+          '/admin/roles.' },
+  { path: '/admin-api/roles/:action', group: 'Management API',
+    name: 'Make and change roles',
+    specs: ['openapi', 'xacml30'],
+    what: 'create-role, delete-role, describe-role, add-member and ' +
+          'remove-member — the same five the console\'s forms post to ' +
+          '/admin/roles, through the same function, so neither door can ' +
+          'enforce a rule the other does not. `kind` on the two member ' +
+          'actions chooses which of THREE lists the value goes in and they ' +
+          'are looked up in three different places, so naming the wrong one ' +
+          'succeeds and writes something that will never match. `member` is ' +
+          'named apart from `role` deliberately: a body that confused them ' +
+          'would succeed and create a role called alice. A BUILT-IN role is ' +
+          'refused by name rather than falling through to "no such role", ' +
+          'because those six are drawn in every menu on the page and have no ' +
+          'membership to edit. delete-role SUCCEEDS even where applications ' +
+          'still require the role and NAMES them: each of those is now issued ' +
+          'nothing at all, and saying so at the moment it happens is better ' +
+          'than refusing until every application entry has been edited. ' +
+          'Nothing already ISSUED is touched by any of the five.' },
   { path: '/admin-api/consent', group: 'Management API', name: 'Consent',
     specs: ['openapi', 'rfc6749', 'oidc'],
     what: 'NON-SPEC. The consent register, both halves, and the third in this ' +
@@ -3375,6 +4310,48 @@ const ENDPOINTS = [
           'does: entriesPage and agentsPage move one list each and per is ' +
           'shared. Read-only; the entries are edited through ' +
           '/admin-api/spiffe/entries.' },
+  { path: '/admin-api/ldap/roles', group: 'Management API',
+    name: 'The role entries as the directory holds them',
+    specs: ['rfc4511', 'rfc4512', 'rfc4519', 'openapi'],
+    what: 'GET /admin/ldap/roles over JSON: the MEMBERSHIP half of the role ' +
+          'register, one entry per role under ou=roles, with a person, a ' +
+          'GROUP and an APPLICATION all first-class members of one. The other ' +
+          'half is not in this container — which roles an application DEMANDS ' +
+          'is appRequiredRole on the application entry — so nothing in this ' +
+          'reply refuses anybody by itself and a caller wanting both halves ' +
+          'resolved wants GET /admin-api/roles. builtIn names the six roles ' +
+          'that are COMPUTED and in no container at all, which is why an ' +
+          'empty roles array is the ordinary state of a service refusing ' +
+          'nobody rather than a sign the feature is unloaded. Read-only; the ' +
+          'register is edited through /admin-api/roles.' },
+  { path: '/admin-api/ldap/policies', group: 'Management API',
+    name: 'The policy repository as the directory holds it',
+    specs: ['rfc4511', 'rfc4512', 'xacml30', 'openapi'],
+    what: 'GET /admin/ldap/policies over JSON: ou=policies IS the XACML ' +
+          'policy repository, one entry per policy or policy set holding the ' +
+          'document itself, with exactly one of them the root. It says one ' +
+          'thing GET /admin-api/xacml/policies does not: A WRITE OVER LDAP ' +
+          'SKIPS THE TYPECHECKER. Every write through the console and through ' +
+          '/admin-api/xacml is statically validated, so a policy that does ' +
+          'not typecheck is refused at write time rather than answering ' +
+          'Indeterminate on every request; an ldapmodify of ' +
+          'xacmlPolicyDocument reaches the entry directly, and nothing caches ' +
+          'these entries. Read-only; the repository is edited through ' +
+          '/admin-api/xacml.' },
+  { path: '/admin-api/ldap/peps', group: 'Management API',
+    name: 'The registered remote PEPs as the directory holds them',
+    specs: ['rfc4511', 'rfc4512', 'xacml30', 'openapi'],
+    what: 'GET /admin/ldap/peps over JSON: the remote Policy Enforcement ' +
+          'Points that have registered with this PDP, under ou=peps. Almost ' +
+          'every attribute is a RECORD this service wrote rather than ' +
+          'configuration, which is what this container has in common with ' +
+          'ou=agents — an identity here was taken from the CLIENT ' +
+          'CERTIFICATE the PEP presented and never from the body it sent. The ' +
+          'two that are not a record are xacmlPepEnabled, which a ' +
+          'reconnecting PEP does not clear, and xacmlPepNotifyUrl. An empty ' +
+          'peps array is not a feature that is off: a PEP pulls ' +
+          '/xacml/pep/policies and converges without ever registering. ' +
+          'Read-only; PEPs are managed through /admin-api/xacml.' },
   { path: '/admin-api/ldap/service', group: 'Management API',
     name: 'What the directory IS, right now',
     specs: ['rfc4511', 'rfc4512', 'rfc4513', 'rfc4514', 'rfc4515', 'openapi'],
@@ -4037,8 +5014,9 @@ const ENDPOINTS = [
           'checkbox against each. POST ends what was ticked, and a POST that ticks NOTHING is a ' +
           'GLOBAL logout, which is the default and the point. It also sends what only a browser ' +
           'can send: the Front-Channel Logout iframes, the wsignoutcleanup1.0 images, and the ' +
-          'SAML LogoutRequests as links. WHAT IT CANNOT END IS LISTED WITH THE REASON — an ' +
-          'assertion, a service ticket or an SVID already issued is beyond recall because ' +
+          'SAML LogoutRequests as links. WHAT IT CANNOT COMMUNICATE IS LISTED WITH THE ' +
+          'REASON — an assertion, a service ticket or an SVID already issued is DISOWNED here ' +
+          'since 2026-09-05 and beyond recall out there, because ' +
           'nothing consults this service when one is presented, and hiding those would make a ' +
           'global logout look complete when it is not. No console role is needed; with no ' +
           'session it sends the browser to /authn/login and back. logout.anyUser decides ' +
@@ -4476,6 +5454,45 @@ const PROTOCOLS = [
           'UserInfo and RP-initiated logout, with as many named ' +
           'authorization servers as have been asked for. RFC 9700 mode ' +
           'turns the BCP\'s refusals on.' },
+  { name: 'User portal', groups: ['User portal'],
+    specs: [],
+    // **THE ONE CARD ON THIS PAGE THAT IMPLEMENTS NO SPECIFICATION, AND IT
+    // SAYS SO IN A FIELD RATHER THAN BY HAVING AN EMPTY LIST.** Every other
+    // card names what it implements, and a test asserts that — correctly,
+    // because a protocol family with no specification behind it is either
+    // undocumented or invented. This is neither: it is an application, not a
+    // protocol, and the marker is what lets the rule stay strict for
+    // everything it was written for.
+    notAProtocol: true,
+    what: 'NOT A PROTOCOL, and it has a card because this page reports an ' +
+          'endpoint group no card claims — which is the rule that keeps a new ' +
+          'family from arriving unannounced, and it is worth paying here ' +
+          'rather than making the rule conditional. THE FIRST SURFACE IN THIS ' +
+          'SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT: every other ' +
+          'browser page here is for somebody else — the sign-in screen is a ' +
+          'step in another protocol\'s flow, the consent screen asks one ' +
+          'question and leaves, /admin is for an operator and is gated on two ' +
+          'roles. This is where a person sees what this identity provider ' +
+          'knows about them and changes how they authenticate: their ' +
+          'password, and their security keys and whether each is a primary ' +
+          'credential or a second factor. It is a SEPARATE APPLICATION from ' +
+          'the admin console and shares nothing with it but the session. ' +
+          '/portal/activate is its unauthenticated half, where somebody ' +
+          'provisioned through /admin-api or SCIM spends a single-use, ' +
+          'time-limited activation link to set up a credential — hashed at ' +
+          'rest like a password, rate limited, spent when the setup finishes ' +
+          'rather than when the link is opened, and never signing anybody in.' },
+  { name: 'XACML', groups: ['XACML'],
+    specs: ['xacml30', 'xacmljson'],
+    what: 'A Policy Decision Point, a policy repository that IS ' +
+          'ou=policies in the embedded directory, a Policy Information ' +
+          'Point that reads attributes off the subject\'s own entry, and an ' +
+          'embedded Policy Enforcement Point. THE ONLY FAMILY HERE THAT ' +
+          'ANSWERS A QUESTION ABOUT SOMEBODY ELSE\'S BOUNDARY: every other ' +
+          'protocol on this service authenticates or provisions somebody, ' +
+          'and this one is handed a subject that has already been ' +
+          'authenticated elsewhere and asked whether they may. Held to the ' +
+          'OASIS conformance suite rather than to a test written here.' },
   { name: 'Federation', groups: ['Federation'],
     specs: ['saml2-profiles', 'saml11-profiles', 'ws-federation', 'oidc', 'rfc6749'],
     what: 'BOTH ENDS OF A FEDERATION RELATIONSHIP, in five protocols: SAML ' +
@@ -4698,6 +5715,12 @@ function protocolReport(rows) {
     });
     return { name: p.name, what: p.what, sockets: p.sockets || '',
              groups: p.groups.slice(0), specs: (p.specs || []).slice(0),
+             // CARRIED INTO THE DOCUMENT rather than left on the table, so the
+             // drift test can see it. A card that names no specification has
+             // to say why, and the reason travels with the card — a list of
+             // exemptions kept in the test would be a second place to edit and
+             // the one that gets forgotten.
+             notAProtocol: !!p.notAProtocol,
              endpoints: endpoints };
   });
   // The direction that catches a new protocol family arriving with no row in
@@ -4905,7 +5928,18 @@ function renderInner(base, report) {
     'not from a list kept by hand, so it cannot claim an endpoint that is ' +
     'not there or miss one that is. Issuer identifier <code>' + esc(base) +
     '</code>; WS-Trust issuer <code>' + esc(config.value('wstrust.issuer')) +
-    '</code>; listening on port ' + esc(PORT) +
+    '</code>.' +
+    // The build, in the lead paragraph rather than only in the console's
+    // footer, because this is the page somebody reads to answer "what does
+    // this service do" and the honest form of that answer names a release. The
+    // footer says it on every page; this is the one page where it is part of
+    // the subject rather than provenance in the margin.
+    ' This is <strong>mock-sts ' + esc(APP_VERSION.version) + '</strong>' +
+    (APP_VERSION.commit ? ', built from commit <code>' +
+     esc(APP_VERSION.commit) + '</code>' : '') +
+    (APP_VERSION.stamped ? '' : ' — computed at startup rather than stamped ' +
+     'into a build, so this process is a checkout rather than an artifact') +
+    '. It is listening on port ' + esc(PORT) +
     // The scheme, said out loud, because the issuer above and every endpoint
     // below are built from the URL this request arrived on — so they follow the
     // socket by themselves, and a reader comparing this page against a
@@ -5149,6 +6183,19 @@ function metadataJson(base, report) {
   log.debug("Leaving metadataJson().");
   return {
     service: 'idptools mock Security Token Service',
+    // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read from
+    // the running router, so it describes the process that answered — and this
+    // says which process that was. Downloaded, the two travel together, which
+    // is the point: an endpoint list with no build number on it is a claim
+    // about a service and not about a release of one.
+    version: APP_VERSION.version,
+    build: {
+      number: APP_VERSION.build,
+      commit: APP_VERSION.commit || undefined,
+      at: APP_VERSION.builtAt,
+      // See the management API index for what this distinction is worth.
+      stamped: APP_VERSION.stamped === true
+    },
     issuer: base,
     wsTrustIssuer: config.value('wstrust.issuer'),
     port: PORT,

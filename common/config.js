@@ -537,6 +537,322 @@ const SETTINGS = [
                  'relatives) in either mode — a forwarded certificate is a ' +
                  'certificate anybody can forge.' },
 
+  // -------------------------------------------------------------------------
+  // THE MODE. What this service IS, rather than what any one surface requires.
+  //
+  // **IT IS ONE SETTING BECAUSE "IS AUTHENTICATION REQUIRED HERE" MUST HAVE
+  // ONE ANSWER.** Until 2026-09-06 it had four — `admin.authRequired`,
+  // `scim.authRequired`, `spiffe.authRequired` and, by omission, every other
+  // surface that simply never checked anything. Those three rows are gone and
+  // this replaces them, because a service that required a credential at SCIM
+  // and not at the console was not "partly secured", it was unsecured with a
+  // longer configuration file.
+  //
+  // `development` IS EVERYTHING THIS SERVICE HAS EVER DONE and is the default,
+  // so an unedited process behaves exactly as it did: no password is checked
+  // anywhere, an unknown user or application is created on first sight, a
+  // public client needs no secret, and `/admin-api` is open. That is what makes
+  // it a mock, and a mock is what exercises a client.
+  //
+  // `product` is the same protocol implementations with the permissiveness
+  // taken out: a credential is verified against a stored `userPassword`, every
+  // referenced object must already exist, an OAuth client must hold a secret,
+  // and `/admin-api` is gated like every other door. **The protocol code is the
+  // same code** — see common/mode.js, which is the one place either answer is
+  // given.
+  //
+  // RUNTIME-SETTABLE AND PER REALM, following `oauth2.rfc9700` exactly and for
+  // the same reason: a realm binds no socket, so one process can host a
+  // development realm and a product realm at once and a client can be exercised
+  // against both without a second service. That is also what lets a test flip
+  // to `product`, assert what is now refused, and flip back.
+  // -------------------------------------------------------------------------
+  { key: 'admin.bootstrapUsername', group: 'Admin console',
+    label: 'Product-mode bootstrap account',
+    path: 'admin.bootstrapUsername', env: 'STS_ADMIN_BOOTSTRAP_USERNAME',
+    type: 'string', dflt: 'admin', runtime: false,
+    restartReason: 'the bootstrap runs once, between the persistence store ' +
+                   'opening and the listener binding, so a change after that ' +
+                   'has nothing left to name',
+    description: 'Who gets the generated password when this service starts in ' +
+                 'product mode and NOBODY in the realm holds a credential. It ' +
+                 'is logged once and never again, and it is the only way into ' +
+                 'a fresh product deployment — the console needs a credential ' +
+                 'and /admin-api is gated behind the same one. It does ' +
+                 'nothing in development mode (every password is accepted, so ' +
+                 'there is nothing to bootstrap) and nothing where somebody ' +
+                 'already holds a credential, so it cannot overwrite a ' +
+                 'password or resurrect a disabled administrator.' },
+
+  // -------------------------------------------------------------------------
+  // KEY MATERIAL. Where this service's signing keys come from, and what
+  // protects them when they are written down.
+  //
+  // **DEVELOPMENT GENERATES ON EVERY START AND THAT IS A FEATURE**, not an
+  // omission: a mock is disposable, its tokens are meant to die with it, and a
+  // key regenerated per start is what makes two instances impossible to confuse
+  // (the `kid` is derived from the key material — see helpers.js).
+  //
+  // **PRODUCT GENERATES ONCE.** A token issued yesterday has to verify today,
+  // so the keys are written to the persistence store — which is why product
+  // mode REQUIRES a store — encrypted with AES-256-GCM under a key this service
+  // never generates and never stores. See common/keystore.js and
+  // common/secrets.js.
+  // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // WEB SECURITY. The controls that protect the browser-facing surfaces — the
+  // sign-in screen, the consent screen, the admin console and the User Portal
+  // — against the OWASP Top Ten. See common/websecurity.js.
+  // -------------------------------------------------------------------------
+  { key: 'xacml.enforceAccess', group: 'XACML',
+    label: 'Decide access with policy',
+    path: 'xacml.enforceAccess', env: 'STS_XACML_ENFORCE_ACCESS',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the admin console, the management API, the User ' +
+                 'Portal, SCIM and the SPIRE Server API ask the embedded PDP ' +
+                 'before letting a subject through. ON by default, and it ' +
+                 'changes nothing on an unedited service: the built-in ' +
+                 '`access-control` policy permits a subject that holds a ' +
+                 'required role, permits when the resource requires none — ' +
+                 'which is every surface nobody has narrowed — and permits ' +
+                 'somebody acting on a resource they OWN, which is the User ' +
+                 'Portal\'s rule.\n\nTurning it off does NOT open the ' +
+                 'doors: the roles the console and SCIM already enforce are ' +
+                 'unaffected, because this is the POLICY layer above them. ' +
+                 'What it removes is the ability to write a rule — a helpdesk ' +
+                 'role that may manage somebody else\'s account, say — that ' +
+                 'no handler implements.' },
+
+  { key: 'xacml.accessPolicy', group: 'XACML',
+    label: 'Access policy name',
+    path: 'xacml.accessPolicy', env: 'STS_XACML_ACCESS_POLICY',
+    type: 'string', dflt: 'access-control', runtime: true,
+    description: 'The policy the embedded access PEP evaluates. A repository ' +
+                 'entry of this name in `ou=policies` OVERRIDES the built-in ' +
+                 'one, which is how a deployment writes its own; deleting ' +
+                 'that entry puts the built-in one back. The built-in policy ' +
+                 'is CALLED rather than seeded, for the reason the issuance ' +
+                 'policy is: `ou=policies` is per realm, and seeding once in ' +
+                 'the default realm would leave every realm created later ' +
+                 'unable to decide anything.' },
+
+  { key: 'security.rateLimitWindowS', group: 'Web security',
+    label: 'Rate-limit window (seconds)',
+    path: 'security.rateLimitWindowS', env: 'STS_SECURITY_RATE_WINDOW_S',
+    type: 'int', dflt: 60, runtime: true, min: 1, max: 3600,
+    description: 'How long a rate-limit window lasts. A FIXED WINDOW rather ' +
+                 'than a token bucket, deliberately: what it has to stop is ' +
+                 'thousands of guesses a second, the refill semantics do not ' +
+                 'matter for that, and "5 in 60 seconds" is something an ' +
+                 'operator can reason about.' },
+
+  { key: 'security.rateLimitPerIdentity', group: 'Web security',
+    label: 'Attempts per identity per window',
+    path: 'security.rateLimitPerIdentity',
+    env: 'STS_SECURITY_RATE_PER_IDENTITY',
+    type: 'int', dflt: 5, runtime: true, min: 1, max: 1000,
+    description: 'How many credential attempts one IDENTITY may make in a ' +
+                 'window, counted across every address — so an account ' +
+                 'cannot be ground down from a botnet. Applies to the ' +
+                 'sign-in screen, an activation URL and a password change.' },
+
+  { key: 'security.rateLimitPerAddress', group: 'Web security',
+    label: 'Attempts per address per window',
+    path: 'security.rateLimitPerAddress',
+    env: 'STS_SECURITY_RATE_PER_ADDRESS',
+    type: 'int', dflt: 20, runtime: true, min: 1, max: 10000,
+    description: 'How many credential attempts one ADDRESS may make in a ' +
+                 'window, counted across every identity — so one address ' +
+                 'cannot grind down many accounts. Both buckets are needed: ' +
+                 'either alone is the half an attacker does not use. It is ' +
+                 'higher than the per-identity limit because an address is ' +
+                 'often a proxy carrying many legitimate people; ' +
+                 'global.trustProxy decides whether X-Forwarded-For is read.' },
+
+  { key: 'security.activationTtlMinutes', group: 'Web security',
+    label: 'Activation link lifetime (minutes)',
+    path: 'security.activationTtlMinutes',
+    env: 'STS_SECURITY_ACTIVATION_TTL_MINUTES',
+    type: 'int', dflt: 1440, runtime: true, min: 1, max: 43200,
+    description: 'How long an activation URL stays valid. It is the one ' +
+                 'credential in this service that can complete an account ' +
+                 'setup on its own, so a leaked one is an account takeover — ' +
+                 'which is why it is single-use, hashed at rest like a ' +
+                 'password, and expires. A day is the default because the ' +
+                 'link is delivered by hand here (there is no mail channel), ' +
+                 'and an hour would strand most of them.' },
+
+  { key: 'keys.source', group: 'Key material', label: 'Where signing keys come from',
+    path: 'keys.source', env: 'STS_KEYS_SOURCE', type: 'enum',
+    enumValues: ['auto', 'generated', 'persisted'],
+    dflt: 'auto', runtime: false,
+    restartReason: 'the signing keys are loaded once, before the listener ' +
+                   'binds; changing where they come from after that would ' +
+                   'mean a running service holding keys from one source and ' +
+                   'reporting another',
+    description: '`auto` follows the MODE — generated in development, ' +
+                 'persisted in product — and is what almost every deployment ' +
+                 'wants. The other two override it: `generated` makes a new ' +
+                 'key on every start (a product-mode service that does this ' +
+                 'invalidates every token it issued the moment it restarts), ' +
+                 'and `persisted` reads and writes the store in development ' +
+                 'too, which is the setting to use when TESTING the key ' +
+                 'store without turning on everything else product mode does.' },
+
+  // -------------------------------------------------------------------------
+  // HOW LONG A DECRYPTED PRIVATE KEY MAY STAY IN MEMORY (2026-09-06).
+  //
+  // Where key material PERSISTS it is held in this process as CIPHERTEXT, and
+  // the plaintext exists only while something is signing with it. These two
+  // rows are how long "while" is. `common/keystore.js` carries the argument,
+  // including — importantly — what this does NOT defend against.
+  // -------------------------------------------------------------------------
+  { key: 'keys.plaintextRetention', group: 'Key material',
+    label: 'How long a decrypted private key is kept',
+    path: 'keys.plaintextRetention', env: 'STS_KEYS_PLAINTEXT_RETENTION',
+    type: 'enum', enumValues: ['timed', 'per-use', 'resident'],
+    dflt: 'timed', runtime: true,
+    description: 'THREE WORDS RATHER THAN A FLAG, because the middle one is ' +
+                 'the default and a boolean could only have reached two of ' +
+                 'them. `timed` decrypts a realm\'s signing key on first use ' +
+                 'and purges it once it has gone unused for ' +
+                 '`keys.plaintextTtlS`; `per-use` purges it at the end of the ' +
+                 'turn of the event loop that needed it, so the plaintext is ' +
+                 'resident for microseconds and every signature pays a ' +
+                 'decrypt and a key parse; `resident` decrypts once and keeps ' +
+                 'it for the life of the process, which is what this service ' +
+                 'did before the setting existed. **It only means anything ' +
+                 'where keys PERSIST** — a development service generates its ' +
+                 'key in memory and has no ciphertext to fall back to, so ' +
+                 'there is nothing to purge to.' },
+
+  { key: 'keys.plaintextTtlS', group: 'Key material',
+    label: 'Decrypted key idle timeout (seconds)',
+    path: 'keys.plaintextTtlS', env: 'STS_KEYS_PLAINTEXT_TTL_S',
+    type: 'int', dflt: 300, min: 0, max: 86400, step: 1, runtime: true,
+    description: 'Under `keys.plaintextRetention: timed`, how long a ' +
+                 'decrypted signing key may sit unused before it is dropped. ' +
+                 'The clock restarts on every use, so a busy realm keeps its ' +
+                 'key and an idle one lets it go. Zero behaves as `per-use`. ' +
+                 'Read under any other retention word, it means nothing and ' +
+                 'the console says so.' },
+
+  { key: 'keys.kekProvider', group: 'Key material',
+    label: 'Key-encryption key provider',
+    path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
+    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'file', runtime: false,
+    restartReason: 'the key-encryption key is read once, at startup, before ' +
+                   'the signing keys are decrypted',
+    description: 'Where the AES-256 key that protects the stored signing keys ' +
+                 'is READ FROM. This service never generates it and never ' +
+                 'writes it anywhere. `file` is the default because it needs ' +
+                 'nothing — Kubernetes and Docker both mount a secret as a ' +
+                 'file — and the other four are that same idea with a cloud ' +
+                 'provider\'s access control in front of it. Each of those ' +
+                 'lazily requires its official SDK, which is deliberately NOT ' +
+                 'a dependency of this service: it is a mock first, and four ' +
+                 'cloud SDKs nobody uses would be carried by every install. ' +
+                 'A missing one is reported with the package name to install.' },
+
+  { key: 'keys.kekFile', group: 'Key material', label: 'Key-encryption key file',
+    path: 'keys.kekFile', env: 'STS_KEYS_KEK_FILE', type: 'string',
+    dflt: '/run/secrets/sts-kek', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'The path the `file` provider reads. At least 32 bytes, as ' +
+                 'raw bytes, hex or base64 — `openssl rand -base64 32 > ' +
+                 '/run/secrets/sts-kek`. A file readable by group or other is ' +
+                 'REPORTED rather than refused: the fix may be impossible ' +
+                 'inside a container whose mount the operator does not ' +
+                 'control, and a service that will not start is one somebody ' +
+                 'works around by putting the key in an environment variable.' },
+
+  { key: 'keys.kekRef', group: 'Key material', label: 'Key-encryption key reference',
+    path: 'keys.kekRef', env: 'STS_KEYS_KEK_REF', type: 'string',
+    dflt: '', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'What the cloud providers name the secret by: an AWS Secrets ' +
+                 'Manager name or ARN, a GCP resource name ' +
+                 '(projects/<p>/secrets/<s>, with /versions/latest added when ' +
+                 'no version is given), an Azure Key Vault secret name, or a ' +
+                 'HashiCorp Vault read path. Unused by the `file` provider.' },
+
+  { key: 'keys.kekVault', group: 'Key material', label: 'Vault or Key Vault URL',
+    path: 'keys.kekVault', env: 'STS_KEYS_KEK_VAULT', type: 'string',
+    dflt: '', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) or ' +
+                 'the HashiCorp Vault endpoint. Empty lets the Vault SDK fall ' +
+                 'back to VAULT_ADDR, which is what an agent sidecar sets.' },
+
+  { key: 'keys.kekField', group: 'Key material', label: 'Vault secret field',
+    path: 'keys.kekField', env: 'STS_KEYS_KEK_FIELD', type: 'string',
+    dflt: 'value', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'Which field of a HashiCorp Vault secret holds the key. Both ' +
+                 'KV engine versions are handled without a setting — v2 nests ' +
+                 'the data one level deeper than v1 and the answer is ' +
+                 'unwrapped by shape, because a deployment usually does not ' +
+                 'know which engine it is on.' },
+
+  { key: 'keys.kekToken', group: 'Key material', label: 'Vault token',
+    path: 'keys.kekToken', env: 'STS_KEYS_KEK_TOKEN', type: 'string',
+    dflt: '', runtime: false, secret: true,
+    restartReason: 'read once at startup',
+    description: 'A HashiCorp Vault token, when one is not coming from the ' +
+                 'environment. Empty is the ordinary case: the SDK reads ' +
+                 'VAULT_TOKEN, which is what an agent sidecar or an auth ' +
+                 'method writes.' },
+
+  { key: 'keys.kekRegion', group: 'Key material', label: 'AWS region',
+    path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
+    dflt: '', runtime: false,
+    restartReason: 'read once at startup',
+    description: 'The AWS region for Secrets Manager. Empty uses the SDK\'s ' +
+                 'own resolution (AWS_REGION, the shared config file, the ' +
+                 'instance metadata service), which is what an in-cluster ' +
+                 'deployment relies on.' },
+
+  { key: 'global.mode', group: 'Global', label: 'Mode',
+    path: 'mode', env: 'STS_MODE', type: 'enum',
+    enumValues: ['development', 'product'],
+    // RUNTIME-SETTABLE AND NOT `realmRuntime`, which is the marker's whole
+    // point: that one means "restart-only for the PROCESS, but a realm may
+    // carry it anyway", and it exists for `oauth2.rfc9700` because that row
+    // decides whether a SOCKET is bound as TLS. Nothing about the mode is a
+    // property of a listener — every predicate in common/mode.js is read per
+    // request — so the process can change it at runtime like any ordinary
+    // runtime row, and a realm can carry one of its own because that is what
+    // every runtime row already allows. `tests/config_realm_layer.js` asserts
+    // that `realmRuntime` still has exactly one holder, which is how a second
+    // one stays a decision rather than a copied line.
+    dflt: 'development', runtime: true,
+    description: 'What this service is. `development` is the mock every ' +
+                 'release before 2026-09-06 was: no password is checked in ' +
+                 'any protocol, an unknown user, application, service ' +
+                 'principal or authorization server is created the first time ' +
+                 'it is named, an OAuth client needs no secret, and ' +
+                 '/admin-api is open so that a test can drive it and so that ' +
+                 'somebody who holds no role can get back in. `product` runs ' +
+                 'the SAME protocol implementations with the permissiveness ' +
+                 'removed: a presented credential is verified against the ' +
+                 'hashed `userPassword` on the person\'s directory entry, ' +
+                 'every referenced object must have been created ahead of ' +
+                 'time, every OAuth 2.0 and OpenID Connect application must ' +
+                 'hold a client secret, and /admin-api requires the same ' +
+                 'sign-in and roles the console does. It is settable per ' +
+                 'trust realm, so one process can serve both at once. ' +
+                 'GET /admin/mode lists every requirement and says which ' +
+                 'answer each is given in each mode.\n\nIT CAN BE CHANGED ' +
+                 'WHILE RUNNING, and the order matters when it is: /admin-api ' +
+                 'is open right up until the moment it is set to `product`, ' +
+                 'so provision the credentials FIRST and switch second. A ' +
+                 'realm switched with nobody holding a credential has no way ' +
+                 'in — the startup bootstrap runs at startup and not on a ' +
+                 'change, deliberately, because a service that minted an ' +
+                 'administrator every time a setting moved would be a service ' +
+                 'with an administrator nobody asked for.' },
+
   { key: 'global.logLevel', group: 'Global', label: 'Log level',
     path: 'logLevel', env: 'STS_LOG_LEVEL', type: 'enum',
     enumValues: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
@@ -577,7 +893,14 @@ const SETTINGS = [
   // and `node env/generate_defaults.js` free of child processes they would
   // never use and would have to wait for.
   { key: 'workers.count', group: 'Global', label: 'Worker processes',
-    env: 'STS_WORKERS_COUNT', type: 'int', dflt: 2, min: 0, max: 32,
+    // FIVE SINCE 2026-09-06, where it was two. The pool is what keeps a
+    // post-quantum signature off the thread holding six listener families —
+    // an SLH-DSA sign measured at 15 SECONDS on this hardware — and two
+    // workers means the third concurrent one waits behind them. Five is a
+    // working default for a machine with more than four cores and still costs
+    // nothing until the first post-quantum job, because the pool is lazy and
+    // forks nothing before then.
+    env: 'STS_WORKERS_COUNT', type: 'int', dflt: 5, min: 0, max: 32,
     runtime: true, perProcess: true,
     description: 'How many child processes the post-quantum signing, ' +
                  'verification and key generation are handed to, so that the ' +
@@ -593,6 +916,164 @@ const SETTINGS = [
                  'REALM MAY NOT CARRY THIS: a pool belongs to the process, ' +
                  'and a realm resizing it would be resizing every other ' +
                  'realm\'s too.' },
+
+  // ---------------------------------------------------------------------
+  // THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER FROM THE ONE ABOVE.
+  //
+  // `workers.count` forks children that run a JOB TABLE — four leaf
+  // computations handed everything they need. These three configure children
+  // that run THE SERVICE: each loads the whole protocol stack in the same
+  // order, binds no protocol port, and answers HTTP on a unix socket the front
+  // process proxies to. `common/request_pool.js` argues it.
+  //
+  // All three are `perProcess` for `workers.count`'s reason, and
+  // restart-only rather than runtime: a request worker takes seconds to start
+  // because it loads the service, and the pool is brought up BEFORE the
+  // listener binds so that cost is paid where nobody is waiting. A table that
+  // said `runtime: true` and meant "on restart" is the lie this file refuses
+  // to tell about a bound port.
+  // ---------------------------------------------------------------------
+  { key: 'workers.requestCount', group: 'Global',
+    label: 'Request worker processes',
+    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
+    runtime: false, perProcess: true,
+    restartReason: 'the pool is forked before the listener binds, and the ' +
+                   'check that refuses to dispatch without a coordinating ' +
+                   'store runs once, there',
+    description: 'How many child processes REQUESTS are handled in, so that ' +
+                 'the process holding the sockets is doing request and ' +
+                 'response I/O and not running handlers. Each worker loads ' +
+                 'the whole protocol stack in the same order and binds no ' +
+                 'protocol port. 0 — the default — means every request is ' +
+                 'handled in the process that holds the sockets, which is ' +
+                 'what this service has always done. Nothing is dispatched ' +
+                 'whatever this is set to until workers.dispatch names a ' +
+                 'path.' },
+
+  { key: 'workers.dispatch', group: 'Global',
+    label: 'Paths handled in a request worker',
+    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'dispatching is REFUSED at startup unless this process is ' +
+                   'coordinating, and that check runs once, before the ' +
+                   'listener binds — a path named afterwards would be ' +
+                   'dispatched without it having run at all',
+    description: 'A comma-separated list of path prefixes whose requests go ' +
+                 'to a request worker instead of being handled here — for ' +
+                 'example "/scim/v2,/admin-api" — or "*" for EVERY path, ' +
+                 'which is how "all protocol requests run in the pool" is ' +
+                 'said (a list of families goes stale the next time one is ' +
+                 'added; "*" cannot). /tls is never dispatched whatever this ' +
+                 'says, because its whole content is what the server saw of ' +
+                 'the connection the request arrived on. EMPTY IS THE DEFAULT AND ' +
+                 'MEANS NOTHING IS DISPATCHED, which is what makes the pool ' +
+                 'inert until it is asked for. A prefix is matched after the ' +
+                 'realm segment is removed, so naming /scim/v2 covers every ' +
+                 'realm. A path named here when no worker is serving is ' +
+                 'REFUSED 503 rather than handled here, because the same path ' +
+                 'answered by whichever of two processes was available is the ' +
+                 'failure this pool exists to avoid.' },
+
+  // ---------------------------------------------------------------------
+  // THE ROUTING POLICY, AND THE LIST IS OF THE EXCEPTIONS ON PURPOSE.
+  //
+  // Everything dispatched holds affinity unless it is named here, which is the
+  // right way round: a protocol subsystem carries a browser flow across several
+  // requests and belongs on one worker, and the surfaces that do not are few
+  // enough to write down. Naming the affinity side instead would mean every new
+  // protocol family had to be added to a list or would silently lose its flow.
+  // ---------------------------------------------------------------------
+  { key: 'workers.fanout', group: 'Global',
+    label: 'Dispatched paths with no session affinity',
+    env: 'STS_WORKERS_FANOUT', type: 'string',
+    dflt: '/scim,/xacml,/admin-api',
+    runtime: false, perProcess: true,
+    restartReason: 'the workers this spreads requests across are forked ' +
+                   'before the listener binds',
+    description: 'A comma-separated list of path prefixes that go to the ' +
+                 'least-loaded request worker instead of being stuck to the ' +
+                 'session or flow they belong to. These three carry their own ' +
+                 'credential on every request and name their own target, so ' +
+                 'nothing about one request has to be remembered to answer the ' +
+                 'next. EVERYTHING ELSE DISPATCHED HOLDS AFFINITY — every ' +
+                 'protocol family, the admin console and the user portal — ' +
+                 'because a browser flow spans several requests whose state ' +
+                 'lives in the worker that made it. LDAP is not here and ' +
+                 'cannot be: its protocol is a raw socket the front process ' +
+                 'holds, and its only HTTP views are console pages under ' +
+                 '/admin/ldap, which are the console. Affinity is a LOCALITY ' +
+                 'measure and never a correctness one — what makes a ' +
+                 'dispatched path correct is that every store its handlers ' +
+                 'touch is reachable from a worker.' },
+
+  // ---------------------------------------------------------------------
+  // AND THE HALF THAT IS NOT HTTP AT ALL.
+  //
+  // The front process owns six listener families and one of them speaks HTTP.
+  // An operation is the protocol-independent way the other five reach the pool:
+  // the front process keeps the socket and the framing and hands over a
+  // `{ kind, args }` pair. A kind is `family.operation`, and naming the family
+  // alone dispatches all of it.
+  // ---------------------------------------------------------------------
+  { key: 'workers.operations', group: 'Global',
+    label: 'Operations run in a request worker',
+    env: 'STS_WORKERS_OPERATIONS', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'an operation named here is refused at startup unless ' +
+                   'this process is coordinating, for workers.dispatch\'s ' +
+                   'reason and in the same check',
+    description: 'A comma-separated list of non-HTTP operation kinds handled ' +
+                 'in a request worker instead of in the process that owns the ' +
+                 'socket — "ldap" for every directory operation, or ' +
+                 '"ldap.search" for one of them. They FAN OUT: a directory ' +
+                 'operation carries its own DN and credential and nothing ' +
+                 'about one has to be remembered to answer the next. EMPTY IS ' +
+                 'THE DEFAULT. **A worker holds its own copy of the ' +
+                 'directory, so dispatching a WRITE before that store is ' +
+                 'shared forks it N ways on the first entry** — which is why ' +
+                 'this is off and why the switch is not thrown by adding a ' +
+                 'listener. An operation with no worker to run it is done by ' +
+                 'the caller rather than refused, because failing it would ' +
+                 'take a protocol listener down for what is a performance ' +
+                 'measure.' },
+
+  // ---------------------------------------------------------------------
+  // READ-YOUR-WRITE ACROSS WORKERS. Off by default, and the cost is the reason.
+  // ---------------------------------------------------------------------
+  { key: 'workers.readYourWrite', group: 'Global',
+    label: 'Read-your-write across request workers',
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: false,
+    runtime: true, perProcess: true,
+    description: 'Whether a request worker must catch up with what the other ' +
+                 'workers have written before it serves. Coordination makes ' +
+                 'workers CONVERGE — measured at half a second to a second — ' +
+                 'and convergence is not read-your-write: with this off, a ' +
+                 'caller that writes through one worker and reads through ' +
+                 'another may be answered by one that has not caught up, ' +
+                 'which matters most for the fanout surfaces (SCIM, XACML, ' +
+                 'the management API) precisely because consecutive requests ' +
+                 'there land anywhere. With it on, the pool counts writes and ' +
+                 'a worker that is behind pulls before it answers — so the ' +
+                 'cost falls on the first read after a write on each worker, ' +
+                 'and on nothing while nothing is being written. OFF BY ' +
+                 'DEFAULT because that is the behaviour that existed before ' +
+                 'it, and because whether the wait is worth it is a question ' +
+                 'about the callers rather than about the pool.' },
+
+  { key: 'workers.socketDir', group: 'Global',
+    label: 'Request worker socket directory',
+    env: 'STS_WORKERS_SOCKET_DIR', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the owner-only directory is created once, when the pool ' +
+                   'starts, and removed on the way out',
+    description: 'Where the unix sockets request workers listen on are ' +
+                 'created. Empty means the system temporary directory. One ' +
+                 'owner-only directory is made per process and removed on the ' +
+                 'way out, so two copies of this service on one machine ' +
+                 'cannot meet. A socket here is a door into this service that ' +
+                 'skips every check the front process makes, which is why ' +
+                 'both the directory and the socket are narrowed to the ' +
+                 'owner.' },
 
   // --- Trust realms --------------------------------------------------------
   // Two settings, and they are the only two in this table that a realm cannot
@@ -1154,26 +1635,6 @@ const SETTINGS = [
   // nothing" is now qualified everywhere it appears rather than deleted: it is
   // still true of every OTHER group, and of these two everywhere except this
   // console.
-  { key: 'admin.authRequired', group: 'Admin console',
-    label: 'Require a sign-in for /admin',
-    env: 'ADMIN_AUTH_REQUIRED', type: 'bool', dflt: true, runtime: true,
-    description: 'When on, every /admin page and every /admin form needs a ' +
-                 'browser sign-on session from the authentication service at ' +
-                 '/authn/login, and the person signed in needs a console ' +
-                 'role: admin.readGroup to READ a page, admin.writeGroup to ' +
-                 'POST a form. A browser with no session is sent to the ' +
-                 'sign-in screen and returned to the page it asked for; a ' +
-                 'caller asking for ?format=json, or posting JSON, is refused ' +
-                 '401 or 403 rather than redirected, because a redirect to an ' +
-                 'HTML login screen is not an answer a program can read. ' +
-                 'Turning it OFF restores the behaviour this console had ' +
-                 'before any of this existed — completely open — which stays ' +
-                 'reachable on purpose, for the reason every refusal here is ' +
-                 'switchable: a client is exercised by both answers. It does ' +
-                 'NOT gate /admin-api, which is open either way and is ' +
-                 'deliberately the way back in for somebody who has locked ' +
-                 'themselves out; see admin.openWhenEmpty.' },
-
   { key: 'admin.readGroup', group: 'Admin console', label: 'Admin Read role',
     env: 'ADMIN_READ_GROUP', type: 'string', dflt: 'admin-read', runtime: true,
     description: 'The cn of the directory group whose members may READ the ' +
@@ -1193,6 +1654,56 @@ const SETTINGS = [
                  'group does not also need the read group, because a role ' +
                  'that could change a page it could not see would be a trap ' +
                  'rather than a permission.' },
+
+  // -------------------------------------------------------------------------
+  // THE MANAGEMENT API'S OWN GATE (2026-09-09), which is a different question
+  // from the console's two roles above.
+  //
+  // `/admin-api` is a machine surface: there is no browser, no session and no
+  // sign-in screen, so it is reached with an OAuth 2.0 access token. What the
+  // token must carry is an AUDIENCE naming this API — so a token minted for
+  // some other resource cannot be replayed at it — and a SCOPE saying what it
+  // may do, which `common/roles.js` turns into the built-in ADMIN_READ and
+  // ADMIN_WRITE roles that the XACML access policy asks for.
+  // -------------------------------------------------------------------------
+  { key: 'adminApi.authRequired', group: 'Management API',
+    label: 'Require an access token on /admin-api',
+    env: 'ADMIN_API_AUTH_REQUIRED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Every call into /admin-api must present a Bearer access ' +
+                 'token this service issued, audienced to this API, carrying ' +
+                 '`admin:read` for a read and `admin:write` for anything that ' +
+                 'changes state. OFF restores what this surface did before ' +
+                 'the token was required — open to anybody who can reach the ' +
+                 'port — which is the recovery path when nobody can mint a ' +
+                 'token, and is exactly as dangerous as it sounds.' },
+
+  { key: 'adminApi.clientSecret', group: 'Management API',
+    label: 'The management API client\'s secret',
+    env: 'ADMIN_API_CLIENT_SECRET', type: 'string', dflt: '',
+    secret: true,
+    restartReason: 'the seeded registration is written once, at startup, so a ' +
+                   'secret changed while running would be a value nothing ' +
+                   'reads until the next start — and the client would go on ' +
+                   'authenticating with the old one meanwhile.',
+    description: 'The `client_secret` of the seeded `sts-management-api` ' +
+                 'client, which is what a caller exchanges for an access ' +
+                 'token. EMPTY means one is minted at every start — fine ' +
+                 'while this API was open, and a BOOTSTRAP HOLE now that it ' +
+                 'is not: the secret is only readable THROUGH the API it ' +
+                 'unlocks, so a restart would leave nobody able to get in. ' +
+                 'Set it and the client keeps that secret across restarts, ' +
+                 'which is what a deployment and every test launcher need.' },
+
+  { key: 'adminApi.audience', group: 'Management API',
+    label: 'The audience an /admin-api token must carry',
+    env: 'ADMIN_API_AUDIENCE', type: 'string', dflt: '', runtime: true,
+    description: 'What the `aud` claim must name for a token to be accepted ' +
+                 'here. EMPTY means "this service\'s own /admin-api under ' +
+                 'the host the request arrived on", which is what a client ' +
+                 'gets by asking for `resource=<base>/admin-api` at the token ' +
+                 'endpoint (RFC 8707). Set it to pin a single value where a ' +
+                 'deployment is reached under several names.' },
 
   { key: 'admin.openWhenEmpty', group: 'Admin console',
     label: 'Open while no role has a member',
@@ -2313,21 +2824,6 @@ const SETTINGS = [
   // const at require time. Turning a scheme off removes it from the
   // WWW-Authenticate challenge AND from the published ServiceProviderConfig
   // together, because both are built from one table.
-  { key: 'scim.authRequired', group: 'SCIM', label: 'Require authentication',
-    env: 'SCIM_AUTH_REQUIRED', type: 'bool', dflt: true, runtime: true,
-    description: 'When on, every SCIM endpoint refuses a request that carries ' +
-                 'no credential with 401 and a WWW-Authenticate header per ' +
-                 'offered scheme (RFC 7644 section 2 makes that header a ' +
-                 'SHALL). Turning it OFF restores the behaviour these ' +
-                 'endpoints had before authentication existed — unauthenticated ' +
-                 'provisioning — which stays reachable on purpose, because a ' +
-                 'client is exercised by both answers and because a mock that ' +
-                 'could not reproduce the permissive case would have lost ' +
-                 'something. A credential that IS presented is still checked ' +
-                 'either way: a broken token is a 401 whether or not one was ' +
-                 'required, or a client testing its expired-token path would ' +
-                 'get a 200.' },
-
   { key: 'scim.authDiscovery', group: 'SCIM', label: 'Authenticate discovery too',
     env: 'SCIM_AUTH_DISCOVERY', type: 'bool', dflt: false, runtime: true,
     description: 'Whether /ServiceProviderConfig, /ResourceTypes and /Schemas ' +
@@ -2485,6 +2981,226 @@ const SETTINGS = [
   // argument is actually about. `ssf.signingAlgorithm` is the one setting here
   // that reaches the whole post-quantum table, because the signature goes
   // through `helpers.signJwtAs()` like every other JWT this service mints.
+  // ---------------------------------------------------------------------
+  // XACML 3.0.
+  //
+  // The engine is `xacml/`, the store is ou=policies in the embedded
+  // directory, and the decision endpoint is POST /xacml/pdp. Two things about
+  // this group are worth knowing before adding a row to it.
+  //
+  // FIRST, `xacml.enabled` LEAVES THE ROUTES REGISTERED and makes them answer
+  // 501, exactly as `ssf.enabled` does — the feature is off, the URL is not
+  // wrong, and those are different sentences to a client that is trying to
+  // work out whether this service speaks XACML at all.
+  //
+  // SECOND, THERE IS NO SETTING THAT MAKES THE PDP MORE PERMISSIVE, and that
+  // is deliberate in a service whose every other surface is a turnstile. A
+  // PDP's whole output is a decision; a flag that made it answer Permit when
+  // it could not decide would not be a mock of anything, it would be a broken
+  // PDP. What IS configurable is what happens at the PEP — see
+  // `xacml.pepBias`, which is the PEP's decision and not the PDP's.
+  { key: 'xacml.enabled', group: 'XACML', label: 'XACML enabled',
+    env: 'STS_XACML_ENABLED', type: 'bool', dflt: true, runtime: true,
+    description: 'When on, the XACML 3.0 endpoints under /xacml answer. ' +
+                 'Turning it off leaves the routes REGISTERED and makes ' +
+                 'them answer 501 rather than 404 — the feature is off, the ' +
+                 'URL is not wrong. The policy repository in ou=policies is ' +
+                 'untouched either way, so turning this back on decides ' +
+                 'against the same policies it did before.' },
+
+  { key: 'xacml.maxPolicies', group: 'XACML',
+    label: 'Policies the repository may hold',
+    env: 'STS_XACML_MAX_POLICIES', type: 'int', dflt: 200, runtime: true,
+    description: 'How many entries may live under ou=policies. The same ' +
+                 'kind of limit ou=federations and ou=applications carry, ' +
+                 'and for the same reason: this directory is in memory in ' +
+                 'the default persistence mode, and a caller that can create ' +
+                 'entries without bound can exhaust it. Reaching the limit ' +
+                 'refuses the CREATE and logs; it never evicts.' },
+
+  { key: 'xacml.pepBias', group: 'XACML',
+    label: 'What the embedded PEP does with a non-Permit',
+    env: 'STS_XACML_PEP_BIAS', type: 'enum',
+    enumValues: ['deny-biased', 'permit-biased'], dflt: 'deny-biased',
+    runtime: true,
+    description: 'THIS IS THE PEP\'S DECISION AND NOT THE PDP\'S, which is ' +
+                 'the whole reason it is a setting. XACML section 7.2 lets a ' +
+                 'PEP be deny-biased (anything that is not Permit is a ' +
+                 'refusal) or permit-biased (anything that is not Deny is ' +
+                 'allowed), and real deployments differ. Deny-biased is the ' +
+                 'default because it is what a PEP protecting anything ' +
+                 'should be; permit-biased exists so that a client can see ' +
+                 'what the other choice does to an Indeterminate, which is ' +
+                 'the case the two disagree about and the one nobody tests.' },
+
+  { key: 'xacml.returnPolicyIdList', group: 'XACML',
+    label: 'Always return the applicable policy identifiers',
+    env: 'STS_XACML_RETURN_POLICY_ID_LIST', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'A request asks for the list of policies that applied by ' +
+                 'setting ReturnPolicyIdList; turning this on returns it ' +
+                 'whether or not the request asked. Off by default because ' +
+                 'it is what the specification says, and on is what makes a ' +
+                 'debugger useful — a decision you cannot trace to a policy ' +
+                 'is a decision you cannot argue with.' },
+
+  // ---------------------------------------------------------------------
+  // THE REMOTE PEP (phase five). SEVEN ROWS, AND THEY DIVIDE IN TWO.
+  //
+  // The first three are about the REGISTRATION SURFACE — what a remote Policy
+  // Enforcement Point may do when it dials this service. The last four are
+  // about the NUDGE, which is the one outbound request this family makes, and
+  // they are deliberately the same four `ssf.push*` carries: an off switch, a
+  // host allowlist, an insecure escape and a timeout. Two families making one
+  // outbound request each should be configured the same way, or the second one
+  // is a surprise to anybody who has already read the first.
+  //
+  // WHAT IS NOT HERE IS A SETTING THAT CHANGES A REMOTE PEP'S BIAS. A remote
+  // PEP is a SEPARATE PROCESS with its own configuration, and `xacml.pepBias`
+  // governs the EMBEDDED one at /xacml/protected and nothing else. A row here
+  // that appeared to set a remote PEP's bias would be a control that silently
+  // did nothing, which is worse than no control: the remote one reports the
+  // bias it is actually running with on every heartbeat, and the console shows
+  // that rather than what this service would have chosen for it.
+  { key: 'xacml.remotePeps', group: 'XACML',
+    label: 'Remote Policy Enforcement Points may register',
+    env: 'STS_XACML_REMOTE_PEPS', type: 'bool', dflt: true, runtime: true,
+    description: 'When on, the three endpoints under /xacml/pep answer: a ' +
+                 'remote PEP registers, PULLS the policy repository, and ' +
+                 'reports what it has enforced. Turning it off leaves the ' +
+                 'routes registered and answering 501, like every other ' +
+                 'switch here, and leaves the register in ou=peps untouched ' +
+                 '— so a PEP that was registered is still listed, still ' +
+                 'shown as stale, and comes back the moment this goes on ' +
+                 'again. THE PULL IS THE CONTRACT: a PEP that cannot reach ' +
+                 'this endpoint has stale policy and says so on its own ' +
+                 'surface, which is the failure mode this whole design is ' +
+                 'arranged to make visible.' },
+
+  { key: 'xacml.pepRequireCertificate', group: 'XACML',
+    label: 'A registering PEP must present a client certificate',
+    env: 'STS_XACML_PEP_REQUIRE_CERTIFICATE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'ON by default. It was once the ONE refusal in this family; ' +
+                 'every /xacml endpoint asks for a certificate now, and what ' +
+                 'this setting still governs is the REGISTRATION specifically ' +
+                 '— it writes an entry, it is what the console lists, and it ' +
+                 'is the address a nudge is sent to, so "which PEP is this" ' +
+                 'is exactly the question there and a client certificate is ' +
+                 'the answer. The access-policy layer above it is a different ' +
+                 'and stronger check (roles.remotePepGroup, and ' +
+                 'xacml.enforceAccess to turn it off); this one is about ' +
+                 'whether a registration with NO certificate is accepted at ' +
+                 'all and marked unauthenticated. Like every other ' +
+                 'gate in this service it is a TURNSTILE: the certificate is ' +
+                 'not required to chain to anything, because RFC 8705\'s ' +
+                 'argument applies unchanged — what is proved is that the ' +
+                 'same key completed the handshake. Turning it off lets a ' +
+                 'PEP register over plain HTTP, which is what a run with ' +
+                 'global.https off needs; such a registration is marked ' +
+                 'UNAUTHENTICATED on its entry and on the console rather ' +
+                 'than being quietly indistinguishable from one that proved ' +
+                 'something.' },
+
+  { key: 'xacml.pipMaxPerWindow', group: 'XACML',
+    label: 'PIP queries one caller may make per rate-limit window',
+    env: 'STS_XACML_PIP_MAX_PER_WINDOW', type: 'int', dflt: 600,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many POST /xacml/pip queries one enforcement point — ' +
+                 'and one address — may make in a security.rateLimitWindowS ' +
+                 'window. IT IS ITS OWN NUMBER RATHER THAN ' +
+                 'security.rateLimitPerIdentity, and that is the point: that ' +
+                 'setting is FIVE, because it guards a SIGN-IN, where five ' +
+                 'attempts a minute is generous and a sixth is somebody ' +
+                 'guessing. A PIP query is the opposite rhythm — a remote ' +
+                 'Policy Enforcement Point makes one per access decision, so ' +
+                 'a busy one makes several a second and every one of them is ' +
+                 'legitimate. Sharing the sign-in limiter\'s number would ' +
+                 'have turned this endpoint off for its only caller, which ' +
+                 'is worse than not limiting it: the PEP falls back to ' +
+                 'deciding on what the request asserts and says nothing is ' +
+                 'wrong. The default is ten a second over the default ' +
+                 'sixty-second window. What it bounds is a caller this ' +
+                 'service ADMITTED reading directory attributes in a loop; ' +
+                 'an unadmitted one is refused by the access policy before ' +
+                 'it gets here.' },
+
+  { key: 'xacml.maxPeps', group: 'XACML',
+    label: 'Remote PEPs the register may hold',
+    env: 'STS_XACML_MAX_PEPS', type: 'int', dflt: 50, runtime: true,
+    description: 'How many entries may live under ou=peps, for the same ' +
+                 'reason xacml.maxPolicies bounds ou=policies: this ' +
+                 'directory is in memory in the default persistence mode and ' +
+                 'a caller that can create entries without bound can ' +
+                 'exhaust it. Reaching the limit refuses the REGISTRATION ' +
+                 'and logs; it never evicts, because evicting a PEP would ' +
+                 'stop nudging a component that is still enforcing.' },
+
+  { key: 'xacml.pepStaleAfterS', group: 'XACML',
+    label: 'Seconds before a registered PEP is reported stale',
+    env: 'STS_XACML_PEP_STALE_AFTER_S', type: 'int', dflt: 300,
+    min: 10, max: 86400, runtime: true,
+    description: 'A remote PEP heartbeats; this is how long since the last ' +
+                 'one before the console calls it stale. It changes NOTHING ' +
+                 'this service does — no entry is removed, no nudge is ' +
+                 'withheld — it is purely what the word "stale" means on the ' +
+                 'page. That is the point: a PEP whose sync has stopped is ' +
+                 'still enforcing, against whatever policy it last pulled, ' +
+                 'and a register that hid it would hide exactly the ' +
+                 'situation somebody needs to see.' },
+
+  { key: 'xacml.pepNotify', group: 'XACML',
+    label: 'Nudge a registered PEP when the repository changes',
+    env: 'STS_XACML_PEP_NOTIFY', type: 'bool', dflt: true, runtime: true,
+    description: 'THE NUDGE IS AN OPTIMISATION AND NEVER THE MECHANISM. A ' +
+                 'remote PEP PULLS on its own interval; when a policy ' +
+                 'changes, this service additionally POSTs a few bytes to ' +
+                 'each registered PEP that gave a notify URL, saying only ' +
+                 '"something changed, pull now". Turning it off costs ' +
+                 'LATENCY and nothing else — every PEP still converges on ' +
+                 'its next poll — which is what makes it safe to turn off ' +
+                 'in a deployment with no egress. It is the third outbound ' +
+                 'request in this repository and xacml/xacml_pep_http.js ' +
+                 'argues it rather than citing the other two.' },
+
+  { key: 'xacml.pepNotifyAllowedHosts', group: 'XACML',
+    label: 'Notify endpoint allowlist',
+    env: 'STS_XACML_PEP_NOTIFY_ALLOWED_HOSTS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Host names this service will nudge. EMPTY MEANS ANY, ' +
+                 'which is the default and matches ssf.pushAllowedHosts ' +
+                 'exactly — a deployment reachable by anybody it does not ' +
+                 'trust sets the list, and every other host is refused BY ' +
+                 'NAME on the PEP\'s own row. Hosts rather than URLs, for ' +
+                 'the reason SSF gives: a component legitimately moves its ' +
+                 'path and does not legitimately move to another host.' },
+
+  { key: 'xacml.pepNotifyAllowInsecure', group: 'XACML',
+    label: 'Allow http:// and untrusted TLS for a nudge',
+    env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'OFF by default, like federation\'s and SSF\'s equivalents ' +
+                 '— and what travels here is WEAKER than either of those, ' +
+                 'which is worth saying rather than leaving to be assumed. ' +
+                 'A nudge carries no credential and no event: its whole ' +
+                 'body says that the repository changed, which the PEP is ' +
+                 'about to find out anyway. It is still off by default, ' +
+                 'because the URL is one somebody configured and a request ' +
+                 'this service makes in the clear is a request somebody can ' +
+                 'answer for.' },
+
+  { key: 'xacml.pepNotifyTimeoutMs', group: 'XACML',
+    label: 'Nudge timeout (ms)',
+    env: 'STS_XACML_PEP_NOTIFY_TIMEOUT_MS', type: 'int', dflt: 2000,
+    min: 100, max: 30000, runtime: true,
+    description: 'How long to wait for a PEP to answer a nudge. SHORTER ' +
+                 'THAN SSF\'S TEN SECONDS ON PURPOSE, and the reason is the ' +
+                 'thing that makes a nudge a nudge: a lost push is a lost ' +
+                 'event, so SSF waits; a lost nudge costs one polling ' +
+                 'interval of latency and nothing at all, so waiting is the ' +
+                 'expensive mistake. What IS waiting on it is the console ' +
+                 'form of whoever just saved a policy.' },
+
   { key: 'ssf.enabled', group: 'SSF', label: 'SSF enabled',
     env: 'STS_SSF_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'When on, the Shared Signals Framework endpoints under ' +
@@ -2722,22 +3438,6 @@ const SETTINGS = [
                  'would otherwise grow without bound in a process that ' +
                  'never restarts.' },
 
-  { key: 'ssf.authRequired', group: 'SSF', label: 'Require authentication',
-    env: 'STS_SSF_AUTH_REQUIRED', type: 'bool', dflt: true, runtime: true,
-    description: 'When on, the stream management, status, subject, ' +
-                 'verification and poll endpoints refuse a request carrying ' +
-                 'no credential with 401 and a WWW-Authenticate header. SSF ' +
-                 '1.0 section 8 says these endpoints MUST be protected and ' +
-                 'publishes what they accept in authorization_schemes. It ' +
-                 'is the same turnstile SCIM is: anybody can get a token ' +
-                 'with the ssf scope from this service\'s own token ' +
-                 'endpoint with any grant, and any username with any ' +
-                 'password but "invalid" passes Basic. What it buys is that ' +
-                 'a client\'s 401 path can be run at all. The transmitter ' +
-                 'metadata stays OPEN either way — a receiver has to be ' +
-                 'able to read what the endpoints are before it can ' +
-                 'authenticate to one.' },
-
   { key: 'ssf.authScopeRead', group: 'SSF', label: 'Scope to read a stream',
     env: 'STS_SSF_AUTH_SCOPE_READ', type: 'string', dflt: 'ssf:read',
     runtime: true,
@@ -2950,6 +3650,188 @@ const SETTINGS = [
                  'rather than the first time it is pointed at somebody ' +
                  'else\'s transmitter.' },
 
+  // --- RISC ----------------------------------------------------------------
+  //
+  // The Risk Incident Sharing and Coordination profile (OpenID RISC Profile
+  // Specification 1.0, published 29 August 2025 and final on 2 September
+  // 2025), which is the SECOND vocabulary over the SSF group above and is a
+  // group of its own for the reason CAEP is: its events go out on SSF
+  // streams, are signed by the SSF signer, are queued by the SSF queues and
+  // are delivered by the two SSF deliveries, so nothing here duplicates a
+  // setting up there and ssf.enabled turning off takes RISC with it.
+  //
+  // WHAT IS NEW HERE THAT CAEP DID NOT BRING. CAEP made this service emit
+  // without being asked; RISC makes it emit about something it does not
+  // otherwise act on. Setting `active` to false over SCIM has always
+  // DEACTIVATED NOBODY here — no endpoint reads the attribute, no bind is
+  // refused, no token is withheld, and /admin/scim says so on purpose,
+  // because a mock that silently pretended would teach a provisioning client
+  // that its deprovisioning path works. That is unchanged. What changes is
+  // that the service now SAYS SO, over RISC, which is exactly the division
+  // the profile draws: a transmitter reports and a receiver decides.
+  { key: 'risc.enabled', group: 'RISC', label: 'RISC enabled',
+    env: 'STS_RISC_ENABLED', type: 'bool', dflt: true, runtime: true,
+    description: 'When on, this transmitter offers RISC\'s fourteen account ' +
+                 'event types, tracks the RISC state of every account it ' +
+                 'has been told anything about, and reports both on ' +
+                 '/admin/risc-accounts. Turning it off leaves SSF and CAEP ' +
+                 'entirely alone and drops the fourteen types from what a ' +
+                 'stream may request, so a receiver\'s "this transmitter ' +
+                 'will not deliver the type I asked for" path becomes ' +
+                 'reachable for this vocabulary without narrowing ' +
+                 'ssf.eventsSupported by hand.' },
+
+  { key: 'risc.autoEmit', group: 'RISC',
+    label: 'Emit events when the directory really changes',
+    env: 'STS_RISC_AUTO_EMIT', type: 'bool', dflt: true, runtime: true,
+    description: 'With it on, a person deleted from the directory emits ' +
+                 'account-purged, `active` going false or true emits ' +
+                 'account-disabled or account-enabled, and a changed mail ' +
+                 'or telephone number emits identifier-changed — on every ' +
+                 'stream that asked for the type and covers that account, ' +
+                 'with nobody having typed anything. Those four acts reach ' +
+                 'the directory through SCIM, through LDAP and through the ' +
+                 'console alike, because the observer sits on the WRITE ' +
+                 'rather than on any one door. Off restores the behaviour ' +
+                 'in which every RISC event was asked for, at /admin/risc ' +
+                 'or through the management API.' },
+
+  { key: 'risc.autoEmitTypes', group: 'RISC',
+    label: 'Which acts emit automatically',
+    env: 'STS_RISC_AUTO_EMIT_TYPES', type: 'csv',
+    dflt: 'account-purged,account-disabled,account-enabled,' +
+          'identifier-changed',
+    runtime: true,
+    description: 'The SHORT NAMES of the RISC events this service emits by ' +
+                 'itself, out of the four acts it can actually observe in ' +
+                 'its own directory. Four of the remaining ten — the ' +
+                 'opt-out set — are emitted by hand and CHANGE REAL STATE ' +
+                 'here when they are, because RISC defines each of them as ' +
+                 '"the account is in this state" rather than as a report ' +
+                 'that it moved. The other six describe things nothing here ' +
+                 'does: no breach corpus is searched by this service and no ' +
+                 'recovery flow runs in it. A row naming one of the ten is ' +
+                 'dropped with a warning rather than producing an event ' +
+                 'nothing can cause.' },
+
+  { key: 'risc.eventsSupported', group: 'RISC',
+    label: 'RISC event types offered', env: 'STS_RISC_EVENTS_SUPPORTED',
+    type: 'csv',
+    dflt: 'account-credential-change-required,account-purged,' +
+          'account-disabled,account-enabled,identifier-changed,' +
+          'identifier-recycled,credential-compromise,opt-in,' +
+          'opt-out-initiated,opt-out-cancelled,opt-out-effective,' +
+          'recovery-activated,recovery-information-changed,sessions-revoked',
+    runtime: true,
+    description: 'Which of RISC\'s fourteen this transmitter will agree to ' +
+                 'deliver, unioned with ssf.eventsSupported and ' +
+                 'caep.eventsSupported into the events_supported a receiver ' +
+                 'discovers. SHORT NAMES are accepted as well as whole ' +
+                 'URIs. The default OFFERS sessions-revoked even though ' +
+                 'RISC 1.0 section 2.11 deprecates it in favour of CAEP\'s ' +
+                 'session-revoked, deliberately: a transmitter that could ' +
+                 'not produce a deprecated event could not be used to find ' +
+                 'out what a receiver does with one, and receivers in the ' +
+                 'field still send and expect it. Drop it from this list to ' +
+                 'be the conforming-and-strict transmitter instead.' },
+
+  { key: 'risc.subjectFormat', group: 'RISC',
+    label: 'How an account subject is named',
+    env: 'STS_RISC_SUBJECT_FORMAT', type: 'string', dflt: 'iss_sub',
+    runtime: true,
+    description: 'WHICH RFC 9493 FORMAT this service composes an account ' +
+                 'subject in — iss_sub, email or opaque — and it is the ' +
+                 'most consequential setting in this group. A RISC event ' +
+                 'about an account carries almost nothing but its type and ' +
+                 'its subject, so the subject IS the message. iss_sub is ' +
+                 'the identifier a receiver already holds (an ID Token\'s ' +
+                 'iss and sub said it) and is what this service defaults ' +
+                 'to; email is what a receiver keying on an address ' +
+                 'expects, and identifier-recycled exists precisely because ' +
+                 'that key is unsafe. RISC\'s two identifier events ignore ' +
+                 'this and use email regardless, because their subject ' +
+                 'carries the identifier that changed.' },
+
+  { key: 'risc.honourOptOut', group: 'RISC',
+    label: 'Stop sending about an account that opted out',
+    env: 'STS_RISC_HONOUR_OPT_OUT', type: 'bool', dflt: true, runtime: true,
+    description: 'RISC section 2.8 gives an account three opt-out states, ' +
+                 'and the middle one exists to stop a hijacker silencing ' +
+                 'the events that would report them: opt-out-initiated ' +
+                 'KEEPS EXCHANGING for a while. With this on, an account ' +
+                 'in the final opt-out state has its events suppressed and ' +
+                 'the suppression is recorded on /admin/risc-accounts — ' +
+                 'except for the four opt-out events themselves, which are ' +
+                 'never suppressed, because opt-out-effective is an event ' +
+                 'announcing that there will be no more events and opt-in ' +
+                 'is the only way a receiver learns the account came back. ' +
+                 'Off carries everything, which is how a receiver that ' +
+                 'ignores an opt-out gets to be shown doing it.' },
+
+  { key: 'risc.googleSubjectType', group: 'RISC',
+    label: 'Write subject_type instead of format',
+    env: 'STS_RISC_GOOGLE_SUBJECT_TYPE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'THE DELIBERATE DEFECT FOR THIS PROFILE, and it is the one ' +
+                 'the specification itself names. RISC 1.0 section 3.1 ' +
+                 'records that Google\'s production RISC transmitter spells ' +
+                 'the subject identifier\'s discriminator `subject_type` ' +
+                 'rather than `format`, says the usage is deprecated and ' +
+                 'that new services MUST NOT use it — and then tells ' +
+                 'relying parties they need code to work around it anyway, ' +
+                 'because that is the transmitter their users\' accounts ' +
+                 'live behind. Turning this on renames the member on every ' +
+                 'RISC subject this service sends, which is how a receiver ' +
+                 'finds out whether it has that code before it is pointed ' +
+                 'at Google. It does not touch CAEP or SSF events, whose ' +
+                 'specifications never had the problem.' },
+
+  { key: 'risc.reasonLanguage', group: 'RISC',
+    label: 'Language tag on reason_admin / reason_user',
+    env: 'STS_RISC_REASON_LANGUAGE', type: 'string', dflt: 'en',
+    runtime: true,
+    description: 'The BCP 47 tag this service keys the two reason members ' +
+                 'under on a credential-compromise event, which is the only ' +
+                 'one of the fourteen that has them. RISC 1.0 does not ' +
+                 'repeat CAEP\'s requirement that they be language maps ' +
+                 'rather than strings, which makes a bare string arguably ' +
+                 'conforming to RISC and certainly unreadable to a receiver ' +
+                 'built against CAEP; this service sends the map, because ' +
+                 'that is the reading that is right under both.' },
+
+  { key: 'risc.includeReasons', group: 'RISC',
+    label: 'Send reason_admin and reason_user',
+    env: 'STS_RISC_INCLUDE_REASONS', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether a credential-compromise event carries the two ' +
+                 'reason members. Both are optional, so turning this off is ' +
+                 'how a receiver that assumes a reason is always there gets ' +
+                 'to fail in a test rather than in production. It reaches ' +
+                 'ONE of the fourteen event types, unlike its CAEP ' +
+                 'namesake, which reaches all eight — RISC gives those ' +
+                 'members to credential-compromise alone.' },
+
+  { key: 'risc.omitEventTimestamp', group: 'RISC',
+    label: 'Leave event_timestamp out',
+    env: 'STS_RISC_OMIT_EVENT_TIMESTAMP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The same deliberate-and-conforming omission ' +
+                 'caep.omitEventTimestamp produces, on the one RISC event ' +
+                 'that defines the member. It matters differently here: ' +
+                 'RISC words event_timestamp as when the transmitter ' +
+                 'DISCOVERED the compromise rather than when it happened, ' +
+                 'so a receiver reading it as an occurrence time dates the ' +
+                 'incident from the wrong end whether or not it is sent.' },
+
+  { key: 'risc.maxAccountsTracked', group: 'RISC',
+    label: 'Accounts tracked', env: 'STS_RISC_MAX_ACCOUNTS_TRACKED',
+    type: 'int', dflt: 200, runtime: true,
+    description: 'How many accounts the RISC register holds before the ' +
+                 'oldest is dropped. It outlives the ACCOUNT it describes ' +
+                 'on purpose and more starkly than CAEP\'s register does: a ' +
+                 'purged account is gone from the directory entirely, and ' +
+                 'its row is the only remaining evidence that this service ' +
+                 'ever told anybody it was purged.' },
+
   // --- The group claim -----------------------------------------------------
   //
   // The one feature in this service that reads the directory's GROUPS back out
@@ -3018,6 +3900,164 @@ const SETTINGS = [
                  'group entry stays the only authority. Either way the group ' +
                  'has to EXIST here — a memberOf naming nothing does not ' +
                  'invent a group to put in a token.' },
+
+  // --- Roles ---------------------------------------------------------------
+  //
+  // A role is the one thing here a user, a group AND an application can all be
+  // mapped into, and it has two halves that are configured in different
+  // places: MEMBERSHIP lives on the role entry (/admin/roles) and the
+  // REQUIREMENT lives on the application entry (its own page). These four
+  // settings are about the halves that belong to neither — the claim, and
+  // whether the decision is asked for at all.
+  { key: 'roles.claim', group: 'Roles', label: 'Carry a roles claim',
+    env: 'STS_ROLES_CLAIM', type: 'bool', dflt: true, runtime: true,
+    description: 'When on, every access token, ID Token, SAML 2.0 assertion ' +
+                 'and SAML 1.1 assertion names the roles its subject holds. ' +
+                 'ON by default and it still changes nothing for most ' +
+                 'callers, for the reason the groups claim is on by default: ' +
+                 'the claim is OMITTED ENTIRELY for anybody holding no ' +
+                 'CONFIGURED role, and the six built-in roles are never in ' +
+                 'it — EVERYBODY and ALL_AUTHENTICATED_USERS are true of ' +
+                 'almost every token here, so carrying them would add two ' +
+                 'meaningless members to every token every existing client ' +
+                 'parses and tell a relying party nothing it did not know ' +
+                 'from holding the token. They exist to be REQUIRED, not to ' +
+                 'be carried.' },
+
+  { key: 'roles.claimName', group: 'Roles', label: 'Role claim name',
+    env: 'STS_ROLES_CLAIM_NAME', type: 'string', dflt: 'roles', runtime: true,
+    description: 'What the claim is called, and ALSO what is looked for on ' +
+                 'the way IN: the embedded PEP reads this member out of a ' +
+                 'token a caller presented and unions what it finds with the ' +
+                 'register\'s own answer. So changing it changes both ' +
+                 'directions at once, which is the point — a deployment that ' +
+                 'calls them `groups` or `http://schemas.../role` should be ' +
+                 'able to say so once.' },
+
+  { key: 'roles.enforceIssuance', group: 'Roles',
+    label: 'Decide issuance on roles',
+    env: 'STS_ROLES_ENFORCE_ISSUANCE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether an issuance asks the PDP whether the party being ' +
+                 'authenticated holds a role the application requires. ON by ' +
+                 'default AND OFF PER APPLICATION, which is not a ' +
+                 'contradiction: an application that names no required role ' +
+                 'requires EVERYBODY, everybody holds EVERYBODY, and the ' +
+                 'answer is Permit — exactly what this service did before ' +
+                 'roles existed. Turning THIS off stops the question being ' +
+                 'asked at all, which is the way back if a policy edit ' +
+                 'locks something out. What is refused is refused in the ' +
+                 'protocol\'s own words: access_denied at an OAuth endpoint, ' +
+                 'a page at a browser one.' },
+
+  // THE SETTING THAT MAKES TWO OF THE SIX BUILT-IN ROLES REACHABLE AT ALL.
+  //
+  // `ALL_UNAUTHENTICATED_USERS` names a person who has NOT authenticated, and
+  // until 2026-09-05 there was no such person for any issuance to be about:
+  // every session this service held was one somebody had signed into, so the
+  // role was a name a policy could match and nothing could ever hold at an
+  // issuance site. The sign-in screen's Cancel button is not it — that returns
+  // `access_denied` to the calling protocol and creates nothing, which is the
+  // OAuth contract and is deliberately untouched.
+  //
+  // With this on, the sign-in screen grows a THIRD button — "Continue without
+  // signing in" — and pressing it mints a real session that says
+  // `authenticated: false`. Everything downstream then reads that flag instead
+  // of assuming what it used to assume, so an application requiring
+  // ALL_AUTHENTICATED_USERS refuses that session and one requiring EVERYBODY
+  // does not. That difference IS the distinction between the two roles, and it
+  // was not observable before.
+  //
+  // OFF BY DEFAULT, unlike `roles.enforceIssuance` beside it, and the reason is
+  // that this one changes a SCREEN. Enforcement on by default changes nothing
+  // for an unedited service because everybody holds EVERYBODY; a third button
+  // on every sign-in screen in the service would change what every existing
+  // caller's user sees, which is not something a default should do.
+  //
+  // The group is `Roles` and the key is `authn.` on purpose, and the split is
+  // the one the WS-Federation assertion setting already makes: the key says
+  // which module OWNS the behaviour, and the group says which page a person
+  // reasoning about it is on. Somebody reading ALL_UNAUTHENTICATED_USERS on
+  // /admin/roles and wondering how anything could ever hold it is the reader
+  // this row is for.
+  { key: 'authn.unauthenticatedSessions', group: 'Roles',
+    label: 'Offer "Continue without signing in"',
+    env: 'STS_AUTHN_UNAUTHENTICATED_SESSIONS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Show a third button on /authn/login that starts a session ' +
+                 'for somebody who declines to authenticate. The session is ' +
+                 'real — it has a cookie, it satisfies a flow already in ' +
+                 'progress, and it appears on /admin/sessions in a section of ' +
+                 'its own — but it is marked `authenticated: false`, so an ' +
+                 'application requiring ALL_AUTHENTICATED_USERS refuses it ' +
+                 'and one requiring EVERYBODY does not. That is the only ' +
+                 'place in this service where the difference between those ' +
+                 'two built-in roles can be seen. The person is the stable ' +
+                 '`anonymous` principal, which gets a directory entry like ' +
+                 'anybody else and can therefore hold configured roles too. ' +
+                 'Cancel is unchanged and still answers access_denied.' },
+
+  { key: 'roles.maxRoles', group: 'Roles', label: 'Maximum roles',
+    env: 'STS_ROLES_MAX', type: 'int', dflt: 200, runtime: true,
+    description: 'How many entries ou=roles may hold. The same cap every ' +
+                 'other container here carries and for the same reason: this ' +
+                 'directory is a Map in one process, and an unbounded ' +
+                 'register reachable from an ungated /admin-api is a way to ' +
+                 'exhaust it.' },
+
+  { key: 'roles.remotePepGroup', group: 'Roles',
+    label: 'Group granting the REMOTE_PEPS role',
+    env: 'STS_ROLES_REMOTE_PEP_GROUP', type: 'string', dflt: 'remote-peps',
+    runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'REMOTE_PEPS role, which is what the three /xacml/pep ' +
+                 'endpoints require. A remote Policy Enforcement Point ' +
+                 'presenting a client certificate this service VERIFIED is ' +
+                 'somebody it can name; membership of this group is what ' +
+                 'makes them somebody it lets in, and the two are kept apart ' +
+                 'on purpose — a certificate proves an identity and a group ' +
+                 'grants a permission. Setting it to the empty string means ' +
+                 'NOBODY holds the role, which closes those three endpoints ' +
+                 'to every caller including a correctly configured PEP.' },
+
+  { key: 'roles.xacmlUserGroup', group: 'Roles',
+    label: 'Group granting the XACML_USER role',
+    env: 'STS_ROLES_XACML_USER_GROUP', type: 'string', dflt: 'xacml-users',
+    runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'XACML_USER role, which is what the four XACML endpoints ' +
+                 'proper require — GET /xacml, POST /xacml/pdp, GET ' +
+                 '/xacml/policies and GET /xacml/protected. A caller ' +
+                 'presenting a client certificate this service VERIFIED is ' +
+                 'somebody it can name; membership of this group is what ' +
+                 'makes them somebody it lets in, and the two are kept apart ' +
+                 'for the reason roles.remotePepGroup above is: a ' +
+                 'certificate proves an identity and a group grants a ' +
+                 'permission. IT IS A SECOND GROUP AND NOT THE SAME ONE: ' +
+                 'REMOTE_PEPS reaches the three /xacml/pep endpoints, which ' +
+                 'hand out the documents this service enforces its own ' +
+                 'access with, and one group granting both would make ' +
+                 'admitting a caller to the demonstration surface silently ' +
+                 'admit it to those. Setting it to the empty string means ' +
+                 'NOBODY holds the role, which closes those four endpoints ' +
+                 'to every caller; that is the way to take the XACML surface ' +
+                 'away without turning xacml.enabled off and losing the ' +
+                 'embedded issuance and access PEPs with it.' },
+
+  { key: 'xacml.issuancePolicy', group: 'XACML',
+    label: 'The policy issuance decisions are made with',
+    env: 'STS_XACML_ISSUANCE_POLICY', type: 'string', dflt: 'role-issuance',
+    runtime: true,
+    description: 'The directory entry name of the policy the EMBEDDED PEP ' +
+                 'evaluates for this service\'s own issuance decisions. It ' +
+                 'is deliberately NOT the repository root: the root answers ' +
+                 'questions about somebody else\'s boundary — that is what a ' +
+                 'PDP is for and what /xacml/pdp and every remote PEP ask it ' +
+                 '— and this one answers a question about THIS service. Two ' +
+                 'questions, two documents, so that editing the demo policy ' +
+                 'cannot change who may sign in and narrowing a role cannot ' +
+                 'change what /xacml/pdp answers. It is created from the ' +
+                 '`role-issuance` template and seeded on first start.' },
 
   // --- Audit log -----------------------------------------------------------
   //
@@ -3283,28 +4323,6 @@ const SETTINGS = [
                  'will ever tell them about. Off is for the case where you ' +
                  'are deliberately testing something else.' },
 
-  { key: 'spiffe.authRequired', group: 'SPIFFE',
-    label: 'Authenticate the SPIRE Server API',
-    env: 'STS_SPIFFE_AUTH_REQUIRED', type: 'bool', dflt: true,
-    runtime: false,
-    restartReason: 'the SPIRE Server API\'s TCP port is bound as mutual TLS ' +
-                   'or as plain gRPC when the process starts, and a setting ' +
-                   'that changed the checks without changing the socket ' +
-                   'would report a mode this service was not in',
-    description: 'ON, the SPIRE Server API behaves the way a real ' +
-                 'spire-server does: its TCP port is MUTUAL TLS, a caller ' +
-                 'presents an X509-SVID from this trust domain, and every ' +
-                 'method is authorized against SPIRE\'s own table — local, ' +
-                 'agent, admin, downstream — which GET /spiffe publishes in ' +
-                 'full. The Unix socket stays plain and is the `local` ' +
-                 'entity, which is how the spire-server CLI reaches a real ' +
-                 'one. OFF, the port is plain gRPC and every method is open ' +
-                 'to everybody, which is what this service did before this ' +
-                 'setting existed. **This does not touch the Workload API**, ' +
-                 'whose specification says a client MUST NOT be required to ' +
-                 'authenticate — see spiffe.attestWorkloads for the only ' +
-                 'thing that decides who gets what there.' },
-
   { key: 'spiffe.trustLocalSocket', group: 'SPIFFE',
     label: 'Trust the SPIRE Server API socket as local',
     env: 'STS_SPIFFE_TRUST_LOCAL_SOCKET', type: 'bool', dflt: true,
@@ -3515,12 +4533,17 @@ const SETTINGS = [
                  'everything is gone on restart. ldif writes an RFC 2849 file ' +
                  'per realm plus two JSON files in persistence.dataDir, which ' +
                  'is the local-development answer and needs no database. ' +
-                 'postgres writes three tables and is the shared store. ' +
-                 'NOTHING THIS SERVICE MINTS IS EVER PERSISTED in any mode: ' +
-                 'sessions, tokens, codes, artifacts, Kerberos tickets and ' +
-                 'the signing key are in memory always, because the key is ' +
-                 'regenerated on every start and a token that outlived it ' +
-                 'would verify against nothing.' },
+                 'postgres writes six tables and is the shared store. ' +
+                 'WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
+                 'artifacts, Kerberos principals, the replay caches, the ' +
+                 'counters and the audit log — is persisted in PRODUCT ' +
+                 'mode on postgres and in no other configuration; see ' +
+                 'persistence.minted. Development mode persists none of ' +
+                 'it, because the signing key is regenerated on every ' +
+                 'start there and a token that outlived it would verify ' +
+                 'against nothing. The ldif store holds none of it in ' +
+                 'either mode and says so at startup, because it writes ' +
+                 'whole files per flush.' },
 
   { key: 'persistence.dataDir', group: 'Persistence', label: 'Data directory',
     env: 'STS_PERSISTENCE_DATA_DIR', type: 'string', dflt: './data',
@@ -3563,6 +4586,22 @@ const SETTINGS = [
   // reason docker-compose.yml gives: it guards a throwaway database of mock
   // identities, and this repository's whole premise is that nothing in it is a
   // real credential. An operator with a real one sets the environment variable.
+  //
+  // ---------------------------------------------------------------------
+  // AND SINCE 2026-09-06 THIS DEFAULT NAMES A DIFFERENT ROLE FROM THE ONE THE
+  // COMPOSE STACK DIALS, WHICH LOOKS LIKE DRIFT AND IS NOT.
+  //
+  // The stack's database is built by `postgres/schema.sql`, which creates the
+  // five tables as the owner `sts` and a second role `sts_app` that may read
+  // and write the rows and may NOT create, alter, truncate or drop a table —
+  // and STS_DATABASE_URL there dials `sts_app`. That is the arrangement to
+  // want for anything left running.
+  //
+  // THIS value is the other case: a local database with NOTHING IN IT, which
+  // no script has been run against, where the driver creates what is missing
+  // exactly as it always did. An `sts_app` here would be a role that does not
+  // exist yet, so the default names the owner and the two are answers to two
+  // different questions. `persistence/CLAUDE.md` argues the split.
   // ---------------------------------------------------------------------
   { key: 'persistence.databaseUrl', group: 'Persistence',
     label: 'Database connection string',
@@ -3582,7 +4621,12 @@ const SETTINGS = [
                  'its network. IT CARRIES A PASSWORD, so /admin/persistence ' +
                  'and GET /admin-api/persistence report the host, port, ' +
                  'database and user parsed out of it and never the string ' +
-                 'itself.' },
+                 'itself. THE DEFAULT NAMES AN OWNER AND THE COMPOSE STACK ' +
+                 'DOES NOT: this value is for a local database with nothing ' +
+                 'in it, which this service builds for itself, while the ' +
+                 'stack dials the least-privileged role postgres/schema.sql ' +
+                 'creates — read and write on the rows, no CREATE on the ' +
+                 'schema.' },
 
   // ---------------------------------------------------------------------
   // TLS TO THE DATABASE, and the one knob that is about TRUST rather than
@@ -3658,7 +4702,94 @@ const SETTINGS = [
                  'unchanged and a runtime override is simply durable now. ' +
                  'Only a runtime-changeable setting can be saved, because ' +
                  'only a runtime-changeable setting can be set: that is what ' +
-                 'makes applying them after every module has loaded safe.' }
+                 'makes applying them after every module has loaded safe.' },
+
+  // -------------------------------------------------------------------------
+  // WHAT THIS PROCESS MINTED, IN PRODUCT MODE. The two settings below are the
+  // only configuration the 2026-09-06 change added, and the first one is worth
+  // reading as a REFUSAL rather than a feature switch: turning it off is a
+  // product-mode service that loses every session, token and audit row on
+  // every restart, which is what development mode is for.
+  // -------------------------------------------------------------------------
+  { key: 'persistence.minted', group: 'Persistence',
+    label: 'Persist sessions, tokens and the audit log',
+    env: 'STS_PERSISTENCE_MINTED', type: 'bool', dflt: true, runtime: false,
+    restartReason: 'the minted rows are restored before the listener binds, ' +
+                   'so turning this on or off part-way through a run would ' +
+                   'leave a process writing rows it never read',
+    description: 'Whether the things this service MINTS — sessions, access, ' +
+                 'ID and refresh tokens, authorization codes, pre-authorized ' +
+                 'codes, SAML artifacts, Kerberos principals and tickets, the ' +
+                 'replay caches, the counters and the audit log — survive a ' +
+                 'restart. ON, and it reaches nothing at all unless BOTH ' +
+                 'global.mode is "product" AND persistence.mode is ' +
+                 '"postgres". Development mode ignores it, because the ' +
+                 'signing key is regenerated on every start there and a ' +
+                 'restored token would verify against nothing; the ldif store ' +
+                 'ignores it too and says so at startup, because it writes ' +
+                 'whole files per flush and these rows change on every ' +
+                 'request. Every row is encrypted with the same ' +
+                 'key-encryption key that protects the signing keys, because ' +
+                 'a session id is a cookie value and an authorization code is ' +
+                 'redeemable.' },
+
+  { key: 'persistence.mintedRetention', group: 'Persistence',
+    label: 'Minted state retention (ms)',
+    env: 'STS_PERSISTENCE_MINTED_RETENTION', type: 'int',
+    dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
+    description: 'How long a persisted session, token, code, artifact or ' +
+                 'audit row is kept. A row older than this is neither ' +
+                 'restored nor left behind — it is deleted on the start that ' +
+                 'skipped it. Seven days by default, which is longer than ' +
+                 'every lifetime this service issues and short enough that a ' +
+                 'long-running store does not read a month of dead sessions ' +
+                 'on the way up. 0 keeps everything for ever, which is a ' +
+                 'supported answer for a deployment whose audit log is the ' +
+                 'point and which prunes the table itself.' },
+
+  // -------------------------------------------------------------------------
+  // SEVERAL PROCESSES AGAINST ONE STORE. Until 2026-09-06 this service said,
+  // in several files, that persistence was NOT coordination — two processes
+  // each held their own copy and never saw each other's writes. These two
+  // settings are that sentence being reversed.
+  // -------------------------------------------------------------------------
+  { key: 'persistence.coordinate', group: 'Persistence',
+    label: 'Coordinate with other processes',
+    env: 'STS_PERSISTENCE_COORDINATE', type: 'bool', dflt: true, runtime: false,
+    restartReason: 'the change log\'s high-water mark is taken once the ' +
+                   'store has been restored, so starting or stopping ' +
+                   'part-way through a run would leave a process applying ' +
+                   'changes from a point it was never at',
+    description: 'Whether this process applies changes other processes ' +
+                 'committed to the same store. ON, and it needs the postgres ' +
+                 'store: every change is written to a monotonic log INSIDE ' +
+                 'the transaction that made it, and each process reads what ' +
+                 'it has not yet applied. A LISTEN/NOTIFY nudge wakes that ' +
+                 'read early, so a missed notification costs latency and ' +
+                 'never a change — the same trade the remote XACML PEP makes ' +
+                 'about its own pull. Turning it off is what this service ' +
+                 'did before this existed: correct, and each process alone ' +
+                 'with its own copy. IT SHARES STATE AND NOT SOCKETS — the ' +
+                 'KDC, the LDAP listeners, the two TLS ports and SPIFFE\'s ' +
+                 'four are bound per process — and the replay caches ' +
+                 'CONVERGE rather than synchronise, so between a write in ' +
+                 'one process and its arrival in another there is a window ' +
+                 'in which a proof one refused is accepted by the other.' },
+
+  { key: 'persistence.pollInterval', group: 'Persistence',
+    label: 'Change poll interval (ms)',
+    env: 'STS_PERSISTENCE_POLL_INTERVAL', type: 'int', dflt: 5000,
+    runtime: true,
+    description: 'How often this process asks the change log what other ' +
+                 'processes have committed. This is the CONTRACT and the ' +
+                 'LISTEN/NOTIFY nudge is only an optimisation over it, so ' +
+                 'this is the worst-case convergence lag when a notification ' +
+                 'is lost — a dropped listener, a database restart — and the ' +
+                 'typical lag is a few milliseconds. Five seconds because ' +
+                 'the nudge normally arrives first and a shorter interval ' +
+                 'buys nothing but queries; 250ms is the floor. It is also ' +
+                 'the size of the replay-cache window described under ' +
+                 'persistence.coordinate.' }
 ];
 
 // Indexed once. A linear scan per read would be invisible on a mock and the
@@ -4257,6 +5388,39 @@ function applyPersistedOverrides(saved) {
     overrides[key] = saved[key];
     applied.push(key);
   });
+  // ------------------------------------------------------------------------
+  // AND WHAT IS NO LONGER THERE IS CLEARED (2026-09-08). This function used to
+  // only ADD, which is correct at STARTUP — `overrides` is empty then, so
+  // there is nothing to clear — and silently wrong for the OTHER caller.
+  //
+  // `persistence.js`'s `applyAppconfigChange()` calls it with the whole stored
+  // set every time another process changes the configuration, and a RESET is
+  // the absence of a key. Only ever merging meant a reset made in one process
+  // never reached any other: `POST /admin-api/config/reset` answered ok, the
+  // store no longer held the row, and every other process went on serving the
+  // overridden value for ever. It cost two jobs in the dispatch suite —
+  // `admin_api` read a batch size back as 7 after resetting it to 4, and
+  // `sts_roles` was refused 400 resetting a setting the worker it reached had
+  // never been told was set.
+  //
+  // A KEY THAT IS PRESENT AND REFUSED IS LEFT ALONE, which is why this walks
+  // `saved` rather than `applied`: a refusal above says nothing was applied
+  // for that key, and treating it as an absence would clear an override this
+  // process is legitimately running with because another process's build
+  // validates it differently.
+  // ------------------------------------------------------------------------
+  const cleared = [];
+  Object.keys(overrides).forEach(function (key) {
+    if (!Object.prototype.hasOwnProperty.call(saved || {}, key)) {
+      delete overrides[key];
+      cleared.push(key);
+    }
+  });
+  if (cleared.length) {
+    log.info('config: ' + cleared.length + ' runtime override(s) are no ' +
+             'longer in the store and have been cleared here: ' +
+             cleared.join(', ') + '.');
+  }
   // Once, after all of them, rather than per setting: applyLogLevel() walks
   // every registered logger, and doing that per key would be n times the work
   // for the same answer.

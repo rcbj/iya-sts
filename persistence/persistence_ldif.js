@@ -506,7 +506,132 @@ function create(options) {
         log.debug('Leaving the ldif driver saveOverrides(). ' +
                   Object.keys(map).length + ' override(s).');
       });
+    },
+
+    // -----------------------------------------------------------------------
+    // THE KEY MATERIAL (2026-09-06), and it is the FOURTH thing this driver
+    // stores and the first that is a SECRET.
+    //
+    // **THE FILE HOLDS CIPHERTEXT AND NOTHING ELSE.** `keystore.js` encrypts
+    // with AES-256-GCM before it gets here and this driver never sees a private
+    // key — which is why it can be a file in a directory beside the others
+    // rather than needing protection of its own. The key that opens it comes
+    // from outside the service entirely (see `common/secrets.js`).
+    //
+    // ONE FILE FOR EVERY REALM rather than one per realm, matching
+    // `realms.json` beside it: the whole set is read at startup and rewritten
+    // whenever one realm's keys change, which for a value that changes about
+    // once per deployment is simpler than managing a file per realm and
+    // reconciling what is on disk with what is defined.
+    //
+    // **`mode: 0o600` LIKE EVERY OTHER FILE THIS DRIVER WRITES.** It is
+    // ciphertext, so the permissions are not what protects it — but a file of
+    // encrypted signing keys readable by everything on the host is an offline
+    // attack waiting for the KEK to leak, and defence in depth costs one
+    // argument that `writeAtomic()` already takes.
+    // -----------------------------------------------------------------------
+    loadKeys: function () {
+      log.debug('Entering the ldif driver loadKeys().');
+      return Promise.resolve().then(function () {
+        const file = path.join(dir, 'keys.json');
+        if (!fs.existsSync(file)) {
+          log.debug('Leaving the ldif driver loadKeys(). No file yet.');
+          return [];
+        }
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const rows = (parsed && parsed.keys) || [];
+        log.debug('Leaving the ldif driver loadKeys(). ' + rows.length +
+                  ' realm(s).');
+        return rows;
+      });
+    },
+
+    saveKeys: function (realmId, ciphertext) {
+      log.debug('Entering the ldif driver saveKeys(). realm=' + realmId);
+      return Promise.resolve().then(function () {
+        const file = path.join(dir, 'keys.json');
+        let rows = [];
+        if (fs.existsSync(file)) {
+          try {
+            rows = (JSON.parse(fs.readFileSync(file, 'utf8')) || {}).keys || [];
+          } catch (e) {
+            // A file this service cannot read is REPLACED rather than appended
+            // to, and the warning says so: appending to something unparseable
+            // produces a file that is unparseable for ever.
+            log.warn('persistence: keys.json could not be parsed and is being ' +
+                     'rewritten: ' + e.message);
+            rows = [];
+          }
+        }
+        rows = rows.filter(function (row) { return row.realm !== realmId; });
+        rows.push({ realm: realmId, material: ciphertext,
+                    writtenAt: new Date().toISOString() });
+        writeAtomic(file, JSON.stringify({
+          version: 1,
+          note: 'This service\'s signing keys, one row per trust realm, ' +
+                'ENCRYPTED with AES-256-GCM. The key that opens them is not ' +
+                'here and is never written by this service — see ' +
+                'common/secrets.js for the five places it can be read from. ' +
+                'Deleting a row makes that realm generate new keys on next ' +
+                'use, and everything signed with the old ones stops verifying.',
+          keys: rows
+        }, null, 2) + '\n');
+        log.debug('Leaving the ldif driver saveKeys(). ' + rows.length +
+                  ' realm(s).');
+      });
+    },
+
+    deleteKeys: function (realmId) {
+      log.debug('Entering the ldif driver deleteKeys(). realm=' + realmId);
+      return Promise.resolve().then(function () {
+        const file = path.join(dir, 'keys.json');
+        if (!fs.existsSync(file)) {
+          log.debug('Leaving the ldif driver deleteKeys(). No file.');
+          return;
+        }
+        let rows = [];
+        try {
+          rows = (JSON.parse(fs.readFileSync(file, 'utf8')) || {}).keys || [];
+        } catch (e) {
+          log.warn('persistence: keys.json could not be parsed while removing ' +
+                   'a realm\'s keys: ' + e.message);
+          return;
+        }
+        const kept = rows.filter(function (row) { return row.realm !== realmId; });
+        writeAtomic(file, JSON.stringify({ version: 1, keys: kept }, null, 2) + '\n');
+        log.debug('Leaving the ldif driver deleteKeys(). ' + kept.length +
+                  ' realm(s) left.');
+      });
     }
+
+    // -----------------------------------------------------------------------
+    // AND NO `loadMinted`, `saveMinted` OR `purgeMinted` — DELIBERATELY, AND
+    // THE ABSENCE IS THE ANSWER RATHER THAN AN OMISSION.
+    //
+    // Since 2026-09-06 product mode writes down what this process MINTS:
+    // sessions, tokens, authorization codes, SAML artifacts, Kerberos
+    // principals, the replay caches, the counters and the audit log. This
+    // driver cannot hold them, and the reason is the sentence at the top of
+    // this file rather than anything missing from it: **IT WRITES WHOLE FILES,
+    // ATOMICALLY, PER FLUSH.** That is exactly right for a directory that
+    // changes when somebody types — thirteen entries of a realm build in one
+    // rewrite — and exactly wrong for a session table and an audit ring that
+    // change on EVERY REQUEST. A product deployment on this driver would
+    // rewrite megabytes per write delay for as long as it had traffic.
+    //
+    // `persistence_minted.js`'s `supports()` tests for these three functions by
+    // name and reports the absence as a REASON on `/admin/persistence` and in
+    // one warning at startup, so an operator who chose `ldif` and `product`
+    // together learns it on the way up rather than at the next restart. The
+    // three things somebody TYPED — the directory, the realm registry, the
+    // settings — and the signing keys are all still written here and restored.
+    //
+    // Adding them here would be a second write mechanism in this file (an
+    // appended journal, plus a compaction pass nothing else here needs), and
+    // it was refused rather than deferred: the deployment that wants durable
+    // sessions wants a database, and saying so is cheaper than half-building
+    // one out of files.
+    // -----------------------------------------------------------------------
   };
 }
 

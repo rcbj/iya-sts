@@ -182,8 +182,72 @@ function page(baseUrl, base, version, realmPrefix) {
   return html;
 }
 
+// ---------------------------------------------------------------------------
+// THE SAME EXPLORER, AS A BODY FOR THE ADMIN CONSOLE'S SHELL (2026-09-09).
+//
+// The explorer moved from `/admin-api/docs` to `/admin/api-explorer` that day,
+// and `page()` above is what it used to be: a whole HTML document with its own
+// `<head>`, served from the management API's own path space. It is KEPT and
+// still exported, because the STYLE, the SCRIPT and the realm-prefix argument
+// are the same in both shapes and a second copy of any of them is the thing
+// this file exists to avoid — but nothing registers a route for it any more.
+//
+// **WHY THE MOVE.** That API stopped being open on 2026-09-09: it takes an
+// access token now, and a BROWSER carries none. So the one page in this
+// service whose entire purpose is to be opened in a browser had become the one
+// page a browser could not open — the console linked to it and the link
+// answered 401. Putting it behind the console's own session makes it reachable
+// again by the people it was written for, and it is a stronger gate rather
+// than a weaker one: a session AND one of two roles, instead of nothing at all.
+//
+// **WHAT THIS FUNCTION RETURNS IS AN `inner`**, in the sense `admin.js`'s
+// `respond()` means: the markup that goes inside the console's shell, with the
+// nav column, the realm switcher, the sign-out button and the footer supplied
+// around it. Three things ride in it that a console page does not usually
+// carry, and each is here rather than in the shell because exactly one page
+// needs it: the explorer's own stylesheet, the `<div id="app">` the script
+// looks for, and the `<script>` tag itself.
+//
+// THE BANNER IS NOT INCLUDED. It said "Nothing here is protected", which was
+// true of this API for as long as this page hung off it and is now false twice
+// over — the API takes a token and this page takes a session.
+// ---------------------------------------------------------------------------
+function consoleBody(opts) {
+  log.debug("Entering consoleBody(). spec=" + opts.specUrl);
+  const inner =
+    // SCOPED TO `#app` WHERE IT CAN BE, because these rules are loaded into a
+    // page the console styled. The selectors that are not scoped are the ones
+    // the explorer's own markup uses and the console's does not.
+    '<style>' + STYLE.replace(/(^|})body\{[^}]*\}/g, '$1') + '</style>' +
+    '<p class="lede">Every operation this service\'s management API offers, ' +
+    'read from the same OpenAPI document the API publishes, with a form that ' +
+    'calls it. ' +
+    (opts.token
+      ? 'Calls are made with an access token minted for <strong>' +
+        xmlEscape(opts.who || 'you') + '</strong> carrying <code>' +
+        xmlEscape(opts.scope || '(no scope)') + '</code> — the scopes your ' +
+        'console roles grant and no others, so an operation you may not ' +
+        'perform is refused here exactly as it would be anywhere else.'
+      : '<strong>No access token could be minted for this session</strong>, ' +
+        'so <em>Try it</em> will be refused. Every operation is still ' +
+        'described and the equivalent <code>curl</code> line is still shown.') +
+    '</p>' +
+    '<div id="app" data-spec="' + xmlEscape(opts.specUrl) + '" ' +
+    'data-version="' + xmlEscape(opts.version || '') + '" ' +
+    'data-realm-prefix="' + xmlEscape(opts.realmPrefix || '') + '" ' +
+    'data-token="' + xmlEscape(opts.token || '') + '">' +
+    '<p class="lede">Reading <code>' + xmlEscape(opts.specUrl) +
+    '</code>&hellip;</p>' +
+    '</div>' +
+    '<script src="' + xmlEscape(opts.scriptUrl) + '" defer></script>';
+  log.debug("Leaving consoleBody(). " + inner.length + " bytes.");
+  return inner;
+}
+
 module.exports = {
   CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
   SCRIPT: SCRIPT,
-  page: page
+  STYLE: STYLE,
+  page: page,
+  consoleBody: consoleBody
 };

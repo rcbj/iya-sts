@@ -96,6 +96,10 @@ const { log, logArtifact, STS, xmlEscape, genId, iso, baseUrlOf, randomId,
 // presented one against. They shared a value until config.js split them and
 // still default to the same string.
 const config = require('../common/config');
+// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, so a
+// require from 10 moves no route and closes no cycle. See
+// `common/issuance_gate.js`; an unfilled decider answers "allowed".
+const gate = require('../common/issuance_gate');
 const { buildSamlAssertion } = require('../saml/saml2');
 const { buildSaml11Assertion } = require('../saml/saml11');
 // The session, from the service that owns it. This module has a sign-in screen
@@ -232,7 +236,7 @@ const RP_CONTEXT_TTL_MS = 30 * 60 * 1000;
 // `acme` being recognised by the one in the default realm would make the check
 // this map exists for — did my own value come back? — answer yes across a
 // boundary the rest of the profile does not cross.
-const rpContexts = realms.map();
+const rpContexts = realms.map({ persist: 'wsfed.rpContexts' });
 
 // --- reading the request ---------------------------------------------------
 // 13.2.1 allows the sign-in request as a GET with a query string or as a form
@@ -845,6 +849,41 @@ function signIn(req, res, params) {
 
 function issueSignInResponse(req, res, params, session, realm, wreply, tokenType) {
   log.debug("Entering issueSignInResponse(). tokenType=" + tokenType);
+
+  // THE ROLE GATE, first thing in the one funnel every sign-in response goes
+  // through — before the registry sighting below, because that call records a
+  // token having been ISSUED and nothing has been. A refusal is a PAGE, for
+  // this profile's usual reason and stated once more because it is the reason
+  // this file refuses everything else the same way: section 13 has no error
+  // response at all, a sign-in request is a browser navigation, and there is
+  // nothing to redirect an error to. 403 rather than 400 — the request was
+  // well formed and the answer is about who is asking.
+  const roleAnswer = gate.check({
+    application: realm,
+    kind: gate.ISSUANCE.WSFED_TOKEN,
+    // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
+    //
+    // This was the constant `true` until unauthenticated sessions existed, and
+    // a constant is what it looked like: every session this service held had
+    // somebody behind it. `authenticated !== false` rather than a plain read,
+    // because a session object made before this field existed has no such
+    // property and must go on meaning what it always meant.
+    subject: { kind: 'user', name: String((session.user || {}).username || ''),
+               authenticated: session.authenticated !== false },
+    claims: null
+  });
+  if (!roleAnswer.allowed) {
+    log.info('wsfed: the issuance policy refused a token for "' +
+             String((session.user || {}).username) + '" to "' + realm + '". ' +
+             roleAnswer.why);
+    log.debug("Leaving issueSignInResponse(). The issuance policy refused it.");
+    return wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
+      '<p>The person is signed in. The XACML issuance policy would not let ' +
+      'this relying party have a token for them &mdash; the roles a ' +
+      '<code>wtrealm</code> requires are on its application entry, and who ' +
+      'holds a role is on <a href="/admin/roles">/admin/roles</a>.</p>');
+  }
+
   // THE APPLICATION. wtrealm is WS-Federation's name for the relying party, and
   // this is the point at which this service has decided to issue it a token —
   // every refusal above answered instead. It is recorded here rather than at the

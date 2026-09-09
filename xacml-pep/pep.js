@@ -1,0 +1,715 @@
+'use strict';
+//
+// File: xacml-pep/pep.js
+//
+// ===========================================================================
+// A REMOTE POLICY ENFORCEMENT POINT. PHASE FIVE.
+//
+// This is a whole separate process. It holds its own copy of the XACML engine
+// (`engine.js`), PULLS the policy repository from the mock's PDP (`sync.js`)
+// and ENFORCES it here — which is the point of the exercise, because a PEP
+// that asked the PDP per request would be `POST /xacml/pdp` with a network hop
+// in front of every access decision, and pushing POLICIES to something that
+// could not evaluate them would make no sense at all.
+//
+// Four endpoints:
+//
+//   GET  /              what this PEP is, what it holds, what it has enforced
+//   GET  /protected     THE RESOURCE. 200 or 403, decided here
+//   POST /notify        the PDP's nudge: pull now
+//   GET  /healthcheck   liveness, for the container
+//
+// ---------------------------------------------------------------------------
+// WHAT MAKES THIS DIFFERENT FROM THE MOCK'S EMBEDDED PEP AT /xacml/protected.
+//
+// The embedded one shares a process with the PDP, so it can never disagree
+// with it and can never be stale — which makes it a fine demonstration of
+// section 7.2 and a useless demonstration of everything a distributed
+// deployment is actually hard about. This one can be stale, can hold a policy
+// the PDP no longer has, can refuse a document the PDP accepted, and can be
+// unreachable while still enforcing. Every one of those is a real state that
+// this container makes reachable and reports rather than hides:
+//
+//   * `GET /` says whether the copy is stale and how long since a successful
+//     pull;
+//   * the PDP's `/admin/xacml/peps` says the same thing from the other side,
+//     which is the interesting half — those two answers can DISAGREE, and a
+//     deployment where they do is one nobody could have debugged from either
+//     end alone.
+//
+// ---------------------------------------------------------------------------
+// THE ENFORCEMENT RULE IS THE MOCK'S, RESTATED RATHER THAN IMPORTED.
+//
+// `xacml.js`'s `enforce()` is fifty lines and it is not in `engine.js`'s copy
+// list, deliberately. It is the PEP's own decision — the bias and the
+// obligation rule — and a PEP that imported the PDP's enforcement would be
+// demonstrating that two processes agree because they are one program, which
+// is the thing `tests/sts_dpop.js` refuses to do when it writes its own DPoP
+// client. Written out here, this PEP can be configured with a DIFFERENT bias
+// from the mock's embedded one, and the two then disagree about exactly the
+// answers the two biases disagree about — which is the demonstration worth
+// having.
+//
+// The rule, both halves:
+//
+//   1. THE BIAS decides what a non-Permit means. Deny-biased: only Permit
+//      allows. Permit-biased: only Deny refuses. They agree on Permit and Deny
+//      and differ on Indeterminate and NotApplicable — the two nobody tests.
+//   2. AN OBLIGATION THAT CANNOT BE DISCHARGED TURNS A PERMIT INTO A REFUSAL
+//      (section 7.2). This PEP can discharge exactly one obligation and
+//      refuses on any other, loudly. Allowing the access and dropping the
+//      obligation would enforce half a policy and report success.
+// ===========================================================================
+
+const http = require('http');
+const fs = require('fs');
+const { URL } = require('url');
+const engine = require('./engine');
+const sync = require('./sync');
+// THE REMOTE PIP. It requires `engine.js` for the model, the datatypes and the
+// XML reader — the same three this file uses — so it can join no cycle, and it
+// registers nothing because this container has no router to register with.
+const pip = require('./pip');
+
+const log = engine.log;
+const model = engine.model;
+
+// ---------------------------------------------------------------------------
+// THE VERSION, M.N.O — THE SAME ONE THE MOCK REPORTS, FROM THE SAME MODULE.
+//
+// **IT WAS THE STRING `'mock-sts xacml-pep, phase five'` UNTIL 2026-09-06**,
+// and that is worth keeping written down because of where the value GOES: it
+// is `options.version`, it rides on the registration this PEP sends the PDP,
+// the PDP stores it as `xacmlPepVersion` on the entry, and `/admin/xacml/peps`
+// draws it in a column headed Version. So an operator looking at the console
+// to answer "which build is that enforcement point running" was told the name
+// of a development phase — a label that had not changed in any commit since it
+// was written and could not have, because nothing computed it.
+//
+// It is the mock's own `common/version.js`, copied into this image at BUILD
+// TIME the way the seven engine modules are, and stamped there. One copy in
+// the tree; this container cannot report a release the mock does not have.
+//
+// **TWO CANDIDATES, BECAUSE THIS FILE HAS TWO LAYOUTS AND ONLY ONE OF THEM IS
+// THE IMAGE.** In the container the module is at the root beside this file
+// (`./version`); in a checkout it is where it lives (`../common/version`).
+// They are mutually exclusive — neither layout has both — so the loop finds
+// exactly one and the other miss is normal. This is the shape the parent
+// project's `api/server.js` uses for its own copy of this module, and the
+// reason is the same: one implementation of the scheme rather than a second
+// that could drift.
+//
+// A version may not stop this container starting, which is the rule the module
+// itself is written to (an unreadable VERSION is 0.0, a corrupt stamp is a
+// computed record). This adds the one failure that module cannot cover — being
+// absent from BOTH paths, which would mean a Dockerfile that stopped copying
+// it — and answers a version that SAYS SO rather than throwing. A PEP that
+// cannot name its build is still a PEP that enforces.
+function loadVersion() {
+  const candidates = ['./version', '../common/version'];
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      return require(candidates[i]).load();
+    } catch (error) {
+      // Not this layout. Silent because exactly one of the two is expected to
+      // miss on every start; the case worth reporting is BOTH, below.
+    }
+  }
+  log.error('xacml-pep: neither ./version nor ../common/version could be ' +
+            'loaded, so this PEP cannot name the build it is running. It ' +
+            'registers and enforces regardless. In the image that means the ' +
+            'Dockerfile stopped copying common/version.js and VERSION.');
+  return { version: 'unknown', build: 'unknown', commit: '',
+           builtAt: null, stamped: false };
+}
+
+const APP_VERSION = loadVersion();
+const VERSION = APP_VERSION.version;
+
+// ---------------------------------------------------------------------------
+// CONFIGURATION, ALL OF IT FROM THE ENVIRONMENT.
+//
+// No appconfig file and no settings table, and that is not a shortcut: this
+// container is one component with a dozen knobs, and the mock's five-layer
+// configuration exists to serve a console that can change a setting while the
+// service runs. A PEP has no console.
+// ---------------------------------------------------------------------------
+function intFromEnv(name, dflt) {
+  const raw = process.env[name];
+  const n = raw === undefined ? NaN : parseInt(raw, 10);
+  return isNaN(n) ? dflt : n;
+}
+
+function fileFromEnv(name) {
+  const path = process.env[name];
+  if (!path) {
+    return null;
+  }
+  try {
+    return fs.readFileSync(path);
+  } catch (error) {
+    // NAMED AND FATAL-ADJACENT rather than swallowed: a PEP configured with a
+    // certificate path it cannot read would otherwise start, register
+    // unauthenticated, and leave somebody looking at the PDP's console
+    // wondering why the row says it proved nothing.
+    log.error('xacml-pep: ' + name + ' names ' + path + ' and it could not ' +
+              'be read (' + error.message + '). Carrying on WITHOUT it, ' +
+              'which means this PEP registers unauthenticated if the PDP ' +
+              'allows that and is refused if it does not.');
+    return null;
+  }
+}
+
+const options = {
+  pdpUrl: process.env.PEP_PDP_URL || 'https://localhost:8081',
+  name: process.env.PEP_NAME || 'pep-1',
+  notifyUrl: process.env.PEP_NOTIFY_URL || '',
+  resource: process.env.PEP_RESOURCE || '',
+  version: VERSION,
+  description: process.env.PEP_DESCRIPTION ||
+    'A remote XACML Policy Enforcement Point holding its own copy of the ' +
+    'engine and pulling this repository.',
+  bias: process.env.PEP_BIAS === 'permit-biased' ? 'permit-biased'
+                                                 : 'deny-biased',
+  port: intFromEnv('PEP_PORT', 9090),
+  pollIntervalMs: intFromEnv('PEP_POLL_INTERVAL_MS', 15000),
+  heartbeatIntervalMs: intFromEnv('PEP_HEARTBEAT_INTERVAL_MS', 60000),
+  timeoutMs: intFromEnv('PEP_TIMEOUT_MS', 5000),
+  maxBodyBytes: intFromEnv('PEP_MAX_BODY_BYTES', 4 * 1024 * 1024),
+  clientCertificate: fileFromEnv('PEP_TLS_CERT'),
+  clientKey: fileFromEnv('PEP_TLS_KEY'),
+  pdpCa: fileFromEnv('PEP_TLS_CA'),
+  insecure: process.env.PEP_TLS_INSECURE === 'true',
+  // ---------------------------------------------------------------------
+  // THE REMOTE PIP. ON BY DEFAULT, AND TURNING IT OFF IS A SUPPORTED
+  // DEPLOYMENT RATHER THAN A DEGRADED ONE.
+  //
+  // With it on, a designator the request did not carry is resolved against
+  // the PDP's embedded directory before the policy is evaluated, so this
+  // container decides on the same information the PDP's own PEP does. With
+  // it off — or with no client certificate, which the PIP endpoint requires
+  // — it decides on what the request asserts and nothing else, which is what
+  // this container did before `pip.js` existed and is a real property of a
+  // real deployment worth being able to demonstrate.
+  //
+  // ON by default because the surprising state is the other one: a PEP
+  // enforcing the same policy as its PDP and reaching a different answer is
+  // the failure this whole phase exists to make impossible, and a feature
+  // that has to be switched on to get that is a feature most deployments
+  // will not have.
+  // ---------------------------------------------------------------------
+  pipEnabled: process.env.PEP_PIP !== 'false'
+};
+
+function send(res, status, body) {
+  const text = JSON.stringify(body, null, 2);
+  res.writeHead(status, { 'Content-Type': 'application/json',
+                          'Cache-Control': 'no-store',
+                          'Content-Length': Buffer.byteLength(text) });
+  res.end(text);
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THIS PEP DOES WITH A DECISION. See the header — the mock's rule,
+// restated rather than imported.
+// ---------------------------------------------------------------------------
+const DISCHARGEABLE = ['urn:sts-mock:xacml:obligation:log'];
+
+function enforce(answer) {
+  log.debug('Entering enforce(). decision=' + answer.decision);
+  const discharged = [];
+  const undischargeable = [];
+  (answer.obligations || []).forEach(function (obligation) {
+    if (DISCHARGEABLE.indexOf(obligation.id) >= 0) {
+      log.info('xacml-pep: discharging obligation ' + obligation.id +
+               ' with ' + (obligation.assignments || []).length +
+               ' assignment(s).');
+      discharged.push(obligation.id);
+      return;
+    }
+    undischargeable.push(obligation.id);
+  });
+  const permitted = answer.decision === model.DECISION.PERMIT;
+  const denied = answer.decision === model.DECISION.DENY;
+  let allowed = options.bias === 'deny-biased' ? permitted : !denied;
+  let why;
+  if (options.bias === 'deny-biased') {
+    why = permitted ? 'The PDP policy said Permit.'
+      : 'The policy said ' + answer.decision + ', and this PEP is ' +
+        'deny-biased, so anything that is not Permit is a refusal.';
+  } else {
+    why = denied ? 'The policy said Deny.'
+      : 'The policy said ' + answer.decision + ', and this PEP is ' +
+        'permit-biased, so anything that is not Deny is allowed.';
+  }
+  if (allowed && undischargeable.length) {
+    allowed = false;
+    why = 'The policy said ' + answer.decision + ', but the decision carries ' +
+          (undischargeable.length === 1 ? 'an obligation' : 'obligations') +
+          ' this PEP cannot discharge (' + undischargeable.join(', ') +
+          '). Section 7.2: a PEP that cannot fulfil an obligation MUST NOT ' +
+          'grant the access. Allowing it and dropping the obligation would ' +
+          'enforce half a policy and report success.';
+  }
+  log.debug('Leaving enforce(). ' + (allowed ? 'Allowed.' : 'Refused.'));
+  return { allowed: allowed, bias: options.bias, why: why,
+           discharged: discharged, undischargeable: undischargeable };
+}
+
+// ---------------------------------------------------------------------------
+// A DECISION, HERE, WITH WHAT WAS PULLED.
+//
+// THERE IS NO PIP. Every attribute a policy asks about has to be in the
+// request, and one that is not produces an empty bag — which is a perfectly
+// ordinary XACML result rather than an error. That is not a gap in this
+// container: a real PEP knows who the caller is and generally nothing else
+// about them, and the mock's PIP reads a person's entry in an embedded
+// directory this process cannot see and should not have.
+//
+// So a policy that decides on `employeeType` decides here only if the caller
+// asserts one. `GET /protected?employeeType=staff` is how this container lets
+// somebody see that, and it is honest about what it means: an attribute the
+// SUBJECT asserted about itself, which no real deployment would believe and
+// which is exactly the sort of thing a mock exists to let you try.
+// ---------------------------------------------------------------------------
+async function decide(query) {
+  log.debug('Entering decide().');
+  const holding = sync.current();
+  if (!holding.loaded) {
+    log.debug('Leaving decide(). Nothing is held.');
+    return { decision: model.DECISION.NOT_APPLICABLE,
+             status: { code: model.STATUS.OK },
+             obligations: [], advice: [], policyIdentifiers: [],
+             note: 'This PEP holds no root policy — it has never pulled one ' +
+                   'successfully, or what it pulled had no root. There is ' +
+                   'nothing to evaluate, so the decision is NotApplicable ' +
+                   'and the bias below is what actually decided.' };
+  }
+  const subject = String(query.subject || '');
+  const resource = String(query.resource || options.resource ||
+                          'urn:xacml-pep:protected');
+  const action = String(query.action || 'GET');
+  const subjectAttributes = subject
+    ? [{ attributeId: model.ATTRIBUTE.SUBJECT_ID, issuer: null,
+         includeInResult: true,
+         values: [{ type: model.TYPE.STRING, lexical: subject }] }]
+    : [];
+  // EVERY OTHER QUERY PARAMETER BECOMES A SUBJECT ATTRIBUTE, ASSERTED UNDER
+  // BOTH SPELLINGS — the bare name and the mock's own
+  // `urn:sts-mock:xacml:attribute:` form.
+  //
+  // **THAT IS NOT BELT AND BRACES; IT IS WHAT MAKES THE CONTRACT TRUE.** The
+  // mock's `xacml_pip.js` answers BOTH spellings from ONE directory attribute
+  // — a designator for `employeeType` and one for
+  // `urn:sts-mock:xacml:attribute:employeeType` both read the same entry — so
+  // a policy author over there may legitimately write either and the PDP
+  // decides identically. A remote PEP that asserted only one of them would
+  // decide differently from the PDP for every policy that happened to use the
+  // other, which is precisely the disagreement this whole phase exists to
+  // make impossible. It cost a run to find: the seeded RBAC policy names
+  // `employeeType` bare, this container asserted only the prefixed form, and
+  // every request was denied by a policy that was working perfectly.
+  //
+  // The prefix is a literal here rather than imported from `xacml_pip.js`,
+  // because that module is not in `engine.js`'s copy list and pulling it in
+  // for one string would bring the mock's directory reader into a process
+  // that has no directory.
+  const PIP_PREFIX = 'urn:sts-mock:xacml:attribute:';
+  Object.keys(query).forEach(function (key) {
+    if (key === 'subject' || key === 'resource' || key === 'action') {
+      return;
+    }
+    const values = [{ type: model.TYPE.STRING, lexical: String(query[key]) }];
+    subjectAttributes.push({ attributeId: key, issuer: null,
+                             includeInResult: true, values: values });
+    subjectAttributes.push({ attributeId: PIP_PREFIX + key, issuer: null,
+                             includeInResult: true, values: values });
+  });
+  const request = {
+    returnPolicyIdList: true,
+    combinedDecision: false,
+    categories: [
+      { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
+        attributes: subjectAttributes },
+      { category: model.CATEGORY.RESOURCE, id: null, content: null,
+        attributes: [{ attributeId: model.ATTRIBUTE.RESOURCE_ID, issuer: null,
+                       includeInResult: true,
+                       values: [{ type: model.TYPE.ANYURI,
+                                  lexical: resource }] }] },
+      { category: model.CATEGORY.ACTION, id: null, content: null,
+        attributes: [{ attributeId: model.ATTRIBUTE.ACTION_ID, issuer: null,
+                       includeInResult: true,
+                       values: [{ type: model.TYPE.STRING,
+                                  lexical: action }] }] },
+      { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
+        attributes: [] }
+    ]
+  };
+  // ---------------------------------------------------------------------
+  // THE PIP, FETCHED BEFORE EVALUATION RATHER THAN DURING IT.
+  //
+  // `xacml_pdp.js`'s resolver is SYNCHRONOUS — it is handed a designator and
+  // must return an array — and an HTTP request is not. Making the evaluator
+  // asynchronous would be a change to the code every one of the 455 OASIS
+  // conformance cases runs through, for the benefit of one deployment shape,
+  // and it was refused. So `pip.js` walks the policy for the designators it
+  // could be asked about, fetches them ALL IN ONE REQUEST, and hands back a
+  // synchronous resolver over what came back.
+  //
+  // **THAT IS WHY THE PDP'S ENDPOINT TAKES A LIST.** The batch is not an
+  // optimisation; it is what makes a synchronous engine able to use a remote
+  // PIP at all.
+  //
+  // IT NEVER REJECTS. A PDP that will not answer, a refused query, a policy
+  // designating more attributes than one query may carry — every one of them
+  // comes back as a resolver answering empty bags, which is EXACTLY what this
+  // container did before `pip.js` existed. The degraded state of this feature
+  // is the old behaviour, reported on `GET /`, rather than a PEP that stops
+  // deciding.
+  // ---------------------------------------------------------------------
+  const pipResolver = await pip.resolverFor(request, holding, options);
+  lastPipReport = pipResolver.report;
+  const answer = engine.pdp.evaluate(holding.root, request, {
+    repository: holding.repository,
+    resolver: pipResolver.resolve
+  });
+  // WHAT THE PIP DID, ON THE ANSWER. A decision that came out differently
+  // because an attribute was resolved remotely is indistinguishable from one
+  // that did not, and this is the only place the difference is visible to
+  // whoever is reading a refusal.
+  answer.pip = pipResolver.report;
+  log.debug('Leaving decide(). ' + answer.decision);
+  return answer;
+}
+
+// The last PIP query's outcome, for `GET /`. One value rather than a history:
+// this page answers "is the PIP working", and a list would be a log in a
+// container that already has one.
+let lastPipReport = null;
+
+// ---------------------------------------------------------------------------
+// THE ROUTES. Node's own http and no framework: this container's whole surface
+// is four endpoints and none of them takes a form, so express would be a
+// dependency to describe four `if`s.
+// ---------------------------------------------------------------------------
+function overview() {
+  const s = sync.state();
+  const staleAfterMs = options.pollIntervalMs * 3;
+  const lastPull = s.held.lastPullAt ? Date.parse(s.held.lastPullAt) : NaN;
+  const stale = !(lastPull > 0) || (Date.now() - lastPull) > staleAfterMs;
+  return {
+    what: 'A REMOTE XACML Policy Enforcement Point. It holds its own copy of ' +
+          'the engine, PULLS the policy repository from the PDP below, and ' +
+          'decides here. The PDP saw none of the decisions counted on this ' +
+          'page, which is what a remote PEP is.',
+    // ---------------------------------------------------------------------
+    // WHETHER THIS PEP HAS A PIP, SAID OUT LOUD (2026-09-06).
+    //
+    // It used to say `pip: { here: false }` and explain at length that a
+    // designator the request did not carry is an empty bag out here. That is
+    // still true when `PEP_PIP` is off or no certificate is mounted, and it
+    // is no longer the only state — so the page reports which one it is in
+    // rather than asserting one of them.
+    //
+    // `lastQuery` is the last query's outcome and not a count, because the
+    // question an operator has is "is it working", and the answer to that is
+    // the most recent attempt with its reason.
+    // ---------------------------------------------------------------------
+    pip: {
+      enabled: options.pipEnabled,
+      endpoint: options.pipEnabled ? options.pdpUrl + '/xacml/pip' : null,
+      credentialed: !!options.clientCertificate,
+      lastQuery: lastPipReport,
+      what: options.pipEnabled
+        ? 'This PEP resolves attribute designators the request did not carry ' +
+          'against the PDP\'s embedded directory, in ONE batched query before ' +
+          'each evaluation, in XACML\'s own XML both ways. So a policy that ' +
+          'reads employeeType off a person\'s entry decides HERE the way it ' +
+          'decides at the PDP. The endpoint requires a client certificate ' +
+          'whose subject holds the built-in REMOTE_PEPS role; without one ' +
+          'every query is refused and this PEP falls back to deciding on ' +
+          'what the request asserts.'
+        : 'PEP_PIP is off, so this PEP has NO Policy Information Point: a ' +
+          'designator the request did not carry produces an empty bag. Pass ' +
+          'extra query parameters to /protected and each becomes a subject ' +
+          'attribute — asserted by the caller about itself, which no real ' +
+          'deployment would believe and which is exactly what a mock is for.'
+    },
+    version: VERSION,
+    // THE PROVENANCE OF THAT NUMBER, broken out the way the mock's own
+    // `GET /admin-api` breaks it out, and for the same reason: a client
+    // comparing this PEP's build against the PDP's should read fields rather
+    // than write a regular expression over a string.
+    //
+    // `stamped` is the one that changes how the rest is read. False means this
+    // container computed its number when the process started — it was never
+    // built, which happens when somebody runs pep.js by hand — so the build is
+    // a start time and comparing it with the PDP's says nothing at all.
+    build: {
+      number: APP_VERSION.build,
+      commit: APP_VERSION.commit || null,
+      at: APP_VERSION.builtAt,
+      stamped: APP_VERSION.stamped === true,
+      // THE TWO IMAGES ARE BUILT SEPARATELY AND THEIR BUILD NUMBERS DIFFER
+      // UNLESS ONE WAS PASSED TO BOTH. Said here rather than left for somebody
+      // to infer from two timestamps that are four seconds apart, because the
+      // question this page gets opened for is whether this PEP is the same
+      // release as the PDP — and M.N is the part that answers it.
+      what: 'M.N comes from the same VERSION file the PDP\'s does, so a ' +
+            'difference THERE is a PEP left behind across a release. The ' +
+            'build number is per IMAGE: these are two artifacts and they ' +
+            'differ unless the same BUILD_NUMBER was passed to both builds.'
+    },
+    pdp: options.pdpUrl,
+    bias: options.bias,
+    protectedAt: '/protected',
+    holding: s.held,
+    // COMPUTED HERE AND SEPARATELY FROM THE PDP'S OWN VERDICT, on purpose.
+    // The PDP calls this PEP stale after `xacml.pepStaleAfterS` without a
+    // heartbeat; this PEP calls itself stale after three missed polls. The two
+    // measure different things and CAN DISAGREE — a PEP that is pulling
+    // happily while its heartbeats are being dropped looks fine here and
+    // stale there, which is a real and confusing deployment state that is far
+    // easier to recognise when both numbers are visible.
+    stale: stale,
+    staleAfterMs: staleAfterMs,
+    registration: s.registration,
+    enforced: s.counters,
+    notify: options.notifyUrl || null,
+    poll: { intervalMs: options.pollIntervalMs,
+            heartbeatMs: options.heartbeatIntervalMs },
+    contract: 'THE PULL IS THE CONTRACT. This PEP polls the PDP on its own ' +
+              'interval and converges whether or not a nudge ever arrives. ' +
+              'A PDP that is unreachable leaves this PEP enforcing what it ' +
+              'last pulled rather than denying everything — which is a ' +
+              'deliberate trade, and it means a policy change made during an ' +
+              'outage is not enforced here until the next successful pull.',
+    noPip: 'There is no Policy Information Point here. Every attribute a ' +
+           'policy asks about must be IN the request, and one that is not ' +
+           'produces an empty bag. Pass extra query parameters to ' +
+           '/protected and each becomes a subject attribute under ' +
+           'urn:sts-mock:xacml:attribute: — asserted by the caller about ' +
+           'itself, which no real deployment would believe and which is ' +
+           'exactly what a mock is for.'
+  };
+}
+
+async function protectedResource(query) {
+  const answer = await decide(query);
+  const outcome = enforce(answer);
+  sync.countDecision(outcome);
+  const body = {
+    decision: answer.decision,
+    allowed: outcome.allowed,
+    bias: outcome.bias,
+    why: outcome.why,
+    status: answer.status,
+    obligations: (answer.obligations || []).map(function (one) {
+      return { id: one.id, discharged: outcome.discharged.indexOf(one.id) >= 0 };
+    }),
+    advice: (answer.advice || []).map(function (one) {
+      return one.id;
+    }),
+    applicablePolicies: answer.policyIdentifiers || [],
+    decidedBy: { pep: options.name,
+                 syncToken: sync.state().held.syncToken,
+                 note: 'Decided IN THIS PROCESS, against the policy this PEP ' +
+                       'last pulled. The PDP did not see this request.' },
+    // WHAT WAS RESOLVED REMOTELY, ON EVERY ANSWER. Two decisions that differ
+    // only because one had an attribute the other did not are otherwise
+    // identical on the wire, and this is what makes the difference readable —
+    // which is the whole point of a component that exists to stop a PEP and
+    // its PDP disagreeing.
+    pip: answer.pip || { used: false, why: 'nothing was asked.' }
+  };
+  if (answer.note) {
+    body.note = answer.note;
+  }
+  return { status: outcome.allowed ? 200 : 403, body: body };
+}
+
+const server = http.createServer(function (req, res) {
+  let parsed;
+  try {
+    parsed = new URL(req.url, 'http://localhost');
+  } catch (error) {
+    // A URL node itself will not parse cannot name any of four fixed paths,
+    // so there is nothing to route it to.
+    send(res, 400, { error: 'that is not a request URL' });
+    return;
+  }
+  const path = parsed.pathname;
+  const query = {};
+  parsed.searchParams.forEach(function (value, key) {
+    query[key] = value;
+  });
+
+  if (req.method === 'GET' && path === '/healthcheck') {
+    // LIVENESS ONLY, AND IT DOES NOT ASK WHETHER THE POLICY IS CURRENT. A PEP
+    // holding a stale copy is working — it is enforcing, and it is saying so
+    // on `GET /`. A healthcheck that failed on staleness would make a
+    // container restart loop out of a PDP outage, which would turn a
+    // recoverable problem into an outage of its own.
+    send(res, 200, { message: 'Success' });
+    return;
+  }
+  if (req.method === 'GET' && (path === '/' || path === '')) {
+    send(res, 200, overview());
+    return;
+  }
+  if (req.method === 'GET' && path === '/protected') {
+    // AWAITED WITH A CATCH, because this handler became asynchronous when the
+    // PIP query went in front of the evaluation — and node's http server does
+    // not look at what a handler returns, so an unhandled rejection here would
+    // be a request that HANGS where it used to be a 500. `pip.js` is written
+    // never to reject; this is the guard for everything else in the path.
+    protectedResource(query).then(function (answer) {
+      send(res, answer.status, answer.body);
+    }).catch(function (error) {
+      log.error('xacml-pep: deciding threw: ' + error.message);
+      send(res, 500, { error: 'decision_failed',
+        error_description: 'This PEP could not reach a decision: ' +
+                           error.message + '. That is a defect here rather ' +
+                           'than a Deny, and it is reported as one.' });
+    });
+    return;
+  }
+  if (req.method === 'POST' && path === '/notify') {
+    // THE NUDGE. Answered 204 IMMEDIATELY and the pull happens after, which
+    // matters: the PDP times this request out in two seconds by default and
+    // holding it open for the length of a pull would make a slow pull look
+    // like an unreachable PEP on somebody's console.
+    //
+    // THE BODY IS NOT READ AND NOTHING IN IT IS TRUSTED. A nudge says only
+    // that something changed; what actually changed is discovered by pulling
+    // from the PDP over this PEP's own configured URL. A nudge that could tell
+    // this PEP what the policy now is, or where to fetch it, would be an
+    // unauthenticated caller supplying policy — and the whole reason a nudge
+    // is affordable is that it carries nothing.
+    req.resume();
+    send(res, 204, {});
+    log.info('xacml-pep: nudged by the PDP; pulling now rather than waiting ' +
+             'up to ' + options.pollIntervalMs + 'ms for the next poll. ' +
+             'Nothing in the nudge was read — what changed is discovered by ' +
+             'pulling.');
+    sync.pull(options).catch(function (error) {
+      log.warn('xacml-pep: the nudged pull failed: ' + error.message +
+               '. The scheduled poll will try again.');
+    });
+    return;
+  }
+  send(res, 404, {
+    error: 'not_found',
+    error_description: 'This PEP answers GET /, GET /protected, ' +
+                       'POST /notify and GET /healthcheck.'
+  });
+});
+
+async function start() {
+  // THE BUILD FIRST, before the configuration tour: it is the one line here
+  // that is about the ARTIFACT rather than about how it was pointed at a PDP,
+  // and it is the line somebody scrolls this container's log back to find when
+  // it decides differently from the one next to it.
+  log.info('xacml-pep: version ' + VERSION + ' (build ' + APP_VERSION.build +
+           (APP_VERSION.commit ? ', commit ' + APP_VERSION.commit : '') +
+           ', ' + (APP_VERSION.stamped
+                     ? 'stamped at image build time'
+                     : 'COMPUTED AT STARTUP — this is not a built image, so ' +
+                       'the build number is when this process started') +
+           '). M.N is the mock\'s own release; the build number is this ' +
+           'image\'s.');
+  log.info('xacml-pep: starting. PDP=' + options.pdpUrl + ' name=' +
+           options.name + ' bias=' + options.bias);
+  if (options.insecure) {
+    // ON EVERY START rather than once somewhere, for `federation_http.js`'s
+    // reason about insecure requests: a certificate check turned off months
+    // ago and forgotten is the worst kind of leftover.
+    log.warn('xacml-pep: PEP_TLS_INSECURE is on, so this PEP does NOT verify ' +
+             'the PDP\'s certificate. That is the ordinary setting against ' +
+             'the mock — it regenerates its key on every start and signs it ' +
+             'itself, so there is no anchor to verify against — and it is ' +
+             'the wrong setting against anything else.');
+  }
+  if (!options.clientCertificate) {
+    // THE SECOND SENTENCE OF THIS WARNING WAS WRONG FROM 2026-09-06 and it
+    // is the kind of wrong that costs an afternoon: it told an operator that
+    // a missing certificate affected only the registration, while the PULL
+    // had gone behind the same gate — so the visible symptom was a PEP
+    // enforcing stale policy for ever, with a log line saying that was fine.
+    log.warn('xacml-pep: no PEP_TLS_CERT, so this PEP has no client ' +
+             'certificate. The PDP refuses the REGISTRATION unless ' +
+             'xacml.pepRequireCertificate is off — and it refuses the PULL ' +
+             'too, because GET /xacml/pep/policies requires a VERIFIED ' +
+             'certificate whose subject holds the built-in REMOTE_PEPS role. ' +
+             'This PEP will go on deciding against whatever policy it ' +
+             'already holds, which on a fresh start is NOTHING, so every ' +
+             'decision will be NotApplicable and the bias will settle it. ' +
+             'Either mount a certificate whose CA the PDP trusts (POST ' +
+             '/tls/trust) and put its DN in the group roles.remotePepGroup ' +
+             'names, or turn xacml.enforceAccess off on the PDP.');
+  }
+  // REGISTER FIRST, PULL REGARDLESS. `await`ed rather than fired and
+  // forgotten so that the first `GET /` after start reports a settled
+  // registration rather than "not attempted yet" — but its result is not
+  // checked, because a refused registration must not stop anything. **AND IT
+  // IS NO LONGER THE ONLY ATTEMPT**: the poll timer below retries it until it
+  // works, so a PEP started before its PDP — or before the realm it polls
+  // exists — converges on a console row the same way it converges on policy.
+  await sync.register(options);
+  await sync.pull(options);
+
+  setInterval(function () {
+    // THE REGISTRATION IS RETRIED HERE AND NOWHERE ELSE, on the poll timer
+    // rather than a timer of its own — see `sync.js`'s header for why it is
+    // retried at all. `registerIfNeeded()` returns immediately once it has
+    // worked, so the ordinary case is one comparison on a timer that was
+    // already firing.
+    //
+    // IT DOES NOT GATE THE PULL. The two are chained so the register is
+    // attempted first — a row that appears before the counters start moving
+    // reads better on the console — but a registration that fails must never
+    // stop a pull, which is the whole doctrine of this file, so the catch is
+    // between them rather than around both.
+    sync.registerIfNeeded(options).catch(function (error) {
+      log.debug('xacml-pep: the retried registration threw: ' + error.message);
+    }).then(function () {
+      return sync.pull(options);
+    }).catch(function (error) {
+      log.warn('xacml-pep: the scheduled pull threw: ' + error.message);
+    });
+  }, options.pollIntervalMs).unref();
+
+  setInterval(function () {
+    sync.heartbeat(options).then(function (result) {
+      // A PDP THAT SAYS THIS COPY IS BEHIND GETS A PULL IMMEDIATELY. It is the
+      // second path to convergence after the nudge and the poll, and it costs
+      // one comparison on a beat that was happening anyway.
+      if (result.ok && result.current === false) {
+        return sync.pull(options);
+      }
+      return null;
+    }).catch(function (error) {
+      log.warn('xacml-pep: the heartbeat threw: ' + error.message);
+    });
+  }, options.heartbeatIntervalMs).unref();
+
+  server.listen(options.port, function () {
+    log.info('xacml-pep: listening on ' + options.port +
+             '. The protected resource is GET /protected.');
+  });
+}
+
+// Guarded so that `tests/xacml_pep.js` can require this file for `enforce()`
+// and `decide()` without starting a listener or a timer — the same guard
+// `common/worker.js` carries, for the same reason.
+if (require.main === module) {
+  start().catch(function (error) {
+    log.error('xacml-pep: could not start: ' +
+              (error && error.stack ? error.stack : error));
+    process.exit(1);
+  });
+}
+
+module.exports = { enforce: enforce, decide: decide, overview: overview,
+                   protectedResource: protectedResource, options: options,
+                   server: server, start: start };

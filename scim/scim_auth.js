@@ -161,6 +161,10 @@ const crypto = require('crypto');
 // One signer, one verifier and one constant-time comparison for the whole
 // service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
+// The credential verifier and the mode. Both LEAVES (rule 3): they register
+// nothing and require nothing here.
+const credentials = require('../common/credentials');
+const mode = require('../common/mode');
 
 const { log, baseUrlOf, parseBody, hasScope, capturingResponse,
         capturedDescription } = require('../common/helpers');
@@ -169,6 +173,12 @@ const dpop = require('../oauth-oidc/dpop');
 const mtls = require('../oauth-oidc/mtls');
 const stats = require('../common/admin_stats');
 const authn = require('../authn/authn');
+// THE ACCESS GATE, which `xacml/xacml_access_pep.js` arms at 23c. A LEAF
+// (rule 3): it registers nothing and, with no decider installed, `check()`
+// answers "allowed" — so a process without the XACML family behaves exactly as
+// this file did before the gate existed, which is `npm test` and the parent
+// project's in-process jobs.
+const accessGate = require('../common/access_gate');
 const tlsServer = require('../tls/tls_server');
 const directory = require('../ldap/ldap_server');
 
@@ -183,7 +193,8 @@ const directory = require('../ldap/ldap_server');
 // like the console is broken.
 // ---------------------------------------------------------------------------
 function authRequired() {
-  return config.value('scim.authRequired') !== false;
+  // THE MODE, since 2026-09-06, where this read `scim.authRequired`.
+  return mode.gatesScim();
 }
 
 function authDiscovery() {
@@ -668,18 +679,34 @@ function attemptBasic(req, ctx) {
       'The Basic credential names nobody. This service checks no password, so the username is ' +
       'the whole of what it authenticates and an empty one authenticates nothing.');
   }
-  if (password === REFUSED_PASSWORD) {
-    log.debug("Leaving attemptBasic(). The reserved password was used.");
-    return unauthenticated(req,
-      'The password "' + REFUSED_PASSWORD + '" is refused on purpose — the same reserved value ' +
-      'the OAuth password grant, WS-Trust, the WS-Federation sign-in screen and every LDAP bind ' +
-      'here refuse. Every other password is accepted, including no password at all, because ' +
-      'nothing in this service checks one. Nothing else about this request was wrong.');
+  // THE CREDENTIAL (2026-09-06). One call, both modes. In development this is
+  // exactly what the branch it replaced did — refuse the reserved string,
+  // accept everything else including an empty password — and in product mode
+  // it verifies against the hashed `userPassword` on the person's entry.
+  const checked = credentials.verify(username, password,
+                                     { via: 'SCIM HTTP Basic' });
+  if (!checked.ok) {
+    log.debug("Leaving attemptBasic(). The credential was refused: " +
+              checked.reason);
+    return unauthenticated(req, checked.reason === 'reserved-refusal'
+      ? 'The password "' + REFUSED_PASSWORD + '" is refused on purpose — the same reserved ' +
+        'value the OAuth password grant, WS-Trust, the WS-Federation sign-in screen and every ' +
+        'LDAP bind here refuse. In development mode every other password is accepted, ' +
+        'including no password at all. Nothing else about this request was wrong.'
+      // ONE SENTENCE FOR EVERY OTHER FAILURE, which is the account enumeration
+      // answer avoided: "no such user" and "wrong password" must not be
+      // distinguishable to a caller. The reason is in the log.
+      : 'Authentication failed. In product mode a Basic credential is verified against the ' +
+        'hashed userPassword on the person\'s directory entry, and a person with none cannot ' +
+        'authenticate at all.');
   }
   log.debug("Leaving attemptBasic(). " + username + " is accepted.");
   return {
     ok: true, scheme: 'basic', principal: username, isClient: false,
-    scopes: '', note: 'HTTP Basic (no password was checked)'
+    scopes: '',
+    note: mode.verifiesCredentials()
+      ? 'HTTP Basic (the password was verified)'
+      : 'HTTP Basic (no password was checked)'
   };
 }
 
@@ -1579,9 +1606,117 @@ function authenticate(req, need) {
     recordAuthentication(decision, row);
   }
 
+  // -------------------------------------------------------------------------
+  // THE SESSION, AND THEN THE POLICY (2026-09-06).
+  //
+  // Both are here rather than at the eleven route handlers for this function's
+  // whole reason to exist: it is the ONE place a SCIM credential is accepted,
+  // so a surface added tomorrow gets both without its author having to know
+  // they exist. Eleven call sites would be ten that do and one that does not.
+  //
+  // **THE SESSION IS `authn.startSession()` AND NOT A REGISTER OF THIS
+  // FILE'S.** That function owns every session this service holds — the
+  // console draws them, `logout.js` ends them, CAEP observes them — and a
+  // second store for API callers would be a second answer to "is somebody
+  // signed in", which is the thing rule 3m exists to prevent. What makes it
+  // work for a per-request credential is `detail.key`: a call whose key matches
+  // a live session TOUCHES it rather than minting one, so a provisioning
+  // client doing a thousand PATCHes leaves one row and not a thousand.
+  //
+  // `cookie: false` because a SCIM client is not a browser — see startSession().
+  const session = sessionFor(decision);
+
+  // THE POLICY. The subject is the session's person, never anything off the
+  // request — a PDP deciding faithfully about a subject the caller nominated
+  // is broken access control with extra steps.
+  //
+  // **IT RUNS AFTER THE SCOPE CHECK AND NOT INSTEAD OF IT.** RFC 7644 section
+  // 2's mapping from an authenticated client to a policy is this file's own
+  // and stays exactly as it was; the gate is the layer ABOVE it, and on an
+  // unedited service it permits — the built-in policy asks for a role only
+  // where somebody has required one. So this changes nothing until a
+  // deployment writes a rule, which is the contract every mode here follows.
+  const answer = accessGate.check({
+    resource: accessGate.RESOURCE.SCIM,
+    action: wanted === 'write' ? accessGate.ACTION.WRITE
+                               : accessGate.ACTION.READ,
+    subject: { name: (session && session.user && session.user.username) ||
+                     decision.principal || '',
+               authenticated: !decision.anonymous,
+               sessionId: session ? session.id : null },
+    context: { method: req.method, path: req.originalUrl || req.url,
+               scheme: decision.scheme }
+  });
+  if (!answer.allowed) {
+    log.info('scim: the access policy refused ' + req.method + ' ' +
+             (req.originalUrl || req.url) + ' for ' +
+             (decision.principal || '(nobody)') + '. ' + answer.why);
+    return {
+      ok: false, status: 403, scimType: null,
+      detail: 'The access policy refused this request. ' + answer.why +
+              ' This is a POLICY decision rather than a missing credential: ' +
+              'the credential presented was accepted. The document is on ' +
+              '/admin/xacml and xacml.enforceAccess turns the whole layer off.'
+    };
+  }
+
   log.debug("Leaving authenticate(). " + decision.scheme + " for " +
             (decision.principal || '(nobody)') + ".");
   return decision;
+}
+
+// The session for an accepted SCIM credential. Separated from the funnel above
+// only because it is eight lines of hashing and a call, and the funnel is
+// already the longest function in this file.
+//
+// **AN ANONYMOUS DECISION GETS NO SESSION**, which is not a special case: it
+// means `scim.authRequired` is off or this is the open discovery endpoint, so
+// nobody authenticated and there is nothing to hold a session for. It returns
+// null and the policy is asked about an unauthenticated subject — which the
+// built-in policy refuses only if somebody has turned `requireAuthenticated`
+// into a requirement for this surface.
+function sessionFor(decision) {
+  log.debug("Entering sessionFor().");
+  if (!decision || decision.anonymous || !decision.principal) {
+    log.debug("Leaving sessionFor(). Nobody authenticated.");
+    return null;
+  }
+  try {
+    // **THE KEY IS THE SCHEME AND THE PRINCIPAL, NOT THE CREDENTIAL.** Two
+    // things point the same way. `authenticate()` never keeps what was
+    // presented — a bearer token reaching a register would be a second place
+    // to steal one from, which is why `logout.js` refuses to put an
+    // authorization code in a row id — so there is nothing here to hash. And
+    // the right unit is the CLIENT rather than the credential: a client that
+    // refreshes its token mid-run is the same client on the same surface, and
+    // keying on the token would give it a second row and leave the first
+    // sitting there until it expired.
+    //
+    // It is still hashed, because the principal can be a DN or an email and a
+    // session id is printed on `/admin/sessions` and in audit rows.
+    const key = crypto.createHash('sha256')
+      .update('scim ' + String(decision.scheme || '') + ' ' +
+              String(decision.principal || ''))
+      .digest('hex').slice(0, 24);
+    const session = authn.startSession(
+      { set: function () {}, req: null }, decision.principal,
+      ['pwd'], '1', 'SCIM',
+      { key: key, cookie: false,
+        summary: decision.principal + ' authenticated at /scim/v2 over ' +
+                 decision.scheme + '; session created',
+        note: 'A SCIM credential was presented and accepted. This session is ' +
+              'a RECORD that it was, not a thing that can be presented in ' +
+              'its place: every SCIM request authenticates again.' });
+    log.debug("Leaving sessionFor(). " + (session ? session.id : 'none') + ".");
+    return session;
+  } catch (error) {
+    // Nothing about recording a session may be able to fail an authentication
+    // — the same guarantee recordAuthentication() gives one line up.
+    log.error('scim: a session could not be recorded and the request is ' +
+              'unaffected: ' + error.message);
+    log.debug("Leaving sessionFor(). It threw.");
+    return null;
+  }
 }
 
 // One accepted credential, at the single funnel every other family here passes.

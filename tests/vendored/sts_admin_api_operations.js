@@ -88,10 +88,13 @@
 // Trust realms make that mostly unnecessary. A realm is a whole logical copy of
 // this service under a path prefix, with its own directory subtree, its own
 // applications registry, its own federation register, its own claim sets, its
-// own tokens and its own configuration overrides. So this job creates one,
+// own tokens and its own configuration overrides. So this job creates one and
 // performs every destructive thing inside it — `forget`, `revoke-all`,
-// `reset-all`, `delete` — and removes it at the end, which takes the whole
-// subtree with it. What is left to restore by hand is only what is genuinely
+// `reset-all`, `delete` — where none of it reaches anything else. **It does
+// NOT remove the realm afterwards** (2026-09-06): a realm a test run created
+// stays, because it is the record a person reads when the run went red. See
+// theThrowawayRealmIsLeftBehind(). What is left to restore by hand is only
+// what is genuinely
 // process-wide, and that list is short and is named where it is touched: the
 // two admin roles (groups in the DEFAULT realm, by design), the SPIFFE signing
 // authority, and one process-wide setting.
@@ -376,7 +379,8 @@ async function theRealmRegistryWorks() {
   const created = await ok("/realms/create", {
     id: REALM,
     name: "Management API operations test",
-    description: "Created by tests/sts_admin_api_operations.js; removed at the end.",
+    description: "Created by tests/sts_admin_api_operations.js; LEFT IN " +
+                 "PLACE on purpose, so a failed run can be read afterwards.",
     overrides: { "saml2.entityId": "urn:test:" + REALM + ":idp" }
   }, "created the throwaway realm", true);
   assert.strictEqual(created.realm, REALM,
@@ -836,12 +840,15 @@ async function everyReadAnswersAboutThisRealm(doc) {
 
   let withContainer = 0;
   for (const path of paths) {
-    // The two documentation routes answer HTML and JavaScript rather than
-    // JSON, on purpose — they are the explorer. They are asserted by
-    // tests/admin_api.js, which owns the CSP half of them.
-    if (path === "/docs" || path === "/docs/explorer.js") {
-      continue;
-    }
+    // THIS EXEMPTION IS GONE AND THE COMMENT IS KEPT AS THE RECORD. It read:
+    // "The two documentation routes answer HTML and JavaScript rather than
+    // JSON, on purpose — they are the explorer", and skipped `/docs` and
+    // `/docs/explorer.js`. Those operations moved to the console on
+    // 2026-09-09 — `/admin/api-explorer` — because this API began requiring
+    // an access token a browser has no way to carry. Every remaining
+    // operation here answers JSON, which is what this walk was always really
+    // asserting, so it now has no exception at all. `tests/admin_api.js`
+    // still owns the CSP half, at the page's new address.
     const reply = await get(path);
     assert.strictEqual(reply.status, 200,
       "GET " + api + path + " should answer 200; it answered " + reply.status +
@@ -1896,8 +1903,25 @@ async function theSamlRegistriesRoundTrip() {
   log.debug("Entering theSamlRegistriesRoundTrip().");
   log.info("=== SAML 2.0 (four actions) and SAML 1.1 (one) ===");
   const sp = "urn:test:" + REALM + ":sp";
+  // **`acs` USED TO BE IN THIS BODY AND WAS ALWAYS IGNORED (removed 2026-09-06).**
+  // `saml2Action()`'s register branch reads `sp` and nothing else, there is no
+  // action on this resource that sets an assertion consumer service, and no
+  // assertion below ever looked for one — so the member did nothing from the
+  // day it was written and this job passed regardless.
+  //
+  // It was found by ENFORCING the operation's own schema: every action here
+  // declares a `requestBody` with `additionalProperties: false`, the OpenAPI
+  // document has always published it, and since 2026-09-06 `admin_api.js`
+  // compiles that same object with ajv and refuses a body that does not match.
+  //
+  // That is precisely the hazard the comment twenty lines below this one warns
+  // about — *the handler reads `value`, and a body naming the field anything
+  // else answers 200 having done nothing* — committed here, in the file that
+  // warns about it. A silently ignored member is the one kind of API mistake a
+  // passing test cannot see, which is the whole argument for the document being
+  // enforced rather than descriptive.
   const registered = await ok("/saml2/register",
-    { sp: sp, acs: "https://sp.example/acs/" + REALM },
+    { sp: sp },
     "registered a SAML 2.0 service provider");
   assert.ok(registered.application,
     "the register should answer with the application entry it made or found.");
@@ -1915,8 +1939,10 @@ async function theSamlRegistriesRoundTrip() {
     "and the URL should be inside this realm, since the entry is; it is " +
     one.metadataUrl);
 
+  // `binding` was here and is ignored too — `saml2Action()` reads `sp` and
+  // `value` for this action and nothing else. Same finding as `acs` above.
   await ok("/saml2/set-logout-service",
-    { sp: sp, binding: "HTTP-Redirect", value: "https://sp.example/slo" },
+    { sp: sp, value: "https://sp.example/slo" },
     "added a single logout service");
   assert.ok(JSON.stringify(await serviceProvider(sp)).indexOf("https://sp.example/slo") > 0,
     "the logout service should be readable back off the service provider.");
@@ -1948,7 +1974,9 @@ async function theSamlRegistriesRoundTrip() {
     "and the certificate should be on the entry afterwards.");
 
   const rp = "urn:test:" + REALM + ":rp";
-  await ok("/saml11/register", { rp: rp, target: "https://rp.example/" },
+  // `target` was here and `saml11Action()` never read it — the third ignored
+  // member this file was sending, found the same way as `acs` and `binding`.
+  await ok("/saml11/register", { rp: rp },
     "registered a SAML 1.1 relying party");
   const parties = (await get("/saml11")).body.relyingParties || [];
   assert.ok(parties.some(function (row) {
@@ -1993,7 +2021,10 @@ async function theAuthorizationServerProfilesRoundTrip() {
 
   const id = "as-" + names.usernameFor("stsapi-as").toLowerCase()
       .replace(/[^a-z0-9-]/g, "");
-  await ok("/authorization-servers/create", { id: id, name: "Test profile" },
+  // `name` was here and `asAction()` reads `label` — so the profile's label was
+  // never actually being set by this job and nothing noticed. Corrected to the
+  // real field rather than dropped, because exercising it is the point.
+  await ok("/authorization-servers/create", { id: id, label: "Test profile" },
     "created an authorization server profile");
   assert.ok(await profile(id), "the profile should be in the list after create.");
 
@@ -2200,7 +2231,13 @@ async function theSpiffeDoorsRoundTrip() {
   const created = await ok("/spiffe/entries/create", {
     spiffeId: spiffeId,
     parentId: "spiffe://" + trustDomain + "/spire/agent/test",
-    selectors: ["unix:uid:1000"]
+    // A COMMA-SEPARATED STRING, which is what the operation's schema declares
+    // and what `spiffeCommaList()` documents. It was `["unix:uid:1000"]` and
+    // worked only by accident: that function does `String(value)`, and an
+    // array stringifies to its comma-joined members — so a one-element array
+    // happens to produce the right answer and a selector containing a comma
+    // would not. The test now sends what a caller reading the document sends.
+    selectors: "unix:uid:1000"
   }, "created a registration entry");
   assert.ok(created.id, "the create should answer with the entry's id.");
   const entryId = created.id;
@@ -2289,7 +2326,9 @@ async function theSpiffeDoorsRoundTrip() {
 }
 
 // ---------------------------------------------------------------------------
-// THE TOKEN DOORS. Six actions, and the only ones on this API whose effect can
+// THE TOKEN DOORS. Eight actions — the two that act on a whole ISSUANCE are
+// driven by theIssuedListGroupsByIssuance() below, beside the grouping they
+// exist for — and the only ones on this API whose effect can
 // be confirmed by a PROTOCOL endpoint rather than by another view of the same
 // store — which is what makes them worth driving properly: the API's whole
 // claim is that it is not a second implementation.
@@ -2382,10 +2421,234 @@ async function theTokenDoorsRoundTrip() {
   assert.strictEqual(await introspectActive(mine.access), true,
     "and restoring one jti at a time should bring them back — which is the " +
     "only way back from `revoke-all`, and the reason `restore` exists.");
-  log.info("[tokens] OK — six actions, each confirmed at /oauth2/introspect " +
+  log.info("[tokens] OK — six of the eight actions, each confirmed at " +
+           "/oauth2/introspect " +
            "rather than in the console's own list, and each bulk revocation " +
            "shown to leave something alone.");
   log.debug("Leaving theTokenDoorsRoundTrip().");
+}
+
+// ---------------------------------------------------------------------------
+// THE LIST IS GROUPED BY ISSUANCE, AND THE TWO SET DOORS ACT ON A WHOLE REPLY.
+//
+// Since 2026-09-05 an entry in `GET /admin-api/tokens` is one REPLY rather than
+// one credential: OAuth 2.0 and OIDC are the only families this service speaks
+// that hand back several at once, and a table that drew three rows for one
+// token response left the reader to reassemble it by comparing timestamps.
+//
+// FOUR THINGS ARE ASSERTED HERE AND EACH WOULD BE INVISIBLE TO THE OTHERS.
+//
+//   * That a token response really does arrive as ONE entry holding three,
+//     rather than as three entries that happen to agree.
+//   * That `issued` is still the flatten of `sets`. A caller written against
+//     the older per-credential shape has to go on reading what it read, and
+//     the flatten is what makes that true without a second walk of the
+//     register — so a set whose members were missing from `issued` would be a
+//     silent breaking change for every such caller.
+//   * That `revoke-set` reaches RFC 7662 introspection for EVERY member. This
+//     is the assertion the feature exists for: revoking two credentials of
+//     three and believing the grant is dead leaves a refresh token that mints
+//     another, which is precisely the mistake one row per reply prevents.
+//   * That a set holding nothing revocable is REFUSED. Nothing consults this
+//     service about a SAML assertion or a Kerberos ticket, so a 200 saying
+//     "revoked 0" would be a claim about the world that is not true — the same
+//     answer `revoke-kind` already gives for an unrevocable kind.
+// ---------------------------------------------------------------------------
+async function theIssuedListGroupsByIssuance() {
+  log.debug("Entering theIssuedListGroupsByIssuance().");
+  log.info("=== Tokens: one entry per issuance, and the two set doors ===");
+
+  const user = names.usernameFor("stsapi-sets");
+  const client = "set-client-" + REALM;
+  const minted = await mintTokens(user, client);
+  assert.ok(minted.access && minted.id,
+    "this check needs a reply carrying more than one credential, which is " +
+    "what `scope=openid` on the password grant produces: an access token, a " +
+    "refresh token and an ID Token.");
+
+  const listed = await get("/tokens?per=200");
+  assert.ok(Array.isArray(listed.body.sets),
+    "GET /tokens should carry `sets`; it carried " +
+    Object.keys(listed.body).join(", "));
+
+  // The set holding the access token just minted. Found by the jti rather than
+  // by position: this realm is shared with the section above and the list is
+  // newest-first, so "the first entry" is whatever ran last.
+  const mySet = listed.body.sets.filter(function (set) {
+    return set.members.some(function (m) { return m.jti === minted.jti; });
+  })[0];
+  assert.ok(mySet,
+    "the access token just minted should be in one of the sets; " +
+    listed.body.sets.length + " set(s) came back and none held jti " +
+    minted.jti + ".");
+  assert.strictEqual(mySet.grouped, true,
+    "A TOKEN RESPONSE IS ONE ENTRY. It carried an access token, a refresh " +
+    "token and an ID Token, so the entry must say it is a group rather than " +
+    "arriving as three entries that happen to agree on every field — which " +
+    "is exactly what two people redeeming two codes at the same client in " +
+    "the same millisecond would also look like.");
+  assert.ok(mySet.members.length >= 2,
+    "and hold every credential of that reply; it holds " +
+    mySet.members.length + " (" + mySet.kinds.join(", ") + ").");
+  assert.ok(mySet.members.some(function (m) { return m.jti === minted.idJti; }),
+    "INCLUDING THE ID TOKEN, which is the member that makes this a grouping " +
+    "rather than a rename: it was issued by the same call and is the one a " +
+    "reader most often wants beside the access token.");
+  assert.ok(mySet.setId,
+    "the entry should carry the issuer's own set id, which is what says the " +
+    "grouping was STATED rather than guessed from these fields.");
+  assert.ok(mySet.members.every(function (m) { return m.setId === mySet.setId; }),
+    "and every member should carry the same one.");
+
+  // The flatten. Every member of every set on this page has to be in `issued`,
+  // or a caller written against the older shape is quietly reading less.
+  const flatJtis = {};
+  (listed.body.issued || []).forEach(function (row) { flatJtis[row.jti] = true; });
+  const missingFromFlat = [];
+  listed.body.sets.forEach(function (set) {
+    set.members.forEach(function (m) {
+      if (m.jti && !flatJtis[m.jti]) {
+        missingFromFlat.push(m.jti);
+      }
+    });
+  });
+  assert.deepStrictEqual(missingFromFlat, [],
+    "`issued` MUST BE THE FLATTEN OF `sets`. It is what every caller written " +
+    "against the per-credential shape reads, and it is derived from that " +
+    "array rather than gathered again precisely so the two cannot disagree. " +
+    "These were in a set and not in the flatten: " +
+    missingFromFlat.join(", "));
+
+  // A filter matches a set when ANY member matches, and the neighbours come
+  // with it. That is the one behaviour of this resource a caller would
+  // otherwise read as the filter being ignored.
+  const byKind = await get("/tokens?kind=id_token&per=200");
+  const found = byKind.body.sets.filter(function (set) {
+    return set.setKey === mySet.setKey;
+  })[0];
+  assert.ok(found,
+    "?kind=id_token should find the set CONTAINING an ID Token.");
+  assert.ok(found.members.some(function (m) { return m.kind === "access_token"; }),
+    "AND BRING ITS NEIGHBOURS WITH IT. The access token that came back in " +
+    "the same reply is part of that reply; a filter that returned the ID " +
+    "Token alone would be the old per-credential list wearing this one's " +
+    "name.");
+
+  // The set door, confirmed where it counts.
+  assert.strictEqual(await introspectActive(minted.access), true,
+    "the access token should be active before the set is revoked.");
+  const revoked = await ok("/tokens/revoke-set", { set: mySet.setKey },
+    "revoked one whole issuance");
+  assert.ok(revoked.revoked >= 2,
+    "`revoke-set` should report revoking every revocable member; it " +
+    "reported " + JSON.stringify(revoked.revoked) + " of " +
+    JSON.stringify(revoked.revocable) + ".");
+  assert.strictEqual(await introspectActive(minted.access), false,
+    "REVOKING A SET MUST REACH RFC 7662 INTROSPECTION, member by member. It " +
+    "writes into the same revocation set /oauth2/revoke does — one act per " +
+    "credential rather than a new mechanism — so a set door that only " +
+    "changed a number in the console would leave every one of these tokens " +
+    "alive at the endpoint that matters.");
+
+  const opened = await get("/tokens/set?id=" + encodeURIComponent(mySet.setKey));
+  assert.strictEqual(opened.body.found, true,
+    "GET /tokens/set should open the set by the key the list gave it.");
+  assert.strictEqual(opened.body.set.state, "revoked",
+    "and every member being revoked should make the SET revoked rather than " +
+    "mixed; it reads " + opened.body.set.state + " with " +
+    JSON.stringify(opened.body.set.states) + ".");
+
+  await ok("/tokens/restore-set", { set: mySet.setKey },
+    "restored the whole issuance");
+  assert.strictEqual(await introspectActive(minted.access), true,
+    "and `restore-set` should reach the protocol endpoint too — NON-SPEC, " +
+    "for the reason `restore` is, and useless if it only cleared the list.");
+
+  // A key nothing holds is the ORDINARY end of a set's life, so it is a 200
+  // saying so rather than a 404.
+  const absent = await get("/tokens/set?id=set:no-such-issuance");
+  assert.strictEqual(absent.status, 200,
+    "a key nothing holds should answer 200: a set forgotten to the " +
+    "registry's cap is the ordinary end of its life, not a caller's mistake.");
+  assert.strictEqual(absent.body.found, false, "with `found: false`");
+  assert.ok(absent.body.why, "and a sentence saying which of the two it was.");
+
+  // AN ASSERTION IS DISOWNED, NOT RECALLED, and this is where that pair is
+  // driven end to end. A WS-Trust RST issues one into this realm; it is the
+  // archetype of a credential this service cannot take back, and since
+  // 2026-09-05 it is also one this service will record a POSITION on.
+  await mintAssertion(user);
+  const everything = await get("/tokens?per=200");
+  const assertionSet = everything.body.sets.filter(function (set) {
+    return set.members.some(function (m) {
+      return m.revocationReach === "record-only";
+    });
+  })[0];
+  assert.ok(assertionSet,
+    "the WS-Trust RST above should have put an assertion in the issued " +
+    "register, and every assertion carries `revocationReach: record-only`. " +
+    "The sets held are: " + everything.body.sets.map(function (set) {
+      return set.kinds.join("+");
+    }).join(", "));
+
+  const disowned = await ok("/tokens/revoke-set", { set: assertionSet.setKey },
+    "disowned an assertion");
+  assert.ok(disowned.recordOnly >= 1,
+    "REVOKING A SET MUST REPORT HOW MUCH OF IT ANYBODY OUTSIDE WILL NOTICE. " +
+    "It marked " + JSON.stringify(disowned.revoked) + " credential(s) and " +
+    "reported `recordOnly: " + JSON.stringify(disowned.recordOnly) + "`. A " +
+    "caller is entitled to know that what it just revoked goes on working, " +
+    "and one count folding both kinds together would have hidden it.");
+  assert.strictEqual(disowned.reachedProtocol, 0,
+    "and nothing in an assertion-only set reaches a protocol; it reported " +
+    JSON.stringify(disowned.reachedProtocol) + ".");
+  assert.ok(/HOLDER|record|not been told|goes on working/i.test(
+      String(disowned.message || "")),
+    "AND THE MESSAGE MUST SAY THE HOLDER WAS NOT TOLD. This is the one " +
+    "operation on this API whose success means less than success normally " +
+    "means, so the sentence carrying that is part of the contract rather " +
+    "than decoration. It said: " + JSON.stringify(disowned.message));
+
+  const reopened = await get("/tokens/set?id=" +
+                             encodeURIComponent(assertionSet.setKey));
+  assert.strictEqual(reopened.body.set.state, "revoked",
+    "and the register should now report the assertion revoked; it reads " +
+    reopened.body.set.state + ".");
+  await ok("/tokens/restore-set", { set: assertionSet.setKey },
+    "stopped disowning it");
+
+  // The single-credential door, which is what the tokens table draws on the row.
+  const one = assertionSet.members[0];
+  const marked = await ok("/tokens/revoke-artifact", { artifact: one.key },
+    "disowned one credential by its row handle");
+  assert.strictEqual(marked.revocationReach, "record-only",
+    "`revoke-artifact` must report that its reach is the record and nothing " +
+    "further; it said " + JSON.stringify(marked.revocationReach) + ".");
+  await ok("/tokens/restore-artifact", { artifact: one.key },
+    "and stopped disowning it again");
+  // READ IT BACK, which the ledger at the end of this run requires of every
+  // write and which is worth doing here on its own account: a restore that
+  // answered `{ok: true}` and left the credential disowned would satisfy every
+  // assertion above, all of which read the REPLY.
+  // `GET /tokens` and not `GET /tokens/set`: the ledger matches a write against
+  // a read of THE RESOURCE THE WRITE LANDED ON, and these actions live under
+  // /tokens. The drill-down is a different resource however well it answers the
+  // same question, so it is read too — for what it says — but the list is what
+  // discharges the obligation.
+  const listedAgain = await get("/tokens?per=200");
+  const restoredSet = (listedAgain.body.sets || []).filter(function (set) {
+    return set.setKey === assertionSet.setKey;
+  })[0];
+  assert.ok(restoredSet && restoredSet.state === "valid",
+    "after both restores the assertion should be valid again in this " +
+    "service's record; it reads " +
+    (restoredSet ? restoredSet.state : "(the set is gone)") + ".");
+
+  log.info("[sets] OK — a token response arrives as ONE entry holding " +
+           mySet.members.length + ", `issued` is still its flatten, a kind " +
+           "filter brings the neighbours, and revoke-set/restore-set both " +
+           "reach /oauth2/introspect.");
+  log.debug("Leaving theIssuedListGroupsByIssuance().");
 }
 
 // A token set for one person, out of THIS REALM'S token endpoint. The password
@@ -2414,6 +2677,37 @@ async function mintTokens(username, client) {
   };
   log.debug("Leaving mintTokens(). jti=" + out.jti);
   return out;
+}
+
+// A SAML ASSERTION IN THIS REALM, through WS-Trust, so that the set doors have
+// something unrevocable to be refused about. The RST carries no AppliesTo — an
+// audience restriction is optional there and this job needs the assertion, not
+// the audience — and the username is a UsernameToken, which this service does
+// not check any more than it checks a password anywhere else.
+async function mintAssertion(username) {
+  log.debug("Entering mintAssertion(). username=" + username);
+  const rst = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">' +
+    '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
+    '2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
+    '<wsse:UsernameToken><wsse:Username>' + username + '</wsse:Username>' +
+    '<wsse:Password>whatever</wsse:Password></wsse:UsernameToken>' +
+    '</wsse:Security></soap:Header><soap:Body>' +
+    '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/' +
+    'ws-trust/200512"><wst:RequestType>http://docs.oasis-open.org/ws-sx/' +
+    'ws-trust/200512/Issue</wst:RequestType>' +
+    '</wst:RequestSecurityToken></soap:Body></soap:Envelope>';
+  const reply = await common.httpJson(base + "/realm/" + REALM + "/sts", {
+    method: "POST",
+    headers: { "Content-Type": "application/soap+xml" },
+    body: rst
+  });
+  assert.strictEqual(reply.status, 200,
+    "the realm's WS-Trust endpoint should issue an assertion with no " +
+    "AppliesTo — that is optional in an RST and this service allows it. It " +
+    "answered " + reply.status + " " + String(reply.raw).slice(0, 200));
+  log.debug("Leaving mintAssertion().");
+  return reply;
 }
 
 function subjectOf(tokens) {
@@ -3131,11 +3425,29 @@ async function theConfigurationChangeReachesTheStore(candidate) {
 
   assert.strictEqual(before.healthy, true,
     "the store is enabled and reports itself unhealthy: " + before.lastError);
-  assert.strictEqual(before.coordinates, false,
-    "and it must still say it does not COORDINATE. Two processes pointed at " +
-    "one database each hold their own directory in memory and never see " +
-    "each other's writes; a status that claimed otherwise would be the one " +
-    "sentence somebody deployed against.");
+  // WHAT THE STATUS SAYS MUST BE WHAT THIS PROCESS IS CONFIGURED TO DO, and
+  // this asserted a constant `false` until 2026-09-07. That was right when it
+  // was written — two processes against one database genuinely could not see
+  // each other's writes — and it stopped being right on 2026-09-06, when the
+  // change log landed and `persistence.coordinate` began turning it on. The
+  // constant had quietly become a claim about the CONFIGURATION rather than
+  // about the service, and it failed in every mode that switches it on.
+  //
+  // Read from the settings table rather than assumed either way: the status and
+  // the setting are two reports of one fact, and the only assertion that cannot
+  // go stale again is that they agree.
+  const coordinateSetting = settingValue((await get("/config")).body,
+                                         "persistence.coordinate");
+  const shouldCoordinate = coordinateSetting === true ||
+                           String(coordinateSetting) === "true";
+  assert.strictEqual(before.coordinates, shouldCoordinate,
+    "the persistence status and persistence.coordinate must agree about " +
+    "whether this process coordinates. The setting says " +
+    JSON.stringify(coordinateSetting) + " and the status says " +
+    before.coordinates + ". Two processes pointed at one database that do NOT " +
+    "coordinate each hold their own directory in memory and never see each " +
+    "other's writes, so a status wrong in either direction is the one sentence " +
+    "somebody deploys against.");
 
   // A process-wide override, then a realm one. They take different branches
   // and land in different places.
@@ -3230,9 +3542,16 @@ async function settleThenStatus(previous) {
 // ---------------------------------------------------------------------------
 // THE LEDGER, ASKED. Both checks read the document and this run's own call
 // list, and neither of them drives anything — so they go last, after every
-// section above has had its turn, and before the teardown (which drives
-// `removeRealm` for real; the refusal of it is driven up in
-// theRealmRegistryWorks()).
+// section above has had its turn.
+//
+// **`removeRealm` IS THE ONE OPERATION DRIVEN ONLY BY ITS REFUSAL SINCE
+// 2026-09-06**, and it needs no exemption row because `post()` records a
+// refusal as DRIVEN and not ACCEPTED — theRealmRegistryWorks() asks it to
+// remove the realm the call arrived in and it says no. What used to drive it
+// for real was the teardown, and there is no teardown: a realm a test run
+// created stays, because it is what a person reads when the run went red. So
+// the ledger stays honest without a row, and this paragraph is the record that
+// the coverage of that one operation is a refusal rather than a removal.
 // ---------------------------------------------------------------------------
 
 // The operations this file does not drive, and why. It is a TABLE rather than
@@ -3240,18 +3559,21 @@ async function settleThenStatus(previous) {
 // with no sentence beside it is indistinguishable from an operation somebody
 // forgot, which is the whole condition this check exists to end.
 //
-// Both rows are the explorer, which answers HTML and JavaScript rather than
-// JSON. tests/admin_api.js drives them, and owns the harder half besides — the
-// Content Security Policy that makes /admin-api/docs the fourth scripted page
-// in a service whose default is `script-src 'none'`.
-const NOT_DRIVEN_HERE = {
-  "GET /docs":
-    "the explorer PAGE: HTML, not JSON. Driven by tests/admin_api.js, which " +
-    "also owns its CSP — this API's document is what it is drawn from, and " +
-    "the document is driven here.",
-  "GET /docs/explorer.js":
-    "the explorer's script, driven and CSP-checked by tests/admin_api.js."
-};
+// **IT IS EMPTY SINCE 2026-09-09, AND THAT IS THE POINT WORTH RECORDING.** It
+// held two rows, both the explorer — `GET /docs` and `GET /docs/explorer.js` —
+// which answered HTML and JavaScript rather than JSON and were therefore the
+// only operations on this API a JSON walk could not drive.
+//
+// They are not exempt now because they are not here: the explorer moved to the
+// admin console (`/admin/api-explorer`) when this API began requiring an
+// access token a browser has no way to carry. So every operation this API
+// documents answers JSON and every one of them is driven, which is the state
+// this table was always an apology for.
+//
+// The table stays rather than the constant being deleted, because the next
+// operation that cannot be driven here needs somewhere to say why — and an
+// empty object is a much better prompt for that than no object at all.
+const NOT_DRIVEN_HERE = {};
 
 function everyDocumentedOperationWasDriven(doc) {
   log.debug("Entering everyDocumentedOperationWasDriven().");
@@ -3373,41 +3695,30 @@ function everyAcceptedWriteWasReadBack() {
 }
 
 // ---------------------------------------------------------------------------
-// TEARDOWN. Removing the realm takes its directory subtree, its applications
-// registry, its federation register, its claim sets, its SPIFFE registry, its
-// tokens and its configuration overrides with it — which is the whole reason
-// the work happened inside one.
+// THERE IS NO TEARDOWN, AND THAT IS THE POINT (2026-09-06).
 //
-// It runs in a `finally`, and it runs whether or not the assertions passed: a
-// realm left behind is a realm every later job's `GET /realms` can see, and one
-// left behind per failing run accumulates.
+// This file used to remove the realm here, and the argument was that a realm
+// left behind is one every later job's `GET /realms` can see and that one per
+// failing run accumulates. **The operator requirement is the other way round:
+// a realm a test run created STAYS, because it is what a person reads when the
+// run went red.** Its directory subtree, its applications registry, its
+// federation register, its claim sets, its SPIFFE registry, its tokens and its
+// overrides are the record of what a hundred and thirty operations actually
+// did — and removing it destroyed that record at exactly the moment it was
+// worth something.
+//
+// The accumulation is real and is paid for elsewhere: the id carries
+// `names.runStamp()`, so runs never collide, and nothing outside the realm is
+// touched, so a service holding ten of these behaves exactly as it did with
+// none. They go when the process does — a realm is not persisted unless a
+// store is configured — and a person who wants them gone removes them by hand
+// or restarts the mock.
 // ---------------------------------------------------------------------------
-async function removeTheThrowawayRealm() {
-  log.debug("Entering removeTheThrowawayRealm().");
-  try {
-    // Called at the ROOT, because `remove` refuses the realm the call arrived
-    // in — which is the one refusal this registry has that is about the caller
-    // rather than about the request.
-    const reply = await post("/realms/remove", { id: REALM }, true);
-    if (reply.status !== 200) {
-      log.warn("Could not remove the throwaway realm " + REALM + ": " +
-               JSON.stringify(reply.body).slice(0, 300) + ". It will show up " +
-               "in GET /realms until this service restarts.");
-      log.debug("Leaving removeTheThrowawayRealm(). It refused.");
-      return;
-    }
-    const left = ((await get("/realms", true)).body.realms || [])
-        .filter(function (r) { return r.id === REALM; });
-    assert.deepStrictEqual(left, [],
-      "the realm should be gone from the registry after `remove`.");
-    log.info("[teardown] Removed the throwaway realm " + REALM +
-             ", and with it everything this job created inside it.");
-  } catch (e) {
-    // Reported and not rethrown: a teardown that threw would replace the
-    // failure that actually matters with the failure to tidy up after it.
-    log.warn("Teardown could not finish: " + e.message);
-  }
-  log.debug("Leaving removeTheThrowawayRealm().");
+function theThrowawayRealmIsLeftBehind() {
+  log.info("[teardown] The throwaway realm " + REALM + " is LEFT IN PLACE on " +
+           "purpose, with everything this job created inside it. Read it at " +
+           base + "/realm/" + REALM + "/admin, or remove it by hand when you " +
+           "are done with it.");
 }
 
 async function test() {
@@ -3437,6 +3748,7 @@ async function test() {
     await theCredentialResourcesRoundTrip();
     await theSpiffeDoorsRoundTrip();
     await theTokenDoorsRoundTrip();
+    await theIssuedListGroupsByIssuance();
     await theDirectoryAndSignOutDoorsRoundTrip();
     await theAdminRolesRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
@@ -3444,7 +3756,7 @@ async function test() {
     everyDocumentedOperationWasDriven(doc);
     everyAcceptedWriteWasReadBack();
   } finally {
-    await removeTheThrowawayRealm();
+    theThrowawayRealmIsLeftBehind();
   }
   log.info("Test completed successfully. The store was in `" +
            persistenceMode + "` mode for this run.");

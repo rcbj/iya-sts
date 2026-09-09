@@ -57,6 +57,16 @@ const stats = require('./admin_stats');
 // only helpers.js and config.js, which is what keeps it out of the cycles rule 2
 // exists to avoid.
 const audit = require('./audit');
+
+// The input guard. A LEAF (rule 3) — it registers no route of its own and
+// requires only `config`, `bunyan` and zod, so requiring it here closes no
+// cycle and moves nothing in the route order. `common/validation.js` is where
+// every decision about what a value from outside may be is argued.
+const validation = require('./validation');
+// The request worker pool. A LIBRARY as far as rule 1 goes — it registers no
+// route and requires only `config` plus node builtins, so it can neither join a
+// cycle nor move a route. Its middleware is installed below the realm one.
+const requestPool = require('./request_pool');
 // --- express app -----------------------------------------------------------
 const app = express();
 
@@ -159,11 +169,13 @@ app.use(function (req, res, next) {
   //
   // THE HONEST LIMITATION, said here rather than discovered later: a URL this
   // service builds inside a SCRIPT or a JSON island in an HTML page is not
-  // rewritten. There is one such page — /admin-api/docs, whose explorer builds
-  // request URLs in JavaScript — and it is handled in mgmt-api/admin_api_explorer.js
-  // by being given the prefix as a value rather than by having its markup
-  // rewritten. A fifth scripted page would need the same treatment and would
-  // not get it for free.
+  // rewritten. There is one such page — /admin/api-explorer, whose explorer
+  // builds request URLs in JavaScript — and it is handled in
+  // mgmt-api/admin_api_explorer.js by being given the prefix as a value rather
+  // than by having its markup rewritten. A fifth scripted page would need the
+  // same treatment and would not get it for free. (It was /admin-api/docs
+  // until 2026-09-09; the page moved into the console, the limitation did
+  // not move with it.)
   // ---------------------------------------------------------------------
   const send = res.send;
   res.send = function (body) {
@@ -216,6 +228,43 @@ realms.reserve(function () {
 // Chrome Private Network Access: when a PUBLIC page calls a LOCAL (loopback)
 // server — which is exactly the live-site test setup, an HTTPS page on
 // idptools.com calling this mock at http://localhost:8081 — Chrome may send a
+// ---------------------------------------------------------------------------
+// AND HERE THE FRONT PROCESS STOPS HANDLING THE REQUEST AND STARTS PROXYING IT.
+//
+// `request_pool.js` argues the whole arrangement; this is where it is installed,
+// and the POSITION belongs in this file because two things pin it, from
+// opposite sides.
+//
+// **BELOW THE REALM MIDDLEWARE**, because that one decides which realm a
+// request is in and must go on doing so here — the call log, the audit row and
+// the flush-time check below all read `req.realm`. What the worker is sent is
+// `req.originalUrl`, which still carries the `/realm/<id>` prefix, so the
+// worker derives the same realm by the same rule rather than being told it.
+//
+// **ABOVE THE BODY PARSERS**, and that one is not a preference: `bodyParser`
+// CONSUMES the request stream. Installed after it, this middleware would pipe
+// an already-drained `req` to the worker and every POST in the service would
+// arrive there with an empty body — a failure that would look like a
+// validation bug in whichever handler happened to notice first.
+//
+// So everything between here and the routes runs IN THE WORKER for a
+// dispatched request: the private-network preflight, CORS, the security
+// headers, the body parsers, the call log and the validation guard. That is
+// the point rather than a side effect — the front process is meant to be doing
+// request/response I/O and nothing else.
+//
+// **THE ANSWER IS PIPED, WHICH IS WHY `res.send()`'s OVERRIDE BELOW DOES NOT
+// FIRE TWICE.** That override rewrites root-relative links and re-checks the
+// CSP; the proxy writes the worker's bytes through `res.write()`/`res.end()`
+// and never calls `res.send()`, so a body the worker has already rewritten is
+// not rewritten again. The flush-time CSP check still runs here over the header
+// the worker set, which is defence in depth rather than duplication.
+//
+// With `workers.dispatch` empty — the default — this calls next() for
+// everything and the service behaves exactly as it did.
+// ---------------------------------------------------------------------------
+app.use(requestPool.middleware());
+
 // CORS preflight carrying Access-Control-Request-Private-Network and require
 // this header on the response. Answer it so the call isn't blocked. Registered
 // BEFORE cors() so the header is set before the preflight response is sent;
@@ -403,8 +452,38 @@ app.use(cors(corsOptions));
 
 app.options('*', cors(corsOptions));
 
+// ---------------------------------------------------------------------------
+// BINARY BODIES FIRST, AND THE TEXT PARSER BELOW TAKES EVERYTHING ELSE.
+//
+// **THIS ORDER IS A FIX RATHER THAN A TIDY-UP (2026-09-05).** The text parser
+// below claims EVERY content type — `type: () => true` — which is right for a
+// service whose bodies are SOAP, form encodings, JSON and XML, and silently
+// wrong for the one endpoint here whose body is neither text nor meant to be:
+// `POST /KdcProxy`, MS-KKDCP's KDC-PROXY-MESSAGE, which is DER.
+//
+// What that cost was total and invisible: a DER body decoded as UTF-8 is
+// CORRUPTED — every byte outside ASCII becomes U+FFFD and no length prefix
+// survives — and it arrives at the handler as a `string`, so
+// `prim.toBytes()` throws `expected bytes, got string` and the endpoint
+// answers `400 the KDC-PROXY-MESSAGE does not decode`. **MS-KKDCP has
+// therefore never worked**, while `/admin/sts-metadata` advertised it and
+// `krb5_kdc.js` carried a complete and correct implementation behind it. No
+// test drove it, which is how it survived: the Kerberos jobs in this suite talk
+// to the KDC on raw TCP 88, where there is no body parser.
+//
+// `application/kerberos` is what MS-KKDCP section 2.1 specifies and what the
+// endpoint answers with; `application/octet-stream` is beside it because a
+// caller that sends the bytes without knowing the specific type should not be
+// handed a corrupted body either. Anything else still reaches the text parser
+// exactly as before, so no other endpoint in this service changes.
+app.use(bodyParser.raw({
+  type: ['application/kerberos', 'application/octet-stream'],
+  limit: '5mb'
+}));
+
 // Accept any content-type as raw text (SOAP arrives as text/xml or
-// application/soap+xml).
+// application/soap+xml). It runs AFTER the raw parser above, and body-parser
+// leaves a body alone once one of them has taken it.
 app.use(bodyParser.text({ type: function () { return true; }, limit: '5mb' }));
 
 // ---------------------------------------------------------------------------
@@ -510,6 +589,28 @@ app.use(function (req, res, next) {
             "its finish event.");
   next();
 });
+
+// ---------------------------------------------------------------------------
+// THE VALIDATION GUARD, AND WHY IT IS HERE RATHER THAN THREE MIDDLEWARES UP.
+//
+// It refuses the two things no caller of any protocol this service speaks ever
+// sends: a parameter NAMED `__proto__`/`constructor`/`prototype`, and a control
+// character in a query-string value. Everything else about input validation is
+// per endpoint and lives in the schema that endpoint declares —
+// `common/validation.js` argues the split, and in particular argues why a
+// REPEATED parameter is deliberately NOT refused here.
+//
+// **AFTER THE CALL LOG ON PURPOSE.** A refusal is exactly the request an
+// operator wants to find afterwards, and the middleware above is what puts a
+// request in `/admin/audit`. Registered ahead of it, every refusal this makes
+// would be invisible — which is the same argument `common/websecurity.js` makes
+// about a rate-limit lockout nobody can see being a support call with no
+// evidence in it.
+//
+// It is BELOW the security-headers middleware too, so a refusal still carries
+// the CSP and `X-Content-Type-Options` every other response does.
+// ---------------------------------------------------------------------------
+app.use(validation.guard());
 
 app.get('/healthcheck', function (req, res) {
   log.debug("Entering the healthcheck endpoint.");

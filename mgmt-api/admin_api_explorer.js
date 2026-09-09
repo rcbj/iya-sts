@@ -44,6 +44,28 @@
   // default realm's API: the call would succeed and it would have changed the
   // wrong service. See the comment on page() in admin_api_docs.js.
   var REALM_PREFIX = root.getAttribute('data-realm-prefix') || '';
+  // ---------------------------------------------------------------------
+  // THE ACCESS TOKEN (2026-09-09), AND WHY A PAGE IS GIVEN ONE AT ALL.
+  //
+  // `/admin-api` requires an OAuth 2.0 access token. This page is drawn by
+  // the ADMIN CONSOLE, which authenticates the person reading it and knows
+  // which of the two roles they hold — so the console mints a token carrying
+  // exactly those scopes and puts it here. A reader with Admin Read alone
+  // gets `admin:read`, and pressing Try it on a POST gets them a 403 from
+  // the same policy that would refuse them anywhere else.
+  //
+  // **IT IS NOT A WAY ROUND THE GATE AND MUST NEVER BECOME ONE.** The token
+  // is minted for the person already through the console's own gate, with
+  // their own permissions and no more; the API still checks it on every
+  // call, exactly as it does for a machine. What the console removes is the
+  // step where a person copies a credential from a terminal into a form.
+  //
+  // Empty is a supported state: the page still renders every operation and
+  // still shows the curl line, and Try it will be refused. That is what a
+  // reader gets if the console could not mint one, and it is better than a
+  // page that will not draw.
+  // ---------------------------------------------------------------------
+  var TOKEN = root.getAttribute('data-token') || '';
 
   // --- small DOM helpers ----------------------------------------------------
   function el(tag, className, text) {
@@ -150,6 +172,15 @@
 
   function curlFor(method, url, body) {
     var parts = ["curl -i -X " + method + " '" + url + "'"];
+    // THE HEADER IS IN THE CURL LINE TOO, and it is the reason that line is
+    // worth showing: a copied command that omitted the credential would fail
+    // with a 401 for a reason the page had not mentioned. The token is
+    // printed in full because the whole point of the line is to be pasted
+    // into a terminal — it is a short-lived credential for the person
+    // already reading this console, which is where it came from.
+    if (TOKEN) {
+      parts.push("-H 'Authorization: Bearer " + TOKEN + "'");
+    }
     if (body !== null && body !== undefined && body !== '') {
       parts.push("-H 'Content-Type: application/json'");
       // Single quotes inside a single-quoted shell word have to be closed,
@@ -257,6 +288,9 @@
     run.addEventListener('click', function () {
       var url = urlFor(row, inputs);
       var options = { method: row.method, headers: {} };
+      if (TOKEN) {
+        options.headers.Authorization = 'Bearer ' + TOKEN;
+      }
       if (bodyBox) {
         options.headers['Content-Type'] = 'application/json';
         options.body = bodyBox.value;
@@ -336,6 +370,9 @@
     });
   }
 
+  // The document is read from the CONSOLE's own path rather than from
+  // `/admin-api/openapi.json`, so it arrives on the console session this page
+  // was drawn with and needs no token of its own. See api_explorer.js.
   fetch(SPEC_URL).then(function (response) {
     return response.json();
   }).then(render).catch(function (error) {

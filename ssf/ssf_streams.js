@@ -60,11 +60,11 @@ const subjects = require('./ssf_subjects');
 const events = require('./ssf_events');
 
 // stream_id -> stream record, one partition per trust realm.
-const streams = realms.map();
+const streams = realms.map({ persist: 'ssf_streams.streams' });
 
 // What this service has RECEIVED, when the debugger is the transmitter and
 // this service is the receiver. Also per realm, and capped the same way.
-const received = realms.arr();
+const received = realms.arr({ persist: 'ssf_streams.received', merge: 'own' });
 
 // The two delivery method URNs of SSF 1.0 section 7.1.1. They are the RFC
 // numbers as URNs rather than names, which catches everybody once: a stream

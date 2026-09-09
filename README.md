@@ -97,7 +97,7 @@ is written down in
 | **TLS / mutual TLS (RFC 8446)** | two **HTTPS listeners of its own** — 8443 asks for a client certificate and never refuses one, 9443 *requires* it — whose entire content is what the **server** saw: the request as it arrived, what TLS negotiated underneath it, and the client certificate exactly as presented, chain and all. It is the half of a handshake a client cannot report. It already knows what it sent; what it cannot know is which chain the server built out of that, which anchor it verified against, or whether the certificate was accepted at all — which, under TLS 1.3, it has not learned by the time its own handshake completes. The client truststore starts **empty** and is filled at runtime through `POST /tls/trust`, because the CA it has to verify is usually generated in a *browser* minutes before the connection and exists nowhere a file could hold it. `GET /tls` describes it; `GET /tls/whoami` over either listener is the report |
 | **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain, in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.authRequired`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
 | **LDAP v3 (RFC 4511)** | an embedded **directory on two raw sockets — TCP 389 in the clear and TCP 636 over TLS (LDAPS)**, one set of handlers and one store behind both: simple bind, unbind, add, delete, modify, modifyDN, compare and search with RFC 4515 filters and all three scopes, a root DSE, and result codes 0, 2, 4, 11, 16, 32, 49, 66 and 68 all reachable. Built on the [`ldapjs`](https://github.com/rcbj/node-ldapjs) submodule and used unmodified. It is **schemaless on purpose** and says so, it enforces the four structural rules whose absence would teach a client something false — plus one of its own, that an add under `ou=users` whose username is already there is `LDAP_ENTRY_ALREADY_EXISTS` (68), because one person is one entry however they got in — and it deliberately does not do referential integrity. `GET /admin/ldap/service` describes it and `GET /admin/ldap/directory` lists every entry. **`LDAP_AUTOCREATE_USERS`, on by default, grows an entry under `ou=users` for anybody who authenticates through any of the other twelve families** — and `ou=applications` grows one for the CLIENT, relying party, service provider or Kerberos service on the other side of that authentication, which is a **registry rather than a record**: the RFC 7591 registrations live there, nothing caches them, and an `ldapmodify` of `oauthRedirectUri` changes which redirect URI RFC 9700 mode accepts — one hook on the single funnel they all already pass |
-| **Shared Signals (OpenID SSF 1.0)** | a **transmitter**, and the one family here that TALKS BACK: every other answers a request, and this one agrees a **stream** with a receiver and then delivers a **Security Event Token** (RFC 8417) at the moment something happens. The stream management API at `/ssf/stream` — one path, five methods — with the status, subject and verification endpoints beside it, every one of them DISCOVERED from `/.well-known/ssf-configuration` because SSF fixes no paths. Subjects in all eight **RFC 9493** formats plus SSF's **complex subject**, whose `user`/`device`/`session` members are what make *"this session was revoked"* expressible at all; each format's member set is CLOSED and a subject carrying an extra member is REFUSED BY NAME, because a conforming receiver must reject one and it looks perfectly fine in a log. Delivery by **RFC 8935 push** or **RFC 8936 poll**, and a **receiver of its own** at `/ssf/receive` so that a client can be the transmitter. **SSF is the pipe and not the vocabulary**: it defines two event types, both about the pipe, and CAEP and RISC are separate specifications not implemented here. Every SET is signed through the same signer everything else here uses, so `ssf.signingAlgorithm` reaches the whole table including ML-DSA and SLH-DSA — which matters more for this document than for any other, because RFC 8417 forbids a SET to expire and it is therefore read long after it was written |
+| **Shared Signals (OpenID SSF 1.0)** | a **transmitter**, and the one family here that TALKS BACK: every other answers a request, and this one agrees a **stream** with a receiver and then delivers a **Security Event Token** (RFC 8417) at the moment something happens. The stream management API at `/ssf/stream` — one path, five methods — with the status, subject and verification endpoints beside it, every one of them DISCOVERED from `/.well-known/ssf-configuration` because SSF fixes no paths. Subjects in all eight **RFC 9493** formats plus SSF's **complex subject**, whose `user`/`device`/`session` members are what make *"this session was revoked"* expressible at all; each format's member set is CLOSED and a subject carrying an extra member is REFUSED BY NAME, because a conforming receiver must reject one and it looks perfectly fine in a log. Delivery by **RFC 8935 push** or **RFC 8936 poll**, and a **receiver of its own** at `/ssf/receive` so that a client can be the transmitter. **SSF is the pipe and not the vocabulary**: it defines two event types, both about the pipe, and **both vocabularies over it are implemented** — CAEP's eight about a SESSION and RISC's fourteen about an ACCOUNT. Two things here therefore send a Security Event Token with nobody having asked, watching two different registers: a sign-in, a single sign-on or a sign-out (CAEP), and a change to the embedded directory — a person deleted, an account marked inactive, a mail address moved (RISC). Eleven of RISC's fourteen carry no payload members at all, so the SUBJECT is the entire message; one of them is deprecated by its own specification in favour of a CAEP event; and RISC section 3.1's own compatibility note — a production transmitter that spells the subject discriminator `subject_type` rather than `format` — is reproducible at `risc.googleSubjectType`, which makes it the only deliberate defect here that a specification asks for by name. Every SET is signed through the same signer everything else here uses, so `ssf.signingAlgorithm` reaches the whole table including ML-DSA and SLH-DSA — which matters more for this document than for any other, because RFC 8417 forbids a SET to expire and it is therefore read long after it was written |
 | **SCIM 2.0 (RFC 7642, 7643, 7644)** | a provisioning endpoint at `/scim/v2`, and **the only family here whose purpose is to write**: create, read, list, replace, PATCH (section 3.5.2 in full, `emails[type eq "work"].value` paths included), delete, both shapes of `.search`, bulk, filtering, sorting, pagination, attribute projection, and the three discovery documents. **What it provisions into is the LDAP directory above — the same entries, no second store and no cache** — so a `POST /scim/v2/Users` and an `ldapadd` create the same entry, and somebody provisioned over SCIM turns up on `/admin/users`, in an `ldapsearch`, in whatever group a client puts them in, and in the attributes their next access token carries. The SCIM `id` **is** the entry's DN, because that already is the opaque server-assigned identifier RFC 7643 asks for. **It is the one family here that requires a credential** — all six schemes RFC 7644 section 2 names are offered (OAuth 2.0 bearer and DPoP tokens with `scim:read` / `scim:write`, HTTP Basic, HTTP Digest, HOBA, the session cookie and a TLS client certificate), and every one of them is permissive, so it is a turnstile rather than a lock. `active: false` **deactivates nobody**: it is stored as `scimActive` and read by nothing, which is worth reading twice, because deprovisioning is the commonest thing a SCIM client is built to do |
 
 `GET /admin/sts-metadata` is the authoritative list — every endpoint read from the running
@@ -171,6 +171,52 @@ export NODE_EXTRA_CA_CERTS=/tmp/sts.pem                          # for a node cl
 `STS_HTTPS=false` restores the plain port, and it is a supported configuration
 rather than an escape hatch — a client that cannot be taught to trust a
 per-start certificate is exactly the thing this service exists to exercise.
+
+### The ports
+
+Ten bindings across nine numbers — 88 is listed twice because TCP and UDP are two
+sockets. Every default is in the table; every one is settable.
+
+| Port | | Setting / env var | What is on it |
+|---|---|---|---|
+| **8081** | tcp | `global.port` / `STS_PORT` | **The main port, and everything path-based is here** — OAuth 2.0 / OIDC, both SAML profiles, WS-Trust, WS-Federation, federation, SCIM, OID4VC, Shared Signals, XACML, `/admin`, `/portal`, `/admin-api`, the SPIFFE **bundle** endpoint, and Kerberos over **MS-KKDCP at `/KdcProxy`**. **HTTPS** unless `STS_HTTPS=false` — one listener, never both schemes |
+| **8443** | tcp | `tls.port` / `STS_TLS_PORT` | The TLS endpoint that **asks** for a client certificate and never refuses one |
+| **9443** | tcp | `tls.mutualPort` / `STS_MTLS_PORT` | The one that **requires** it — node refuses an unverified certificate during the handshake, so nothing here runs for one |
+| **88** | **tcp** | `krb5.kdcPort` / `KRB5_KDC_PORT` | The KDC. `0` asks for any free port — it does not turn it off |
+| **88** | **udp** | *(the same setting)* | The KDC again: both transports, two sockets, one number |
+| **8888** | tcp | `krb5.servicePort` / `KRB5_SERVICE_PORT` | The Kerberized test service that accepts an AP-REQ |
+| **389** | tcp | `ldap.port` / `LDAP_PORT` | The embedded directory, plain LDAP |
+| **636** | tcp | `ldap.tlsPort` / `LDAPS_PORT` | The same directory over TLS. A **second server object**, not an option on the first — see below |
+| **8092** | tcp | `spiffe.workloadPort` / `STS_SPIFFE_WORKLOAD_PORT` | The SPIFFE **Workload API** over gRPC. `0` turns it off and leaves the Unix socket alone |
+| **8181** | tcp | `spiffe.serverPort` / `STS_SPIFFE_SERVER_PORT` | The **SPIRE Server API** over gRPC. Always mutual TLS — a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own table, which the service **mode** decides rather than a setting of its own. 8181 rather than SPIRE's own 8081, because that number is this service's HTTP port — so a client configured for a real `spire-server` has one thing to change |
+
+And two **Unix domain sockets**, which are what `SPIFFE_ENDPOINT_SOCKET` means to
+every real client and which no `EXPOSE` can publish — to reach them from the
+host or another container, mount the directory as a volume:
+
+| Socket | Setting / env var | On? |
+|---|---|---|
+| `/tmp/spire-agent/public/api.sock` | `spiffe.workloadSocket` / `STS_SPIFFE_WORKLOAD_SOCKET`, switched by `spiffe.workloadSocketEnabled` / `STS_SPIFFE_WORKLOAD_SOCKET_ENABLED` | **on** — SPIRE's own path, for the Workload API |
+| `/tmp/spire-server/private/api.sock` | `spiffe.serverSocket` / `STS_SPIFFE_SERVER_SOCKET`, switched by `spiffe.serverSocketEnabled` / `STS_SPIFFE_SERVER_SOCKET_ENABLED` | **off** — the SPIRE Server API's private socket, trusted as `local` when it is on |
+
+**The four raw-socket families start from `listen()` and a failure to bind is
+RECORDED rather than thrown.** A route cannot fail to register; a port can, so
+binding one at require time would let a busy port take down a service whose
+other sixteen protocol families were fine. **Every socket reports itself
+separately** rather than through one flag per family — `GET /krb5/principals`,
+`GET /admin/ldap/service`, `GET /tls`, `GET /spiffe` — for the reason given
+below about 389 and 636.
+
+**`/admin/sts-metadata` cannot see any of them.** That page is built by walking
+the live Express router, so a protocol that registers no route is invisible to
+it — the raw listeners are described there by hand or they go unlisted with
+nothing failing.
+
+**`docker-compose.yml` publishes 8081 only.** The rest are `EXPOSE`d, which
+publishes nothing; 389 and 636 are deliberately left unpublished, because the
+host most likely to want a mock directory is a host already running slapd. And
+**9090 is not this service** — it is the `xacml-pep/` container, a separate
+program on the same network.
 
 **Ports 389 and 636 are both privileged**, so a host run that is not root will fail to
 bind them — which is reported and is not fatal, the rest of the service being
@@ -515,7 +561,7 @@ and `GET /admin-api/config` answers, so this list cannot describe a setting this
 service does not have or miss one it does. The **Group** each setting belongs to
 is also the console page that draws it: the *Kerberos* rows are on
 `/admin/kerberos`, the *SCIM* rows on `/admin/scim`, and `/admin/config` lists
-the mapping for all twenty-two.
+the mapping for all thirty-two.
 
 How to read it. **The appconfig key is the dot path in the file**, so
 `oid4vci.batchSize` is `oid4vci: { batchSize: … }`; `logLevel` is the one key
@@ -797,6 +843,25 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `scim.authCookie` | `SCIM_AUTH_COOKIE` | `true` | yes | Whether the browser sign-on session this service already has — the one /authn/login creates and WS-Federation shares — authenticates a SCIM request. RFC 7644 section 2 names cookies explicitly. |
 | `scim.authClientCert` | `SCIM_AUTH_CLIENT_CERT` | `true` | yes | Mutual TLS, the first scheme RFC 7644 section 2 names. It applies only where the request arrived over TLS with a certificate that VERIFIED against an anchor POSTed to /tls/trust, so on the main port only when global.https is on. |
 
+#### Roles
+
+Who holds a role, and what requires one. **A role is not a group**: a group here
+grants nothing, and holding a role is what an ISSUANCE is decided on. It is also
+not the two *Admin console* roles, which are directory groups granting `/admin`
+and nothing else. Both halves of a role — who holds one, and which roles an
+application demands — are edited on `/admin/roles` and on the application's own
+page rather than in a setting.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `roles.claim` | `STS_ROLES_CLAIM` | `true` | yes | When on, every OAuth 2.0 access token, OIDC ID Token, SAML 2.0 assertion and SAML 1.1 assertion names the roles its subject holds. The BUILT-IN roles are never carried — eight of them since 2026-09-06: `EVERYBODY` and `ALL_AUTHENTICATED_USERS` are true of almost every token this service issues, so carrying them would tell a relying party nothing it did not know from holding the token, and the two group-derived ones (`REMOTE_PEPS`, `XACML_USER`) say which of this service's own XACML endpoints the holder may reach, which is nobody else's business. |
+| `roles.claimName` | `STS_ROLES_CLAIM_NAME` | `roles` | yes | What the claim is called: the JWT member name, the SAML 2.0 Attribute Name and the SAML 1.1 AttributeName. |
+| `authn.unauthenticatedSessions` | `STS_AUTHN_UNAUTHENTICATED_SESSIONS` | `false` | yes | Show a third button on `/authn/login` — **Continue without signing in** — that starts a session for somebody who declines to authenticate. The session is real: it has a cookie, it satisfies a flow already in progress, tokens can be issued on it, and it appears on `/admin/sessions` in a section of its own. What it records is `authenticated: false`, so an application requiring `ALL_AUTHENTICATED_USERS` refuses it and one requiring `EVERYBODY` does not — **the only place in this service where the difference between those two built-in roles is visible**. The person is the stable `anonymous` principal, which gets a directory entry like anybody else and can therefore hold configured roles too. **Off by default**, unlike `roles.enforceIssuance` beside it, because this one changes a SCREEN: enforcement on by default changes nothing for an unedited service, and a third button on every sign-in screen would change what every existing caller's user sees. Cancel is unchanged and still answers `access_denied` without creating anything. |
+| `roles.enforceIssuance` | `STS_ROLES_ENFORCE_ISSUANCE` | `true` | yes | Whether this service ASKS before it issues anything. On, each of the nine kinds of issuance is a XACML request decided by the embedded PEP against a policy; off, nothing is asked and everything is allowed. **On by default costs nothing until an application is narrowed**: one that names no required role requires `EVERYBODY`, everybody holds `EVERYBODY`, and the answer is Permit — so the machinery is always running and always visible, and turning enforcement on for an application is narrowing a list rather than switching on a subsystem that has never run. Off is the way back if a policy edit locks something out. |
+| `roles.maxRoles` | `STS_ROLES_MAX` | `200` | yes | How many role entries `ou=roles` will hold, per trust realm. |
+| `roles.remotePepGroup` | `STS_ROLES_REMOTE_PEP_GROUP` | `remote-peps` | yes | The directory group whose members hold the built-in `REMOTE_PEPS` role, which is what `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `POST /xacml/pep/heartbeat` and `POST /xacml/pip` require. A remote Policy Enforcement Point presenting a client certificate this service VERIFIED is somebody it can NAME; membership of this group is what makes them somebody it lets IN, and the two are kept apart on purpose — **the certificate says who and the group says whether**, so a perfectly valid certificate for the wrong common name is refused while being fully authenticated. Setting it to the empty string means nobody holds the role, which closes those four endpoints to every caller including a correctly configured PEP. |
+| `roles.xacmlUserGroup` | `STS_ROLES_XACML_USER_GROUP` | `xacml-users` | yes | The same arrangement for the built-in `XACML_USER` role, which is what the four XACML endpoints proper require — `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` and `GET /xacml/protected`. **It is a SECOND group and not the same one**, because `/xacml/pep/*` publishes the documents this service enforces its own access with and `POST /xacml/pip` publishes a named person's directory attributes; one group granting both would make admitting a caller to the demonstration surface silently admit it to those. A person is granted the role by being put in this group — one line on `/admin/ldap/directory` or one `ldapmodify` — and it takes effect on the very next request, because membership is resolved at decision time. Setting it to the empty string closes those four endpoints to everybody, which is how to take the XACML surface away without turning `xacml.enabled` off and losing the embedded issuance and access PEPs with it. `xacml.enforceAccess` is the other way, and it opens both sets at once. |
+
 #### Group claim
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
@@ -855,16 +920,16 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `spiffe.serverSocketEnabled` | `STS_SPIFFE_SERVER_SOCKET_ENABLED` | `false` | **restart** — the listener is bound when the process starts | Whether the SPIRE Server API is also served on a Unix socket, which is where a real spire-server keeps its administrative API. |
 | `spiffe.serverSocket` | `STS_SPIFFE_SERVER_SOCKET` | `/tmp/spire-server/private/api.sock` | **restart** — the listener is bound when the process starts | Where that socket lives when it is on. SPIRE's own default path, for the same reason the Workload API's is. |
 | `spiffe.grpcHost` | `STS_SPIFFE_GRPC_HOST` | `0.0.0.0` | **restart** — the listeners are bound when the process starts | The address both TCP gRPC listeners bind. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines them to the machine this runs on. |
-| `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` | **restart** — the store is opened and READ before the HTTP listener binds, so a mode changed at runtime would leave a service whose directory came from one place and whose writes went to another | Where the embedded directory, the trust realm registry and the runtime setting changes are written down. `memory` writes nothing and is what this service did until 2026-08-27. `ldif` writes an RFC 2849 file per realm plus two JSON files into `dataDir` and needs no database. `postgres` writes three tables. NOTHING THIS SERVICE MINTS is persisted in any mode — see *Persistence* above. |
+| `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` | **restart** — the store is opened and READ before the HTTP listener binds, so a mode changed at runtime would leave a service whose directory came from one place and whose writes went to another | Where the embedded directory, the trust realm registry and the runtime setting changes are written down. `memory` writes nothing and is what this service did until 2026-08-27. `ldif` writes an RFC 2849 file per realm plus two JSON files into `dataDir` and needs no database. `postgres` writes six tables. What this service MINTS — sessions, tokens, codes, artifacts, Kerberos principals, the replay caches, the counters and the audit log — is persisted in PRODUCT mode on `postgres` and in no other configuration, each row encrypted under the same key-encryption key as the signing keys; development mode persists none of it, because the signing key is regenerated on every start there. See *Persistence* above. |
 | `persistence.dataDir` | `STS_PERSISTENCE_DATA_DIR` | `./data` | **restart** — same reason | Where `ldif` mode writes. A relative path resolves against the package root rather than the working directory, for the reason `CONFIG_FILE` does. Ignored in the other two modes. In a container this is what a volume mounts over. |
-| `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` | **restart** — the connection pool is opened before the listener binds | The connection string `postgres` mode dials. The default is a LOCAL DEVELOPMENT one matching the Postgres service in this repository's `docker-compose.yml` (user, password and database all `sts`), so turning persistence on against a local database is one setting rather than two. **It is never dialled unless `persistence.mode` is `postgres`**, which is not the default, so it is inert on an ordinary run. The compose stack sets this variable itself with `postgres` as the host, that being the service name on its network. It carries a password, so this service never echoes it back — `/admin/persistence` reports the host, port, database and user parsed out of it. |
+| `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` | **restart** — the connection pool is opened before the listener binds | The connection string `postgres` mode dials. **The default names an OWNER and the compose stack does not**: the default is for a local database with nothing in it, which this service builds for itself, while the stack dials the least-privileged `sts_app` that `postgres/schema.sql` created — see *Building the schema*. The default is a LOCAL DEVELOPMENT one matching the Postgres service in this repository's `docker-compose.yml` (user, password and database all `sts`), so turning persistence on against a local database is one setting rather than two. **It is never dialled unless `persistence.mode` is `postgres`**, which is not the default, so it is inert on an ordinary run. The compose stack sets this variable itself with `postgres` as the host, that being the service name on its network. It carries a password, so this service never echoes it back — `/admin/persistence` reports the host, port, database and user parsed out of it. |
 | `persistence.writeDelay` | `STS_PERSISTENCE_WRITE_DELAY` | `1500` | yes | How long a change waits before the `ldif` files are rewritten, so a burst — a realm build writes thirteen entries — costs one file write. What it risks is that many milliseconds of writes on a `kill -9`, which no process can trap; SIGTERM and SIGINT flush first. **Postgres ignores it** and uses 0: the unit of writing there is a transaction, so every change made while handling one request commits as one transaction the moment that request is done. |
 | `persistence.realms` | `STS_PERSISTENCE_REALMS` | `true` | **restart** — the realm rows are restored before the listener binds | Whether trust realm definitions — names, descriptions and per-realm settings — are written down beside the directory. Turning it off is a half-persisted service rather than a smaller one: a realm holds its own directory, so its entries would be stored with no realm to restore them into, and the next run's first write would remove them. |
 | `persistence.appconfig` | `STS_PERSISTENCE_APPCONFIG` | `true` | **restart** — the saved overrides are applied before the listener binds | Whether a setting changed through the console or the management API survives a restart. It adds NO LAYER: the saved values are re-applied at startup through the same `setOverride()` a caller uses, so the five layers above are unchanged and a runtime override is simply durable. Only a runtime-changeable setting can be saved, because only one can be set — which is what makes applying them after every module has loaded safe. |
 
 ## How it is put together
 
-A mock Security Token Service used by the test suite, **split across forty-nine files at its root** (it was one 4,489-line `server.js` until 2026-08-03; eight protocol families in one file meant no way to see what was in it short of reading it). `server.js` is now the shell — it requires `app.js` (the express app and every middleware, which must load before any route) and `helpers.js` (the log, the keys, and the helpers more than one protocol needs), then the modules that register routes, and listens: `authn.js`, `wstrust.js`, `oauth2.js`, `wsfed.js`, `vc_offers.js`, `vc_did.js`, `vc_issuer.js`, `vc_verifier.js`, `krb5_kdc.js`, `krb5_service.js`, `spnego.js`, `admin.js`, `admin_api.js`, `ldap_server.js`, `tls_server.js`, `sts_metadata.js`. The rest are reached through those rather than named there — `saml2.js`, `saml11.js`, `vc_configs.js`, `vc_claims.js`, `vc_verifier_config.js`, `claim_attributes.js`, `group_claims.js`, `dpop.js`, `admin_stats.js`, `audit.js`, `bbs2023.js`, `webauthn.js`, `admin_api_spec.js`, `admin_api_docs.js` and the nine `krb5_*.js` files under the KDC and the negotiation — which is not a hierarchy so much as the consequence of the rule below. One file among them is **not a module at all**: `admin_api_explorer.js` is browser code, read off disk by `admin_api_docs.js` and served verbatim at `/admin-api/docs/explorer.js`, and nothing in node ever requires it.
+A mock Security Token Service used by the test suite, **split across forty-nine files at its root** (it was one 4,489-line `server.js` until 2026-08-03; eight protocol families in one file meant no way to see what was in it short of reading it). `server.js` is now the shell — it requires `app.js` (the express app and every middleware, which must load before any route) and `helpers.js` (the log, the keys, and the helpers more than one protocol needs), then the modules that register routes, and listens: `authn.js`, `wstrust.js`, `oauth2.js`, `wsfed.js`, `vc_offers.js`, `vc_did.js`, `vc_issuer.js`, `vc_verifier.js`, `krb5_kdc.js`, `krb5_service.js`, `spnego.js`, `admin.js`, `admin_api.js`, `ldap_server.js`, `tls_server.js`, `sts_metadata.js`. The rest are reached through those rather than named there — `saml2.js`, `saml11.js`, `vc_configs.js`, `vc_claims.js`, `vc_verifier_config.js`, `claim_attributes.js`, `group_claims.js`, `dpop.js`, `admin_stats.js`, `audit.js`, `bbs2023.js`, `webauthn.js`, `admin_api_spec.js`, `admin_api_docs.js` and the nine `krb5_*.js` files under the KDC and the negotiation — which is not a hierarchy so much as the consequence of the rule below. One file among them is **not a module at all**: `admin_api_explorer.js` is browser code, read off disk by `admin_api_docs.js` and served verbatim at `/admin/api-explorer/explorer.js`, and nothing in node ever requires it.
 
 The Kerberos files are a stack rather than a feature list, bottom up: `krb5_primitives.js`
 (what no runtime gives you — CTS, RC4, MD4, MD5), `krb5_crypto.js` (the RFC 3961
@@ -1173,7 +1238,7 @@ is what somebody typed, and what resets is what this process minted or counted*.
 |---|---|
 | `memory` | Writes nothing. **The default**, so a run that says nothing about persistence behaves exactly as every run before this existed — which is why no test in the parent project's suite had to be told about it. |
 | `ldif` | Local development, no database. One RFC 2849 LDIF file per trust realm in `persistence.dataDir`, plus `realms.json` and `appconfig.json`. |
-| `postgres` | The shared store: three tables, one transaction per flush, `persistence.databaseUrl` to reach it. |
+| `postgres` | The shared store: five tables, one transaction per flush, `persistence.databaseUrl` to reach it. **The schema is built by `postgres/schema.sql` and this service's own database role cannot change it** — see *Building the schema* below. |
 
 **LDIF rather than a JSON dump of our own**, because a directory has an
 interchange format that predates this service by thirty years: the file is
@@ -1209,6 +1274,38 @@ Postgres container beside this service, with a named volume under each and the
 `env/` directory bind-mounted so the appconfig files are editable from the host.
 `docker compose down` keeps the volumes; `down -v` removes them.
 
+#### Building the schema
+
+```bash
+psql -v ON_ERROR_STOP=1 -f postgres/schema.sql "postgres://owner@host:5432/sts"
+```
+
+**`postgres/schema.sql` builds the five tables and creates the role this service
+connects as**, and those are two halves of one thing. The role it creates —
+`sts_app`, or whatever `-v sts_app_role=` names — holds `SELECT`, `INSERT`,
+`UPDATE` and `DELETE` on the tables and `USAGE` but **not** `CREATE` on the
+schema, so a running mock can change every row in its store and cannot add,
+alter, truncate or drop a table in it. Run it as a superuser or as the owner of
+the database; it is idempotent, so running it again is how the password is
+rotated.
+
+**The compose stack does it for you**, through `postgres/apply-schema.sh` in the
+database container's `/docker-entrypoint-initdb.d` — but *only on the start that
+creates the cluster*, which is how that mechanism works. A `sts-db` volume from
+before 2026-09-06 has the tables and no `sts_app`, and the service then
+restart-loops with `password authentication failed`. `docker compose down -v` is
+the answer, and what it removes is the directory, the realm registry and the
+appconfig overrides — never anything this service minted.
+
+**A database with nothing in it still works with no script**, which is what the
+default connection string above is for: the driver asks which objects exist and
+creates the ones that do not, so a privileged role against an empty database
+behaves as it always did. What it will not do is issue a `CREATE` when there is
+nothing to create — and that is not a tidying: `CREATE TABLE IF NOT EXISTS`
+checks `CREATE` on the schema *before* it checks whether the table exists, so a
+least-privileged role would otherwise be refused on every start by statements
+that had nothing to do.
+
 #### The parts worth knowing before you turn it on
 
 **A failed write is logged and never thrown.** If the database goes away, the
@@ -1236,13 +1333,29 @@ only a runtime-changeable setting can be overridden at all, and a runtime settin
 is by definition one that is read per call rather than captured at startup. No
 saved value can reach `global.https`, `oauth2.rfc9700` or a bound port.
 
-**Persistence is not coordination.** Two processes pointed at one Postgres
-database each hold their own copy of the directory in memory: each writes its own
-changes down, and neither sees the other's until it restarts. Running several
-copies against one store is **not** yet a way to scale this service — it is a way
-to have several services quietly overwrite each other. One process per store.
-`status.coordinates` is `false` and says so; `persistence/CLAUDE.md` carries the
-checklist for closing it.
+**Processes against one Postgres store coordinate, since 2026-09-06 — and this
+paragraph said the opposite until then.** It read *"persistence is not
+coordination… one process per store"*, and that was the honest description of
+what existed.
+
+Every change is now written to a monotonic log (`sts_changes`) **inside the
+transaction that made it**, and each process asks for everything it has not yet
+applied: the directory, the realm registry, the runtime settings and the minted
+rows alike. A `LISTEN`/`NOTIFY` nudge wakes that ask early and is allowed to fail
+in every way a best-effort mechanism can — dropped connection, at-most-once
+delivery, an 8000-byte payload limit — because **the log is the contract and the
+notification is only latency.** `persistence.coordinate` turns it off, which is
+what this service did before; `persistence.pollInterval` is the worst-case
+convergence lag when a notification is lost.
+
+**It shares state and not sockets, and that is where the surprises are.** The
+KDC, both LDAP listeners, the two TLS ports and SPIFFE's four are bound per
+process and always will be. And the **replay caches and DPoP `jti` sets converge
+rather than synchronise**: between a write in one process and its arrival in
+another there is a window the size of the poll interval in which a proof one
+process refused is accepted by another. Sticky sessions at the load balancer
+close it; nothing here does. `status.coordinates` and `status.replication` report
+all of it.
 
 `/admin/persistence` in the console and `GET /admin-api/persistence` report which
 mode is in force, how much it holds, when it last wrote and what went wrong if
@@ -3903,9 +4016,19 @@ and the reason an application accumulates kinds instead of being filed twice.
 
 Where there is no entry the section says **which** of the five reasons it is, because four of them are facts about the user rather than about the directory and "not found" alone would send a reader looking for a bug: auto-creation is switched off, the identity is a *client* and not a person, it has never authenticated here at all (it is known only as the subject of something that was issued), everything it has ever done here is an *LDAP bind* — which presents a DN and not a user name — or the entry was there and has since been `delete`d or `modifyDN`'d through the protocol. It also lists any **other** entry whose `uid` names the same person — which is now a report about entries *outside* `ou=users`, since inside it one person is one entry and every door enforces that — and it says so loudly when the directory's listener is down: the entry can be in this process's store while no client can connect to read it, and only one of those two facts is visible from an HTTP page. The dependency is the thing to be careful with. `admin.js` does **not** require `ldap_server.js` — `server.js` requires the console first (rule 6: the directory needs `admin_stats`' identity normalisation, and the console reads `oauth2`'s sessions), so a require from the console would drag the directory's routes into the router *ahead* of its own, and `/admin/sts-metadata` is built by walking that router. So the direction is inverted the same way the user observer is: `admin.js` offers `setDirectoryReader()`, `ldap_server.js` fills it at its own require time with a function that takes the identity key the console files a person under — the same normalised local name the entry's DN was built from, so the two cannot drift — and a build of this service without the directory renders the section as "no directory is loaded", which is a different answer from an entry that is not there.
 
-**The page has exactly one control, and it writes somewhere else.** A form on the list creates a person in the embedded LDAP directory — `POST /admin/users` with `action=create`, and `POST /admin-api/users/create` beside it. Until it existed `ou=users` could only be filled by authenticating or by an `ldapadd`, while `ou=applications` could be filled from three directions; a client that wanted claims read out of the directory had to sign somebody in first to make the entry it was about to read. The entry is created with the invented person behind that name already written onto it, so an issued credential and an `ldapsearch` for that entry agree from the first request. **A username that is already there is refused**, naming the entry that holds it — the same refusal an `ldapadd` gets as `LDAP_ENTRY_ALREADY_EXISTS` (68), because both call one function in `ldap_server.js` and the console is not a second definition of what a user is. Two things the message says outright rather than leaving to be discovered: **no password is set**, because none is ever checked here, and **the new person does not appear in the table above** until they authenticate somewhere — that list is who this service has *seen*, and the entry is what the directory *holds*. It is the same distinction `/admin/groups` draws when it marks a member *never here*.
+**The page has exactly one control, and since 2026-09-06 it is a door rather than a deed.** It carries a name and takes you to **`/admin/users/new`**, where the person is described. Until any of this existed `ou=users` could only be filled by authenticating or by an `ldapadd`, while `ou=applications` could be filled from three directions; a client that wanted claims read out of the directory had to sign somebody in first to make the entry it was about to read.
+
+**`/admin/users/new`** is a box for every attribute a person in this directory can carry — the same catalogue *Credential claims* chooses from, so a value typed here is the value an issued credential asserts. **Only the username is required, and a box left empty records no value.** That is the whole of what changed: the button this replaced invented an entire person behind whatever name was typed — a full name, an email address, a date of birth, a street, a nationality — and an operator who knew the real ones had to correct the entry afterwards from outside the console. The invented person is still one press away as **Fill with example data**, which writes what this service *would* have made up into the boxes you left empty and touches nothing you have already filled in, creating nobody; it is development-mode only, and it is computed on the server, because this console is `script-src 'none'`. Leaving a field empty is not a promise it stays empty: the Populate button on *Credential claims* fills every missing selected attribute on every person and does not know which were typed.
+
+**It is also where somebody is given a way in**, which no screen here could do before. Four choices: no credential at all (the default, and enough in development mode, where no password is checked anywhere); a password you type; **a password generated and shown once**; or **no credential and a single-use, time-limited activation link, shown once**, at which the person chooses a password, a security key or both at `/portal/activate`. The last two are shown in the body of the page that comes back rather than in a redirect, because what is stored is a scrypt hash and the value exists exactly once — a secret in a URL is a secret in the browser's history and in every proxy log on the way. Issuing another activation link invalidates the first, which is also how one that never arrived is replaced.
+
+**A username that is already there is refused**, naming the entry that holds it — the same refusal an `ldapadd` gets as `LDAP_ENTRY_ALREADY_EXISTS` (68), because both call one function in `ldap_server.js` and the console is not a second definition of what a user is. `POST /admin-api/users/create` is the same act without a browser and takes the same attributes; `GET /admin-api/users/new` publishes the catalogue it validates them against, so a caller learns what it may send from the service rather than from a copy of the list in a document. One thing the page says outright rather than leaving to be discovered: **the new person does not appear in the table above** until they authenticate somewhere — that list is who this service has *seen*, and the entry is what the directory *holds*. It is the same distinction `/admin/groups` draws when it marks a member *never here*.
 
 **`/admin/groups`** is the one page in this console that reports the *directory* rather than what this service has issued. It lists every group with what it is made of, and `?group=<dn>` drills into one: every attribute the entry holds, operational ones included, and every member resolved to the entry it names. Both views come out of `groupsFor()` in `ldap_server.js` through a third inverted hook — `admin.js` offers `setGroupReader()` and the directory fills it, for the same route-order reason `setDirectoryReader()` exists — and the console renders what it is handed without deciding anything, which matters most for the first decision below.
+
+**It writes since 2026-09-06, and what is worth knowing is how long it did not.** This page could report a dangling member, a claimed membership and the two groups that decide who may use the console, and could create none of them: `/admin/groups` was a read, `/admin-api/groups` was a read, and the only two doors onto a group in this directory were an `ldapadd` on the raw socket and `POST /scim/v2/Groups`. There are two controls now. **Create a group** is on the list, below the table — the question this page is usually open to answer is what the directory holds, and a create form at the top would answer a different one first; it puts a `groupOfNames` at `cn=<name>,ou=groups` and takes members one per line or comma-separated, each a user name or any DN, since a group can hold another group and no user name names one. **Add a member** is on the drill-down, because it needs a group in hand; a create lands you on the group it just made, since that is where the control is. `POST /admin-api/groups/create` and `POST /admin-api/groups/add-member` are the same two acts without a browser.
+
+Three things about them are decided in `ldap_server.js` rather than on the page, and each is this directory being consistent with itself rather than an omission. **A member that names nothing is written and not refused** — this directory does no referential integrity in either direction, so refusing here would make the *dangling* state this page exists to report impossible to produce from it. **An empty group is allowed**, although RFC 4519 makes `member` MUST on a `groupOfNames`: SCIM already creates one, and a console stricter than SCIM about the same store would be two doors disagreeing about what the directory holds. **Adding somebody already in the group changes nothing and is not an error**, so a script that adds on every run does not fail on its second one. Removing a member is not here — it is an `ldapmodify`, a SCIM `PATCH`, or *Admin roles* for the two groups that grant this console — and neither is deleting a group, which is an `ldapdelete` or a SCIM `DELETE`. A group made here still grants nothing, which the page says at the moment you have just made one.
 
 **What counts as a group is two rules and not one.** An entry under `ou=groups`, *or* an entry carrying a group `objectClass` (`groupOfNames`, `groupOfUniqueNames`, `posixGroup`, `groupOfURLs`) wherever it sits. Both, because this directory is schemaless and nothing stops a client adding a `groupOfNames` under `ou=users` or an entry with no `objectClass` at all under the groups container — either rule applied alone answers correctly for one of those and quietly loses the other. The list says which rule caught each row, since "this entry is a group because somebody put it under `ou=groups` and it carries no group class at all" is the interesting fact and "developers is a group" is not.
 
@@ -3935,6 +4058,8 @@ Four things about it are deliberate:
 A typed custom claim and a ticked directory attribute of the same name both **win over** it, because those were named on `/admin/claims` about this service and this comes from a setting and a directory. `groups.claimName` naming something this service sets itself (`exp`, `scope`, …) is **refused at issuance** and `/admin/claims` says why — the same rule a typed claim of that name meets at configuration time, made in the only place that can reach the reserved list. The claim reaches a SAML assertion as **one `<Attribute>` with several `<AttributeValue>` children**, which is what the content model means by multi-valued; one element per group with the same name is a relying party reading the first and silently seeing one group where the person is in four.
 
 **`/admin/tokens`** lists what was issued and invalidates what can be. What it lists is **every JWT, every SAML assertion and every Kerberos ticket, in one table, newest first** — the assertions whether WS-Trust issued them or a WS-Federation sign-in did, since both go through the two builders and both are counted there. One table rather than three because a WS-Federation sign-in that produces an ID Token and a SAML 1.1 assertion is *one event*, and three tables would leave it to be reassembled by comparing timestamps. The three families are declared in `admin_stats.js` (`ISSUED_FAMILIES`) and `issuedList()` merges them, because which artifact belongs beside a token and what "still valid" means for each are statements about the state that file holds; `admin.js` renders what it is handed. Two things had to be made common to merge them at all: the state, which comes from one function per family against one clock, and the expiry, which is **normalised to milliseconds** — a JWT's `exp` is seconds and an artifact's `expiresAt` already is not, and one table cannot sort two units. A filter for the family sits beside the one for the kind, and the kind list is grouped by family and built from that same structure, so the two cannot come to disagree about which kind is which.
+
+**A ROW IS ONE ISSUANCE RATHER THAN ONE CREDENTIAL, since 2026-09-05, and the reason is that one protocol family here hands back several at once.** Redeeming an authorization code returns an access token, a refresh token and an ID Token in a *single reply*; `response_type=id_token token` returns two in one fragment. OAuth 2.0 and OIDC are the only families that do it — a SAML assertion, a Kerberos ticket and a SPIFFE SVID are each one credential from one act — so every other row is a *set of one* and looks exactly as it always did. The grouping comes from an identifier the **issuer** stated at the moment it built the reply and never from noticing that two rows sit close together in time: two people redeeming two codes at the same client in the same millisecond produce six credentials that agree on every column of this table, and a table that merged them would report a handover nobody received. The identifier is in no token, no client ever sees it, and it is not a claim. **A set is one response and not one grant** — refreshing makes a new set beside the old one, because a set has one issued instant and one grant and a row that grew all afternoon could have neither; what joins the generations is the refresh lineage, drawn on each credential's own page. Three columns answer differently as a result and each says so where it is drawn: **State** reads `mixed` when the members disagree, which within the hour is most sets, because an access token and the refresh token beside it have very different lifetimes and choosing one would be the column deciding which member matters; **Expires** shows the first member to go and then the last; and **Detail** is the access token's scope, which the refresh token deliberately does not share. A filter matches a set when *any* member matches and the neighbours come with it — asking for `id_token` answers with the replies that contain one. `/admin/tokens/set` opens a reply and is the old table scoped to it, member by member, with each credential's own identifier, expiry and button; **Revoke set** does every revocable member in one act, into the same revocation set `/oauth2/revoke` writes to, which is what stops somebody revoking two credentials of three and believing the grant is dead while the refresh token left behind mints another. A set holding nothing revocable is refused rather than answered "revoked 0".
 
 **Only the JWTs have a button, and the rows that do not are the reason to list them.** Nothing consults this service about a SAML assertion or a Kerberos ticket: an assertion is valid because its signature verifies and its `Conditions` hold, and a ticket because the service it names can decrypt it with a key it already has. So the only thing that ends one is its own expiry — and until it was on this page there was no way to see when that was, or to see that a sign-in had produced one at all. Each such row carries the reason there is no button in place of it, which is the honest version of the button this console deliberately does not offer. Because most columns then mean something slightly different depending on the row — `Detail` is a scope, or whether the signature was written, or the enc-type — the page carries **a legend saying which**, and the code is written one function per *column* answering for all three families rather than one per family, so a header like "Client, audience or service" can be checked against the three answers underneath it. Two of those answers are worth stating: a Kerberos ticket has **no identifier at all** to put in the `jti` column, because none exists for anyone to quote and the KDC keeps no handle on one either; and an assertion's `Detail` says signed or unsigned, which meant correcting the record in the two builders' `catch` blocks — the assertion is counted *before* the signing attempt on purpose, so an assertion that went out unsigned was being counted as signed, and a column showing that would have agreed with the page rather than with what left. **OID4VCI credentials are not in the table**, only counted on the metrics page; that is a gap rather than a principle, and the page says so rather than letting "everything this service has issued" be read as four families.
 
@@ -4154,7 +4279,7 @@ Nothing here checks a password — that row of *what this service does not do* i
 
 ### The management API
 
-`GET /admin-api` is the console above with the HTML taken off: every page's `?format=json` view and every one of its forms, at a path a script can use, with an OpenAPI 3.1 document at `/admin-api/openapi.json` and an explorer that calls it at `/admin-api/docs`. None of them protected — **including now that the console itself is**, which is argued above and is what makes this the way back in when nobody holds a console role — and all of them changing the same state the console changes, because they call the same functions it does.
+`GET /admin-api` is the console above with the HTML taken off: every page's `?format=json` view and every one of its forms, at a path a script can use, with an OpenAPI 3.1 document at `/admin-api/openapi.json` and an explorer that calls it at **`/admin/api-explorer`** — a page of the admin console since 2026-09-09, behind its session and its two roles, because this API began requiring an access token and a browser navigating to a URL carries none. **The operations themselves require an OAuth 2.0 access token** audienced to this API, carrying `admin:read` to read and `admin:write` to write; `adminApi.authRequired` turns that off and restores the open API exactly, which is the way back in when nobody can mint a token. All of them change the same state the console changes, because they call the same functions it does.
 
 **It exists because a form is the right shape for a person and the wrong one for anything else.** Every page here has answered `?format=json` since it was written, so reading was never the problem; *changing* something was. A caller that wanted to revoke a token from a script, or narrow the issuer's claim set from a CI job before running a wallet against it, was left either parsing a 303 redirect for the message in its query string or knowing which hidden input a particular form carried. Both are ways of driving a browser without one.
 
@@ -4169,7 +4294,7 @@ The third is the direction neither of those can check. **Nothing in this service
 
 **Eight POST routes serve thirty-nine URLs**, and the shape is deliberate. Express registers `/admin-api/tokens/:action` once; the document lists `/admin-api/tokens/revoke`, `/restore`, `/revoke-kind`, `/revoke-subject`, `/revoke-user` and `/revoke-all` as the six operations they are, each with its own body schema and its own example. One pattern keeps `GET /admin/sts-metadata` to one row per resource showing the parameter — the router is what that page reads, and twenty-four rows of near-identical prose there would bury the rest of the service — while the document describes URLs a caller can actually use. An action nobody has heard of is not a 404: it reaches the console's own handler and comes back as its refusal, naming the ones that exist, which is both the friendliest error and the sentence the parity check reads.
 
-**The explorer at `/admin-api/docs` is the only page in this service with a script on it**, and that is the one thing this feature costs. `app.js` sets `script-src 'none'` service-wide, which is what makes the whole family of reflected-content problems moot here rather than merely unlikely, so the explorer relaxes that header on its own two routes and in exactly two clauses: `script-src 'self'`, and an added `connect-src 'self'` so the page can call the API it documents. `default-src 'none'` and everything else stay as they are, and the console next door is still `script-src 'none'` — which the test asserts, because a middleware change that widened the exception would show up there first. The script is a **separate resource rather than an inline block for precisely that reason**: `'self'` is enough for a file, an inline block would have needed `'unsafe-inline'`, and `'unsafe-inline'` is the clause that would make the relaxation matter.
+**The explorer at `/admin/api-explorer` is the only page in this console with a script on it**, and that is the one thing this feature costs. `app.js` sets `script-src 'none'` service-wide, which is what makes the whole family of reflected-content problems moot here rather than merely unlikely, so the explorer relaxes that header on its own two routes and in exactly two clauses: `script-src 'self'`, and an added `connect-src 'self'` so the page can call the API it documents. `default-src 'none'` and everything else stay as they are, and the console next door is still `script-src 'none'` — which the test asserts, because a middleware change that widened the exception would show up there first. The script is a **separate resource rather than an inline block for precisely that reason**: `'self'` is enough for a file, an inline block would have needed `'unsafe-inline'`, and `'unsafe-inline'` is the clause that would make the relaxation matter.
 
 **It is this repository's own explorer rather than Swagger UI**, which was weighed rather than skipped. `swagger-ui-dist` is 11.7 MB unpacked and pulls in an install-time telemetry package, in a service whose `package.json` is deliberately short and whose image is built in containers that may have no network beyond the registry. What it would have bought is a familiar look, for an API with no authentication, no OAuth flows, no polymorphic bodies and nobody generating a client from it. `admin_api_explorer.js` is about 250 lines with no dependency and does the same three things — read the document, fill a form, show the response — plus the equivalent `curl` line beside each operation, which is what an operator of a mock actually copies. It is also the one file in this repository that is **not a node module**: `admin_api_docs.js` reads it off disk and serves it verbatim, so it has no `require`, no `process`, and builds every node with `createElement` rather than assigning `innerHTML` — it renders response bodies, which are not always this service's own.
 
@@ -5762,6 +5887,72 @@ Two consequences worth knowing before changing this:
 
 * **Absent is not empty.** No `claims` member means "whatever you issue" and every authorization made before this existed means exactly that, so `requestedClaimPaths()` returns `null` rather than `[]` and the full configured set goes out. An empty array is not expressible at all — A.1 requires a non-empty one — so a caller that could not tell the two apart would issue an empty credential to every wallet that authorized with a scope.
 * **The Token Request accepts `authorization_details` too**, which is the only route the **pre-authorized code flow** has: it has no authorization request to have sent them in. Section 6.1.1 allows it in both flows. What the **offer** was for bounds it — a detail naming a configuration the Credential Offer did not is refused — and the refresh grant carries the granted details forward, because an access token that dropped them would make the section 14.5 refresh fail at the credential endpoint with "that identifier was not granted".
+
+## Versioning
+
+The version is **M.N.O**:
+
+```
+0.1.20260906143205
+│ │ └── the build number: the UTC build instant (YYYYMMDDHHMMSS), or BUILD_NUMBER
+│ └──── minor ┐ from the repo-root VERSION file, the single source of M.N
+└────── major ┘
+```
+
+**The build number is fixed when an image is BUILT, not when it runs.** The
+Dockerfile runs `node common/version.js --stamp .` after the source is copied,
+which writes a `version.json` into the image; the service reads that at startup.
+A service that numbered itself at startup would report a different build every
+time its container restarted, which makes *which build is this* unanswerable in
+exactly the situation where it gets asked. A checkout run with `node server.js`
+has no stamp, computes a number and **says so** — every surface that draws the
+version reports whether it was stamped.
+
+Seven places report it: the startup log, the front page, the foot of every
+`/admin` console page, the foot of every `/portal` page, `GET /admin-api` (with
+`build`, `commit`, `builtAt` and `stamped` as separate fields),
+`/admin/sts-metadata` — in the page and in `?format=json` — and **the remote
+XACML PEP**, on its own `GET /` and in the Version column of
+`/admin/xacml/peps`, which is the row it registers with this service. The three
+outbound requests this service makes carry it too, as
+`User-Agent: mock-sts/0.1.<build> (federation | ssf-transmitter |
+xacml-pdp-notify)`.
+
+**The `xacml-pep/` container is stamped separately, and that is deliberate.**
+It is a second image built from this same tree: `VERSION` and
+`common/version.js` are copied into it at build time — one copy of each in the
+repository — so its **M.N always matches this service's**, while its **build
+number is its own** unless the same `BUILD_NUMBER` is passed to both builds.
+A PEP left behind across a release shows up as a different M.N on that console
+row; two build numbers a few seconds apart are just two artifacts.
+
+```bash
+# One release, both images:
+BUILD_NUMBER=$(date -u +%Y%m%d%H%M%S) GIT_COMMIT=$(git rev-parse HEAD) \
+  docker compose --profile xacml build
+```
+
+```bash
+node common/version.js                    # 0.1.20260906143205
+node common/version.js --json             # the whole record, with the commit
+node common/version.js --check-manifests  # non-zero if a package.json is stale
+node common/version.js --sync-manifests   # fix them
+
+# Give an image a build number and a commit of your choosing:
+BUILD_NUMBER=1234 GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
+```
+
+**Cutting a release is editing `VERSION` and running `--sync-manifests`.** Both
+`package.json` files carry the same M.N as `M.N.0` — semver needs three parts,
+and the real build number is not one of them — and `--check-manifests` is what
+stops a bump that edited `VERSION` alone from leaving them silently stale.
+
+**Nothing about the version can stop this service starting.** An unreadable
+`VERSION` file falls back to `0.0` and a corrupt stamp falls back to a computed
+record, both with a message on stderr. That is the opposite of the signing key,
+which is fatal to lose in product mode, and the difference is deliberate: a
+wrong version misinforms a reader, a wrong key invalidates every token this
+service has ever issued.
 
 ## Running the tests
 

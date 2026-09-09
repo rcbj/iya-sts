@@ -1349,7 +1349,7 @@ const MAX_TRANSACTIONS = 500;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const transactions = realms.map();              // 'pkce:x' / 'nonce:x' -> record
+const transactions = realms.map({ persist: 'oauth2_bcp.transactions' });  // 'pkce:x' / 'nonce:x' -> record
 
 function forgetStaleTransactions() {
   log.debug("Entering forgetStaleTransactions().");
@@ -1456,6 +1456,12 @@ function noteRedeemed(record) {
     const known = transactions.get(entry.key);
     if (known) {
       known.redeemed = true;
+      // THROUGH THE STORE, because this mark is REPLAY PROTECTION and not
+      // bookkeeping. `transactions` is `realms.map({persist})` and its journal
+      // sees `set()`, never a field stamped on the object it handed out — so a
+      // redemption marked in place is a code that is spent in this process and
+      // unspent in every other one.
+      transactions.set(entry.key, known);
     }
   });
   log.debug("Leaving noteRedeemed().");
@@ -1698,6 +1704,99 @@ function checkClientRegistration(metadata) {
 // seconds of computation on the thread that owns every listener here. See
 // common/worker.js. What this function DECIDES is unchanged: the policy is
 // still this module's and the mechanics are still client_auth.js's.
+// ---------------------------------------------------------------------------
+// WHAT THIS REQUEST DEMONSTRATED ABOUT THE CLIENT — AN OBSERVATION, NEVER A
+// REFUSAL (2026-09-05).
+//
+// `checkClientAuthentication()` below is POLICY: it decides whether this
+// client was REQUIRED to authenticate and refuses it if it did not. This is
+// the FACT underneath that decision — did the client, on this request,
+// present a credential that verified — and it is a different question with a
+// different audience.
+//
+// **IT EXISTS BECAUSE THE ROLE GATE ASKS A QUESTION RFC 9700 MODE DOES NOT.**
+// `ALL_AUTHENTICATED_APPLICATIONS` and `ALL_UNAUTHENTICATED_APPLICATIONS` are
+// about what the client IS, and that is true whether or not this service has
+// been asked to enforce the BCP. A mock with `oauth2.rfc9700` off still knows
+// perfectly well that a client sent a matching secret; refusing to notice
+// would make those two roles unusable in the default configuration, which is
+// the configuration almost everything here runs in.
+//
+// **THE FOUR "no" ANSWERS ARE KEPT APART**, because they are four different
+// facts and a caller that collapsed them would report the wrong one:
+//
+//   * no entry here at all — this service has never seen the client_id;
+//   * a PUBLIC client — `token_endpoint_auth_method` is `none` or absent, so
+//     there is nothing to prove and not proving it is correct. This is the one
+//     that ALL_UNAUTHENTICATED_APPLICATIONS is actually about;
+//   * confidential with NOTHING ON FILE to check against — half-configured,
+//     which `checkClientAuthentication()` deliberately does not refuse;
+//   * confidential, credential presented, and it did not verify.
+//
+// Only the fourth is a failure. The others are all "no" and none of them is a
+// fault, which is why this function has no `ok` field at all — an `ok` would
+// invite a caller to treat a public client as a problem.
+//
+// **IT IS NOT MODE-GATED AND IT IS NOT FREE.** For a confidential client it
+// performs the same verification `checkClientAuthentication()` performs, so a
+// token request from one now does that work whether or not the BCP mode is on.
+// That is affordable here — it is one signature check on a request that is
+// about to mint several — and the alternative was a third state, "we did not
+// look", which every caller would have had to decide what to do about.
+// ---------------------------------------------------------------------------
+async function observeClientAuthentication(opts) {
+  log.debug("Entering observeClientAuthentication(). client=" + (opts.clientId || '?'));
+  const registered = opts.registered;
+  if (!registered || !registered.known) {
+    log.debug("Leaving observeClientAuthentication(). No entry here.");
+    return { authenticated: false, method: '',
+             why: 'this service has no entry for this client, so there was ' +
+                  'nothing to authenticate it against.' };
+  }
+  if (!isConfidential(registered)) {
+    log.debug("Leaving observeClientAuthentication(). A public client.");
+    return { authenticated: false, method: 'none',
+             why: 'this is a PUBLIC client: its entry declares ' +
+                  'token_endpoint_auth_method="none" (or none at all), so it ' +
+                  'has no credential to present and presenting none is correct.' };
+  }
+  const method = String(registered.token_endpoint_auth_method).trim();
+  const haveCredential =
+    (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 && registered.client_secret) ||
+    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri)) ||
+    (method === 'tls_client_auth' && registered.tls_client_auth_subject_dn) ||
+    (method === 'self_signed_tls_client_auth' && registered.certificate_thumbprint);
+  if (!haveCredential) {
+    log.debug("Leaving observeClientAuthentication(). Confidential with nothing on file.");
+    return { authenticated: false, method: method,
+             why: 'this client is configured as confidential ' +
+                  '(token_endpoint_auth_method=' + method + ') and has nothing ' +
+                  'on its entry to verify that method against, so nothing ' +
+                  'could be checked.' };
+  }
+  const checked = await clientAuth.verify({
+    method: method,
+    clientId: opts.clientId,
+    request: opts.request,
+    audiences: opts.audiences || [],
+    presentedSecret: opts.clientSecret,
+    assertion: opts.assertion,
+    assertionType: opts.assertionType,
+    clientSecret: registered.client_secret,
+    jwks: registered.jwks,
+    jwksUri: registered.jwks_uri,
+    subjectDn: registered.tls_client_auth_subject_dn,
+    certificateThumbprint: registered.certificate_thumbprint
+  });
+  if (!checked.ok) {
+    log.debug("Leaving observeClientAuthentication(). It did not verify.");
+    return { authenticated: false, method: method, why: checked.description };
+  }
+  log.debug("Leaving observeClientAuthentication(). Authenticated by " + method + ".");
+  return { authenticated: true, method: method, alg: checked.alg || '',
+           why: 'it authenticated with ' + method + '.' };
+}
+
 async function checkClientAuthentication(opts) {
   log.debug("Entering checkClientAuthentication().");
   const registered = opts.registered;
@@ -1856,13 +1955,13 @@ const MAX_REFRESH_TOKENS = 2000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const refreshTokens = realms.map();   // jti -> { family, clientId, rotated, forget }
+const refreshTokens = realms.map({ persist: 'oauth2_bcp.refreshTokens' });  // jti -> { family, clientId, rotated, forget }
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const refreshFamilies = realms.map(); // family -> { members: [jti], clientId, forget }
+const refreshFamilies = realms.map({ persist: 'oauth2_bcp.refreshFamilies' });  // family -> { members: [jti], clientId, forget }
 
 function forgetStaleRefreshTokens() {
   log.debug("Entering forgetStaleRefreshTokens().");
@@ -1934,12 +2033,17 @@ function noteRefreshRotated(jti) {
   const known = refreshTokens.get(String(jti));
   if (known) {
     known.rotated = true;
+    // THROUGH THE STORE, for noteRedeemed()'s reason: this is the mark that
+    // makes a re-presented refresh token a detected REPLAY, and a mark that
+    // does not leave this process is a rotated token another one still accepts.
+    refreshTokens.set(String(jti), known);
     // The chain has just been used, which is what the idle timeout measures
     // from. Recorded HERE — at the successful redemption — rather than when the
     // request arrived, so a run of refused attempts cannot keep a chain alive.
     const family = refreshFamilies.get(known.family);
     if (family) {
       family.lastUsedAt = Date.now();
+      refreshFamilies.set(known.family, family);
     }
   }
   log.debug("Leaving noteRefreshRotated(). " + (known ? "Marked." : "It was not one of ours."));
@@ -2440,6 +2544,7 @@ module.exports = {
   isConfidential: isConfidential,
   checkGrantType: checkGrantType,
   checkClientAuthentication: checkClientAuthentication,
+  observeClientAuthentication: observeClientAuthentication,
   checkClientRegistration: checkClientRegistration,
   checkRefreshRequest: checkRefreshRequest,
   noteRefreshIssued: noteRefreshIssued,

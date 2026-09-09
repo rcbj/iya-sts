@@ -38,6 +38,23 @@
 #   would need a database — the parent suite's sts_persistence_postgres.js — is
 #   not vendored here, because it starts its own database with docker and this
 #   container has no docker in it.
+#   NO DOCKER IN THE TESTS CONTAINER, AND THAT NOW COSTS A SECOND JOB. Since
+#   2026-09-06 tests/vendored/sts_xacml_remote_pep.js builds the xacml-pep image
+#   and runs it as a container on the service's network, so it needs a daemon
+#   for the same reason that postgres job does. It is marked `docker: true` in
+#   tests/vendored/MANIFEST.js and tools/run-report.js reports it SKIPPED here,
+#   with the reason and with what is therefore unchecked — amber in the report,
+#   <skipped> in the JUnit, a line in the summary. It is never silently green.
+#   **What is unchecked here is the remote PEP end to end**: what stands on this
+#   stack is tests/xacml_pep.js (that container's modules, in a child process,
+#   no HTTP) and sts_xacml_endpoints.js (the three PEP endpoints, with the TEST
+#   impersonating a PEP), both one-sided by construction. ./local-run-tests.sh
+#   runs the container job, and that is the stack the seam is driven on.
+#
+#   Mounting the daemon's socket in here would close both gaps and is NOT done
+#   on a judgement rather than an oversight: this container carries a Chrome and
+#   runs a suite that reconfigures a service, and a docker socket in it is root
+#   on the host that runs CI. The two jobs are worth less than that.
 #   NO KEYCLOAK, NO walt.id, NO api, NO client. The thirteen vendored protocol
 #   jobs are exactly the ones a LONE mock can satisfy; that is the rule
 #   tests/vendored/MANIFEST.js records and the reason this file is two services
@@ -79,6 +96,16 @@ services:
       # image carries no tests. The tests image is built from the same context
       # with a per-Dockerfile ignore file; see tests/Dockerfile.
       context: .
+      # THE BUILD'S IDENTITY, both optional and both empty by default — the
+      # same two arguments docker-compose.yml passes, and that file carries the
+      # argument for them. They are here so that a CI run of this stack can
+      # stamp its image with the run number and the commit, which is the
+      # environment where "which build produced this report" is asked most and
+      # answerable least. Leave them and the build number is the UTC build
+      # instant, which is still unique per build.
+      args:
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
+        GIT_COMMIT: "${GIT_COMMIT:-}"
     environment:
       # env/docker-tests.js, which exists for this file and says so in its own
       # header. It is env/local.js with a different comment: `logLevel: debug`,
@@ -105,11 +132,33 @@ services:
       # reports a healthcheck timeout rather than anything naming a log level.
       # `docker compose config` tells the two apart: bare renders null.
       - STS_LOG_LEVEL
+      # THE MANAGEMENT API'S CLIENT SECRET, PINNED BY THE LAUNCHER (2026-09-09).
+      #
+      # `/admin-api` requires an access token minted by the seeded
+      # `sts-management-api` client, whose secret is otherwise generated at
+      # every start and readable only THROUGH the API it unlocks. The launcher
+      # generates one per run and passes it here; `./docker-run-tests.sh` then
+      # mints a token against this container once per mode.
+      #
+      # BARE, for the reason STS_LOG_LEVEL above is bare — though the stakes
+      # are the opposite way round here. An empty value is harmless (it means
+      # "mint one per start", which is the default), so what the bare form
+      # buys is that `docker compose -f this up` by hand behaves exactly as it
+      # did before this line existed.
+      - ADMIN_API_CLIENT_SECRET
       # NOT A TUNING CHOICE. A suite that persisted would be a suite whose
       # second run started from the first run's leavings, which is the failure
       # that looks like a flaky test and is not one. It is also why there is no
       # postgres service in this file and no volume on this one.
-      - STS_PERSISTENCE_MODE=memory
+      # THE MODE MATRIX DECIDES THIS NOW. It was hardcoded `memory`, which was
+      # right while there was one run; tests/tools/modes.sh runs the suite three
+      # times and this is one of the settings it varies. The default keeps a
+      # hand-run of this file behaving as it did.
+      - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
+      - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
+      - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
+      - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}
+      - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}
       # TLS ON THE MAIN PORT (2026-08-30), so that the suite drives the mock
       # over the scheme every stack in this ecosystem drives it over. It was
       # http here and https in the parent project's three compose files, which
@@ -152,9 +201,121 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------
-  # THE SUITE. Twenty-three jobs — ten in-process and thirteen protocol,
+  # THE REMOTE XACML POLICY ENFORCEMENT POINT, AND THE ONLY THING IN THIS FILE
+  # THAT IS NOT THE SERVICE OR THE SUITE.
+  #
+  # It is here because `tests/vendored/sts_xacml_remote_pep.js` cannot assert
+  # what it exists to assert without it: a SECOND CONTAINER, on this network,
+  # holding its own copy of the XACML engine, pulling policy from the service
+  # above and enforcing it where that service cannot see. The job drives this
+  # container over HTTP by the hostname below; it does not create it, because
+  # the tests container has no docker in it and is not going to get any (see
+  # WHAT THIS STACK DELIBERATELY DOES NOT HAVE, above).
+  #
+  # **IT POINTS AT A REALM THAT DOES NOT EXIST WHEN IT STARTS, AND THAT IS THE
+  # ARRANGEMENT RATHER THAN A DEFECT.** `pep-e2e` is created by that job, minutes
+  # into the run, and removed by it at the end — which is how the job gets a
+  # repository whose whole contents it wrote without disturbing the realm every
+  # other job is using. So this container comes up, fails to register, fails to
+  # pull, says so, and goes on trying: `xacml-pep/sync.js` retries its
+  # registration on the poll timer, so it converges on a console row the same
+  # way it converges on policy. That retry exists BECAUSE of this ordering and
+  # its own header argues why it is right independently of this file.
+  #
+  # NO CLIENT CERTIFICATE, so it registers UNAUTHENTICATED — which is what the
+  # shipped `docker-compose.yml` does too, and for the same reason: generating
+  # one here would mean committing a private key or writing a first-start
+  # script for a container. The job turns `xacml.pepRequireCertificate` off IN
+  # ITS OWN REALM and asserts the row is marked unauthenticated. The
+  # authenticated path is asserted by `sts_xacml_endpoints.js`, which presents
+  # a real certificate over a real handshake.
+  # ---------------------------------------------------------------------------
+  xacml-pep:
+    container_name: ${XACML_PEP_CONTAINER_NAME:-xacml-pep-docker-tests}
+    # The name the tests container dials AND the name the service nudges. Both
+    # resolve on this bridge and neither is published anywhere.
+    hostname: xacml-pep
+    image: rcbj/xacml-pep
+    build:
+      # The repository root, because xacml-pep/Dockerfile copies the seven
+      # engine modules out of xacml/ at build time — so this image cannot drift
+      # from the evaluator the service in this same stack is running. That is
+      # the whole argument of xacml-pep/CLAUDE.md, and building it HERE is what
+      # makes this stack able to catch a module added to engine.js and not to
+      # that Dockerfile: the container dies at load and the job says so.
+      context: .
+      dockerfile: xacml-pep/Dockerfile
+      # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Pass
+      # the SAME BUILD_NUMBER to both to say the PDP and this PEP are one
+      # release; leave them and each image gets the instant it was built, which
+      # is two different numbers for two artifacts and is the honest default.
+      args:
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
+        GIT_COMMIT: "${GIT_COMMIT:-}"
+    depends_on:
+      sts:
+        condition: service_healthy
+    volumes:
+      # The launcher writes pep.crt and pep.key here between bringing the
+      # service up and starting this container — see ./docker-run-tests.sh,
+      # which does it with `docker run` against the service image so that the
+      # host still needs docker and nothing else.
+      - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
+    environment:
+      # BY COMPOSE DNS AND THE INTERNAL PORT, never a published one — nothing
+      # in this stack publishes anything. `sts` is in the certificate's SANs.
+      - PEP_PDP_URL=${XACML_PEP_PDP_URL:-https://sts:8081/realm/pep-e2e}
+      - PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
+      # THE CLIENT CERTIFICATE ./docker-run-tests.sh MINTS AND MOUNTS. The
+      # three /xacml/pep endpoints require a verified one whose DN holds
+      # REMOTE_PEPS; without these two this container registers as nothing and
+      # is refused, which is what a `docker compose -f this up` by hand gets.
+      - PEP_TLS_CERT=${XACML_PEP_TLS_CERT:-}
+      - PEP_TLS_KEY=${XACML_PEP_TLS_KEY:-}
+      # The service regenerates and self-signs its key on every start, so there
+      # is no anchor any image could hold. `pep.js` logs this on every start
+      # rather than once, for federation_http.js's reason.
+      - PEP_TLS_INSECURE=true
+      # THE ADDRESS THE SERVICE NUDGES, and it is deliverable in this stack
+      # once the job turns xacml.pepNotifyAllowInsecure on in its realm — which
+      # is the one place this repository's third outbound request is dialled at
+      # a listener that answers. Until it does, the service refuses to dial a
+      # plain-http URL and says so on the row, which the job asserts first.
+      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
+      - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://example.test/records}
+      - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
+      # THE REMOTE POLICY INFORMATION POINT (2026-09-06). On by default:
+      # this PEP resolves designators the request did not carry against
+      # the mock's embedded directory, through POST /xacml/pip, in one
+      # batched query before each evaluation — so a policy reading
+      # employeeType off a person's entry decides HERE the way it decides
+      # at the PDP. Set it false to watch the old behaviour, where every
+      # attribute has to be asserted in the request and the two
+      # enforcement points legitimately disagree. A container with no
+      # PEP_TLS_CERT reaches that state anyway, because the endpoint
+      # requires a verified certificate holding REMOTE_PEPS.
+      - PEP_PIP=${XACML_PEP_PIP:-true}
+      # SHORT, because the job MEASURES against this interval: it converges by
+      # polling with the nudge refused, then turns the nudge on and asserts the
+      # next change lands in a fraction of it. The shipped fifteen seconds
+      # would make that comparison a minute of waiting.
+      - PEP_POLL_INTERVAL_MS=${XACML_PEP_POLL_INTERVAL_MS:-5000}
+      - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-2000}
+      - PEP_LOG_LEVEL
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9090,path:'/healthcheck'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # THE SUITE. Every job — the in-process half and the protocol half,
   # including the Selenium admin-console one — run by
   # tests/run-tests-in-container.sh against the service above.
+  # NO COUNT IS WRITTEN HERE. tests/vendored/MANIFEST.js and tests/run.js's
+  # own discovery are the two answers, and the number that used to be on
+  # this line was wrong within a fortnight of being written.
   # ---------------------------------------------------------------------------
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
@@ -174,13 +335,82 @@ services:
       # handed, and a scheme mismatch reaches a test as a closed socket that
       # names nothing.
       - STS_TEST_SERVICE_URL=${STS_TEST_SERVICE_URL:-https://sts:8081}
+      # ---------------------------------------------------------------------
+      # THE DIRECTORY'S OWN SOCKET, FOR THE ONE JOB THAT DRIVES IT (2026-09-06).
+      #
+      # `tests/vendored/sts_directory_bulk_load_ldap.js` writes five thousand
+      # people over RFC 4511 on TCP 389, and this stack publishes NOTHING —
+      # which costs it exactly nothing here, because this runner is a container
+      # on the bridge with the service and reaches the port directly. That is
+      # the same reason XACML_PEP_URL below names a container and not a
+      # published port.
+      #
+      # **./local-run-tests.sh has to work harder for this and that asymmetry
+      # is the point.** Over there the runner is a host process, so the socket
+      # must be published — and `docker-compose.yml` deliberately does not
+      # publish it, because 389 is the assigned LDAP port and the host most
+      # likely to want a mock directory is a host already running slapd. That
+      # launcher layers `tests/docker-compose-ldap.yml` with a free host port.
+      # Here one line does it.
+      #
+      # `sts` is the hostname of the service in this file and 389 is the
+      # container-side port it binds as root.
+      - STS_LDAP_URL=${STS_LDAP_URL:-ldap://sts:389}
       # Passed to run-report.js, split by the entrypoint. `STS_TEST_ARGS=
       # "--only=crypto --no-browser" ./docker-run-tests.sh` is the way to
       # narrow a containerized run; unset, the whole suite runs.
       - STS_TEST_ARGS=${STS_TEST_ARGS:-}
+      # ONE REPORT TREE PER MODE, so three runs do not overwrite each other. The
+      # mode matrix sets it; unset, run-report.js's own default applies.
+      - STS_TEST_REPORT_DIR=${STS_TEST_REPORT_DIR:-}
       # The suite's own bunyan level (the jobs', not the service's). Bare, for
       # the same reason STS_LOG_LEVEL is bare on the service above.
       - LOG_LEVEL
+      # ---------------------------------------------------------------------
+      # THE REMOTE PEP THIS STACK BRINGS UP, HANDED TO THE ONE JOB THAT DRIVES
+      # IT. Three variables and they are one answer split three ways: where it
+      # is, what it registered as, and which realm it polls. The job REQUIRES
+      # all three together — a URL with no realm would have it asserting
+      # against a container pointed somewhere else — and without them it falls
+      # back to building and starting a container of its own, which is what a
+      # hand-run `node tests/tools/run-report.js` does and needs a docker
+      # daemon for.
+      #
+      # `xacml-pep:9090` and not a published port: nothing in this stack
+      # publishes anything, and the tests container is on the bridge with it.
+      # ---------------------------------------------------------------------
+      - XACML_PEP_URL=${XACML_PEP_URL:-http://xacml-pep:9090}
+      - XACML_PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
+      - XACML_PEP_REALM=${XACML_PEP_REALM:-pep-e2e}
+      # ---------------------------------------------------------------------
+      # THE PEP'S ROOT CA AS TEXT, AND IT NEVER ARRIVED UNTIL 2026-09-09.
+      #
+      # `./docker-run-tests.sh` has been putting this in its compose
+      # environment since the anchor existed, and this file never named it —
+      # so compose dropped it and the variable reached the runner in
+      # ./local-run-tests.sh alone, where the runner is a host process that
+      # inherits the shell. The job says so rather than failing
+      # ("XACML_PEP_CA_PEM is not set, so this job cannot put the PEP back"),
+      # which is exactly why nobody noticed: it degrades in the launcher CI
+      # runs and works in the one a developer runs.
+      #
+      # What it is for: the truststore is a Map in the service's process and
+      # `POST /tls/trust/clear` needs no credential, so any job may empty it.
+      # The job that DEPENDS on this anchor re-establishes it, and it travels
+      # as text because the runner container cannot see the directory the PEP
+      # mounts its certificate from.
+      - XACML_PEP_CA_PEM=${XACML_PEP_CA_PEM:-}
+      # ---------------------------------------------------------------------
+      # THE MANAGEMENT API'S ACCESS TOKEN (2026-09-09), minted by the launcher
+      # once per mode against the service in this stack and handed to every job
+      # by run-report.js. Twenty-odd jobs drive `/admin-api`, which requires
+      # one; without it they would each report a 401 and the report would name
+      # twenty problems instead of one.
+      #
+      # PER MODE, because a token is signed by a key this service regenerates
+      # on every start and this stack is torn down between modes.
+      # ---------------------------------------------------------------------
+      - STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the
@@ -200,6 +430,17 @@ services:
         # a suite that begins against a service which is not listening reports
         # thirteen protocol failures that are all one fact.
         condition: service_healthy
+      xacml-pep:
+        # STARTED RATHER THAN HEALTHY, AND IT IS AN ISOLATION DECISION.
+        # `service_healthy` would work — that container listens as soon as its
+        # first registration and pull have been ATTEMPTED, and both fail fast
+        # against a realm that does not exist yet — but it would mean a PEP
+        # image that will not load takes the WHOLE SUITE down with
+        # "dependency failed to start", instead of failing the one job that
+        # drives it. Fifty-odd jobs must not go red because a container none of
+        # them touch is broken. The job waits for it itself, names it, and says
+        # to read `docker logs` on it.
+        condition: service_started
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

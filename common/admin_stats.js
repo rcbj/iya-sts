@@ -47,6 +47,11 @@ const { log, setJwtRecorder, userFor } = require('./helpers');
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
 const realms = require('./realms');
+// WHAT OTHER PROCESSES COUNTED, for the fan-in in snapshot(). A LIBRARY
+// (rule 3): it registers no route and requires only `config` and `realms`, so
+// requiring it here closes no cycle and moves nothing. With one process it
+// answers an empty array and every number this file reports is unchanged.
+const replication = require('../persistence/persistence_replication');
 // The audit log. A one-way require and it must stay one: audit.js requires
 // helpers.js and config.js and nothing else in this repository, precisely so
 // that this file — which most of the service already requires — can call it
@@ -121,7 +126,7 @@ const MAX_EVENTS_PER_USER = 50;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const calls = realms.map();       // "GET /path" -> the row below
+const calls = realms.map({ persist: 'admin_stats.calls', merge: 'own' });  // "GET /path" -> the row below
 
 // ---------------------------------------------------------------------
 // THE COUNTERS THAT ARE NOT IN THE MAPS, PER TRUST REALM.
@@ -148,8 +153,17 @@ const calls = realms.map();       // "GET /path" -> the row below
 // ---------------------------------------------------------------------
 const nums = realms.obj(function () {
   return { callTotal: 0, callPathsDropped: 0, tokensForgotten: 0,
-           tokensWithoutJti: 0, artifactsForgotten: 0, usersForgotten: 0 };
-});
+           tokensWithoutJti: 0, artifactsForgotten: 0, usersForgotten: 0,
+           // How many artifacts this realm has EVER recorded, which is not
+           // `artifacts.length` and must not be confused with it: the array is
+           // capped and shifts from the front, so its length falls back. This
+           // only ever rises, and it is what gives every artifact a key of its
+           // own — see recordArtifact(). A Kerberos ticket carries no
+           // identifier anybody can quote, so without this there would be
+           // nothing to address the row by, and /admin/tokens/set could not
+           // open one.
+           artifactsRecorded: 0 };
+}, { persist: 'admin_stats.nums', merge: 'own' });
 
 
 
@@ -188,6 +202,34 @@ function recordCall(call) {
   row.lastAt = Date.now();
   row.lastStatus = call.status || 0;
   nums.callTotal++;
+  // -------------------------------------------------------------------------
+  // PUT THE ROW BACK, AND IT IS NOT A NO-OP (2026-09-09).
+  //
+  // `callRow()` calls `calls.set()` only when a path is FIRST SEEN. Every
+  // increment above mutates the object it handed back, and a mutation is
+  // invisible to the journalling view `realms.map()` returns for a store with a
+  // persist handle — so nothing is marked dirty, no flush is scheduled, and the
+  // row in `sts_changes` keeps the count it had when the path was created.
+  //
+  // With one process that was harmless: the map IS the answer, and the store
+  // only had to survive a restart. With request workers it is not, because
+  // `/admin/metrics` sums this process's rows with what the OTHERS wrote — and
+  // what they wrote was one row each, at count 0. Every worker's traffic after
+  // the first call on a path was invisible to every other worker, for ever.
+  //
+  // Measured: three probes of `/healthcheck` across three workers, and the
+  // metrics page still reporting the count from before them 45 seconds later.
+  // It looked like a convergence lag and no amount of waiting would have fixed
+  // it — there was nothing on its way.
+  //
+  // **THE COST IS A SCHEDULED FLUSH PER REQUEST AND IT IS BOUNDED BY THE
+  // SCHEDULER RATHER THAN BY THIS LINE.** `schedule()` starts a timer only when
+  // none is pending and `flush()` runs one at a time, so a burst of requests
+  // coalesces into one write of the handful of rows that actually moved. A
+  // service already writing (a bulk load, a sign-in) pays nothing extra — the
+  // flush was happening anyway and carries a few more rows.
+  // -------------------------------------------------------------------------
+  calls.set(call.method + ' ' + path, row);
   log.debug("Leaving recordCall(). " + nums.callTotal + " call(s) recorded in total.");
 }
 
@@ -210,7 +252,7 @@ function recordCall(call) {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const tokens = realms.map();      // jti (or a synthetic key) -> the record below
+const tokens = realms.map({ persist: 'admin_stats.tokens' });  // jti (or a synthetic key) -> the record below
 
 
 
@@ -311,6 +353,43 @@ function recordJwt(payload, signed, context) {
     // direct grants, the pre-authorized code, a token exchange — which is a fact
     // about the token rather than a gap in the recording.
     sessionId: issuedUnder.sessionId || '',
+    // AND WHETHER ANYBODY AUTHENTICATED FOR THAT SESSION (2026-09-05), beside
+    // it and for exactly the reason it is here: the REFRESH grant has no
+    // session and no cookie, so what it can say about the person is what this
+    // registry remembers. Without it the second generation of a token issued
+    // on an unauthenticated session would be judged as though somebody had
+    // signed in, which is the one way this feature could quietly leak.
+    //
+    // `!== false` at the write as well as at the read, so a caller that says
+    // nothing means "authenticated" — which is what every caller that existed
+    // before this field meant.
+    sessionAuthenticated: issuedUnder.sessionAuthenticated !== false,
+    // WHICH TOKEN RESPONSE THIS CAME BACK IN (2026-09-05), and it is the reason
+    // /admin/tokens lists SETS rather than credentials. OAuth 2.0 and OIDC are
+    // the only families here that hand back several credentials at once — an
+    // access token, an ID Token and a refresh token out of one code redemption,
+    // an access token and an ID Token out of one implicit response — and until
+    // this field existed there was nothing joining the three but a timestamp
+    // three rows apart. Every other family issues one thing per act, so a row
+    // with no set id is a set of one, which is the honest shape rather than a
+    // gap.
+    //
+    // It CANNOT be derived, and that is why it is stated out of band exactly as
+    // `sessionId` above is. Two clients redeeming two codes for the same person
+    // at the same client in the same millisecond produce six tokens that agree
+    // on every field this record holds; a heuristic over sub/client/issuedAt
+    // would merge them, and the page would report a set that was never issued.
+    // The two OAuth issuance sites mint one id and pass it to every token they
+    // produce — see oauth2.js's tokenSet() and issueAuthorizationResponse() —
+    // so the grouping is a FACT the issuer stated rather than a guess this file
+    // made.
+    //
+    // A REFRESH PRODUCES A NEW SET, not a bigger one. What a set is is one
+    // RESPONSE, so the second generation of a grant is its own row with its own
+    // issued instant and its own expiries; what joins the generations is the
+    // refresh lineage oauth2_bcp.js keeps and /admin/tokens/credential draws,
+    // which is a different relation and is drawn as one.
+    setId: issuedUnder.setId || '',
     grant: issuedUnder.grant || '',
     issuedAt: Date.now(),
     revoked: false,
@@ -354,9 +433,16 @@ setJwtRecorder(recordJwt);
 //
 // A Set has no facade in `realms.js` — `map()`, `arr()` and `obj()` are the
 // three — so this is `keyed()`, the general case, and the reads below are
-// spelled `revokedJtis()` because of it.
+// spelled `revokedJtis` because of it.
 // ---------------------------------------------------------------------------
-const revokedJtis = realms.keyed(function () { return new Set(); });
+// A MAP AND NOT A SET, AND ONLY BECAUSE A SET CANNOT BE PERSISTED (2026-09-07).
+// The value is always `true` and nothing reads it — what this holds is
+// membership. It was `realms.keyed(() => new Set())`, which meant a revocation
+// never left the process that made it: with a request worker pool, a token
+// revoked through /admin-api introspected as ACTIVE on any other worker,
+// because that worker had never been told. `realms.map({persist})` is the
+// declaration that makes a store replicate, and a Set has no such declaration.
+const revokedJtis = realms.map({ persist: 'admin_stats.revokedJtis' });
 
 function revoke(jti, via) {
   log.debug("Entering revoke(). jti=" + jti);
@@ -364,16 +450,22 @@ function revoke(jti, via) {
     log.debug("Leaving revoke(). There was no jti to revoke.");
     return false;
   }
-  const first = !revokedJtis().has(jti);
-  revokedJtis().add(jti);
+  const first = !revokedJtis.has(jti);
+  revokedJtis.set(jti, true);
   const record = tokens.get(jti);
   if (record) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();
     record.revokedVia = record.revokedVia || (via || 'unstated');
+    // THROUGH THE STORE. `revokedJtis` above is what ENFORCES the revocation
+    // and it is journalled by its own `set()`; this record is what the console
+    // and `/admin-api/tokens` DRAW, and a field stamped in place never leaves
+    // this process — so the token would read as revoked on one worker and live
+    // on the next, which is the one report an operator must be able to trust.
+    tokens.set(jti, record);
   }
   log.info('admin: the token with jti ' + jti + ' is revoked (' + (via || 'unstated') + '). ' +
-           revokedJtis().size + ' revoked in total.');
+           revokedJtis.size + ' revoked in total.');
   log.debug("Leaving revoke(). " + (first ? "It is newly revoked." : "It was already revoked."));
   return first;
 }
@@ -386,12 +478,14 @@ function revoke(jti, via) {
 // it NON-SPEC for exactly that reason.
 function restore(jti) {
   log.debug("Entering restore(). jti=" + jti);
-  const was = revokedJtis().delete(jti);
+  const was = revokedJtis.delete(jti);
   const record = tokens.get(jti);
   if (record) {
     record.revoked = false;
     record.revokedAt = 0;
     record.revokedVia = '';
+    // Through the store, for revoke()'s reason above and in this direction too.
+    tokens.set(jti, record);
   }
   log.info('admin: the token with jti ' + jti + ' is no longer revoked (NON-SPEC).');
   log.debug("Leaving restore(). " + (was ? "It had been revoked." : "It had not been revoked."));
@@ -399,11 +493,11 @@ function restore(jti) {
 }
 
 function isRevoked(jti) {
-  return !!jti && revokedJtis().has(jti);
+  return !!jti && revokedJtis.has(jti);
 }
 
 function revokedCount() {
-  return revokedJtis().size;
+  return revokedJtis.size;
 }
 
 // ---------------------------------------------------------------------------
@@ -419,11 +513,99 @@ function revokedCount() {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain array it replaced. See common/realms.js.
-const artifacts = realms.arr();
+const artifacts = realms.arr({ persist: 'admin_stats.artifacts', merge: 'own' });
+
+// ---------------------------------------------------------------------------
+// THE ARTIFACT KEY CARRIES THE PROCESS THAT MINTED IT (2026-09-08).
+//
+// `key` used to be `artifact-<n>` off `nums.artifactsRecorded`, and that
+// counter is `merge: 'own'` — one per process. So two processes both mint
+// `artifact-3`, and once the issued list fans in (see allArtifacts()) the
+// merged table holds two different credentials under one handle:
+// `artifactByKey()` returns whichever comes first, and the Revoke button on
+// one row acts on the other. A per-process tag makes the handle mean one row
+// again. It is opaque to every caller — nothing parses it, and the console and
+// the management API both take it from the list they were given.
+// ---------------------------------------------------------------------------
+const ARTIFACT_TAG = process.pid.toString(36) + Date.now().toString(36).slice(-4);
+
+// ---------------------------------------------------------------------------
+// AND A REGISTER OF WHAT HAS BEEN REVOKED, WHICH THE COMMENT BELOW USED TO
+// ARGUE AGAINST (2026-09-08).
+//
+// That argument was right and its premise expired. It ran: nothing ever asks
+// this service about an artifact, so a set outliving the record would answer a
+// question nobody can ask, and the flag ON the record is enough. What it took
+// for granted is that the record is HERE — and with request workers it very
+// often is not. `artifacts` is `merge: 'own'`, so the row a console shows may
+// belong to another process's segment and be a COPY; marking that copy revoked
+// changed nothing anybody would ever read again, and the register went on
+// reporting the credential valid. `sts_admin_api_operations` caught it exactly:
+// "the register should now report the assertion revoked; it reads valid".
+//
+// It is a plain `realms.map` — `replace` merge, not `own` — because a
+// revocation is a whole-valued fact about one credential rather than an
+// accumulator, so the later write winning is exactly right.
+// ---------------------------------------------------------------------------
+const revokedArtifacts = realms.map({ persist: 'admin_stats.revokedArtifacts' });
+
+// The mark on one artifact, wherever it was made. `null` when nothing has
+// revoked it.
+function artifactRevocation(record) {
+  if (!record || !record.key) {
+    return null;
+  }
+  // THE REGISTER IS THE ONLY SOURCE, and it was a SECOND source for an hour —
+  // which resurrected revocations that had been undone. The flag on a record is
+  // this process's own copy of the answer: the worker that revoked an artifact
+  // has `revoked: true` in its own `merge: 'own'` segment for ever, and that
+  // segment is what the fan-in serves to everybody. So a restore made on any
+  // OTHER worker deleted the shared row and cleared its own copy, and the
+  // original worker's row then answered "revoked" again through the fallback.
+  // `sts_admin_api_operations` reported it exactly: "after both restores the
+  // assertion should be valid again; it reads revoked."
+  //
+  // There is no mode in which this loses anything: `revokeArtifact()` writes
+  // the register on every path, and `realms.map()` is an ordinary in-process
+  // Map when nothing is being persisted.
+  return revokedArtifacts.get(record.key) || null;
+}
+
+// One artifact with the revocation overlaid, so that a row from another
+// process's segment says who revoked it and when rather than only that it is
+// in the revoked state.
+function withRevocation(record) {
+  const mark = artifactRevocation(record);
+  if (!mark) {
+    if (!record || !record.revoked) {
+      return record;
+    }
+    // ITS OWN FLAG SAYS REVOKED AND THE REGISTER DOES NOT, which means another
+    // process has since restored it. The register wins — see
+    // artifactRevocation() — and the row is drawn without the stale mark so
+    // that the state and the "revoked by" line cannot disagree.
+    return Object.assign({}, record,
+                         { revoked: false, revokedAt: 0, revokedVia: '' });
+  }
+  return Object.assign({}, record, { revoked: true, revokedAt: mark.at,
+                                     revokedVia: mark.via });
+}
 
 
 function recordArtifact(kind, detail) {
-  const record = Object.assign({ kind: kind, issuedAt: Date.now(), expiresAt: 0, subject: '' }, detail);
+  nums.artifactsRecorded += 1;
+  // `key` is THIS SERVICE'S handle on the row and never the protocol's — the
+  // protocol's is `id`, and a Kerberos ticket has none at all. The two are kept
+  // apart deliberately: `identifier` is what somebody can quote back at this
+  // service (a jti, an AssertionID) and is what /admin/tokens/credential looks a
+  // lineage up by, while this is only ever a way of naming ONE ROW of the issued
+  // register — which is what /admin/tokens/set needs to open a set of one. It
+  // matches the shape the token store already had, where the key is the jti or a
+  // synthetic `no-jti-N`, so both halves of the merged list are addressable the
+  // same way.
+  const record = Object.assign({ kind: kind, issuedAt: Date.now(), expiresAt: 0, subject: '',
+                                 key: 'artifact-' + ARTIFACT_TAG + '-' +
+                                      nums.artifactsRecorded }, detail);
   artifacts.push(record);
   if (artifacts.length > MAX_ARTIFACTS) {
     artifacts.shift();
@@ -553,6 +735,69 @@ function recordSvid(kind, detail) {
 //     spiffe_ca.js deliberately does not add it to this service's authorities
 //     either.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A SECURITY KEY WAS ENROLLED FOR SOMEBODY (2026-09-06).
+//
+// The FOURTH kind of event `setUserObserver()` carries, beside
+// `authentication`, `issuance` and `credential-status` — and it is here for the
+// reason the second one is: **being given a credential is not authenticating
+// with one**, and the directory has to know about the person either way.
+//
+// Before this, a WebAuthn key enrolled for somebody who had never signed in
+// left this service holding a working credential for a person it could not
+// list. For a PASSWORDLESS key that is the whole account, because the key is
+// the only credential it will ever have.
+//
+// **IT COUNTS NO AUTHENTICATION**, exactly as `issuance` does not. Nobody
+// authenticated by enrolling a key, and counting it would inflate the one
+// number /admin/users is about. What the person gets is an entry and a row
+// marked as seen without having authenticated, which is the honest answer.
+// ---------------------------------------------------------------------------
+// IS THERE ALREADY AN IDENTITY BY THIS NAME? Asked by the WebAuthn enrolment
+// door in product mode, which must not enrol a key for somebody who does not
+// exist — that would create them, and creating objects because something
+// referenced them is exactly what product mode removes.
+//
+// It answers about THIS REGISTER rather than about the directory, and the two
+// can differ: a person seeded into the directory who has never authenticated is
+// not here. That is the conservative direction for this caller — it refuses an
+// enrolment it could have allowed, rather than allowing one that creates
+// somebody — and the refusal names the fix.
+function knownUser(username) {
+  const identity = identityOf(username);
+  if (!identity.key) return false;
+  return !!users.get(identity.key);
+}
+
+function noteWebauthnEnrolled(username) {
+  log.debug("Entering noteWebauthnEnrolled(). username=" + (username || '?'));
+  const identity = identityOf(username);
+  if (!identity.key || !userObserver) {
+    log.debug("Leaving noteWebauthnEnrolled(). " +
+              (identity.key ? "There is no directory." : "There is no identity."));
+    return;
+  }
+  try {
+    userObserver({
+      event: 'enrolment',
+      key: identity.key, name: identity.name, realm: identity.realm,
+      presented: identity.form,
+      protocol: 'WebAuthn',
+      method: 'security key enrolled',
+      isClient: false, sub: '',
+      amr: [], acr: '',
+      linkedTo: ''
+    });
+  } catch (e) {
+    // The tail must not wag the dog — the same rule signJwt()'s recorder
+    // follows. An enrolment that succeeded must not be undone because the
+    // directory could not be told about it.
+    log.error('admin: the directory could not be told that a security key was ' +
+              'enrolled for ' + identity.key + ': ' + e.message);
+  }
+  log.debug("Leaving noteWebauthnEnrolled().");
+}
+
 function noteCertificateIssued(subject, certificate, detail) {
   log.debug("Entering noteCertificateIssued(). subject=" + (subject || '?'));
   const identity = identityOf(subject);
@@ -714,36 +959,129 @@ const SCIM_OPERATIONS = [
 const SCIM_RESOURCE_TYPES = ['User', 'Group', 'Bulk', 'ServiceProviderConfig',
                              'ResourceType', 'Schema', 'Self'];
 
-const scimCounts = {
-  total: 0,
-  ok: 0,
-  failed: 0,
-  firstAt: 0,
-  lastAt: 0,
-  byOperation: {},
-  byResourceType: {},
-  byStatus: {},
-  // Keyed by the `scimType` from RFC 7644 section 3.12, with '(none)' for a
-  // refusal that carried no such code — a 404 has none, and a table that
-  // silently dropped those would report far fewer failures than there were.
-  byScimType: {},
-  // WHICH AUTHENTICATION SCHEME GOT IN. Keyed by scim_auth.js's scheme ids,
-  // plus `anonymous` for a request nothing authenticated (a discovery call, or
-  // any call while scim.authRequired is off) and `refused` for one that never
-  // got past the gate. The VOCABULARY is not here, deliberately: it belongs to
-  // scim_auth.js, this module cannot require that one (it requires this), and
-  // the console draws the full list of schemes from the surface description it
-  // already reads. So this is a plain tally and the zeroes are supplied by the
-  // page — which is the same division /admin/scim already has between the
-  // counters and the surface.
-  byAuthScheme: {}
-};
+// ---------------------------------------------------------------------------
+// THE COUNTERS ARE PER TRUST REALM, AND THEY WERE NOT UNTIL 2026-09-06.
+//
+// This was a plain object beside a file in which everything else — the endpoint
+// calls, the token registry, the artifact list, the identity register, the
+// revocation set, the claim sets — is declared `realms.map()`, `realms.arr()`
+// or `realms.obj()`. It was the third store found process-wide for a reason
+// that had stopped being true, and `tests/realm_isolation.js`'s header says
+// that a third one belongs in that file rather than in one of its own, so the
+// guard is there beside the other two.
+//
+// What being process-wide produced was not an error. `/scim/v2` is realm-
+// prefixed like every other endpoint here and writes into a directory that has
+// been a SUBTREE PER REALM since 2026-08-25, so a provisioning client working
+// in `/realm/acme` created entries in acme and was counted in the default
+// realm's totals — a page under one realm reporting traffic that happened in
+// another, beside a directory count that was correctly partitioned. Exactly
+// the shape of disagreement that test was written about.
+//
+// `realms.obj(factory)` rather than `realms.map()` because this is a record of
+// SCALARS and dictionaries read by name (`scimCounts.total++`), which is the
+// case that facade's own comment describes.
+// ---------------------------------------------------------------------------
+
+// HOW MANY REQUESTS THE MONITOR REMEMBERS INDIVIDUALLY. The tallies are
+// unbounded — they are integers — but the `recent` ring is one object per
+// request and would otherwise grow without limit on a service being load
+// tested. Fifty because the question it answers is "what just happened", which
+// nobody asks about the four-hundredth-most-recent call; the durable record of
+// anything older is the audit log, which has a settable cap of its own.
+const SCIM_RECENT = 50;
+
+// HOW MANY DISTINCT CALLERS ARE REMEMBERED. A cap for the same reason and a
+// sharper one: the principal is whatever the caller typed — Basic here accepts
+// any username — so an unbounded table is a store somebody else decides the
+// size of. Past the cap the tallies still count every call; it is only the
+// per-client BREAKDOWN that stops growing, and the page says so rather than
+// quietly under-reporting.
+const SCIM_MAX_CLIENTS = 200;
+
+function freshScimCounts() {
+  return {
+    total: 0,
+    ok: 0,
+    failed: 0,
+    firstAt: 0,
+    lastAt: 0,
+    byOperation: {},
+    byResourceType: {},
+    byStatus: {},
+    // The status CLASS as well as the code, because "how much of this is 4xx"
+    // is the question somebody actually arrives with and summing a table of
+    // eleven codes in their head is how they get it wrong.
+    byStatusClass: {},
+    // Keyed by the `scimType` from RFC 7644 section 3.12, with '(none)' for a
+    // refusal that carried no such code — a 404 has none, and a table that
+    // silently dropped those would report far fewer failures than there were.
+    byScimType: {},
+    // WHICH AUTHENTICATION SCHEME GOT IN. Keyed by scim_auth.js's scheme ids,
+    // plus `anonymous` for a request nothing authenticated (a discovery call,
+    // or any call at all if the SCIM gate is ever off) and `refused` for one
+    // that never got past the gate. The VOCABULARY is not here, deliberately: it belongs to
+    // scim_auth.js, this module cannot require that one (it requires this), and
+    // the console draws the full list of schemes from the surface description it
+    // already reads. So this is a plain tally and the zeroes are supplied by the
+    // page — which is the same division /admin/scim already has between the
+    // counters and the surface.
+    byAuthScheme: {},
+    // ONE ROW PER OPERATION, which is the breakdown `byOperation` cannot be.
+    // That table is a single integer per operation and answers "how many
+    // PATCHes"; this one answers "how many of them worked, and how long did
+    // they take" — and those are the two halves of the question somebody has
+    // when a provisioning client is slow or is failing on one verb only.
+    detail: {},
+    // WHO IS CALLING. Keyed by the authenticated principal, which is
+    // scim_auth.js's `principal` — a username for the five user-bearing
+    // schemes, a `client_id` for a Bearer token minted for an application, and
+    // an RFC 4514 subject DN for a client certificate. A caller nothing
+    // authenticated has no row here at all and is counted in `anonymous`;
+    // one the gate turned away is counted in `refused`, because attributing a
+    // refusal to a name the caller merely CLAIMED would be this page asserting
+    // an identity the service declined to believe.
+    clients: {},
+    // Set when the client table stopped growing at SCIM_MAX_CLIENTS. Reported
+    // rather than hidden: a truncated breakdown that does not say it is
+    // truncated is a breakdown somebody will read as the whole list.
+    clientsCapped: false,
+    anonymous: 0,
+    refused: 0,
+    // Latency and response size, in aggregate. `ms` is a SUM and is divided by
+    // `total` when it is drawn — kept as a sum because a running mean loses the
+    // ability to answer any other question about the same numbers.
+    ms: 0,
+    maxMs: 0,
+    bytes: 0,
+    // THE LAST FEW REQUESTS, INDIVIDUALLY. Newest first. Everything else here
+    // is an aggregate, and an aggregate cannot answer "what did the call that
+    // just failed actually look like" — which is the first thing anybody asks.
+    recent: []
+  };
+}
+
+const scimCounts = realms.obj(freshScimCounts, { persist: 'admin_stats.scimCounts', merge: 'own' });
 
 function bump(table, key) {
   const name = String(key || '(none)');
   table[name] = (table[name] || 0) + 1;
 }
 
+// The per-operation row, created on first use. Not pre-seeded from
+// SCIM_OPERATIONS because the ZEROES are supplied by the reader out of that
+// same table — which is how an operation that has never been called still
+// appears on the page, and how one that is called under a name the table has
+// not heard of appears too rather than being dropped.
+function scimDetailRow(table, operation) {
+  const name = String(operation || '(none)');
+  if (!table[name]) {
+    table[name] = { calls: 0, ok: 0, failed: 0, ms: 0, maxMs: 0, bytes: 0 };
+  }
+  return table[name];
+}
+
+// ---------------------------------------------------------------------------
 // One SCIM request, recorded where it is ANSWERED rather than where it arrives —
 // the same rule recordAuthentication() follows about a credential being
 // accepted. A request that never reached a handler is an endpoint call and is
@@ -753,13 +1091,50 @@ function bump(table, key) {
 // It cannot throw. It is called from inside request handlers whose failure mode
 // would otherwise be a provisioning client seeing a 500 because a counter was
 // unhappy, which is the same guarantee audit() gives and for the same reason.
+//
+// **EVERYTHING IS READ BEFORE ANYTHING IS WRITTEN**, which is the rule
+// `xacml/xacml_monitor.js`'s `record()` states at length and had to learn the
+// hard way: a caller whose object throws on a property access — a getter, a
+// Proxy, a half-built object — otherwise leaves the row with the call counted
+// and no bucket, and the page's own arithmetic stops reconciling permanently
+// with nothing to say why. Half a count is worse than no count, because it is
+// indistinguishable from a real request.
+// ---------------------------------------------------------------------------
 function recordScim(detail) {
   log.debug("Entering recordScim().");
   try {
     const info = detail || {};
     const now = Date.now();
+
+    // --- read ------------------------------------------------------------
+    const operation = String(info.operation || '(none)');
+    const resourceType = String(info.resourceType || '(none)');
+    const status = String(info.status || '(none)');
+    const statusClass = /^[1-5]/.test(status) ? status.charAt(0) + 'xx' : '(none)';
+    const ok = !!info.ok;
+    const scimType = String(info.scimType || '');
+    const scheme = String(info.authScheme || 'anonymous');
+    // A duration this module did not measure is ABSENT rather than zero. A
+    // call site that forgot to stamp the request would otherwise pull the mean
+    // down towards nothing, which is the one way a latency figure can be wrong
+    // and look healthy.
+    const ms = Number.isFinite(Number(info.ms)) && Number(info.ms) >= 0
+      ? Number(info.ms) : null;
+    const bytes = Number.isFinite(Number(info.bytes)) && Number(info.bytes) >= 0
+      ? Number(info.bytes) : 0;
+    const principal = String(info.principal || '').trim();
+    const isClient = !!info.isClient;
+    const method = String(info.method || '');
+    const path = String(info.path || '');
+    // `refused` is scim.js's word for a caller the GATE turned away, and it is
+    // the one case where there is a name on the request and this page must not
+    // use it. See the comment on `clients` above.
+    const wasRefusedAtTheGate = scheme === 'refused';
+    const named = !!principal && !wasRefusedAtTheGate && scheme !== 'anonymous';
+
+    // --- write -----------------------------------------------------------
     scimCounts.total++;
-    if (info.ok) {
+    if (ok) {
       scimCounts.ok++;
     } else {
       scimCounts.failed++;
@@ -768,12 +1143,86 @@ function recordScim(detail) {
       scimCounts.firstAt = now;
     }
     scimCounts.lastAt = now;
-    bump(scimCounts.byOperation, info.operation);
-    bump(scimCounts.byResourceType, info.resourceType);
-    bump(scimCounts.byStatus, info.status);
-    bump(scimCounts.byAuthScheme, info.authScheme);
-    if (!info.ok) {
-      bump(scimCounts.byScimType, info.scimType);
+    bump(scimCounts.byOperation, operation);
+    bump(scimCounts.byResourceType, resourceType);
+    bump(scimCounts.byStatus, status);
+    bump(scimCounts.byStatusClass, statusClass);
+    bump(scimCounts.byAuthScheme, scheme);
+    if (!ok) {
+      bump(scimCounts.byScimType, scimType);
+    }
+    if (wasRefusedAtTheGate) {
+      scimCounts.refused++;
+    } else if (!named) {
+      scimCounts.anonymous++;
+    }
+
+    const row = scimDetailRow(scimCounts.detail, operation);
+    row.calls += 1;
+    if (ok) {
+      row.ok += 1;
+    } else {
+      row.failed += 1;
+    }
+    row.bytes += bytes;
+    scimCounts.bytes += bytes;
+    if (ms !== null) {
+      row.ms += ms;
+      scimCounts.ms += ms;
+      if (ms > row.maxMs) {
+        row.maxMs = ms;
+      }
+      if (ms > scimCounts.maxMs) {
+        scimCounts.maxMs = ms;
+      }
+    }
+
+    if (named) {
+      const clients = scimCounts.clients;
+      let client = clients[principal];
+      if (!client && Object.keys(clients).length >= SCIM_MAX_CLIENTS) {
+        // THE TALLIES ABOVE ARE ALREADY COUNTED. Only the breakdown stops, and
+        // the flag is what stops the page claiming this is everybody.
+        scimCounts.clientsCapped = true;
+      } else {
+        if (!client) {
+          client = { principal: principal,
+                     // 'application' when the credential named a client_id and
+                     // no user — scim_auth.js's own `isClient`, carried here
+                     // rather than guessed at from the shape of the name.
+                     kind: isClient ? 'application' : 'identity',
+                     schemes: {}, resourceTypes: {},
+                     calls: 0, ok: 0, failed: 0,
+                     firstAt: now, lastAt: now,
+                     lastOperation: '', lastStatus: '' };
+          clients[principal] = client;
+        }
+        client.calls += 1;
+        if (ok) {
+          client.ok += 1;
+        } else {
+          client.failed += 1;
+        }
+        bump(client.schemes, scheme);
+        bump(client.resourceTypes, resourceType);
+        client.lastAt = now;
+        client.lastOperation = operation;
+        client.lastStatus = status;
+        // A caller that authenticated as an application ONCE is an
+        // application, and the last answer wins rather than the first: an
+        // entry that changed kind is a name being used two ways, and the
+        // recent reading is the one that explains what is happening now.
+        client.kind = isClient ? 'application' : 'identity';
+      }
+    }
+
+    scimCounts.recent.unshift({
+      at: now, operation: operation, resourceType: resourceType,
+      status: status, ok: ok, scimType: scimType, scheme: scheme,
+      principal: named ? principal : '', ms: ms, bytes: bytes,
+      method: method, path: path });
+    if (scimCounts.recent.length > SCIM_RECENT) {
+      scimCounts.recent.length = SCIM_RECENT;
     }
   } catch (e) {
     // Swallowed on purpose: a counter must never be able to fail a provisioning
@@ -787,6 +1236,14 @@ function recordScim(detail) {
 // The counters, with the two vocabularies beside them so that a caller can draw
 // every row — including the ones at zero, which are the interesting ones for
 // somebody asking "does this server support PATCH".
+//
+// THIS IS THE SUMMARY AND `scimMonitorSnapshot()` BELOW IS THE WHOLE THING.
+// Two views over ONE store rather than two stores: `/admin/scim` is about the
+// SURFACE — what SCIM here is, what it will and will not do, which LDAP
+// attribute each member is — and carries the headline counts because a surface
+// page with no evidence that anything ever called it is a page about a
+// hypothesis. `/admin/scim/monitor` is about the TRAFFIC. Neither can disagree
+// with the other, because there is one set of numbers underneath both.
 function scimSnapshot() {
   log.debug("Entering scimSnapshot().");
   const operations = SCIM_OPERATIONS.map(function (row) {
@@ -810,6 +1267,180 @@ function scimSnapshot() {
   };
   log.debug("Leaving scimSnapshot(). " + out.total + " request(s) counted.");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// EVERYTHING /admin/scim/monitor AND GET /admin-api/scim/monitor DRAW, out of
+// ONE call so that the page and the JSON cannot disagree — the rule every view
+// in this console follows.
+//
+// Three things in here are worth knowing before reading a number off it.
+//
+//   * **A CLIENT IS AN AUTHENTICATED PRINCIPAL AND NOT A CONNECTION.** SCIM is
+//     stateless HTTP: there is no session, no registration and nothing to be
+//     "connected". So `clients.distinct` is how many different names have
+//     successfully authenticated since this process started, which is the only
+//     honest reading of "how many clients" here. It never goes down, because a
+//     provisioning client that has stopped calling is indistinguishable from
+//     one that is between calls.
+//   * **A REFUSED CALLER IS NOT A CLIENT.** The gate's refusals are counted in
+//     `authentication.refused` and appear in no client row, even when the
+//     credential carried a name. Attributing traffic to an identity this
+//     service declined to believe is the one mistake a page like this can make
+//     that would matter.
+//   * **THE OPERATION TABLE DOES NOT TALLY WITH `calls`, ON PURPOSE.** One
+//     `POST /scim/v2/Bulk` carrying five creates is one `bulk` row AND five
+//     `create` rows, because each of the five really is performed. The page
+//     says so where a reader would otherwise add the column up.
+// ---------------------------------------------------------------------------
+function scimMonitorSnapshot() {
+  log.debug("Entering scimMonitorSnapshot().");
+  const detail = scimCounts.detail;
+
+  // Every operation this server implements, with the ones nothing has called
+  // at zero — SCIM_OPERATIONS is the vocabulary, exactly as it is for
+  // scimSnapshot() — and then anything counted under a name that table has not
+  // heard of, which is how a new operation becomes VISIBLE rather than being
+  // silently dropped.
+  const known = {};
+  const operations = SCIM_OPERATIONS.map(function (row) {
+    known[row.operation] = true;
+    return scimOperationRow(row.operation, row.label, row.method, row.what,
+                            detail[row.operation]);
+  });
+  Object.keys(detail).sort().forEach(function (name) {
+    if (!known[name]) {
+      operations.push(scimOperationRow(name, name, '', 'Counted under a name ' +
+        'admin_stats.js\'s SCIM_OPERATIONS does not list. It is shown rather ' +
+        'than dropped, because a table that quietly discarded it would make ' +
+        'the column stop adding up with no way to find out why.',
+        detail[name]));
+    }
+  });
+
+  const resourceTypes = SCIM_RESOURCE_TYPES.map(function (name) {
+    return { resourceType: name,
+             count: scimCounts.byResourceType[name] || 0 };
+  });
+  Object.keys(scimCounts.byResourceType).sort().forEach(function (name) {
+    if (SCIM_RESOURCE_TYPES.indexOf(name) < 0) {
+      resourceTypes.push({ resourceType: name,
+                           count: scimCounts.byResourceType[name] });
+    }
+  });
+
+  const clientRows = Object.keys(scimCounts.clients).map(function (name) {
+    const row = scimCounts.clients[name];
+    return { principal: row.principal, kind: row.kind,
+             calls: row.calls, ok: row.ok, failed: row.failed,
+             schemes: Object.keys(row.schemes).sort(),
+             resourceTypes: Object.keys(row.resourceTypes).sort(),
+             firstAt: row.firstAt, lastAt: row.lastAt,
+             lastOperation: row.lastOperation, lastStatus: row.lastStatus };
+  }).sort(function (a, b) {
+    // Busiest first, and most recent as the tie-break: the two orders somebody
+    // reading a traffic page wants, and neither of them is alphabetical.
+    return b.calls - a.calls || b.lastAt - a.lastAt;
+  });
+
+  const applications = clientRows.filter(function (row) {
+    return row.kind === 'application';
+  }).length;
+
+  const out = {
+    // THE HEADLINE FIGURES. `calls` is every request the SCIM implementation
+    // had an opinion about, which INCLUDES the ones its own gate refused — a
+    // 401 is a call this service answered, and a "requests" figure that
+    // omitted them would be smaller than the access log for no stated reason.
+    calls: scimCounts.total,
+    ok: scimCounts.ok,
+    failed: scimCounts.failed,
+    // Percent, to one decimal, and NULL rather than 100 when nothing has been
+    // called. A success rate of 100% on zero requests is the most misleading
+    // number this page could print.
+    successRate: scimCounts.total
+      ? Math.round((scimCounts.ok / scimCounts.total) * 1000) / 10 : null,
+    firstAt: scimCounts.firstAt,
+    lastAt: scimCounts.lastAt,
+    // WHEN THE COUNTING STARTED, which is when this process did. A count with
+    // no epoch on it is a count somebody will read as all-time.
+    since: STARTED_AT,
+    latency: {
+      // The SUM is kept and the mean is derived, so that a caller can compute
+      // anything else it wants from the same two numbers.
+      totalMs: scimCounts.ms,
+      averageMs: scimCounts.total
+        ? Math.round((scimCounts.ms / scimCounts.total) * 10) / 10 : null,
+      maxMs: scimCounts.maxMs
+    },
+    // What went back over the wire, in bytes. Useful for exactly one question
+    // and it is a common one: whether a client is listing the whole directory
+    // on every poll.
+    bytesOut: scimCounts.bytes,
+    authentication: {
+      // AUTHENTICATED PRINCIPALS, not connections. See the header.
+      distinct: clientRows.length,
+      applications: applications,
+      identities: clientRows.length - applications,
+      // Calls nothing authenticated: the discovery endpoints, which are open
+      // unless `scim.authDiscovery` says otherwise.
+      anonymous: scimCounts.anonymous,
+      // Calls the gate turned away. Deliberately not attributed to a client.
+      refused: scimCounts.refused,
+      capped: !!scimCounts.clientsCapped,
+      cap: SCIM_MAX_CLIENTS,
+      byScheme: Object.assign({}, scimCounts.byAuthScheme)
+    },
+    operations: operations,
+    resourceTypes: resourceTypes,
+    byStatus: Object.assign({}, scimCounts.byStatus),
+    byStatusClass: Object.assign({}, scimCounts.byStatusClass),
+    byScimType: Object.assign({}, scimCounts.byScimType),
+    clients: clientRows,
+    recent: scimCounts.recent.slice(),
+    recentCap: SCIM_RECENT,
+    // The trust realm these counters are for. They are PER REALM, like the
+    // directory SCIM writes into.
+    realm: { id: realms.currentId(),
+             name: realms.current() ? realms.current().name : '' }
+  };
+  log.debug("Leaving scimMonitorSnapshot(). " + out.calls + " request(s), " +
+            clientRows.length + " client(s).");
+  return out;
+}
+
+function scimOperationRow(operation, label, method, what, counted) {
+  const row = counted || { calls: 0, ok: 0, failed: 0, ms: 0, maxMs: 0, bytes: 0 };
+  return {
+    operation: operation, label: label, method: method, what: what,
+    count: row.calls, ok: row.ok, failed: row.failed,
+    // NULL rather than 0 when nothing has been called, for the reason
+    // `successRate` is: an average over no samples is not zero, it is absent,
+    // and a table of 0.0ms rows would read as a service answering instantly.
+    averageMs: row.calls ? Math.round((row.ms / row.calls) * 10) / 10 : null,
+    maxMs: row.calls ? row.maxMs : null,
+    bytes: row.bytes
+  };
+}
+
+// FOR THE TESTS, and named so that it cannot be mistaken for an operator
+// control. There is deliberately no button on the console that calls it, for
+// the reason `xacml_monitor.js` gives about its own: a console that could zero
+// its own monitoring would make every number on the page a number somebody
+// might have reset, and the audit log — which is the durable record of what
+// SCIM was asked to do — cannot be reset either.
+//
+// It clears THIS REALM'S counters and not every realm's, because that is what
+// a `realms.obj()` store means: a test asserting a count runs inside the realm
+// it made the calls in, and one that reached across realms would be able to
+// pass while the isolation was broken.
+function resetScimForTests() {
+  log.debug("Entering resetScimForTests().");
+  const fresh = freshScimCounts();
+  Object.keys(fresh).forEach(function (key) {
+    scimCounts[key] = fresh[key];
+  });
+  log.debug("Leaving resetScimForTests().");
 }
 
 // ---------------------------------------------------------------------------
@@ -866,7 +1497,7 @@ const SUBJECT_PREFIX = (function () {
 // stays process-wide — there the cap protects ONE store every realm writes
 // into, and here each realm has a store of its own, so a shared cap would let a
 // busy realm evict a quiet realm's people.
-const users = realms.map();    // local name -> the record below
+const users = realms.map({ persist: 'admin_stats.users', merge: 'own' });  // local name -> the record below
 
 // Does this identity begin `<attributetype>=`? That is the one shape identityOf()
 // below must not split at an '@'. Deliberately strict — a type is a letter
@@ -1337,7 +1968,7 @@ function freshClaimSets() {
   };
 }
 
-const CLAIM_SETS = realms.obj(freshClaimSets);
+const CLAIM_SETS = realms.obj(freshClaimSets, { persist: 'admin_stats.claimSets' });
 
 // The prose that used to sit on the members of the literal above, kept because
 // it is the reasoning for what is in the table rather than for how it is held:
@@ -1491,6 +2122,32 @@ function resolvedSamlAttributes(id, context) {
 // then its typed claims and its directory attributes alone — a smaller service,
 // not a broken one.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ROLES CLAIM, AND WHY IT IS A PLAIN REQUIRE WHERE THE GROUPS CLAIM NEEDED
+// A SLOT.
+//
+// CLAUDE.md rule 3e says the hooks on this file are four different problems
+// rather than a pattern, that a fifth must not be added because the fourth
+// exists, and that the group resolver is the one to check a new proposal
+// against — it was added only after showing a require failed BOTH ways round.
+//
+// THE ROLES CLAIM FAILS NEITHER, so it does not get a slot:
+//
+//   * `common/roles.js` is a LEAF. It requires `helpers` and `config` and
+//     nothing else in this repository, so requiring it here cannot close a
+//     cycle — which is the whole of why `group_claims.js` could not be
+//     required this way round: that file requires THIS one.
+//   * It registers no route, so requiring it moves nothing in the router.
+//
+// The DIRECTORY still arrives at that module through a slot of its own that
+// `ldap_server.js` fills, for the reason it always does — only that module can
+// answer what is in `ou=roles`, and it is the last thing `server.js` requires.
+//
+// So the rule is honoured by doing the ordinary thing where the ordinary thing
+// works, which is what the rule actually asks for. `audit.js` is required here
+// the same way and for the same reason.
+const roles = require('./roles');
+
 let groupResolver = null;
 
 function setGroupResolver(hooks) {
@@ -1512,6 +2169,52 @@ function resolvedGroupClaims(id, context) {
               'issued without its groups claim: ' + e.message);
     return {};
   }
+}
+
+// The roles claim, wrapped for the reason every other directory read during an
+// issuance is wrapped: a register this service consults must never be able to
+// fail the issuance it was consulted during. `roles.js` already swallows its
+// own store errors; this is the second net, and it costs nothing.
+//
+// **WHO THE CLAIM IS ABOUT is the subject of the token**, and where there is no
+// person — a client_credentials grant — that is the CLIENT, which is exactly
+// the case the role register exists to be able to answer. `authenticated` is
+// true here because a token is being minted: whatever door this came through
+// let them through it.
+function resolvedRoleClaims(context) {
+  const ctx = context || {};
+  const username = String(ctx.username || ctx.subject || '');
+  try {
+    return roles.claimFor(
+      username
+        ? { kind: 'user', name: username, authenticated: true }
+        : { kind: 'application',
+            name: String(ctx.client_id || ''), authenticated: true }) || {};
+  } catch (e) {
+    log.error('the role register threw and was ignored; the token is issued ' +
+              'without its roles claim: ' + e.message);
+    return {};
+  }
+}
+
+// The SAML half. ONE <Attribute> with several <AttributeValue> children rather
+// than one element per role — the same rule `group_claims.js` states beside its
+// own emitter, and the same defect it prevents: several elements with one Name
+// is a relying party reading the first and silently seeing one role where the
+// person holds four.
+function resolvedRoleAttributes(id, context) {
+  const claim = resolvedRoleClaims(context);
+  const names = Object.keys(claim);
+  if (!names.length) {
+    return [];
+  }
+  return names.map(function (name) {
+    const attribute = { name: name, values: claim[name] };
+    if (id === 'saml11') {
+      attribute.namespace = DEFAULT_SAML11_NAMESPACE;
+    }
+    return attribute;
+  });
 }
 
 function resolvedGroupAttributes(id, context) {
@@ -1695,7 +2398,20 @@ function setClaimSet(id, entries) {
   const afterNames = cleaned.map(function (claim) { return claim.name; });
   const added = afterNames.filter(function (name) { return beforeNames.indexOf(name) < 0; });
   const removed = beforeNames.filter(function (name) { return afterNames.indexOf(name) < 0; });
+  // **ASSIGNED THROUGH THE STORE AND NOT INTO THE OBJECT IT HANDED BACK
+  // (2026-09-07).** `CLAIM_SETS` is a `realms.obj()` proxy and it sees
+  // TOP-LEVEL property writes; `set` is the inner object it returned, so
+  // `set.claims = cleaned` mutated it behind the proxy's back. The store was
+  // never marked dirty, so the change was never journalled, never flushed and
+  // never replicated: the process that took the call had it and no other did.
+  // A dispatched run measured that as a claim reported added and absent from
+  // the set on the next read.
+  //
+  // Writing the whole member back through `CLAIM_SETS[id]` is what the proxy
+  // is watching for, and it is the same shape `claim_attributes.js` already
+  // uses (`selections[id] = wanted`).
   set.claims = cleaned;
+  CLAIM_SETS[id] = set;
   log.info('admin: the ' + set.label + ' claim set now has ' + cleaned.length + ' custom claim(s): ' +
            (afterNames.join(', ') || '(none)'));
   recordClaimSetChange(id, set, added, removed, cleaned.length, true, []);
@@ -1783,7 +2499,18 @@ function jwtClaims(id, context) {
   // and the specific thing beats the general one. Written as an assignment
   // ORDER here because a JWT payload is an object; samlAttributes() below has
   // to write the same rule as a filter, for the reason stated there.
-  const out = resolvedGroupClaims(id, context);
+  //
+  // FOUR LAYERS NOW, and the roles claim is UNDER the groups claim rather than
+  // beside it. Both come from a setting and a directory rather than from
+  // anything somebody named on a page, so the precedence between the two only
+  // matters when they are configured to the SAME name — which is a real
+  // configuration (`groups.claimName` = `roles` is one of the spellings its own
+  // row recommends trying) and therefore needs an answer rather than an
+  // accident. The answer is that GROUPS WINS, because that claim has been here
+  // longer and a client already parsing it must not have its meaning changed by
+  // a feature arriving underneath it.
+  const out = resolvedRoleClaims(context);
+  Object.assign(out, resolvedGroupClaims(id, context));
   Object.assign(out, resolvedJwtClaims(id, context));
   claimSet(id).forEach(function (claim) {
     out[claim.name] = typedValue(expandValue(claim.value, context));
@@ -1848,7 +2575,15 @@ function samlAttributes(id, context) {
   const fromGroups = resolvedGroupAttributes(id, context).filter(function (attribute) {
     return !names.has(attribute.name);
   });
-  let out = fromGroups.concat(fromDirectory, typed);
+  // The FIFTH layer and the lowest, filtered against all three above it, and
+  // beneath the groups claim for the reason jwtClaims() gives: the two are the
+  // only layers here nobody named on a page, they can be configured to the same
+  // name, and the older of the two has to keep its meaning.
+  fromGroups.forEach(function (attribute) { names.add(attribute.name); });
+  const fromRoles = resolvedRoleAttributes(id, context).filter(function (attribute) {
+    return !names.has(attribute.name);
+  });
+  let out = fromRoles.concat(fromGroups, fromDirectory, typed);
   // The same fourth layer jwtClaims() applies, and for the same reason it is
   // last: this decides which of the attributes this service would assert to
   // ANYBODY a particular federation partner is allowed to see. It removes only,
@@ -1890,7 +2625,7 @@ function samlAttributes(id, context) {
 // a token is expired only once it is past `exp` PLUS the allowance, and not yet
 // valid only while it is before `nbf` MINUS it.
 function tokenStateOf(record, nowMs) {
-  if (record.revoked || (record.jti && revokedJtis().has(record.jti))) return 'revoked';
+  if (record.revoked || (record.jti && revokedJtis.has(record.jti))) return 'revoked';
   const skewMs = config.value('oauth2.clockSkewS') * 1000;
   if (record.exp && record.exp * 1000 + skewMs <= nowMs) return 'expired';
   if (record.nbf && record.nbf * 1000 - skewMs > nowMs) return 'not yet valid';
@@ -1911,32 +2646,208 @@ function tokenList() {
   return out;
 }
 
-// The same three answers for an artifact, and there are only three: nothing that is
-// not a JWT can be revoked here, so 'revoked' is not among them. Written as a
-// function beside tokenStateOf() because both are read by the merged list below and
-// two definitions of "expired" in one table is the kind of disagreement nobody
-// notices until the two rows are next to each other.
+// FOUR ANSWERS FOR AN ARTIFACT SINCE 2026-09-05, AND THE FOURTH REVERSED A
+// DOCUMENTED DECISION.
+//
+// This function had three, and said so: "nothing that is not a JWT can be
+// revoked here, so 'revoked' is not among them." That was a true statement
+// about the WORLD — nothing consults this service when a SAML assertion or a
+// Kerberos ticket is presented, so no mark here can stop one working — and it
+// was the wrong statement about this REGISTER, which is what the function
+// actually reports on.
+//
+// **WHAT THIS SERVICE KNOWS AND WHAT A RELYING PARTY WILL HONOUR ARE TWO
+// DIFFERENT CLAIMS, AND MERGING THEM COST THE ONE THAT COULD BE TRUE.** An
+// identity provider that has signed somebody out has a POSITION on every
+// credential it issued them, and being unable to enforce it does not make it
+// unavailable to say. Three things now depend on its being said:
+//
+//   * A global logout can report what it invalidated rather than only what it
+//     could reach, which is what makes "everything for this person is dead" a
+//     checkable claim instead of a hope.
+//   * CAEP can carry it. `ssf/caep.js` transmits a Security Event Token the
+//     moment a session is revoked, and a receiver that acts on one has been
+//     told about an assertion this service considers dead — which is the
+//     channel SAML and Kerberos do not have.
+//   * SAML Single Logout can carry it for the assertions that came from a
+//     browser profile.
+//
+// **WHAT HAS NOT CHANGED IS THE ONLY THING THAT MATTERED IN THE OLD
+// SENTENCE.** A revoked assertion still verifies. A revoked service ticket
+// still decrypts with the key its service holds. A revoked SVID still chains
+// to the bundle. This service is not consulted and cannot become consulted, so
+// a holder that was not TOLD goes on using it until it expires — and that is
+// why `revocationReach` rides on every row of the issued list beside
+// `revocable`: the two are different questions and one field answering both is
+// how this got merged in the first place.
 //
 // IT DELIBERATELY DOES NOT APPLY `oauth2.clockSkewS`, and that is not the
-// disagreement the paragraph above warns about. That setting exists so this
-// page agrees with the endpoint that will read the token back, and there is no
-// such endpoint for a SAML assertion or a Kerberos ticket: nothing here reads
-// one of those back at all, so there is nothing to agree with, and an OAuth
-// allowance silently stretching a ticket's lifetime on a page would be this
-// service inventing a tolerance that its KDC (which has `krb5.clockSkew`, a
-// different setting with a different owner) never applied.
+// disagreement tokenStateOf() warns about. That setting exists so this page
+// agrees with the endpoint that will read the token back, and there is no such
+// endpoint for a SAML assertion or a Kerberos ticket: nothing here reads one of
+// those back at all, so there is nothing to agree with, and an OAuth allowance
+// silently stretching a ticket's lifetime on a page would be this service
+// inventing a tolerance that its KDC (which has `krb5.clockSkew`, a different
+// setting with a different owner) never applied.
+//
+// REVOKED BEATS EXPIRED, the way it does for a token: a credential this service
+// has disowned is disowned whether or not its window has also closed, and
+// reporting the expiry would hide the act.
 function artifactStateOf(record, nowMs) {
+  // THE SHARED REGISTER FIRST: the flag on the record is this process's own
+  // copy of the answer and is absent on a row that came through the fan-in.
+  if (artifactRevocation(record)) return 'revoked';
   if (!record.expiresAt) return 'no expiry stated';
   return record.expiresAt <= nowMs ? 'expired' : 'valid';
+}
+
+// ---------------------------------------------------------------------------
+// MARKING ONE ARTIFACT, AND WHY THERE IS NO SET BESIDE THE RECORD.
+//
+// `revoke()` above keeps a per-realm Set of revoked jtis as well as the flag on
+// the record, and its comment says why: RFC 7009 lets a caller revoke a token
+// this registry never saw, and a jti can be revoked whose record has already
+// been dropped to `MAX_TOKENS`. The set is authoritative there because
+// `/oauth2/introspect` asks it about tokens this file may no longer hold.
+//
+// **NOTHING EVER ASKS ABOUT AN ARTIFACT.** That is the whole property this
+// service cannot change, and here it makes the design simpler rather than
+// harder: there is no endpoint that could be handed an AssertionID, so a set
+// outliving the record would answer a question nobody can ask. The flag on the
+// record is the mark, and when the record is forgotten to `MAX_ARTIFACTS` so is
+// the mark — which is correct, because at that point this service has no
+// position on that credential to state.
+// ---------------------------------------------------------------------------
+function revokeArtifact(record, via) {
+  log.debug("Entering revokeArtifact(). kind=" + (record && record.kind));
+  if (!record || artifactRevocation(record)) {
+    log.debug("Leaving revokeArtifact(). It was already revoked or absent.");
+    return false;
+  }
+  record.revoked = true;
+  record.revokedAt = Date.now();
+  record.revokedVia = via || 'unstated';
+  // AND INTO THE SHARED REGISTER, which is the half that survives this row
+  // belonging to another process. See revokedArtifacts above.
+  if (record.key) {
+    revokedArtifacts.set(record.key,
+                         { at: record.revokedAt, via: record.revokedVia });
+  }
+  log.info('admin: the ' + record.kind + ' ' + (record.id || '(no identifier)') +
+           ' is marked revoked (' + (via || 'unstated') + '). THE HOLDER CANNOT BE ' +
+           'TOLD: nothing consults this service when one is presented, so this is ' +
+           'this service\'s own position and not an enforcement.');
+  log.debug("Leaving revokeArtifact(). Marked.");
+  return true;
+}
+
+function restoreArtifact(record) {
+  log.debug("Entering restoreArtifact().");
+  if (!record || !artifactRevocation(record)) {
+    log.debug("Leaving restoreArtifact(). It was not revoked.");
+    return false;
+  }
+  record.revoked = false;
+  record.revokedAt = 0;
+  record.revokedVia = '';
+  if (record.key) {
+    revokedArtifacts.delete(record.key);
+  }
+  log.debug("Leaving restoreArtifact(). Restored.");
+  return true;
+}
+
+// THE ARTIFACT BY THE HANDLE THE ISSUED LIST GAVE IT. `key` rather than `id`,
+// for the reason recordArtifact() gives: a Kerberos ticket has no identifier
+// anybody can quote, and a console button has to be able to name every row.
+function artifactByKey(key) {
+  log.debug("Entering artifactByKey(). key=" + key);
+  const wanted = String(key == null ? '' : key).trim();
+  if (!wanted) {
+    log.debug("Leaving artifactByKey(). Nothing was asked for.");
+    return null;
+  }
+  // ACROSS EVERY PROCESS'S ROWS. The console offers Revoke on rows it drew
+  // from the merged list, so looking the handle up in this process's segment
+  // alone would 404 on most of them in a pool — and the key is unique per
+  // process now (ARTIFACT_TAG), so a merged search cannot match the wrong one.
+  const found = allArtifacts().filter(function (record) {
+    return record.key === wanted;
+  });
+  log.debug("Leaving artifactByKey(). " + found.length + " match(es).");
+  return found.length ? found[0] : null;
+}
+
+// EVERY ARTIFACT A PREDICATE PICKS, marked in one act — the artifact half of
+// revokeWhere(), and separate from it for the reason the two state functions
+// are separate: one store each, and a single function walking both would have
+// to be told which kind of predicate it was given.
+function revokeArtifactsWhere(predicate, via) {
+  log.debug("Entering revokeArtifactsWhere().");
+  let count = 0;
+  // ACROSS EVERY PROCESS'S ROWS, not only this one's: a bulk revocation that
+  // silently skipped the artifacts another worker issued would revoke a
+  // different set from the one the caller was shown. `revokeArtifact()` writes
+  // the shared register, so a row from the fan-in is marked properly even
+  // though the copy it is marked on is thrown away with this list.
+  allArtifacts().forEach(function (record) {
+    if (artifactRevocation(record)) return;
+    if (!predicate(record)) return;
+    if (revokeArtifact(record, via)) count += 1;
+  });
+  log.debug("Leaving revokeArtifactsWhere(). Marked " + count + " artifact(s).");
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY PROCESS'S ARTIFACTS, IN ONE ARRAY (2026-09-08).
+//
+// `artifacts` is `merge: 'own'` — an append-only ARRAY, so each process keeps
+// its own segment and what another one issued arrives through the replication
+// fan-in rather than in this array. `metrics()` had always added the fan-in to
+// its COUNT; the two functions that BUILD the list did not, so the number and
+// the table disagreed. With request workers the table was simply wrong — a
+// WS-Trust assertion issued on one worker was absent from `GET
+// /admin-api/tokens` answered by another, which `sts_admin_api_operations`
+// reported as an issuance that had left no row.
+//
+// **IT IS ONE FUNCTION BECAUSE FIXING ONE READER IS HOW THIS HAPPENED.**
+// `artifactList()` was fanned in first and `issuedList()` — the one that
+// endpoint actually calls — was still walking the bare array, so the failure
+// did not move at all. Both go through here now.
+//
+// THE MUTATING READERS USE IT TOO, AND THAT NEEDED A SECOND CHANGE. A record
+// from the fan-in is a COPY of another process's row, so marking it revoked
+// here would once have been a no-op that looked like a revocation — which is
+// exactly what shipped for a few hours, and what
+// `sts_admin_api_operations` caught as "it reads valid". The mark lives in the
+// shared `revokedArtifacts` register now rather than only on the record, so
+// marking a copy is effective and every process sees it.
+// ---------------------------------------------------------------------------
+function allArtifacts() {
+  let all = artifacts.slice(0);
+  const others = replication.remoteRows('admin_stats.artifacts', undefined, '');
+  if (!others.length) {
+    // THE ORDINARY CASE — one process — and it costs one array copy.
+    return all;
+  }
+  others.forEach(function (rows) {
+    if (Array.isArray(rows)) {
+      all = all.concat(rows);
+    }
+  });
+  return all;
 }
 
 function artifactList() {
   log.debug("Entering artifactList().");
   const nowMs = Date.now();
-  const out = artifacts.map(function (record) {
+  const out = allArtifacts().map(function (one) {
+    const record = withRevocation(one);
     return Object.assign({ state: artifactStateOf(record, nowMs) }, record);
   }).sort(function (a, b) { return b.issuedAt - a.issuedAt; });
-  log.debug("Leaving artifactList(). " + out.length + " artifact(s).");
+  log.debug("Leaving artifactList(). " + out.length + " artifact(s), " +
+            artifacts.length + " of them this process's own.");
   return out;
 }
 
@@ -2004,10 +2915,16 @@ function issuedList() {
       family: 'token',
       state: tokenStateOf(record, nowMs),
       expiresAtMs: record.exp ? record.exp * 1000 : 0,
-      identifier: record.jti || ''
+      identifier: record.jti || '',
+      // See the artifact branch below for what this answers and why it is not
+      // `revocable`. A JWT revoked here is refused at /oauth2/introspect,
+      // UserInfo and the refresh grant, which is a client-visible fact rather
+      // than a note in this register.
+      revocationReach: 'protocol'
     }));
   });
-  artifacts.forEach(function (record) {
+  allArtifacts().forEach(function (one) {
+    const record = withRevocation(one);
     const family = FAMILY_BY_ARTIFACT_KIND[record.kind];
     // A credential, or a kind added to the registry and not to the structure above.
     // Skipped rather than shown under a family nothing can filter by.
@@ -2017,19 +2934,231 @@ function issuedList() {
       state: artifactStateOf(record, nowMs),
       expiresAtMs: record.expiresAt || 0,
       identifier: record.id || '',
-      // Carried explicitly rather than left undefined: the page's button column
-      // reads this one field for all three families, so an assertion says why it
-      // has no button in the same place a UserInfo response does.
-      revocable: false
+      // Stated rather than left undefined, for the reason `revocable` below is:
+      // every reader of this list asks the same question of every row, and a
+      // member that is absent on three families out of four is a member every
+      // one of them has to test for existence before testing for value. No
+      // artifact belongs to a token response — OAuth is the only family here
+      // that issues several credentials in one act — so the honest answer is
+      // the empty one, and issuedSets() reads it as "a set of your own".
+      setId: '',
+      // REVOCABLE SINCE 2026-09-05, AND IT WAS `false` HERE UNTIL THAT DAY.
+      // See artifactStateOf() for the argument. What decides it is whether this
+      // service can HOLD A POSITION on the credential, which it can for
+      // anything it issued and still remembers — and `revocationReach` below
+      // carries the other half of the question, which used to be folded into
+      // this one field and is the reason the two got confused.
+      //
+      // A row whose record has been dropped to `MAX_ARTIFACTS` is not here to
+      // be revoked, which is the honest end of it: at that point this service
+      // has no position on that credential to state.
+      revocable: true,
+      // WHAT A REVOCATION HERE ACTUALLY REACHES, and it is the field to read
+      // before writing any sentence on any page about what a button does.
+      //
+      //   'protocol'    the revocation is HONOURED somewhere a client will
+      //                 meet it: introspection reports the token inactive,
+      //                 UserInfo refuses it, the refresh grant fails. Every
+      //                 JWT is this.
+      //   'record-only' this service's own position, and NOTHING ELSE. The
+      //                 credential still verifies, still decrypts, still
+      //                 chains — because nothing consults this service when it
+      //                 is presented and nothing can be made to. Every
+      //                 assertion, ticket and SVID is this.
+      //
+      // The second is not a lesser version of the first and must never be
+      // drawn as one. It is what a global logout can SAY, what CAEP can
+      // TRANSMIT, and what SAML Single Logout can carry for the assertions
+      // that came from a browser profile — and for a WS-Trust assertion it is
+      // the whole of what exists, because that protocol has no logout at all.
+      revocationReach: 'record-only'
     }));
   });
+  // THE ORDER THE ROWS WERE RECORDED IN, before the sort below destroys it, and
+  // it is not the same thing as `issuedAt`. Both stores keep insertion order —
+  // a Map iterates in it and the artifact array is pushed to — but `issuedAt` is
+  // a millisecond, and the three tokens of one response are minted well inside
+  // one. So sorting by the timestamp alone leaves the members of a set in
+  // whatever order the sort happened to be stable in, and the set page would
+  // print the refresh token above the access token that was issued before it.
+  // issuedSets() sorts its members by this and gets issuance order exactly.
+  out.forEach(function (row, index) { row.order = index; });
   // Newest first, across all three families together — the point of one table is
   // that a sign-in which produced an ID Token and a SAML assertion shows both,
-  // next to each other, in the order they happened.
-  out.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+  // next to each other, in the order they happened. Ties broken by the ordinal
+  // above rather than left to the sort's stability, so two credentials minted in
+  // the same millisecond are ALWAYS the later one first.
+  out.sort(function (a, b) {
+    return (b.issuedAt - a.issuedAt) || (b.order - a.order);
+  });
   log.debug("Leaving issuedList(). " + out.length + " row(s) across " +
             ISSUED_FAMILIES.length + " family/families.");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME LIST, GROUPED INTO WHAT WAS ISSUED TOGETHER.
+//
+// **This is what /admin/tokens draws, and the reason it is a different list
+// from the one above.** A person redeeming an authorization code gets back an
+// access token, an ID Token and a refresh token in ONE reply, and a table that
+// prints them as three rows makes the reader reassemble by eye the one thing the
+// protocol handed over whole. OAuth 2.0 and OIDC are the ONLY families here that
+// do that: a SAML assertion, a Kerberos ticket and an SVID are each one
+// credential from one act, so each is a set of one and says so.
+//
+// A SET IS ONE RESPONSE AND NOT ONE GRANT. Refreshing produces a new set beside
+// the old one rather than a fourth member of it — every credential in a set
+// shares an issued instant and a grant, and a set that grew over an afternoon
+// could say neither. What joins the generations of a grant is the refresh
+// lineage, which is a different relation and is drawn as one at
+// /admin/tokens/credential.
+//
+// THE SET'S OWN FIELDS ARE DERIVED AND THREE OF THEM ARE NOT WHAT A READER
+// FIRST EXPECTS:
+//
+//   state          the state every member shares, or 'mixed'. A set whose
+//                  access token has expired while its refresh token is still
+//                  valid is neither expired nor valid, and reporting either
+//                  would be this list deciding which member matters. `states`
+//                  carries the breakdown, and the STATE FILTER matches a set
+//                  when ANY member holds the state asked for — so filtering for
+//                  'revoked' still finds the set a revoked access token is in,
+//                  which is the row somebody looking for it wants.
+//   expiresAtMs    the EARLIEST member's, which is when the set starts to come
+//                  apart rather than when it is finished. `lastExpiresAtMs` is
+//                  the other end. One column cannot carry both and the earlier
+//                  one is the one somebody debugging a refused call needs.
+//   issuedAt       the earliest member's, which is when the response was
+//                  produced. They are within a millisecond of each other in
+//                  practice; taking the earliest rather than the latest means
+//                  the set sorts where its first credential did.
+//
+// `setKey` is what a page addresses a set BY, and it is not `setId`: a row with
+// no set id is a set of its own and needs a handle too, so it gets `one:` and
+// this service's own key for that row (a jti, `no-jti-N`, `artifact-N`). Every
+// row therefore has one, including a Kerberos ticket, which is the family with
+// no identifier of its own to quote.
+// ---------------------------------------------------------------------------
+function issuedSets() {
+  log.debug("Entering issuedSets().");
+  const rows = issuedList();
+  const byKey = new Map();
+  const order = [];
+  rows.forEach(function (row) {
+    const key = row.setId ? 'set:' + row.setId : 'one:' + (row.key || row.identifier || '');
+    let set = byKey.get(key);
+    if (!set) {
+      set = { setKey: key, setId: row.setId || '', members: [] };
+      byKey.set(key, set);
+      order.push(set);
+    }
+    set.members.push(row);
+  });
+  const out = order.map(function (set) {
+    // Issuance order within the set, which is the order the token endpoint
+    // minted them in: access token, then refresh token, then ID Token. See the
+    // ordinal in issuedList() for why the timestamp cannot do this.
+    const members = set.members.slice().sort(function (a, b) { return a.order - b.order; });
+    const first = members[0];
+    const states = {};
+    let shared = '';
+    let mixed = false;
+    let earliestIssued = 0;
+    let earliestExpiry = 0;
+    let latestExpiry = 0;
+    let revocable = 0;
+    let revoked = 0;
+    members.forEach(function (row) {
+      states[row.state] = (states[row.state] || 0) + 1;
+      if (!shared) {
+        shared = row.state;
+      } else if (shared !== row.state) {
+        mixed = true;
+      }
+      if (!earliestIssued || row.issuedAt < earliestIssued) earliestIssued = row.issuedAt;
+      // A member with NO expiry stated is skipped on both ends rather than
+      // counted as zero: zero would make every set containing one look as
+      // though it had already expired in 1970, which is the units bug
+      // issuedList()'s `expiresAtMs` comment warns about, arrived at from the
+      // other direction.
+      if (row.expiresAtMs) {
+        if (!earliestExpiry || row.expiresAtMs < earliestExpiry) earliestExpiry = row.expiresAtMs;
+        if (row.expiresAtMs > latestExpiry) latestExpiry = row.expiresAtMs;
+      }
+      if (row.revocable) revocable += 1;
+      if (row.state === 'revoked') revoked += 1;
+    });
+    // The kinds IN ISSUANCE ORDER and de-duplicated. A set never holds two of a
+    // kind today — one response carries at most one of each — but a duplicate
+    // would print as `access_token + access_token` rather than being noticed,
+    // and the check costs one lookup.
+    const kinds = [];
+    members.forEach(function (row) {
+      if (kinds.indexOf(row.kind) < 0) kinds.push(row.kind);
+    });
+    return {
+      setKey: set.setKey,
+      setId: set.setId,
+      // Whether this is a GROUP or a single credential standing in for one.
+      // The page reads it to decide whether to say "3 credentials" or to draw
+      // the row as the one thing it is, and a test reads it to assert that
+      // nothing outside OAuth ever groups.
+      grouped: members.length > 1,
+      size: members.length,
+      kinds: kinds,
+      // The families present. One in every case that can occur — a set id is
+      // minted by the OAuth issuance sites and nothing else records one — but
+      // derived rather than assumed, so a family that starts grouping later
+      // does not silently report itself as `token`.
+      families: members.reduce(function (list, row) {
+        if (list.indexOf(row.family) < 0) list.push(row.family);
+        return list;
+      }, []),
+      family: first.family,
+      state: mixed ? 'mixed' : shared,
+      states: states,
+      issuedAt: earliestIssued,
+      expiresAtMs: earliestExpiry,
+      lastExpiresAtMs: latestExpiry,
+      // Taken from the FIRST member rather than merged, because every member of
+      // a set was issued by one act to one party for one person: the access
+      // token and the ID Token of one response disagree about `aud` by design
+      // and about nothing else. The ID Token's audience is the client and the
+      // access token's is the resource server, which is why the party column
+      // reads `client_id` — see partyCell() — and why merging audiences here
+      // would produce a party that was never named.
+      username: first.username || '',
+      sub: first.sub || '',
+      client_id: first.client_id || '',
+      audience: first.audience || '',
+      scope: first.scope || '',
+      sessionId: first.sessionId || '',
+      sessionAuthenticated: first.sessionAuthenticated !== false,
+      grant: first.grant || '',
+      revocableCount: revocable,
+      revokedCount: revoked,
+      members: members
+    };
+  });
+  log.debug("Leaving issuedSets(). " + out.length + " set(s) over " + rows.length + " row(s).");
+  return out;
+}
+
+// ONE SET, BY THE KEY THE LIST ABOVE GAVE IT. Null for a key nothing holds,
+// which is the ORDINARY answer for a set old enough to have been dropped to
+// `MAX_TOKENS` or `MAX_ARTIFACTS` — the caller says so rather than treating it
+// as a mistake, exactly as issuedById() does.
+function issuedSetByKey(setKey) {
+  log.debug("Entering issuedSetByKey(). setKey=" + setKey);
+  const wanted = String(setKey == null ? '' : setKey).trim();
+  if (!wanted) {
+    log.debug("Leaving issuedSetByKey(). Nothing was asked for.");
+    return null;
+  }
+  const found = issuedSets().filter(function (set) { return set.setKey === wanted; });
+  log.debug("Leaving issuedSetByKey(). " + found.length + " set(s) hold it.");
+  return found.length ? found[0] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2165,7 +3294,9 @@ function userRows() {
     if (record.issuedAt > row.lastActivityAt) row.lastActivityAt = record.issuedAt;
   });
 
-  artifacts.forEach(function (record) {
+  // EVERY PROCESS'S — see allArtifacts(). A per-user count built from this
+  // process's segment alone under-reports every identity another worker served.
+  allArtifacts().forEach(function (record) {
     const row = rowFor(record.subject);
     if (!row) return;
     row.artifacts++;
@@ -2218,9 +3349,19 @@ function userDetail(key) {
     theirTokens.push(Object.assign({ state: tokenStateOf(record, nowMs) }, record));
   });
   theirTokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
-  const theirArtifacts = artifacts.filter(function (record) {
+  // ACROSS EVERY PROCESS'S ROWS — see allArtifacts(). This was the LAST reader
+  // still walking the bare array, and it was the one that mattered most: this
+  // is what `logout.js`'s `issued` family collects, so a credential another
+  // worker issued was not among the things a global sign-out could end. The
+  // symptom was one row that would not go away — `sts_global_logout` reported
+  // "7 were live and 1 still are", the survivor a Kerberos ticket-granting
+  // ticket whose artifact stayed `valid` because nothing had offered it for
+  // revocation. The SAML assertions beside it revoked correctly, which is what
+  // made it look like a Kerberos problem for a day.
+  const theirArtifacts = allArtifacts().filter(function (record) {
     return identityKeyOf(record.subject) === wanted;
-  }).map(function (record) {
+  }).map(function (one) {
+    const record = withRevocation(one);
     return Object.assign({ state: artifactStateOf(record, nowMs) }, record);
   }).sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   log.debug("Leaving userDetail(). " + theirTokens.length + " token(s), " +
@@ -2236,6 +3377,19 @@ function userDetail(key) {
 function sessionIdOfJti(jti) {
   const record = jti ? tokens.get(jti) : null;
   return (record && record.sessionId) || '';
+}
+
+// AND WHETHER THAT SESSION WAS AUTHENTICATED, by the same jti and for the same
+// reason: a refresh is a back-channel request with no cookie, so the only
+// record of who was behind the original sign-in is this one. A jti this
+// registry has never seen answers `true`, which is the same "an absent answer
+// means what it always meant" rule the field itself is written under — and the
+// permissive answer is the right default here because the alternative would
+// refuse a client holding a perfectly good refresh token from a process that
+// restarted.
+function sessionAuthenticatedOfJti(jti) {
+  const record = jti ? tokens.get(jti) : null;
+  return !record || record.sessionAuthenticated !== false;
 }
 
 // Revoke every token matching a predicate, and say how many. Used by the console's
@@ -2288,8 +3442,13 @@ function sessionsFromArtifacts() {
     if (tokenStateOf(record, nowMs) !== 'valid') return;
     add('OAuth 2.0 / OIDC', record.sub || record.username);
   });
-  artifacts.forEach(function (record) {
+  allArtifacts().forEach(function (record) {
     if (record.expiresAt && record.expiresAt <= nowMs) return;
+    // A DISOWNED CREDENTIAL IS NOT A LIVE SESSION, which is the claim
+    // `logout.js` already makes about the same rows on `/admin/sessions`. It
+    // could not be made here until the mark moved into a register every
+    // process can see.
+    if (artifactRevocation(record)) return;
     if (record.kind === 'SAML 2.0') add('SAML 2.0 (WS-Trust, WS-Federation)', record.subject);
     else if (record.kind === 'SAML 1.1') add('SAML 1.1 (WS-Federation)', record.subject);
     else if (record.kind === 'Kerberos TGT') add('Kerberos (a TGT is the session)', record.subject);
@@ -2337,7 +3496,10 @@ function snapshot() {
   });
 
   const artifactKinds = new Map();
-  artifacts.forEach(function (record) {
+  // EVERY PROCESS'S, because `metrics()` reports this table beside a `held`
+  // count that has been fanned in since the day it was written — so walking
+  // the bare array here made the total and its breakdown disagree.
+  allArtifacts().forEach(function (record) {
     if (!artifactKinds.has(record.kind)) {
       artifactKinds.set(record.kind, { kind: record.kind, issued: 0, valid: 0, expired: 0, noExpiry: 0 });
     }
@@ -2358,20 +3520,144 @@ function snapshot() {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // AND WHAT THE OTHER PROCESSES COUNTED.
+  //
+  // These stores are declared `merge: 'own'` — each process writes only its own
+  // tally and never adopts another's into memory — because `nums.callTotal++`
+  // is an INCREMENT and not an assignment, so a last-writer-wins row would
+  // report roughly one process's traffic while looking perfectly plausible.
+  // That is the worst kind of wrong number: one nobody has any reason to
+  // doubt.
+  //
+  // So the fan-in is HERE, in the one function that reports any of it, and it
+  // is a plain sum. With one process `remoteRows()` answers an empty array and
+  // every number below is exactly what it has always been.
+  // -------------------------------------------------------------------------
+  const theirNums = replication.remoteRows('admin_stats.nums', undefined, '');
+  function alsoElsewhere(field) {
+    return theirNums.reduce(function (n, theirs) {
+      return n + Number((theirs || {})[field] || 0);
+    }, 0);
+  }
+  // THE PATHS ANOTHER PROCESS SERVED AND THIS ONE DID NOT. A load balancer
+  // sending /oauth2/token to one container and /admin to another would
+  // otherwise make each console show half the endpoint list.
+  // -------------------------------------------------------------------------
+  // AND THE PER-PATH ROWS ARE MERGED TOO, WHICH THEY WERE NOT UNTIL 2026-09-08.
+  //
+  // The comment below this block used to say the rows stayed this process's:
+  // the tiles were summed, the TABLE was not, and `pathsElsewhere` was offered
+  // so a reader could tell. That was an argument from EFFORT — "merging
+  // per-status histograms per path across processes is real work for a table
+  // whose point is what this instance sees" — and it does not survive being
+  // read next to the tiles beside it, which have always been service-wide. One
+  // page cannot mean two things by "how many".
+  //
+  // It was measurable rather than theoretical: twelve probes of `/healthcheck`
+  // across three request workers moved the table by FOUR, consistently and
+  // permanently, while `calls.total` moved by twelve. `admin_api` reported it
+  // as "the metrics page counted 3 calls against 1 before 3 were made".
+  //
+  // The merge is by METHOD AND PATH, which is the key the store already uses,
+  // and it sums exactly the fields that are sums. `maxMs` takes the larger and
+  // `lastAt`/`lastStatus` the later, because those are not sums and adding
+  // them would be a number with no meaning at all.
+  // -------------------------------------------------------------------------
+  const merged = new Map();
+  callRows.forEach(function (row) {
+    merged.set(row.method + ' ' + row.path, Object.assign({}, row, {
+      statuses: Object.assign({}, row.statuses)
+    }));
+  });
+  const theirPaths = replication.remoteKeys('admin_stats.calls');
+  theirPaths.forEach(function (key) {
+    replication.remoteRows('admin_stats.calls', undefined, key)
+      .forEach(function (theirRow) {
+        if (!theirRow || !theirRow.path) {
+          return;
+        }
+        Object.keys(theirRow.statuses || {}).forEach(function (bucket) {
+          statusTotals[bucket] = (statusTotals[bucket] || 0) +
+                                 theirRow.statuses[bucket];
+        });
+        const id = (theirRow.method || '') + ' ' + theirRow.path;
+        const mine = merged.get(id);
+        if (!mine) {
+          merged.set(id, Object.assign({}, theirRow, {
+            statuses: Object.assign({}, theirRow.statuses)
+          }));
+          return;
+        }
+        mine.count += Number(theirRow.count || 0);
+        mine.totalMs += Number(theirRow.totalMs || 0);
+        mine.maxMs = Math.max(mine.maxMs || 0, Number(theirRow.maxMs || 0));
+        if (Number(theirRow.lastAt || 0) > Number(mine.lastAt || 0)) {
+          mine.lastAt = theirRow.lastAt;
+          mine.lastStatus = theirRow.lastStatus;
+        }
+        Object.keys(theirRow.statuses || {}).forEach(function (bucket) {
+          mine.statuses[bucket] = (mine.statuses[bucket] || 0) +
+                                  theirRow.statuses[bucket];
+        });
+      });
+  });
+  const mergedRows = Array.from(merged.values()).sort(function (a, b) {
+    return b.count - a.count;
+  });
+  // WHAT THIS PROCESS ALONE SERVED, kept because the two numbers answer
+  // different questions and a reader troubleshooting one worker wants the
+  // second. `pathsElsewhere` keeps its old meaning: paths nobody here served.
+  const extraPaths = mergedRows.filter(function (row) {
+    return !callRows.some(function (mine) {
+      return mine.method === row.method && mine.path === row.path;
+    });
+  }).length;
+
   const result = {
     startedAt: STARTED_AT,
     uptimeMs: nowMs - STARTED_AT,
     now: nowMs,
-    calls: { total: nums.callTotal, paths: callRows.length, byStatusClass: statusTotals,
-             pathsCollapsed: nums.callPathsDropped, rows: callRows },
-    tokens: { held: tokens.size, forgotten: nums.tokensForgotten, cap: MAX_TOKENS,
-              revoked: revokedJtis().size, byKind: Array.from(byKind.values()) },
-    artifacts: { held: artifacts.length, forgotten: nums.artifactsForgotten, cap: MAX_ARTIFACTS,
+    calls: { total: nums.callTotal + alsoElsewhere('callTotal'),
+             // THE ROWS ARE STILL THIS PROCESS'S, and `paths` counts every
+             // path anybody served. THE ROWS ARE MERGED NOW — see the block
+             // above — so this table means the same thing as the tiles beside
+             // it, which it did not until 2026-09-08. `pathsHere` and
+             // `pathsElsewhere` still split the same list, because a reader
+             // troubleshooting ONE worker wants to know which of these rows it
+             // served itself.
+             paths: mergedRows.length,
+             pathsHere: callRows.length,
+             pathsElsewhere: extraPaths,
+             byStatusClass: statusTotals,
+             pathsCollapsed: nums.callPathsDropped +
+                             alsoElsewhere('callPathsDropped'),
+             rows: mergedRows },
+    // TOKENS ARE `merge: 'replace'` AND ARE THEREFORE ALREADY MERGED — a token
+    // is minted by one process and the register is keyed by jti, so the row IS
+    // the value and coordination has already put every process's tokens in
+    // this map. That is also why a revocation in another process reaches this
+    // one: it is a write to the same row rather than a tally of its own.
+    tokens: { held: tokens.size, forgotten: nums.tokensForgotten + alsoElsewhere('tokensForgotten'),
+              cap: MAX_TOKENS,
+              revoked: revokedJtis.size, byKind: Array.from(byKind.values()) },
+    // ARTIFACTS ARE `merge: 'own'`, because the register is an append-only
+    // ARRAY rather than a keyed map — so what another process issued is in the
+    // fan-in and not in this array.
+    artifacts: { held: artifacts.length + replication
+                   .remoteRows('admin_stats.artifacts', undefined, '')
+                   .reduce(function (n, rows) {
+                     return n + (Array.isArray(rows) ? rows.length : 0);
+                   }, 0),
+                 heldHere: artifacts.length,
+                 forgotten: nums.artifactsForgotten + alsoElsewhere('artifactsForgotten'),
+                 cap: MAX_ARTIFACTS,
                  byKind: Array.from(artifactKinds.values()) },
     // Counted, not listed: the whole list is what /admin/users is for, and repeating
     // it inside every metrics reply would make the two disagree the first time one
     // of them changed.
-    users: { known: knownUsers.length, cap: MAX_USERS, forgotten: nums.usersForgotten,
+    users: { known: knownUsers.length, cap: MAX_USERS,
+             forgotten: nums.usersForgotten + alsoElsewhere('usersForgotten'),
              authenticatedHere: knownUsers.filter(function (r) { return r.authenticated; }).length,
              clients: knownUsers.filter(function (r) { return r.isClient; }).length,
              authentications: knownUsers.reduce(function (n, r) { return n + r.authentications; }, 0) },
@@ -2406,6 +3692,8 @@ module.exports = {
   ISSUED_FAMILIES: ISSUED_FAMILIES,
   recordCall: recordCall,
   recordAuthentication: recordAuthentication,
+  noteWebauthnEnrolled: noteWebauthnEnrolled,
+  knownUser: knownUser,
   setUserObserver: setUserObserver,
   noteKnownIdentity: noteKnownIdentity,
   identityOf: identityOf,
@@ -2413,6 +3701,7 @@ module.exports = {
   userRows: userRows,
   userDetail: userDetail,
   sessionIdOfJti: sessionIdOfJti,
+  sessionAuthenticatedOfJti: sessionAuthenticatedOfJti,
   recordAssertion: recordAssertion,
   recordTicket: recordTicket,
   recordCredential: recordCredential,
@@ -2422,9 +3711,22 @@ module.exports = {
   SCIM_RESOURCE_TYPES: SCIM_RESOURCE_TYPES,
   recordScim: recordScim,
   scimSnapshot: scimSnapshot,
+  // The traffic view over the SAME counters, for /admin/scim/monitor and
+  // GET /admin-api/scim/monitor. Two views over one store, which is why
+  // the surface page and the monitoring page cannot disagree.
+  scimMonitorSnapshot: scimMonitorSnapshot,
+  // Exported for the tests only. There is no console control that calls
+  // it; see the comment on the function.
+  resetScimForTests: resetScimForTests,
+  SCIM_RECENT: SCIM_RECENT,
+  SCIM_MAX_CLIENTS: SCIM_MAX_CLIENTS,
   revoke: revoke,
   restore: restore,
   revokeWhere: revokeWhere,
+  revokeArtifact: revokeArtifact,
+  restoreArtifact: restoreArtifact,
+  artifactByKey: artifactByKey,
+  revokeArtifactsWhere: revokeArtifactsWhere,
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,
@@ -2444,6 +3746,8 @@ module.exports = {
   tokenList: tokenList,
   artifactList: artifactList,
   issuedList: issuedList,
+  issuedSets: issuedSets,
+  issuedSetByKey: issuedSetByKey,
   issuedById: issuedById,
   snapshot: snapshot
 };

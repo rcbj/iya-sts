@@ -24,3 +24,16 @@ data/
 # code it sits beside.
 tests/report/
 coverage/
+
+# THE BUILD STAMP. `common/version.js --stamp .` writes version.json at the
+# package root during the image build, and it is what every surface here reports
+# as the version — see CLAUDE.md, *Versioning*. It is never committed for the
+# reason the report above is not: it is a claim about ONE build on ONE machine,
+# and a stale one in the repository would make every checkout claim to be an
+# artifact that was built somewhere else. With no stamp the version is computed
+# at startup and says so, which is the correct answer for a checkout.
+#
+# ANCHORED, so it names the one file at the package root and not any file of
+# that name anywhere in the tree. There is only one stamp: `xacml-pep/`
+# deliberately does not get one, for a reason common/version.js gives.
+/version.json

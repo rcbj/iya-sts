@@ -72,6 +72,9 @@
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
+// For the federated bundle store below — a shared, persisted map rather than
+// a plain one, so every process in this service sees the same bundles.
+const realms = require('../common/realms');
 const jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
@@ -167,18 +170,105 @@ function keyTypeById(id) {
 // Publishing only the active authority is the mistake that makes a rotation
 // look like an outage.
 // ---------------------------------------------------------------------------
-let x509Authorities = [];
-let jwtAuthorities = [];
+// ---------------------------------------------------------------------------
+// SHARED, PERSISTED, AND ENCODED ON THE WAY IN (2026-09-08).
+//
+// These were two module arrays, which is one PROCESS's certificate authority.
+// With request workers that is a service whose bundle depends on who answers:
+// a worker publishing `GET /spiffe` offered keys that verify NONE of the SVIDs
+// the four gRPC sockets had issued (those sockets are bound by the front
+// process alone — `server.js` starts them and a request worker binds nothing
+// but its own unix socket), and `/admin/spiffe`'s Rotate button rotated a CA
+// that signs nothing while the one doing the signing stood still.
+//
+// `sharedMap` and not `map`: SPIFFE is ONE trust domain for the whole service
+// — its sockets have no path to put a realm segment in — so this is not per
+// realm, exactly as `federated` below is not.
+//
+// **THE ENCODING IS THE PART THAT NEEDED CARE.** The journal writes JSON, and
+// JSON turns a `Buffer` into `{"type":"Buffer","data":[…]}` and a `Map` into
+// `{}` — a trap this service has already been caught by twice, in
+// `krb5_principals.js`'s key cache and its sign-out stamp. Exactly one field
+// here is a Buffer, `certificateDer`, so it rides as base64 and comes back a
+// Buffer. Everything else is a string, a number or a plain object and survives
+// unchanged. A field added to an authority record that is NOT one of those
+// must be packed here too.
+// ---------------------------------------------------------------------------
+const authorities = realms.sharedMap({ persist: 'spiffe.authorities',
+                                       scope: 'shared' });
+
+function packX509(one) {
+  return Object.assign({}, one, {
+    certificateDer: Buffer.isBuffer(one.certificateDer)
+      ? one.certificateDer.toString('base64')
+      : String(one.certificateDer || '')
+  });
+}
+
+function unpackX509(one) {
+  return Object.assign({}, one, {
+    certificateDer: Buffer.isBuffer(one.certificateDer)
+      ? one.certificateDer
+      : Buffer.from(String(one.certificateDer || ''), 'base64')
+  });
+}
+
+// THE UNPACKED LIST, MEMOISED ON THE STORED ARRAY'S IDENTITY. `x509List()[0]`
+// is on the path of every SVID this service mints, and rebuilding a Buffer per
+// call for a value that changes only when somebody rotates would be a cost with
+// nothing to show for it. The store hands back the same array object until it
+// is replaced — by a rotation here or by a replicated write from another
+// process — so identity is exactly the right invalidation.
+let x509Unpacked = { from: null, list: [] };
+
+function x509List() {
+  const raw = authorities.get('x509') || [];
+  if (x509Unpacked.from !== raw) {
+    x509Unpacked = { from: raw, list: raw.map(unpackX509) };
+  }
+  return x509Unpacked.list;
+}
+
+function setX509List(list) {
+  authorities.set('x509', list.map(packX509));
+}
+
+function jwtList() {
+  return authorities.get('jwt') || [];
+}
+
+function setJwtList(list) {
+  authorities.set('jwt', list.slice(0));
+}
 
 // The foreign trust domains this one federates with, keyed by trust domain
 // name. Each holds the bundle document exactly as it was given — see
 // `setFederatedBundle()` for why it is given rather than fetched.
-const federated = new Map();
+// **A SHARED, PERSISTED STORE AND NOT A PLAIN Map (2026-09-07).** A federated
+// bundle is registered through `/admin-api/spiffe` or the console and read back
+// off `GET /spiffe`, and a plain Map made it visible only in the process that
+// took the call: with a request worker pool, registering a trust domain on one
+// worker left the other two unable to see it, which is what
+// `sts_admin_api_operations` and `sts_admin_console` measured.
+//
+// `sharedMap` and not `map`, because SPIFFE is one trust domain for the whole
+// service — its four sockets have no path to put a realm segment in, so its
+// state is not per realm (see the root CLAUDE.md's realm table). The values are
+// plain JSON — strings, a document and a timestamp — so they survive the
+// `JSON.stringify` the journal writes, which is the trap three other stores hit.
+const federated = realms.sharedMap({ persist: 'spiffe.federatedBundles',
+                                     scope: 'shared' });
 
 // RFC-required monotonic counter on the bundle. It changes whenever the bundle
 // changes and never otherwise, which is what lets a consumer tell "I have the
 // current bundle" from "I have a bundle".
-let sequence = 1;
+// IN THE SAME SHARED STORE, for the same reason: a counter a relying party
+// watches for staleness that moved on one worker of three would tell two
+// thirds of its readers that a rotated bundle was the one they already had.
+function sequenceNow() {
+  const held = Number(authorities.get('sequence'));
+  return held > 0 ? held : 1;
+}
 
 // What the startup actually did, for the pages that report it. Set once
 // `initialise()` finishes and readable synchronously — see `state()`.
@@ -186,8 +276,9 @@ let started = null;
 let startError = null;
 
 function bumpSequence(why) {
-  sequence++;
-  log.debug('spiffe: the bundle sequence is now ' + sequence + ' (' + why + ').');
+  authorities.set('sequence', sequenceNow() + 1);
+  log.debug('spiffe: the bundle sequence is now ' + sequenceNow() +
+            ' (' + why + ').');
 }
 
 // ---------------------------------------------------------------------------
@@ -355,10 +446,35 @@ async function initialise() {
     throw new Error('spiffe.trustDomain is not a valid trust domain name: ' +
                     parsed.reason);
   }
+  // ------------------------------------------------------------------------
+  // WHAT IS ALREADY IN THE STORE WINS, and this is what makes several
+  // processes ONE trust domain rather than several.
+  //
+  // Every process runs this at startup and each would otherwise mint an
+  // authority of its own. The first to write establishes the trust domain and
+  // the rest adopt it; two that raced both write, the later wins, and both
+  // then READ the winner — because every reader below goes through
+  // `x509List()`/`jwtList()` rather than a local array. So the disagreement is
+  // a window rather than a state, and it closes without anybody deciding.
+  //
+  // The pair is generated FIRST either way: an authority is cheap, this runs
+  // once, and checking the store before generating would mean holding a
+  // half-built trust domain across an await for no gain.
+  // ------------------------------------------------------------------------
   const x509Authority = await makeX509Authority(x509Type, caTtl, 0);
   const jwtAuthority = await makeJwtAuthority(jwtType);
-  x509Authorities = [x509Authority];
-  jwtAuthorities = [jwtAuthority];
+  const heldX509 = x509List();
+  const heldJwt = jwtList();
+  const adopted = heldX509.length > 0 && heldJwt.length > 0;
+  if (!adopted) {
+    setX509List([x509Authority]);
+    setJwtList([jwtAuthority]);
+  } else {
+    log.info('spiffe: another process in this service had already established ' +
+             'the trust domain; adopting its authorities (X.509 ' +
+             heldX509[0].id + ', JWT kid ' + heldJwt[0].id + ') rather than ' +
+             'the pair just generated. One service is one trust domain.');
+  }
   started = Date.now();
   log.info('spiffe: the trust domain is ' + spiffeId.trustDomainId(TRUST_DOMAIN) +
            '. Its X.509 authority is ' + x509Authority.keyType + ' (' +
@@ -513,7 +629,7 @@ async function signCsr(csrDer, id, options) {
 async function issueLeaf(id, publicPem, options) {
   log.debug('Entering issueLeaf(). id=' + id);
   const opts = options || {};
-  const authority = x509Authorities[0];
+  const authority = x509List()[0];
   if (!authority) {
     log.debug('Leaving issueLeaf(). No authority.');
     throw new Error('This trust domain has no X.509 authority.');
@@ -637,7 +753,7 @@ async function downstreamCa(options) {
   log.debug('Entering downstreamCa().');
   await ready();
   const opts = options || {};
-  const authority = x509Authorities[0];
+  const authority = x509List()[0];
   if (!authority) {
     log.debug('Leaving downstreamCa(). No authority.');
     throw new Error('This trust domain has no X.509 authority.');
@@ -717,7 +833,7 @@ async function mintJwtSvid(id, audiences, options) {
     log.debug('Leaving mintJwtSvid(). No audience.');
     throw new Error('A JWT-SVID must name at least one audience.');
   }
-  const authority = jwtAuthorities[0];
+  const authority = jwtList()[0];
   if (!authority) {
     log.debug('Leaving mintJwtSvid(). No JWT authority.');
     throw new Error('This trust domain has no JWT authority.');
@@ -870,7 +986,7 @@ function jwkSetFor(trustDomain) {
   log.debug('Entering jwkSetFor().');
   if (trustDomain === TRUST_DOMAIN) {
     log.debug('Leaving jwkSetFor().');
-    return jwtAuthorities.map(function (authority) {
+    return jwtList().map(function (authority) {
       return { kid: authority.id, pem: authority.publicKeyPem,
                algorithms: [authority.alg] };
     });
@@ -938,13 +1054,13 @@ async function bundle() {
   log.debug('Entering bundle().');
   await ready();
   const keyList = [];
-  x509Authorities.forEach(function (authority) {
+  x509List().forEach(function (authority) {
     const jwk = publicJwkOf(authority.publicKeyPem);
     jwk.use = 'x509-svid';
     jwk.x5c = [authority.certificateDer.toString('base64')];
     keyList.push(jwk);
   });
-  jwtAuthorities.forEach(function (authority) {
+  jwtList().forEach(function (authority) {
     const jwk = Object.assign({}, authority.jwk);
     jwk.use = 'jwt-svid';
     jwk.kid = authority.id;
@@ -952,10 +1068,11 @@ async function bundle() {
   });
   const document = {
     keys: keyList,
-    spiffe_sequence: sequence,
+    spiffe_sequence: sequenceNow(),
     spiffe_refresh_hint: refreshHintSeconds()
   };
-  log.debug('Leaving bundle(). ' + keyList.length + ' key(s), sequence ' + sequence + '.');
+  log.debug('Leaving bundle(). ' + keyList.length + ' key(s), sequence ' +
+            sequenceNow() + '.');
   return document;
 }
 
@@ -966,7 +1083,7 @@ async function bundle() {
 // anything against after a rotation.
 async function x509BundleDer() {
   await ready();
-  return Buffer.concat(x509Authorities.map(function (a) { return a.certificateDer; }));
+  return Buffer.concat(x509List().map(function (a) { return a.certificateDer; }));
 }
 
 // The same, for a federated trust domain, built from the `x5c` members of the
@@ -1167,11 +1284,15 @@ async function rotateX509Authority() {
   await ready();
   const authority = await makeX509Authority(config.value('spiffe.x509KeyType'),
                                             config.value('spiffe.caTtl'), 0);
-  x509Authorities.unshift(authority);
-  const dropped = x509Authorities.splice(MAX_RETAINED_AUTHORITIES);
+  // READ, PREPEND, WRITE BACK — and the write is what makes the rotation the
+  // SERVICE's rather than this process's. `x509List()` hands back the
+  // memoised array, so it is copied before being changed.
+  const kept = [authority].concat(x509List());
+  const dropped = kept.splice(MAX_RETAINED_AUTHORITIES);
+  setX509List(kept);
   bumpSequence('the X.509 authority was rotated');
   log.info('spiffe: a new X.509 authority (' + authority.id + ') is now ' +
-           'active; ' + (x509Authorities.length - 1) + ' retired one(s) are ' +
+           'active; ' + (kept.length - 1) + ' retired one(s) are ' +
            'still published in the bundle' +
            (dropped.length ? ', and ' + dropped.length + ' was dropped — ' +
             'anything it signed no longer verifies' : '') + '.');
@@ -1183,11 +1304,12 @@ async function rotateJwtAuthority() {
   log.debug('Entering rotateJwtAuthority().');
   await ready();
   const authority = await makeJwtAuthority(config.value('spiffe.jwtKeyType'));
-  jwtAuthorities.unshift(authority);
-  const dropped = jwtAuthorities.splice(MAX_RETAINED_AUTHORITIES);
+  const kept = [authority].concat(jwtList());
+  const dropped = kept.splice(MAX_RETAINED_AUTHORITIES);
+  setJwtList(kept);
   bumpSequence('the JWT authority was rotated');
   log.info('spiffe: a new JWT authority (kid ' + authority.id + ') is now ' +
-           'active; ' + (jwtAuthorities.length - 1) + ' retired one(s) are ' +
+           'active; ' + (kept.length - 1) + ' retired one(s) are ' +
            'still published' +
            (dropped.length ? ', and ' + dropped.length + ' was dropped — ' +
             'anything it signed no longer verifies' : '') + '.');
@@ -1238,15 +1360,15 @@ function state() {
     trustDomain: TRUST_DOMAIN,
     trustDomainId: spiffeId.trustDomainId(TRUST_DOMAIN),
     serverId: started && !startError ? spiffeId.serverId(TRUST_DOMAIN) : '',
-    sequence: sequence,
+    sequence: sequenceNow(),
     refreshHint: refreshHintSeconds(),
-    x509Authorities: x509Authorities.map(function (a, index) {
+    x509Authorities: x509List().map(function (a, index) {
       return { id: a.id, active: index === 0, keyType: a.keyType,
                subject: a.subject, serialHex: a.serialHex,
                notBefore: a.notBefore, notAfter: a.notAfter,
                certificatePem: a.certificatePem, createdAt: a.createdAt };
     }),
-    jwtAuthorities: jwtAuthorities.map(function (a, index) {
+    jwtAuthorities: jwtList().map(function (a, index) {
       return { id: a.id, active: index === 0, keyType: a.keyType, alg: a.alg,
                jwk: a.jwk, createdAt: a.createdAt };
     }),
@@ -1297,5 +1419,5 @@ module.exports = {
   checkBundleDocument: checkBundleDocument,
   rotateX509Authority: rotateX509Authority,
   rotateJwtAuthority: rotateJwtAuthority,
-  sequence: function () { return sequence; }
+  sequence: function () { return sequenceNow(); }
 };

@@ -19,11 +19,13 @@
 #
 # WHY THEY ARE TWO JOBS RATHER THAN TWO STEPS, which is the shape
 # ../id-proto-debugger/.github/workflows/tests.yml uses and the reason to copy
-# it here. Both launchers write tests/report/ and point tests/report/latest at
-# their own timestamped directory. In one job the second run moves that symlink
-# before either upload reads it, so an artifact named for the plain suite would
-# hold the coverage run's report — wrong, and wrong silently. Two jobs are two
-# workspaces, so each `latest` is its own. Two more things fall out of it: the
+# it here. Both launchers write into tests/report/ and point a `latest` symlink
+# at their own timestamped directory — ./docker-run-tests.sh one per MODE under
+# tests/report/<mode>/, ./run-coverage.sh the bare tests/report/latest, which is
+# why the two uploads name different paths. In one job the second run would
+# write into the tree the first one's upload has not read yet, so an artifact
+# named for the plain suite could hold the coverage run's report — wrong, and
+# wrong silently. Two jobs are two workspaces, so each tree is its own. Two more things fall out of it: the
 # coverage pass still runs when the plain suite goes red, which is when its
 # report is most worth having, and the two run in PARALLEL, so the wall clock
 # is the slower of them rather than the sum. What it costs is a second image
@@ -117,14 +119,33 @@ jobs:
         run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
 
       # if: always() — the report is at its most useful when the run went red.
-      # `latest` is a symlink into the timestamped directory beside it, and
-      # upload-artifact follows it.
+      #
+      # THE WHOLE tests/report TREE AND NOT `tests/report/latest`, WHICH IT
+      # NAMED UNTIL 2026-09-07 AND WHICH HAD BEEN UPLOADING NOTHING SINCE THE
+      # MODE MATRIX LANDED. ./docker-run-tests.sh runs the suite once per mode
+      # and hands each `--report-dir=tests/report/<mode>`, so `latest` lives
+      # under THOSE directories and the bare `tests/report/latest` no longer
+      # exists in a fresh checkout at all. `if-no-files-found: warn` is what
+      # made that silent: the upload said so in a line nobody reads and the job
+      # stayed green.
+      #
+      # The tree also carries the two container logs each mode's run left
+      # beside its jobs — and, for a mode that died before writing a report,
+      # the tests/report/<mode>-00-*.log the launcher falls back to, which is
+      # exactly the run whose logs are worth having.
+      #
+      # pep-credential/ is excluded: it is the client key and certificate the
+      # launcher mints for the remote PEP, it protects nothing and lives for
+      # one run, and a private key does not belong in a downloadable artifact
+      # whatever it is worth.
       - name: Upload the test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-report
-          path: tests/report/latest
+          path: |
+            tests/report
+            !tests/report/pep-credential
           if-no-files-found: warn
           retention-days: 30
 

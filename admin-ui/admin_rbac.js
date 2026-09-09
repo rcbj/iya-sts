@@ -92,6 +92,8 @@
 
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 const audit = require('../common/audit');
 
 // The two roles. An array rather than two constants because everything below
@@ -830,7 +832,7 @@ function describe() {
   log.debug("Entering describe().");
   const rows = roster();
   const out = {
-    enforced: !!config.value('admin.authRequired'),
+    enforced: mode.gatesConsole(),
     openWhenEmpty: !!config.value('admin.openWhenEmpty'),
     available: !!directory,
     groupsDn: directory ? directory.groupsDn : '',

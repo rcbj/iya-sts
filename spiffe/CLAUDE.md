@@ -288,3 +288,83 @@ that up silently.
   window, every method the caller's entity is not allowed, and a federated
   bundle whose JWKs have no `use`. `spiffe.authRequired` off restores the whole
   of the old posture. See rule 3k, `spiffe_auth.js` and `GET /spiffe`.
+
+## There is no test for this in either repository, and it is the largest untested surface here
+
+**By the root `CLAUDE.md`'s rule it belongs in the PARENT project's suite** —
+all of it is driven over gRPC against a running service.
+
+What a test would have to cover is not the happy
+path — an SVID that verifies against the bundle it came with proves very little —
+but the things that were actually wrong during the build and would be silently
+wrong again: a `google.protobuf.Struct` whose members serialise to nothing
+(`ValidateJWTSVID` answered 200 with empty `claims`), a server stream that ends
+when it should stay open, an X509-SVID whose private key does not match its
+certificate, `keepCase` spellings, the `MATCH_SUBSET`/`SUPERSET`/`ANY` selector
+behaviours, an output mask that is ignored, paging that returns a `next_page_token`
+forever, and every one of the refusals above. **The authentication half now has
+its own list and it is mostly negatives**: an anonymous caller refused
+`UNAUTHENTICATED` and an insufficient one refused `PERMISSION_DENIED` (they are
+different instructions and collapsing them is easy); `AttestAgent` and
+`GetBundle` reachable with no credential at all, because an agent has none yet;
+`Debug.GetInfo` refused to an admin SVID over TCP and allowed on the socket; an
+agent allowed `GetAuthorizedEntries` and refused `ListEntries`; a certificate
+with no URI SAN, with two, signed by nothing here, outside its validity window,
+or naming a trust domain the signing authority does not own; a join token never
+minted, expired, replayed, or minted for another agent; `RenewAgent` renewing
+the agent on the CONNECTION and never one named in the request; and the same run
+with `spiffe.authRequired` off, which must behave exactly as the service did
+before any of it existed. Also that one identity presented three ways is ONE
+directory entry — **and now that one identity ISSUED a certificate fifty times
+is still one entry**, with `x509serialNumber` equal to the last SVID and
+`x509svidsIssued` equal to fifty, which is the assertion that catches the
+append-versus-assign rule being "simplified" into agreement with
+`certificatePlan()`. Beside it: that an issuance adds NOTHING to
+`/admin/users`'s authentication count (an agent holding `FetchX509SVID` open
+would otherwise read as hundreds of sign-ins overnight); that the `x509subject`
+an SVID writes is byte-for-byte the string a client certificate with that
+subject would write, because two spellings of one DN is two people; that
+deleting ONE of two registration entries naming an identity leaves it active and
+deleting the second marks it revoked; that a ban and an unban round-trip while
+`spiffeRevokedAt` survives the unban; and that nothing anywhere is ever deleted
+from `ou=users`. Drive it with `@grpc/grpc-js` as a
+CLIENT — which is what `tests/sts_dpop.js` does by writing its own DPoP client
+rather than importing the wallet's, and for the same reason: if both ends came
+from one implementation, a shared misunderstanding passes and interoperates with
+nobody.
+
+## THE SPIRE SERVER API ASKS THE ACCESS POLICY, AFTER SPIRE'S OWN TABLE (2026-09-06)
+
+In `spiffe_grpc.js`'s `prepareCall()`, as `auth.authorize(caller, method) ||
+policyRefusal(caller, method)` — and the ORDER is the whole of it.
+
+**SPIRE'S PER-METHOD TABLE IS UNCHANGED AND STILL DECIDES FIRST.** What an agent
+may call is that project's answer, copied from its `policy_data.json`, and not
+this service's to reinvent. The gate is the layer above it, so a deployment can
+narrow this surface by policy; on an unedited service the built-in document
+permits, because it asks for a role only where somebody has required one.
+
+**AFTER, so the refusal a caller sees is the most specific one.** *Your SVID is
+not an admin and this method is admins only* is a sentence somebody can act on;
+*the policy denied it* is not. Reaching the second first would hide the first
+for every ordinary misconfiguration.
+
+**EVERY METHOD IS `write` AT THE GATE, AND THAT IS NOT LAZINESS.** What comes out
+of this surface is a credential another service will believe. SPIRE's table is
+where read and write are told apart, per method, and it has already run; a
+second, coarser split here would invite a policy author to think `read` on this
+resource meant something SPIRE agrees with.
+
+**A CALLER THAT AUTHENTICATED NOBODY GETS NO SESSION.** The local Unix socket is
+trusted by path and presents no credential, and `spiffe.authRequired` off checks
+nothing at all — both reach here with `authenticated` false, and a session
+recording a sign-in would be untrue. An authenticated caller gets one through
+`authn.startSession()` keyed on its SPIFFE ID rather than its certificate: an
+agent that rotates its SVID mid-run is the same agent, and keying on the
+certificate would give it a second row per rotation. `common/CLAUDE.md` argues
+why it is that store and not one of this directory's.
+
+**THE WORKLOAD API IS DELIBERATELY UNTOUCHED.** It authenticates nobody because
+its specification says it MUST NOT — a workload has no root of trust until that
+call gives it one — so there is no subject to decide about and no session to
+record. Only the `server` surface asks.

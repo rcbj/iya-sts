@@ -105,8 +105,14 @@
 const crypto = require('crypto');
 const { log, nowSec } = require('../common/helpers');
 const config = require('../common/config');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 const audit = require('../common/audit');
 const stats = require('../common/admin_stats');
+// PER PROCESS AND NOT PER REALM — see the store below. Required only for
+// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
+// move a route or join a cycle.
+const realms = require('../common/realms');
 const spiffeId = require('./spiffe_id');
 const ca = require('./spiffe_ca');
 const registry = require('./spiffe_registry');
@@ -241,7 +247,12 @@ const ENTITY_ORDER = ['local', 'admin', 'agent', 'downstream'];
 // config.js's header for why a captured `const` is the one thing
 // /admin/config cannot reach.
 // ---------------------------------------------------------------------------
-function authRequired() { return !!config.value('spiffe.authRequired'); }
+// THE MODE, since 2026-09-06, where this read `spiffe.authRequired`. The
+// Workload API is deliberately NOT covered by it and never may be — its
+// specification says it MUST NOT authenticate a caller, because a workload has
+// no root of trust until that call gives it one. What this gates is the SPIRE
+// Server API, whose output is a credential another service will believe.
+function authRequired() { return mode.gatesSpireServerApi(); }
 function trustLocalSocket() { return !!config.value('spiffe.trustLocalSocket'); }
 function attestWorkloads() { return !!config.value('spiffe.attestWorkloads'); }
 function acceptAssertedSelectors() {
@@ -765,7 +776,14 @@ function authorize(caller, method) {
 // is a map that grows for the life of the process.
 // ---------------------------------------------------------------------------
 const MAX_RECORDED_CONNECTIONS = 512;
-const recordedConnections = new Map();
+// -------------------------------------------------------------------------
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
+// is a plain Map that reports its writes so product mode can write them down;
+// `scope: 'shared'` is what says the store deliberately has no realm in it,
+// which is the discriminator `tests/realm_isolation.js` checks against.
+// -------------------------------------------------------------------------
+const recordedConnections = realms.sharedMap({
+  persist: 'spiffe.recordedConnections', scope: 'shared' });
 
 function alreadyRecorded(key) {
   if (!key) return false;

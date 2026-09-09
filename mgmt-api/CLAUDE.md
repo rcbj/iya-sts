@@ -131,6 +131,44 @@ unless a group exists that no page draws. `admin-ui/CLAUDE.md` argues the whole
 move; this file's half of it is the paragraph above.
 
 
+### `/admin-api/users/new` is the same shape, and the users resource is the first to mirror TWO console paths
+
+`/admin/users/new` arrived on 2026-09-06 and cost the same two things the
+applications create page did: a GET that publishes what a create may say, and no
+POST beside it.
+
+**The GET earns its place for the same reason and a sharper one.** What it
+answers is the CLOSED ATTRIBUTE CATALOGUE `createUser()` validates `attributes`
+against — every attribute a person in this directory may be given, each naming
+the claim it reaches in an issued credential and the document its name comes
+from — plus the `ou=users` container the entry would land in and the four
+`credential` options. The sharper reason is that **an attribute name that is not
+on that list is REFUSED and the whole create fails**, rather than the value
+being dropped: a caller that reads this first cannot be told afterwards that
+half of what it sent was ignored, and a caller that does not gets a refusal
+naming the attribute. `uid` and `userPassword` are deliberately absent — the
+first IS the username, and a password goes through `credential` so that
+`credentials.js` hashes it.
+
+**THE `mirrors` FIELD ON THE USERS ACTION RESOURCE NAMES TWO CONSOLE PATHS, AND
+THAT IS NOT DECORATION.** `POST /admin-api/users/{action}` mirrors `POST
+/admin/users` AND `POST /admin/users/new`, because both reach one action switch
+— `/admin/users/new` posts to ITSELF rather than to the list, so that a
+generated password and an activation link can be answered in a page body
+instead of a 303's query string. `tests/vendored/sts_admin_console.js` builds
+its list of "console paths that take a POST" by parsing this field, so a page
+left out of it reads as a control that reaches nothing. `/admin-api/xacml/{action}`
+has named three since it was written; this is the second resource to need it.
+
+**IT ALSO CLOSED AN OPERATION THIS SERVICE HAD BEEN DOCUMENTING AND NOT
+SERVING.** `common/credentials.js` names `POST /admin-api/users/set-password`
+twice — in the sentence a refused sign-in gets, and in the banner the
+product-mode bootstrap prints telling an operator to change the generated
+password — and no such operation existed. Somebody following either instruction
+got a 404 naming an endpoint of this service's own. It is an arm of
+`usersAction()` now, so the console and this API reach one function, and it is
+the third action on that resource.
+
 ### `/admin-api/applications/new` is a GET WITH NO POST BESIDE IT, and that is rule 7 read exactly
 
 `/admin/applications/new` arrived on 2026-08-25 — a console page whose one
@@ -211,9 +249,12 @@ GAP.** A stream carries a **delivery endpoint this service will DIAL**, and the
 one place that URL may come from is a receiver that authenticated at
 `POST /ssf/stream` and asked. An operation here that could mint one would be a
 second door onto the outbound request `ssf/ssf_http.js` spends its header
-bounding — **and it would be the UNGATED door**, since this API is not gated and
-the console is. The console has no create form for the same reason, so there is
-no control to mirror and the parity holds; `ssf/CLAUDE.md` argues the outbound
+bounding — **and it would be the door with the WEAKER credential**, since this
+API takes a token that anybody holding the client secret can mint and the
+console takes a person's own sign-in. (It read "and it would be the UNGATED
+door" until 2026-09-09, when this API stopped being ungated; the argument is
+unchanged and only its sharpest word is gone.) The console has no create form
+for the same reason, so there is no control to mirror and the parity holds; `ssf/CLAUDE.md` argues the outbound
 request itself.
 
 ### `/admin-api/federation` is where rule 7 pays MOST, and the honest sentence is sharper here
@@ -226,7 +267,8 @@ resource matters more than the parity rule alone would suggest, and what it cost
 **It is the only way the feature can be exercised automatically.** A federated
 sign-in cannot be driven without a configured relationship, and a relationship
 cannot be configured through a gated console by a test with no cookie jar. This
-API is not gated, so `POST /admin-api/federation/create` is to federation what
+API takes a credential a test can mint rather than a browser session, so `POST
+/admin-api/federation/create` is to federation what
 `POST /admin-api/rbac/grant` is to the roles: not merely a mirror, but the door
 that works when the other one cannot be reached.
 
@@ -309,7 +351,44 @@ back would not have earned anything.
 
 ---
 
-## `/admin-api/docs` is the only page here with an *explorer* script
+## The explorer moved to the console on 2026-09-09
+
+**`/admin-api/docs` IS GONE AND THE PAGE IS `/admin/api-explorer`.** It moved
+for one reason: the section above. This API began requiring an OAuth 2.0 access
+token, and a browser navigating to a URL carries none — so the one page in this
+service whose entire purpose is to be opened in a browser became the one page a
+browser could not open, and the console linked to it and got a 401.
+
+It is behind the console's session and its two roles now, and the calls it makes
+carry a token minted for the reader with exactly the scopes those roles grant.
+`admin-ui/CLAUDE.md` argues the page; `admin-ui/api_explorer.js` builds it, at
+19a, after this module — it needs the route table below to build its document.
+
+**TWO FILES DID NOT MOVE AND ARE STILL HERE**: `admin_api_docs.js` and
+`admin_api_explorer.js`. The stylesheet, the browser script and the
+realm-prefix argument belong to THIS API's document rather than to the
+console's shell, and the console requires them. The first grew a
+`consoleBody()` beside its `page()`; `page()` is kept and exported and nothing
+registers a route for it, because the style, the script and the prefix argument
+are the same in both shapes and a second copy of any of them is what that file
+exists to prevent.
+
+**RULE 7 IS SATISFIED BY `GET /admin-api/api-explorer`**, which reports where
+the document is, how many operations it describes and what the caller's console
+roles would grant — and does NOT repeat the document, because
+`GET /admin-api/openapi.json` is the document.
+
+**AND THE LEDGER'S ONLY EXEMPTION WENT WITH IT.**
+`tests/vendored/sts_admin_api_operations.js` kept a `NOT_DRIVEN_HERE` table
+whose two rows were these two routes, the only operations on this API a JSON
+walk could not drive. Every operation this API documents now answers JSON and
+every one of them is driven; the table is kept, empty, because the next
+operation that cannot be driven needs somewhere to say why.
+
+The section below is the argument for the script itself, which is unchanged by
+the move and is why the page is still the only scripted one in either surface.
+
+## The explorer's script is the one relaxation of `script-src 'none'`
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
@@ -335,14 +414,51 @@ is what an operator of a mock actually copies.
 
 ---
 
-## `/admin-api` IS NOT GATED AND THE CONSOLE NOW IS
+## `/admin-api` WANTS AN ACCESS TOKEN, AND THE CONSOLE WANTS A SESSION
 
-`admin.authRequired` (on by default) puts a sign-on session and one of two roles
-in front of every page and form under `/admin`. It puts nothing in front of
-anything here, and express does not do it by accident: `app.use('/admin', ...)`
-matches on segment boundaries, so `/admin-api` never matched it.
+**THIS SECTION'S HEADING READ "`/admin-api` IS NOT GATED AND THE CONSOLE NOW
+IS" UNTIL 2026-09-09, AND EVERYTHING UNDER IT WAS TRUE FOR AS LONG AS THIS FILE
+EXISTED.** It is kept below rather than deleted, because the three reasons it
+gives are still the argument for the OFF SWITCH — they are the reasons
+`adminApi.authRequired=false` has to keep existing, and what changed is only
+which way the default points.
 
-Three reasons, and the third is the one to read before "fixing" this:
+**WHAT IT IS NOW.** Every call into `/admin-api` presents an OAuth 2.0 access
+token this service issued, audienced to this API, carrying `admin:read` for a
+read and `admin:write` for anything that changes state. One middleware on the
+base path, so the 232 operations are covered by construction rather than by
+232 remembered checks. The scopes become the built-in `ADMIN_READ` and
+`ADMIN_WRITE` roles and the XACML `access-control` document asks for the one
+the action needs — so what this surface demands is stated where every other
+access decision in this service is stated, and `admin_api.js` decides the
+QUESTION rather than the outcome.
+
+**IT IS A DIFFERENT CREDENTIAL FROM THE CONSOLE'S AND MUST STAY ONE.** A
+console session is not an API credential; a token is not a console session.
+Two surfaces, two credentials, and express still does not confuse them by
+accident — `app.use('/admin', ...)` matches on segment boundaries, so
+`/admin-api` never matched the console's gate and never should.
+
+**THE THREE REASONS BELOW SURVIVE, TWO OF THEM INTACT.** A test still drives
+this API — both launchers mint a token before any job runs and hand it to every
+one of them, which is `tests/tools/admin-api-token.js` and its preloaded shim,
+so no job holds a secret. It is still the way back in — through
+`adminApi.authRequired`, which restores the open API exactly. What is no longer
+true by default is the third: anybody who can reach this port can no longer
+grant themselves both roles here.
+
+**AND IT ACQUIRED A BOOTSTRAP HOLE THAT HAS TO BE CLOSED BY CONFIGURATION.**
+The seeded `sts-management-api` client's secret is minted at every start and is
+readable only THROUGH the API it unlocks, so a service that has restarted is a
+service nobody can get a token for. `adminApi.clientSecret` pins it, both
+launchers set it per run, and a deployment that does not set it has an
+administrative surface it cannot reach.
+
+---
+
+### The three reasons it was open, kept verbatim
+
+They are why the off switch exists.
 
 * **A test drives this API.** The parent project's `tests/vendored/admin_api.js` walks
   every operation over HTTP with no browser and no cookie jar. A credential here
@@ -362,6 +478,15 @@ If that ever needs to change it is a SEPARATE setting and a separate argument
 (`admin.apiAuthRequired` was considered and not built), never a quiet extension
 of `admin.authRequired` to this path: a suite that started failing because a
 console setting reached an API it never named would be the worst way to find out.
+
+**THAT PARAGRAPH WAS FOLLOWED EXACTLY AND IS WORTH READING AS A PREDICTION THAT
+HELD.** The change did come, and it came as a separate setting with a separate
+argument — `adminApi.authRequired`, in its own group, with two settings beside
+it — and NOT as an extension of `admin.authRequired`. A deployment that turns
+the console's gate off still has an authenticated API, and one that turns this
+API's gate off still has a gated console. The name considered here was
+`admin.apiAuthRequired` and the one built is `adminApi.*`, which is the same
+decision spelt so that the group has somewhere to live.
 
 **Rule 7 held for this feature and is worth noting because it is the case where
 it pays most.** `/admin/rbac` arrived with `GET /admin-api/rbac` and `POST
@@ -565,11 +690,14 @@ away from a client. One vocabulary for both doors is worth more than a shorter
 URL, and the parity check reads the console's own list either way.
 
 
-## The five directory operations, and the slot they go through (2026-09-01)
+## The directory operations, and the slot they go through (2026-09-01, and three more on 2026-09-05)
 
 `GET /admin-api/ldap/directory`, `/ldap/applications`, `/ldap/federations`,
 `/ldap/spiffe` and `/ldap/service` mirror the five console pages that moved into
-`/admin/ldap/` that day. They exist because of rule 7 and for no other reason —
+`/admin/ldap/` that day, and `/ldap/roles`, `/ldap/policies` and `/ldap/peps`
+mirror the three added on 2026-09-05 — when `ou=roles`, `ou=policies` and
+`ou=peps` each got the page its own module's schema comment had been claiming
+for weeks. They exist because of rule 7 and for no other reason —
 a page of that console gets an operation here in the same change — and the
 parity check in `tests/vendored/admin_api.js` is what would have noticed if they
 had not.
@@ -578,8 +706,10 @@ had not.
 `admin.js`'s NINTH SLOT filled by `ldap/ldap_server.js`.** This module is
 required at #19 and that one at #21, so a plain require would drag every route
 registered there ahead of this API's own; and `admin.js` cannot require it
-either, because that module requires `admin.js` back. The slot carries all five
-views and is validated whole. Each operation calls exactly the function that
+either, because that module requires `admin.js` back. The slot carries all eight
+views and is validated whole — so a name added to `DIRECTORY_PAGE_NAMES`
+without its view is a refused install rather than one operation answering as
+though no directory were loaded. Each operation calls exactly the function that
 DRAWS the page, so an operation and its page cannot come to disagree about what
 is in the directory.
 
@@ -592,9 +722,13 @@ page is built by walking the express router and a raw TCP listener is not on it.
 
 **THE GATE IS THE POINT OF THEM.** Those pages print `oauthClientSecret` and
 `fedClientSecret` in the clear, which is why moving them behind the console's
-gate was right; this API is deliberately not gated, which is what keeps a test
-able to read the directory without signing a browser in. Both halves of that
-sentence are the argument at the top of this file, not an exception to it.
+gate was right; this API takes an access token rather than a browser session,
+which is what keeps a test able to read the directory without signing a browser
+in. Both halves of that sentence are the argument at the top of this file, not
+an exception to it. **It said "deliberately not gated" until 2026-09-09** — the
+sentence survived the gate by pointing at a property that was never the point:
+what a test cannot do is drive a browser, and minting a token is not driving a
+browser.
 
 **Their response schemas are deliberately shallow**, and `admin_api_spec.js`
 says why beside them: what they return is DIRECTORY ENTRIES, and this directory
@@ -602,6 +736,118 @@ is schemaless on purpose, so an `attributes` member written out property by
 property would be a document making a promise the store does not keep. The names
 are published in the one place that can keep them right — each reply carries the
 container's own `schema`, read out of the module that owns it.
+
+**THE THREE ADDED IN 2026-09-05 ARE READ-ONLY AND SAY SO**, each pointing at
+the resource that writes: `/admin-api/roles` for the role register,
+`/admin-api/xacml` for the repository and for PEPs. That is the same split
+`/ldap/applications` and `/ldap/spiffe` already have, and it is what keeps one
+door per fact.
+
+Two of them carry a sentence their writing twin does not, which is the whole
+reason they are worth their rows rather than being a shape of the existing
+operations. `/ldap/roles` says that the container is HALF the register — the
+requirement is `appRequiredRole` on an APPLICATION entry, so a caller wanting
+both halves resolved wants `GET /admin-api/roles`. And `/ldap/policies` says
+that **a write over LDAP skips the typechecker**: every write through
+`/admin-api/xacml` is statically validated so a policy that does not typecheck
+is refused at write time, and an `ldapmodify` reaches the entry directly.
+
+## `/admin-api/groups/{action}` — THE HOLE RULE 7 CANNOT SEE (2026-09-06)
+
+`POST /admin-api/groups/create` and `POST /admin-api/groups/add-member` are new,
+and what makes them worth a section rather than two rows is HOW LONG THEY WERE
+MISSING and WHY nothing here reported it.
+
+`/admin-api/groups` was a read. `/admin/groups` was a read. So this API could
+put a PERSON in the directory — `POST /admin-api/users/create`, driven five
+thousand times by a load job — and had no way at all to put them in a GROUP;
+the only two doors onto a group in this directory were an `ldapadd` on the raw
+socket and `POST /scim/v2/Groups`. The console, meanwhile, could report a
+dangling member, a claimed membership and the two groups that decide who may use
+it, and could create none of them.
+
+**RULE 7 IS SATISFIED EXACTLY WHEN BOTH SIDES ARE MISSING.** It is a parity
+check — every control on that console has an operation here, every operation
+here names a control there — so it reports DRIFT and is silent about ABSENCE.
+That is not a flaw in the rule; it is the boundary of what a parity check can
+be. What found this was `tests/vendored/sts_directory_bulk_load_api.js`: a job
+named "through the management API" that could not be written, because two of its
+three sections would have had to reach for SCIM.
+
+**The pattern is `/groups/:action` and the switch is in `admin.groupsAction()`**,
+exactly as `/users/:action`'s is in `usersAction()` — two doors onto one action
+must not be two readings of what was sent. That function reaches
+`ldap_server.js`'s `createGroup()` and `addGroupMember()` through **`admin.js`'s
+TWELFTH SLOT**, `setGroupWriter()`, for the route-order reason every slot here
+has.
+
+Four things about their behaviour are decided in that module and are worth
+knowing before calling either:
+
+* **A member that names nothing is WRITTEN, not refused.** This directory does
+  no referential integrity in either direction — deleting a person leaves their
+  DN in every group that listed them — so refusing here would make the dangling
+  state `/admin/groups` exists to report impossible to produce from this door.
+  `create` returns them in `dangling`; `add-member` returns `present: false`.
+* **An empty group is allowed and RFC 4519 says it should not be.** `member` is
+  MUST on `groupOfNames`. SCIM already creates one, and an API stricter than
+  SCIM about the same store would be two doors disagreeing about what this
+  directory holds.
+* **`add-member` is IDEMPOTENT** — `ok: true` with `changed: false` for
+  somebody already listed, so a script that adds on every run does not fail on
+  its second one. Membership is asked across `member`, `uniqueMember` and
+  `memberUid` together, which is how `/admin/groups` and the groups claim ask
+  it.
+* **Nothing is ever written onto the PERSON.** `memberOf` is maintained by
+  nothing in this service and is not even a standard attribute; a value written
+  there is one no other door here can take away, which is why `admin_rbac.js`
+  REFUSES a revoke of a membership held that way.
+
+**REMOVING a member and DELETING a group are deliberately not here.** Both doors
+exist — an `ldapmodify` or a SCIM `PATCH` for a membership, an `ldapdelete` or a
+SCIM `DELETE` for a group, and `POST /admin-api/rbac` for the two console roles
+— and adding operations nobody asked for would be four more things for the two
+doors onto them to disagree about. What did not exist anywhere but SCIM and the
+socket was CREATION, and that is what was added.
+
+**They needed no exemption in `sts_admin_api_operations.js`'s ledger.** That
+walk is driven off the document — every GET, and every POST that carries an
+example — so an operation with an example is driven the day it lands. Both
+carry one.
+
+## `/admin-api/xacml/monitor` is the one XACML operation about TRAFFIC
+
+Added 2026-09-06 with the console page it mirrors. The other six describe the
+repository — what policies exist, what one says, what the PDP would decide about
+a subject you name; this answers what is actually HAPPENING, and it is what a
+caller reaches for when authorization is misbehaving rather than when it is
+being set up.
+
+**NO POST BESIDE IT, and that is rule 7 read exactly rather than by shape**: the
+page it mirrors has no control at all. A reset was refused rather than
+forgotten — a console that could zero its own monitoring would make every number
+on it a number somebody might have zeroed, and the audit log, which is the
+durable record of a refusal, cannot be reset either.
+
+Two things about the reply are worth knowing before reading it, and both are
+distinctions a single figure would have lost:
+
+* **`allowed` is not `permit`.** XACML has four decisions and a PEP has two
+  outcomes, and what maps between them is the PEP's bias — a deny-biased PEP
+  refuses a NotApplicable that a permit-biased one allows. An obligation the PEP
+  cannot discharge also turns a Permit into a refusal (section 7.2).
+* **`decisions.here` and `decisions.remote` are two different kinds of
+  evidence.** The first was counted by this process as it happened; the second
+  is what registered PEPs REPORT on their heartbeats, in their own memory, and
+  goes DOWN when one restarts. `combined` adds them and the description says it
+  is arithmetic rather than a measurement.
+
+On the `pdp` row `allowed` and `refused` are **null rather than 0** — this
+service produced that decision for somebody else's enforcement point and never
+saw what was done with it, and a zero would be a claim about an enforcement it
+was not present for. `unenforced` in the totals is what makes the four figures
+reconcile; `xacml/CLAUDE.md` argues why a total that does not add up is worse
+than a missing one.
 
 ## `/admin-api/consent`: a resource of its own, and why the action names stutter
 
@@ -679,3 +925,89 @@ be two places to disagree.
 are drawn — the applications page's arrangement with `/admin/delegation`, and
 for its reason: moving a form is not moving an action, and a route per page
 would have wanted an operation per page over one function.
+
+## `/admin-api/roles`: the register, the preview, and the one read that is not a page
+
+Three shapes under one tag, added 2026-09-05 with the role register itself.
+
+`GET /admin-api/roles` is the register whole — the six built-in roles, every
+configured role with its three membership lists, and every application that has
+been NARROWED. That last list is the reason this operation exists rather than
+being `/admin-api/ldap/roles` with a filter: **the two halves of a role live in
+two containers**, membership on the role entry and the requirement
+(`appRequiredRole`) on the application entry, and this is the only surface that
+resolves them together. `requiring[].unknown` is what that resolution buys — a
+role an application demands that NOTHING defines, which refuses everybody,
+silently and correctly, and looks exactly like the application being broken.
+
+`POST /admin-api/roles/:action` is the five writes: `create-role`,
+`delete-role`, `add-member`, `remove-member` and `describe-role`. Creating and
+populating are separate on purpose, because a role is worth creating before
+anybody holds it — an application can be narrowed to it first and the register
+will then say so.
+
+`GET /admin-api/roles/preview` is the one worth reading the code for. **It is
+the SAME call the nine issuance sites make** — `common/issuance_gate.check()`,
+through `xacml/xacml_role_pep.js`, against the policy `xacml.issuancePolicy`
+names — so a preview that agreed with the enforcement only by coincidence is
+impossible. That is the only reason it is worth having, and it is why the
+answer arrives through `admin.js`'s ELEVENTH SLOT rather than through anything
+this module could compute.
+
+**It is not `POST /xacml/pdp`**, which asks the same engine a different
+question: an arbitrary request against the repository ROOT, which is the policy
+about somebody else's boundary. Two questions, two documents.
+
+### `answered: false` is not leniency, it is the page's own shape
+
+`preview` needs an `application` and a `subject` and declares NEITHER required.
+A GET of `/admin/roles` with no parameters draws the form and no answer, so the
+operation answers 200 with `answered: false` and says what was missing — this is
+a READ, and a read with no question in it has nothing to refuse.
+
+**There is deliberately no `decision` member on that reply.** The hazard is
+gone by construction rather than by care: `issuance_gate.check()` ALLOWS a call
+that names no application, so an operation that fell through to the gate would
+hand back a Permit meaning "you did not ask". `answered` is the first thing to
+read, and `available: false` is the separate fact that the XACML family is not
+loaded in this process at all.
+
+### `gated` and `enforced` are two different offs
+
+`GET /admin-api/roles` reports both because they are reached differently and a
+caller diagnosing "why is nothing being refused" needs to know which one it is.
+`gated: false` means the XACML family is not loaded, so `issuance_gate.js` has
+no decider and every issuance is allowed whatever the register says.
+`enforced: false` means `roles.enforceIssuance` is off — the same outcome by a
+different route, and the way back if a policy edit locks something out.
+
+## THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS GATED AT ALL (2026-09-06)
+
+The product-mode middleware asks the two console roles and then, for a caller
+that holds one, asks `common/access_gate.js`. Three things about that.
+
+**IT IS THE LAYER ABOVE AND NOT A REPLACEMENT.** `admin.gateStateFor()` is still
+the one answer to *who may administer this service* — asking it rather than
+re-deriving it is what stops this file becoming a second one — and the subject
+handed to the policy is the SESSION that got the caller through it, never
+anything on the request. A PDP deciding faithfully about a subject the caller
+nominated is broken access control with extra steps.
+
+**IT RUNS ONLY INSIDE THE `mode.gatesManagementApi()` BRANCH, and that is the
+argument this file has always made read one layer up.** In development this API
+is open by design: it is what the tests drive and the way back in when nobody
+holds a role, which a service that checks no password needs because there is no
+other way to bootstrap an administrator. Open means no credential, so no
+session, so no subject — and asking a policy whose built-in document refuses an
+unauthenticated subject would close exactly that door. **A POLICY LAYER MUST NOT
+BE THE THING THAT REMOVES THE RECOVERY PATH.**
+
+**ON AN UNEDITED PRODUCT DEPLOYMENT IT PERMITS**, because the built-in document
+asks for a role only where somebody has required one and the caller has already
+been shown to hold Admin Read or Admin Write. So turning product mode on does
+not acquire a second refusal nobody asked for; what it acquires is somewhere to
+put one.
+
+The refusal says the caller PASSED the role check and names the roles they hold,
+because "you hold the role and the policy still says no" is the one state a
+reader would otherwise spend an afternoon on.

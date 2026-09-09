@@ -44,6 +44,14 @@ const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// The mode. A LEAF (rule 3) that registers nothing and requires only `config`,
+// which this module already requires — so it can neither move a route nor
+// close a cycle.
+const mode = require('../common/mode');
+// PER PROCESS AND NOT PER REALM — see the store below. Required only for
+// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
+// move a route or join a cycle.
+const realms = require('../common/realms');
 
 const REALM = config.value('krb5.realm');
 const DOMAIN = REALM.toLowerCase();
@@ -596,7 +604,19 @@ function realmForService(nameComponents) {
 // Keys are derived once, lazily, and cached: string-to-key is thousands of PBKDF2
 // rounds per etype per principal, and deriving them all at startup would make the
 // service slow to start for keys most runs never use.
-const principals = new Map();
+// -------------------------------------------------------------------------
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
+// is a plain Map that reports its writes so product mode can write them down;
+// `scope: 'shared'` is what says the store deliberately has no realm in it,
+// which is the discriminator `tests/realm_isolation.js` checks against.
+// -------------------------------------------------------------------------
+// The KDC is one of the three socket families a trust realm does not get: a
+// raw socket has no path to put a realm segment in, and the Kerberos realm
+// name inside the protocol is the KERBEROS realm rather than this service's.
+// **A LONG-TERM KEY IS THE PASSWORD**, which is why every row here is sealed
+// before it reaches the store.
+const principals = realms.sharedMap({ persist: 'krb5.principals',
+                                      scope: 'shared' });
 
 // RIDs for the accounts findOrCreateUser() makes, from 5000 up. Well clear of the
 // configured ones (the 1100s here, the 2100s in PARTNER.COM) on purpose: a service
@@ -691,9 +711,11 @@ function register(def) {
     // by the next successful AS exchange, in handleAsReq(), because the ticket
     // that exchange mints is newer than the instant and leaving a stale one
     // behind would refuse the TGS-REQ that immediately follows it.
-    signedOutAt: null,
-    keys: new Map()
+    signedOutAt: null
   };
+  // THE DERIVED-KEY CACHE IS ATTACHED SEPARATELY AND IS NOT ENUMERABLE — see
+  // withKeyCache() below for why.
+  withKeyCache(principal);
   principals.set(keyOf(principal), principal);
   log.debug('Leaving register().');
   return principal;
@@ -728,7 +750,18 @@ function signOut(nameComponents, realm, at) {
     log.debug("Leaving signOut(). No such principal.");
     return null;
   }
-  principal.signedOutAt = at || new Date();
+  principal.signedOutAt = asDate(at) || new Date();
+  // WRITTEN BACK THROUGH THE STORE, and not merely mutated (2026-09-08). The
+  // principal is an object HELD in `principals`, so stamping a field on it
+  // changes this process's memory and nothing else: `realms.sharedMap()`
+  // journals a write when `set()` is called, so an in-place mutation is
+  // invisible to the persistence store, never becomes a change row and never
+  // reaches another process. With request workers that is a global sign-out
+  // that worked on the worker it ran on — and `GET /admin-api/sessions`, which
+  // fans out, went on listing the Kerberos ticket as live from a worker that
+  // had never heard about it. The same write was lost in one process too: it
+  // simply never persisted.
+  principals.set(keyOf(principal), principal);
   log.info('krb5: ' + principal.name.join('/') + '@' + principal.realm + ' signed out at ' +
            principal.signedOutAt.toISOString() + '. A TGS-REQ presenting a ticket issued ' +
            'before that is now refused KDC_ERR_TGT_REVOKED (20). A service ticket already ' +
@@ -745,8 +778,13 @@ function clearSignOut(nameComponents, realm) {
     log.debug("Leaving clearSignOut(). Nothing was stamped.");
     return null;
   }
-  const was = principal.signedOutAt;
+  const was = asDate(principal.signedOutAt) || new Date(0);
   principal.signedOutAt = null;
+  // Through the store, for signOut()'s reason above — and this direction
+  // matters just as much: a CLEARED stamp that never replicated would leave
+  // another process refusing every TGS-REQ from somebody who has signed back
+  // in, with KDC_ERR_TGT_REVOKED and nothing anywhere to explain it.
+  principals.set(keyOf(principal), principal);
   log.info('krb5: the sign-out instant on ' + principal.name.join('/') + '@' + principal.realm +
            ' (' + was.toISOString() + ') is cleared; tickets issued before it are accepted again.');
   log.debug("Leaving clearSignOut(). Cleared.");
@@ -756,9 +794,41 @@ function clearSignOut(nameComponents, realm) {
 // The instant, or null. Without entering/leaving logs: the TGS handler calls it
 // on every request it answers, and a pair of lines there would be most of the
 // Kerberos log on a busy run.
+// ---------------------------------------------------------------------------
+// THE STAMP AS A `Date`, WHATEVER IT IS ON THE ENTRY (2026-09-08).
+//
+// `principals` is persisted and replicated, and both of those round-trip a
+// value through JSON — where a `Date` becomes an ISO STRING and comes back as
+// one. Every reader of this field calls `.toISOString()` or `.getTime()` on
+// it, so a principal that arrived from the store or from another process blew
+// up in whichever handler read it first. It surfaced as `logout: the krb5
+// family could not be read while terminating: already.getTime is not a
+// function` — and, because `/admin-api/sessions` reads that inventory, as an
+// HTML 500 where two jobs expected JSON.
+//
+// Coerced on the way OUT rather than repaired on the way in: a restore and a
+// replicated apply are two different doors and there will be a third, and the
+// one thing every reader shares is this accessor. Callers reading the field
+// directly are the two below and `logout.js`'s row builder, which take a
+// principal from `find()` and are given the same treatment.
+// ---------------------------------------------------------------------------
+function asDate(value) {
+  if (!value) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value;
+  }
+  const at = new Date(value);
+  // An unparseable stamp is treated as no stamp. The alternative is an
+  // Invalid Date, which formats as "Invalid Date" and compares false against
+  // everything — a principal that is signed out and cannot be seen to be.
+  return isNaN(at.getTime()) ? null : at;
+}
+
 function signedOutAt(nameComponents, realm) {
   const principal = find(nameComponents, realm);
-  return (principal && principal.signedOutAt) || null;
+  return asDate(principal && principal.signedOutAt);
 }
 
 // Every principal currently carrying one, for the console and for /logout's
@@ -768,10 +838,10 @@ function signedOutPrincipals() {
   log.debug("Entering signedOutPrincipals().");
   const out = [];
   principals.forEach(function (principal) {
-    if (principal.signedOutAt) {
+    if (asDate(principal.signedOutAt)) {
       out.push({ name: principal.name.slice(0), realm: principal.realm,
                  principal: principal.name.join('/') + '@' + principal.realm,
-                 signedOutAt: principal.signedOutAt });
+                 signedOutAt: asDate(principal.signedOutAt) });
     }
   });
   log.debug("Leaving signedOutPrincipals(). " + out.length + " principal(s).");
@@ -782,9 +852,46 @@ function signedOutPrincipals() {
 // working unchanged. A caller that means "in the realm this ticket came from" has to
 // say so — and in handleTgsReq that is the difference between opening a cross-realm
 // ticket-granting ticket and failing to.
+// ---------------------------------------------------------------------------
+// THE DERIVED LONG-TERM KEYS ARE A CACHE, AND THEY MUST NOT BE PERSISTED
+// (2026-09-08).
+//
+// `longTermKey()` derives one key per etype from `password` + `salt` and keeps
+// it in a `Map` on the principal. That was harmless while a principal only ever
+// lived in this process's memory. `principals` is a PERSISTED, REPLICATED store
+// though — and since `signOut()` began writing the principal back, every
+// principal round-trips through JSON, where a `Map` becomes `{}` and a `Buffer`
+// becomes `{"type":"Buffer","data":[…]}`. The next `longTermKey()` then called
+// `.has` on a plain object: `principal.keys.has is not a function`, which took
+// out the whole AS exchange with `KRB_ERR_GENERIC could not decode the
+// request` — a message that points at the client's bytes and had nothing to do
+// with them.
+//
+// So the cache is attached NON-ENUMERABLY. `JSON.stringify` skips it, which
+// fixes both halves at once: nothing derived is written down (the stored form
+// carries the password and the salt, so a cache adds exposure without adding
+// anything), and no reader can be handed a broken one. A principal that arrives
+// from the store or from another process simply has no cache, and gets an empty
+// one here — the keys are re-derived on demand, which is what a cache means.
+// ---------------------------------------------------------------------------
+function withKeyCache(principal) {
+  if (!principal) {
+    return principal;
+  }
+  if (!(principal.keys instanceof Map)) {
+    Object.defineProperty(principal, 'keys', {
+      value: new Map(), enumerable: false, writable: true, configurable: true
+    });
+  }
+  return principal;
+}
+
 function find(nameComponents, realm) {
   if (!nameComponents || !nameComponents.length) return null;
-  return principals.get(nameComponents.join('/') + '@' + (realm || REALM)) || null;
+  // EVERY READER COMES THROUGH HERE, which is why the cache is repaired here
+  // rather than at each of the two places that use it.
+  return withKeyCache(
+    principals.get(nameComponents.join('/') + '@' + (realm || REALM))) || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -828,6 +935,21 @@ function findOrCreateUser(nameComponents, realm) {
     // Not our realm, so not our account to invent. handleAsReq refuses a foreign realm
     // before it gets here; this is for any caller that does not.
     log.debug('Leaving findOrCreateUser(). ' + inRealm + ' is not a realm this KDC serves.');
+    return null;
+  }
+  // PRODUCT MODE CREATES NOBODY (2026-09-06). An AS-REQ naming a principal
+  // this KDC has never heard of is answered KDC_ERR_C_PRINCIPAL_UNKNOWN, which
+  // is what a real KDC does and what makes the principal database a statement
+  // about the deployment rather than a log of every name anybody has tried.
+  //
+  // It is checked HERE and not at the caller for the reason every predicate in
+  // common/mode.js is centralised: this function has four callers and a
+  // check at each is three chances to forget.
+  if (!mode.autoCreates()) {
+    log.info('krb5: product mode, so ' + (nameComponents || []).join('/') +
+             '@' + inRealm + ' was NOT created on demand. Principals must be ' +
+             'provisioned ahead of time.');
+    log.debug('Leaving findOrCreateUser(). Product mode creates nobody.');
     return null;
   }
   if (!nameComponents || nameComponents.length !== 1 || !nameComponents[0]) {
@@ -886,6 +1008,16 @@ function findOrCreateService(nameComponents, realm) {
   }
   if (realmsServed().indexOf(inRealm) === -1) {
     log.debug('Leaving findOrCreateService(). ' + inRealm + ' is not served here.');
+    return null;
+  }
+  // PRODUCT MODE CREATES NOTHING (2026-09-06) — see findOrCreateUser(). A
+  // service principal invented on demand is how a TGS-REQ for any name at all
+  // gets a ticket, which is exactly the mock behaviour product mode removes.
+  if (!mode.autoCreates()) {
+    log.info('krb5: product mode, so the service principal ' +
+             (nameComponents || []).join('/') + '@' + inRealm + ' was NOT ' +
+             'created on demand.');
+    log.debug('Leaving findOrCreateService(). Product mode creates nothing.');
     return null;
   }
   if (!nameComponents || nameComponents.length < 2 ||

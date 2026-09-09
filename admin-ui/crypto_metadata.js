@@ -196,6 +196,106 @@ const ssfAuth = require('../ssf/ssf_auth');
 // them as "—" and the `whatItDoesNot` line beside them says which.
 // ---------------------------------------------------------------------------
 const FAMILIES = [
+  // THE USER PORTAL IS THE ONLY FAMILY HERE WHOSE CRYPTOGRAPHY IS ENTIRELY
+  // ABOUT SECRETS AT REST. Every other row on this page is about a credential
+  // being SIGNED, VERIFIED or ENCRYPTED in flight; this one signs nothing and
+  // issues nothing. What it does is decide whether a presented password is the
+  // stored one, and protect two values that must never be readable from a
+  // directory dump.
+  {
+    name: 'User portal',
+    signs: 'Nothing. The portal issues no token, no assertion and no ' +
+           'certificate — it changes credentials rather than minting them.',
+    verifies: 'A PRESENTED PASSWORD, against the scrypt hash on the ' +
+              'person\'s own entry, and an ACTIVATION TOKEN against the ' +
+              'scrypt hash of the one that was issued. Both comparisons are ' +
+              'constant-time through common/crypto.js — a byte-by-byte early ' +
+              'return on either is a timing oracle. A WebAuthn assertion is ' +
+              'verified too, but by authn/webauthn.js, which is where the ' +
+              'ceremony lives.',
+    encrypts: 'Nothing.',
+    decrypts: 'Nothing.',
+    keys: 'None of its own. The CSRF token is an HMAC-SHA256 under a key ' +
+          'generated per process and deliberately NOT persisted — a CSRF ' +
+          'token is only meaningful for the life of a session, a session does ' +
+          'not survive a restart, so a key that did would protect nothing and ' +
+          'be one more secret at rest.',
+    hashes: 'SCRYPT (RFC 7914, N=2^15, r=8, p=1) for both the password and ' +
+            'the activation token, each with 16 random bytes of salt, stored ' +
+            'as `$scrypt$N$r$p$salt$hash` so the cost can be raised later ' +
+            'without invalidating what is already stored. **NOT a digest**: ' +
+            'a password is low-entropy and a fast hash over one is a wordlist ' +
+            'away from being the password. SHA-256 under an HMAC for the CSRF ' +
+            'token, which is a different job — authenticity of a form, not ' +
+            'protection of a secret at rest.',
+    // AN ARRAY, like every other row. Nothing this family protects travels
+    // anywhere — every value is at rest in the embedded directory — so the
+    // list is empty, and saying that as an empty list rather than as a
+    // sentence is what keeps the page able to render it.
+    envelopes: [],
+    algorithms: function () {
+      return [
+        { what: 'Password and activation token at rest',
+          how: 'scrypt, N=32768, r=8, p=1, 32-byte key, 16-byte random salt' },
+        { what: 'Comparing either', how: 'constant-time equality' },
+        { what: 'CSRF token', how: 'HMAC-SHA256 over the session id under a ' +
+                                   'per-process key' }
+      ];
+    }
+  },
+  // XACML IS THE ONE FAMILY HERE THAT PERFORMS NO CRYPTOGRAPHY AT ALL, and
+  // saying so is the point of the row rather than an admission. A PDP reads a
+  // policy and a request and returns a decision; nothing is signed, nothing is
+  // verified, nothing is encrypted, and no key is involved anywhere in the
+  // decision path. A reader who does not find XACML on this page would
+  // reasonably wonder whether the page is incomplete — which is exactly what
+  // the drift check between this table and sts_metadata.js's PROTOCOLS exists
+  // to prevent, in both directions.
+  //
+  // What that costs, and it is worth knowing: a decision travels over whatever
+  // the transport gives it and carries no integrity of its own. The REMOTE
+  // PEP (phase five) is where that matters, and the answer there is the same
+  // one: it REGISTERS over mutual TLS and PULLS the repository over the same
+  // connection, which is the tls/ family's cryptography and not this one's.
+  // The policies it pulls are not signed, so a PEP trusts the transport for
+  // them exactly as it trusts it for everything else.
+  { name: 'XACML',
+    signs: 'Nothing. A decision is not a token and carries no signature.',
+    verifies: 'Nothing in the decision path. The remote PEP\'s client ' +
+              'certificate is verified by the TLS layer (see TLS / mutual ' +
+              'TLS), not here.',
+    encrypts: 'Nothing.',
+    decrypts: 'Nothing.',
+    keys: 'None. No key of any kind takes part in reaching a decision.',
+    hashes: 'ONE, AND IT IS NOT SECURITY. The remote PEP\'s sync token is a ' +
+            'SHA-256 over the documents of every enabled policy plus which ' +
+            'one is the root — a cheap way for a PEP to ask "has anything ' +
+            'changed" and get a 304, and nothing more. It authenticates ' +
+            'nothing and is not compared against anything a caller supplies ' +
+            'as a credential, so it would still be correct as a CRC.',
+    whatItDoesNot: 'It signs no decision, so a decision that travelled ' +
+                   'between two processes carries no integrity of its own ' +
+                   'and rests entirely on the transport. That is the ' +
+                   'position rather than a gap: signing a decision would ' +
+                   'need a PEP to hold a key and verify it, and this ' +
+                   'service\'s whole premise is that the interesting part ' +
+                   'is the policy rather than the plumbing.',
+    // THREE ROWS OF THIS TABLE SAY "NOTHING", AND THIS ONE MUST STILL CARRY
+    // THE FIELDS. `cryptoJson()` calls `envelopes.slice(0)` and
+    // `algorithms()` on every row without checking, deliberately — a row is
+    // the whole shape or it is not a row — and this one was missing both from
+    // phase one until phase five, which made GET /admin-api/crypto answer 500
+    // rather than reporting a family that does no cryptography. The empty
+    // list and the empty table are the right answer here and are what the
+    // page draws as an em dash.
+    envelopes: [],
+    algorithms: function () {
+      return [
+        ['Nothing is signed, verified, encrypted or decrypted here', []],
+        ['The remote PEP sync token, which is a change detector rather ' +
+         'than a security mechanism', ['SHA-256']]
+      ];
+    } },
   { name: 'OAuth2 / OIDC',
     signs: 'Every access token and refresh token, and the ID Token, with the ' +
            'realm\'s RSA key as RS256. A client that registers ' +
@@ -2381,6 +2481,15 @@ const nodeCrypto = require('crypto');
 // thing that EXPORTS them — two different jobs that would otherwise share a
 // name three hundred lines apart.
 const keystore = require('../common/vendored/key_material.js');
+// **AND `stsKeystore` FOR THIS SERVICE'S OWN, WHICH IS A THIRD NAME IN THE
+// SAME NEIGHBOURHOOD ON PURPOSE.** `keyMaterial()` reports on the keys,
+// `keystore` above EXPORTS them, and this one decides whether they persist and
+// how long a decrypted private key may sit in memory. The header on
+// `renderKeyPairs()` records what a name collision in this file already cost;
+// a fourth thing called `keystore` would have been the same 500 a third time.
+// A LEAF (rule 3): it registers nothing and requires nothing this file does
+// not already have loaded.
+const stsKeystore = require('../common/keystore');
 
 // One row per key pair this process holds. `formats` is computed rather than
 // listed, because the answer differs per key for two different reasons — no
@@ -2635,17 +2744,43 @@ async function exportKey(id, format, password) {
 function keysJson(base) {
   log.debug("Entering keysJson().");
   const rows = keyInventory();
+  // **`regeneratedEveryStart` WAS THE CONSTANT `true` AND THAT STOPPED BEING
+  // TRUE ON 2026-09-06.** Where the keystore is in use the signing keys are
+  // generated once and read back, so a resource asserting the opposite was
+  // telling a caller that a key it had just exported would be gone after a
+  // restart — which is the reassurance somebody would act on. It is read from
+  // the keystore now, and the TLS and SPIFFE keys really are per start, which
+  // is why `keyInventory()` marks each row rather than the report as a whole.
+  const store = stsKeystore.report();
   const out = {
     issuer: base,
     realm: realms.currentId(),
-    regeneratedEveryStart: true,
+    regeneratedEveryStart: !store.persisting,
+    // WHAT IS DECRYPTED RIGHT NOW, and the policy that decides. It is the only
+    // way to see from outside that the residency window is what it claims to
+    // be — a page saying "nothing is decrypted" has to be believed, so it says
+    // which realms ARE and lets a reader watch the number change.
+    residency: {
+      persisting: store.persisting,
+      retention: store.retention,
+      plaintextTtlS: store.plaintextTtlS,
+      note: store.retentionNote,
+      realmsHeld: store.realmsHeld,
+      plaintextHeld: store.plaintextHeld
+    },
     formats: keystore.keystoreFormats(),
     keys: rows,
     warning: 'THIS RESOURCE LISTS KEYS; the export operation beside it HANDS ' +
-             'OVER PRIVATE KEY MATERIAL. Every key here is generated at start, ' +
-             'lives only in memory and dies with the process, and none of them ' +
-             'protects anything — this service checks no password and validates ' +
-             'no token it did not mint.'
+             'OVER PRIVATE KEY MATERIAL. ' +
+             (store.persisting
+               ? 'The signing keys of this realm are GENERATED ONCE AND ' +
+                 'WRITTEN DOWN, encrypted, so one exported here goes on ' +
+                 'signing after a restart — and a copy taken out of this ' +
+                 'console goes on verifying against a live JWKS.'
+               : 'Every key here is generated at start, lives only in memory ' +
+                 'and dies with the process, and none of them protects ' +
+                 'anything — this service checks no password and validates no ' +
+                 'token it did not mint.')
   };
   log.debug("Leaving keysJson(). " + rows.length + " key(s).");
   return out;
@@ -2659,24 +2794,102 @@ function keysJson(base) {
 // functions, one name, nine hundred lines apart: exactly what the `keystore`
 // import a few hundred lines up was renamed to avoid, met a second time
 // because the first rename fixed the symptom rather than teaching the lesson.
+// ---------------------------------------------------------------------------
+// HOW LONG A DECRYPTED PRIVATE KEY IS IN MEMORY (2026-09-06).
+//
+// A REPORT AND NOT A CONTROL, and that is rule 7 read exactly rather than a
+// gap. Everything on it is either a SETTING — drawn on `/admin/config` with the
+// rest of the Key material group, because that is where its group's row in
+// `SETTING_HOMES` sends it — or an observation. A *Purge now* button was
+// considered and refused: the one POST this page has answers with a FILE
+// rather than a page (see the routes above), so a second action here would be
+// the one form in this console whose two buttons answer in two different
+// shapes, and what it would buy is shortening a window the timer shortens
+// anyway.
+//
+// **THE NUMBER IS THE POINT.** A page that only named the policy would be
+// describing a promise; naming the realms whose key is decrypted RIGHT NOW is
+// something a reader can watch change, which is the only way an operator can
+// tell this is working rather than configured.
+// ---------------------------------------------------------------------------
+function renderResidency(residency) {
+  log.debug("Entering renderResidency().");
+  if (!residency.persisting) {
+    log.debug("Leaving renderResidency(). Not persisting.");
+    return admin.note('<strong>Nothing here is held encrypted in memory, ' +
+      'because nothing here is written down.</strong> This service generates ' +
+      'its signing key at start and keeps it for as long as it runs — there is ' +
+      'no ciphertext for a decrypted key to be purged back TO, so ' +
+      '<code>keys.plaintextRetention</code> means nothing in this ' +
+      'configuration. It is the keystore that makes it apply, and ' +
+      '<code>keys.source</code> is what turns that on.');
+  }
+  const held = residency.plaintextHeld || [];
+  const all = residency.realmsHeld || [];
+  let html = '<h2 id="residency">How long a private key stays decrypted</h2>';
+  html += admin.note('<strong>What this process holds is the CIPHERTEXT.</strong> ' +
+    'A realm\'s signing key is decrypted when something signs with it and ' +
+    'dropped again — ' + esc(residency.note || '') + '. It narrows a WINDOW ' +
+    'and nothing more: the key-encryption key is resident too, so anybody who ' +
+    'can read this process\'s memory at a moment of their choosing can wait ' +
+    'for the next signature. What it takes away is the value of a SNAPSHOT — a ' +
+    'core dump, a swapped page, a debugger attached for a moment — of material ' +
+    'that used to sit here for weeks.');
+  html += '<table><thead><tr><th class="n">Realm</th><th>Held</th>' +
+    '<th>Decrypted right now</th></tr></thead><tbody>' +
+    (all.length
+      ? all.map(function (id) {
+          const open = held.indexOf(id) >= 0;
+          return '<tr><td class="n"><code>' + esc(id || 'default') + '</code></td>' +
+            '<td>encrypted, AES-256-GCM</td>' +
+            '<td>' + (open ? '<strong>yes</strong>'
+                           : '<span class="why">no</span>') + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="3"><span class="why">no realm has stored key ' +
+        'material yet</span></td></tr>') +
+    '</tbody></table>';
+  html += admin.note('A realm reads <strong>no</strong> here until something ' +
+    'signs for it, and goes back to <strong>no</strong> on its own. Reading ' +
+    'this page does not decrypt anything: the key list above is built from the ' +
+    'PUBLIC half — certificates, key identifiers, public JWKs — which the key ' +
+    'set holds in the clear precisely so that discovery and this console never ' +
+    'touch a private key. Exporting one does.');
+  log.debug("Leaving renderResidency(). " + held.length + " decrypted.");
+  return html;
+}
+
 function renderKeyPairs(report) {
   log.debug("Entering renderKeys().");
-  let html = '<p class="lead">Every key pair this process generated at start, ' +
-    'what each one is used for, and a way to take it away. <strong>The signing ' +
-    'keys are per trust realm</strong> — this shows <code>' +
-    esc(report.realm) + '</code> — and the TLS certificate belongs to the ' +
-    'process.</p>';
+  const residency = report.residency || {};
+  let html = '<p class="lead">Every key pair this process holds, what each one ' +
+    'is used for, and a way to take it away. <strong>The signing keys are per ' +
+    'trust realm</strong> — this shows <code>' + esc(report.realm) +
+    '</code> — and the TLS certificate belongs to the process.</p>';
 
+  // **THE OLD WARNING SAID THESE KEYS DIE WITH THE PROCESS, FULL STOP.** That
+  // was true of every key in this service until the keystore landed, and it is
+  // the sentence that makes handing a private key to a browser defensible — so
+  // leaving it standing on a service whose signing key now OUTLIVES the process
+  // would be this console's most consequential untruth. It is computed.
   html += admin.warn('<strong>THIS PAGE HANDS OVER PRIVATE KEYS, and it is the ' +
     'only one here that does.</strong> <a href="/admin/crypto-metadata">' +
     'Cryptography</a> next door publishes key types, identifiers and ' +
     'fingerprints and deliberately no key material at all; this one is the ' +
-    'other half. It is defensible because of what these keys are: generated at ' +
-    'start, held only in memory, dead when the process exits, and protecting ' +
-    'nothing — this service checks no password and validates no token it did ' +
-    'not mint. It needs <strong>Admin Write</strong>, which is a stronger ' +
-    'requirement than any other read on this console, because here reading IS ' +
-    'taking.');
+    'other half. ' +
+    (residency.persisting
+      ? '<strong>This realm\'s signing keys are PERSISTED</strong>, so a key ' +
+        'exported here is not a throwaway: it goes on signing after a restart, ' +
+        'and anything signed with a copy of it goes on verifying against this ' +
+        'service\'s live JWKS. The TLS and SPIFFE keys below are still per ' +
+        'start. '
+      : 'It is defensible because of what these keys are: generated at start, ' +
+        'held only in memory, dead when the process exits, and protecting ' +
+        'nothing — this service checks no password and validates no token it ' +
+        'did not mint. ') +
+    'It needs <strong>Admin Write</strong>, which is a stronger requirement ' +
+    'than any other read on this console, because here reading IS taking.');
+
+  html += renderResidency(residency);
 
   html += admin.note('<strong>The exporter is the debugger\'s own, vendored.</strong> ' +
     '<code>common/vendored/key_material.js</code> does the four formats with a ' +

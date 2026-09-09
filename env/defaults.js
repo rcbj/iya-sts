@@ -42,7 +42,8 @@
 // ---------------------------------------------------------------------------
 var config = {
   // --- The log level ---------------------------------------------------
-  logLevel: "info", // Log level
+  mode: "development", // Mode
+  logLevel: "info",    // Log level
 
   // --- Global ----------------------------------------------------------
   global: {
@@ -51,9 +52,65 @@ var config = {
     trustProxy: false  // Trust forwarded headers
   },
 
+  // --- Admin console ---------------------------------------------------
+  admin: {
+    bootstrapUsername: "admin", // Product-mode bootstrap account; restart to apply
+    readGroup: "admin-read",    // Admin Read role
+    writeGroup: "admin-write",  // Admin Write role
+    openWhenEmpty: true         // Open while no role has a member
+  },
+
+  // --- XACML -----------------------------------------------------------
+  xacml: {
+    enforceAccess: true,             // Decide access with policy
+    accessPolicy: "access-control",  // Access policy name
+    enabled: true,                   // XACML enabled
+    maxPolicies: 200,                // Policies the repository may hold
+    pepBias: "deny-biased",          // What the embedded PEP does with a non-Permit
+    returnPolicyIdList: false,       // Always return the applicable policy identifiers
+    remotePeps: true,                // Remote Policy Enforcement Points may register
+    pepRequireCertificate: true,     // A registering PEP must present a client certificate
+    pipMaxPerWindow: 600,            // PIP queries one caller may make per rate-limit window
+    maxPeps: 50,                     // Remote PEPs the register may hold
+    pepStaleAfterS: 300,             // Seconds before a registered PEP is reported stale
+    pepNotify: true,                 // Nudge a registered PEP when the repository changes
+    pepNotifyAllowedHosts: "",       // Notify endpoint allowlist
+    pepNotifyAllowInsecure: false,   // Allow http:// and untrusted TLS for a nudge
+    pepNotifyTimeoutMs: 2000,        // Nudge timeout (ms)
+    issuancePolicy: "role-issuance"  // The policy issuance decisions are made with
+  },
+
+  // --- Web security ----------------------------------------------------
+  security: {
+    rateLimitWindowS: 60,       // Rate-limit window (seconds)
+    rateLimitPerIdentity: 5,    // Attempts per identity per window
+    rateLimitPerAddress: 20,    // Attempts per address per window
+    activationTtlMinutes: 1440  // Activation link lifetime (minutes)
+  },
+
+  // --- Key material ----------------------------------------------------
+  keys: {
+    source: "auto",                  // Where signing keys come from; restart to apply
+    plaintextRetention: "timed",     // How long a decrypted private key is kept
+    plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
+    kekProvider: "file",             // Key-encryption key provider; restart to apply
+    kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
+    kekRef: "",                      // Key-encryption key reference; restart to apply
+    kekVault: "",                    // Vault or Key Vault URL; restart to apply
+    kekField: "value",               // Vault secret field; restart to apply
+    kekToken: "",                    // Vault token; restart to apply
+    kekRegion: ""                    // AWS region; restart to apply
+  },
+
   // --- Global ----------------------------------------------------------
   workers: {
-    count: 2  // Worker processes
+    count: 5,                          // Worker processes
+    requestCount: 0,                   // Request worker processes; restart to apply
+    dispatch: "",                      // Paths handled in a request worker; restart to apply
+    fanout: "/scim,/xacml,/admin-api", // Dispatched paths with no session affinity; restart to apply
+    operations: "",                    // Operations run in a request worker; restart to apply
+    readYourWrite: false,              // Read-your-write across request workers
+    socketDir: ""                      // Request worker socket directory; restart to apply
   },
 
   // --- Trust realms ----------------------------------------------------
@@ -83,12 +140,11 @@ var config = {
     frontchannelLogout: true                     // OpenID Connect Front-Channel Logout
   },
 
-  // --- Admin console ---------------------------------------------------
-  admin: {
-    authRequired: true,        // Require a sign-in for /admin
-    readGroup: "admin-read",   // Admin Read role
-    writeGroup: "admin-write", // Admin Write role
-    openWhenEmpty: true        // Open while no role has a member
+  // --- Management API --------------------------------------------------
+  adminApi: {
+    authRequired: true, // Require an access token on /admin-api
+    clientSecret: "",   // The management API client's secret; restart to apply
+    audience: ""        // The audience an /admin-api token must carry
   },
 
   // --- Applications ----------------------------------------------------
@@ -225,7 +281,6 @@ var config = {
     maxResults: 200,             // Maximum results per page
     bulkMaxOperations: 100,      // Bulk operation limit
     bulkMaxPayloadSize: 1048576, // Bulk payload limit
-    authRequired: true,          // Require authentication
     authDiscovery: false,        // Authenticate discovery too
     authRealm: "SCIM",           // Authentication realm
     scopeRead: "scim:read",      // OAuth scope to read
@@ -263,7 +318,6 @@ var config = {
     pollMaxEvents: 20,                                                                                                                                    // Events per poll
     maxReceivedEvents: 200,                                                                                                                               // Received events kept
     maxStreamLogEntries: 200,                                                                                                                             // Log lines per stream
-    authRequired: true,                                                                                                                                   // Require authentication
     authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
     authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
     receiveEnabled: true,                                                                                                                                 // Accept pushed events
@@ -286,12 +340,42 @@ var config = {
     omitEventTimestamp: false                                                                                                                                                         // Leave event_timestamp out
   },
 
+  // --- RISC ------------------------------------------------------------
+  risc: {
+    enabled: true,                                                                                                                                                                                                                                                                                    // RISC enabled
+    autoEmit: true,                                                                                                                                                                                                                                                                                   // Emit events when the directory really changes
+    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed",                                                                                                                                                                                                              // Which acts emit automatically
+    eventsSupported: "account-credential-change-required,account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,credential-compromise,opt-in,opt-out-initiated,opt-out-cancelled,opt-out-effective,recovery-activated,recovery-information-changed,sessions-revoked", // RISC event types offered
+    subjectFormat: "iss_sub",                                                                                                                                                                                                                                                                         // How an account subject is named
+    honourOptOut: true,                                                                                                                                                                                                                                                                               // Stop sending about an account that opted out
+    googleSubjectType: false,                                                                                                                                                                                                                                                                         // Write subject_type instead of format
+    reasonLanguage: "en",                                                                                                                                                                                                                                                                             // Language tag on reason_admin / reason_user
+    includeReasons: true,                                                                                                                                                                                                                                                                             // Send reason_admin and reason_user
+    omitEventTimestamp: false,                                                                                                                                                                                                                                                                        // Leave event_timestamp out
+    maxAccountsTracked: 200                                                                                                                                                                                                                                                                           // Accounts tracked
+  },
+
   // --- Group claim -----------------------------------------------------
   groups: {
     claim: true,             // Carry a groups claim
     claimName: "groups",     // Claim name
     claimValue: "cn",        // What names a group
     claimFromMemberOf: true  // Believe an entry's own memberOf
+  },
+
+  // --- Roles -----------------------------------------------------------
+  roles: {
+    claim: true,                   // Carry a roles claim
+    claimName: "roles",            // Role claim name
+    enforceIssuance: true,         // Decide issuance on roles
+    maxRoles: 200,                 // Maximum roles
+    remotePepGroup: "remote-peps", // Group granting the REMOTE_PEPS role
+    xacmlUserGroup: "xacml-users"  // Group granting the XACML_USER role
+  },
+
+  // --- Roles -----------------------------------------------------------
+  authn: {
+    unauthenticatedSessions: false  // Offer "Continue without signing in"
   },
 
   // --- Audit log -------------------------------------------------------
@@ -326,7 +410,6 @@ var config = {
     svidSubject: "C=US,O=SPIRE",                        // SVID subject DN
     autoCreateEntries: true,                            // Invent a registration entry on first sight
     requireSecurityHeader: true,                        // Require the workload.spiffe.io header
-    authRequired: true,                                 // Authenticate the SPIRE Server API; restart to apply
     trustLocalSocket: true,                             // Trust the SPIRE Server API socket as local
     adminIds: "",                                       // Administrator SPIFFE IDs
     clockSkew: 60,                                      // Clock skew (s)
@@ -353,7 +436,11 @@ var config = {
     databaseTlsRejectUnauthorized: false,                 // Verify the database certificate; restart to apply
     writeDelay: 1500,                                     // Write delay (ms)
     realms: true,                                         // Persist the realm registry; restart to apply
-    appconfig: true                                       // Persist runtime setting changes; restart to apply
+    appconfig: true,                                      // Persist runtime setting changes; restart to apply
+    minted: true,                                         // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                           // Minted state retention (ms)
+    coordinate: true,                                     // Coordinate with other processes; restart to apply
+    pollInterval: 5000                                    // Change poll interval (ms)
   },
 };
 

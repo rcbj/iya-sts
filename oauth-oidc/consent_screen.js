@@ -73,6 +73,11 @@ const realms = require('../common/realms');
 const consent = require('../common/consent');
 const applications = require('../common/applications');
 const audit = require('../common/audit');
+
+// The input validator. A LEAF (rule 3): registers no route, closes no cycle.
+const validation = require('../common/validation');
+const vt = validation.types;
+const vz = validation.z;
 // The session, and the stylesheet the sign-in screen is drawn with. This module
 // is required AFTER authn.js in server.js, so this moves no route; and that
 // module does not require this one, so there is no cycle.
@@ -96,7 +101,7 @@ const CONSENT_TTL_MS = 10 * 60 * 1000;
 // directory — which is the exact failure `common/CLAUDE.md` describes for the
 // stores that were left shared, and the reason `realms.map()` exists.
 // ---------------------------------------------------------------------------
-const pending = realms.map();
+const pending = realms.map({ persist: 'consent_screen.pending' });
 
 // ---------------------------------------------------------------------------
 // BEGIN. Called by the authorization endpoint and by nothing else.
@@ -311,9 +316,36 @@ function sendConsentPage(res, html) {
 // ---------------------------------------------------------------------------
 // GET — the screen.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WHAT THE CONSENT SCREEN TAKES: a pending id, and an answer.
+//
+// The id is `randomId()`'s base64url, and typing it is what stops
+// `pendingFor(['a','b'])` reporting "this consent has expired" about a request
+// that was malformed rather than stale — the same confusion the sign-in screen
+// had, one door along.
+//
+// **THE ANSWER IS A CLOSED SET**, because it decides whether a credential is
+// issued. Anything that is not `allow` or `deny` is not a third option this
+// screen is willing to interpret.
+// ---------------------------------------------------------------------------
+const CONSENT_QUERY = vz.object({
+  consent: vt.opt(vt.base64url)
+});
+
+const CONSENT_FORM = vz.object({
+  consent_id: vt.opt(vt.base64url),
+  action: vt.opt(vt.oneOf(['allow', 'deny'])),
+  csrf_token: vt.opt(vt.token)
+});
+
 app.get(CONSENT_PATH, function (req, res) {
   log.debug("Entering the consent screen.");
-  const record = pendingFor((req.query || {}).consent);
+  const asked = validation.check(req, 'query', CONSENT_QUERY);
+  if (!asked.ok) {
+    log.debug("Leaving the consent screen. The request is malformed.");
+    return oauthError(res, 400, 'invalid_request', asked.detail);
+  }
+  const record = pendingFor(asked.value.consent);
   if (!record) {
     log.debug("Leaving the consent screen. Nothing is pending under that id.");
     return oauthError(res, 400, 'invalid_request',
@@ -349,7 +381,12 @@ app.get(CONSENT_PATH, function (req, res) {
 // ---------------------------------------------------------------------------
 app.post(CONSENT_PATH, function (req, res) {
   log.debug("Entering the consent endpoint.");
-  const body = parseBody(req);
+  const posted = validation.checkParsed(parseBody(req), 'body', CONSENT_FORM);
+  if (!posted.ok) {
+    log.debug("Leaving the consent endpoint. The request is malformed.");
+    return oauthError(res, 400, 'invalid_request', posted.detail);
+  }
+  const body = posted.value;
   const record = pendingFor(body.consent_id);
   if (!record) {
     log.debug("Leaving the consent endpoint. The form had expired.");

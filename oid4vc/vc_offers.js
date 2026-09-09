@@ -44,19 +44,28 @@ const { log, logArtifact, baseUrlOf, randomId, xmlEscape, vciError, userFor,
         walletBaseUrl } = require('../common/helpers');
 const config = require('../common/config');
 const { VCI_CONFIG_ID, vciConfigIds } = require('./vc_configs');
+
+// The input validator. A LEAF (rule 3): registers no route, closes no cycle.
+const validation = require('../common/validation');
+// The credential formats this issuer actually offers, read off the table that
+// defines them rather than written out again.
+const VCI_FORMATS = Array.from(new Set(
+  Object.keys(require('./vc_configs').VCI_CONFIGS).map(function (id) {
+    return require('./vc_configs').VCI_CONFIGS[id].format;
+  }).filter(Boolean)));
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const credentialOffers = realms.map();     // id -> { offer, issuerState, expires }
+const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers' });  // id -> { offer, issuerState, expires }
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const issuerStates = realms.map();         // issuer_state -> { configurationIds, expires }
+const issuerStates = realms.map({ persist: 'vc_offers.issuerStates' });  // issuer_state -> { configurationIds, expires }
 
 // Pre-authorized codes (OID4VCI Appendix H.2 / H.3): the End-User authorized the
 // issuance out of band, so there is no authorization request at all — the code
@@ -68,7 +77,7 @@ const issuerStates = realms.map();         // issuer_state -> { configurationIds
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const preAuthorizedCodes = realms.map();   // code -> { configurationIds, txCode, user, deferred, expires }
+const preAuthorizedCodes = realms.map({ persist: 'vc_offers.preAuthorizedCodes' });  // code -> { configurationIds, txCode, user, deferred, expires }
 
 // Deferred issuance transactions (OID4VCI section 9): the credential endpoint
 // answered 202 with one of these instead of a credential.
@@ -77,7 +86,7 @@ const preAuthorizedCodes = realms.map();   // code -> { configurationIds, txCode
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const deferredTransactions = realms.map(); // transaction_id -> { claims, holderJwk, readyAt, expires }
+const deferredTransactions = realms.map({ persist: 'vc_offers.deferredTransactions' });  // transaction_id -> { claims, holderJwk, readyAt, expires }
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.
@@ -168,6 +177,36 @@ function buildCredentialOffer(req, configurationIds, mode) {
 }
 
 // The issuer's own web page — where H.1 starts.
+// ---------------------------------------------------------------------------
+// THE FOUR SCALAR PARAMETERS THESE PAGES TAKE.
+//
+// **THE FORMAT LIST IS DERIVED FROM `VCI_CONFIGS` AND NEVER RETYPED.** Which
+// credential formats this issuer offers is that table's statement — three of
+// them today (`dc+sd-jwt`, `jwt_vc_json`, `ldp_vc`) — and a list written out
+// here would be the second copy that goes stale the day a fourth is added.
+// Same argument `sts_metadata.js` makes about reading the router.
+//
+// **`wallet` IS TYPED AS A URI AND THAT IS THE ONE THAT MATTERS.** It is a URL
+// this service builds into a link and a QR code for somebody to follow, so a
+// `javascript:` or `data:` scheme here is script execution on the machine of
+// whoever scans it. `vt.uri` refuses the executable schemes; it deliberately
+// does NOT constrain the host, because pointing this at a wallet on a laptop is
+// the whole reason the parameter exists.
+//
+// `mode` and `by` are CASE-SENSITIVE, matching their call sites, which compare
+// with `===` and lower-case nothing.
+// ---------------------------------------------------------------------------
+const OID4VC_QUERY = validation.z.looseObject({
+  mode: validation.types.opt(validation.types.oneOf(
+    ['same-device', 'cross-device', 'deferred', 'direct'])),
+  by: validation.types.opt(validation.types.oneOf(['value', 'reference'])),
+  format: validation.types.opt(validation.types.oneOf(VCI_FORMATS)),
+  wallet: validation.types.opt(validation.types.uri),
+  state: validation.types.opt(validation.types.opaque),
+  credential_configuration_ids: validation.types.opt(
+    validation.z.string().max(validation.CAP.SCOPE))
+});
+
 app.get('/issuer', function (req, res) {
   log.debug("Entering the issuer web page.");
   const base = baseUrlOf(req);
@@ -209,6 +248,11 @@ app.get('/issuer/offer', function (req, res) {
   const configurationIds = req.query.credential_configuration_ids
     ? String(req.query.credential_configuration_ids).split(',').filter(Boolean)
     : [VCI_CONFIG_ID];
+  const askedOffer = validation.check(req, 'query', OID4VC_QUERY);
+  if (!askedOffer.ok) {
+    log.debug('Leaving the offer page. ' + askedOffer.detail);
+    return res.status(400).type('text/plain').send(askedOffer.detail + '\n');
+  }
   const mode = String(req.query.mode || 'same-device');
   const built = buildCredentialOffer(req, configurationIds, mode);
   const wallet = String(req.query.wallet || walletBaseUrl()).replace(/\/+$/, '') +

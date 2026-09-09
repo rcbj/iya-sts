@@ -4,9 +4,11 @@
 
 | File | What it is |
 |---|---|
-| `persistence.js` | The driver interface, the mode selection, the diff, the flush scheduler, the restore, and the status object three surfaces render. A LIBRARY — it registers no route. |
-| `persistence_ldif.js` | The `ldif` driver, and the RFC 2849 codec under it. `tests/ldif_codec.js` guards the codec. |
-| `persistence_postgres.js` | The `postgres` driver: three tables, one transaction per flush, and a `pg_notify` nothing listens to yet. |
+| `persistence.js` | The driver interface, the mode selection, the diff, the flush scheduler, the restore, the appliers, and the status object three surfaces render. A LIBRARY — it registers no route. |
+| `persistence_ldif.js` | The `ldif` driver, and the RFC 2849 codec under it. `tests/ldif_codec.js` guards the codec. It deliberately has NO `loadMinted`/`saveMinted`/`purgeMinted`, and the absence is the answer — see below. |
+| `persistence_postgres.js` | The `postgres` driver: six tables, one transaction per flush, and a `pg_notify` that something listens to now. |
+| **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
+| **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
 
 ## The sentence this directory reverses
 
@@ -16,7 +18,10 @@ was true until 2026-08-27. It is not true now, and the replacement sentence has
 to be said exactly, because a half-remembered version of it is worse than either
 version:
 
-**Three things persist when a store is configured.**
+**Three things persist when a store is configured — and since 2026-09-06 a
+FOURTH in product mode on a postgres store, which is everything this process
+mints. The two halves have to be said together or the sentence is worse than
+either half.**
 
 * **The embedded LDAP directory** — every entry under every realm's base. In
   this service that is also the applications registry, the federation register,
@@ -27,17 +32,61 @@ version:
 * **The runtime appconfig overrides** — the top of `config.js`'s five layers,
   the one a console Save or `POST /admin-api/config/set` writes.
 
-**Nothing this service MINTS ever persists, in any mode.** Sessions, access
-tokens, ID Tokens, refresh tokens, authorization codes, pre-authorized codes,
-SAML artifacts, Kerberos tickets, the replay caches, the statistics and the
-audit log are all still in memory and still gone on restart.
+**In DEVELOPMENT MODE nothing this service MINTS persists, in any store.**
+Sessions, access tokens, ID Tokens, refresh tokens, authorization codes,
+pre-authorized codes, SAML artifacts, Kerberos tickets, the replay caches, the
+statistics and the audit log are all in memory and gone on restart.
 
-That is deliberate rather than unfinished, and there is one fact behind it:
+That was deliberate rather than unfinished, and there was one fact behind it:
 **the signing key is regenerated on every start.** A token restored from a disk
 would verify against nothing, an assertion would be a document nobody can check,
 and a statistics file that outlived the key that signed the tokens it described
-would be worse than none. So the rule is: **what persists is what somebody
-TYPED, and what resets is what this process MINTED or COUNTED.**
+would be worse than none. The rule was: **what persists is what somebody TYPED,
+and what resets is what this process MINTED or COUNTED.**
+
+**IN PRODUCT MODE ON A POSTGRES STORE, ALL OF IT PERSISTS — because the premise
+is gone.** `common/keystore.js` generates a realm's signing keys ONCE and reads
+them back, encrypted under a key-encryption key from outside the database, which
+is why product mode REQUIRES a store. A token restored beside the key that
+signed it verifies. So the old rule survives exactly where its reason does:
+
+* **development mode persists nothing it minted**, because the key is
+  regenerated there. Unchanged, and the default.
+* **product mode on postgres persists all of it**, because the key is not.
+* **the `ldif` store persists none of it in either mode**, and says so once at
+  startup. It writes WHOLE FILES per flush — right for a directory somebody
+  types into, wrong for a session table and an audit ring that change on every
+  request. That was refused rather than deferred: the deployment that wants
+  durable sessions wants a database.
+
+**EVERY MINTED ROW IS SEALED**, with `keystore.seal()` — the same AES-256-GCM
+under the same key-encryption key as `sts_keys`. A session id is a cookie value,
+an authorization code is redeemable, a SAML artifact handle is dereferenceable
+and a Kerberos long-term key IS the password, so a dump of `sts_minted` must not
+be a set of usable credentials. What it costs is that nothing in that table is
+queryable by SQL; what wants querying is the directory, which is JSONB and is
+not sealed.
+
+**A STORE BECOMES PERSISTENT AT ITS DECLARATION AND NOWHERE ELSE**, which is
+`common/CLAUDE.md`'s per-realm rule read a second time and is why this was ~40
+one-line edits rather than ~200 call-site edits:
+
+```js
+const sessions = realms.map({ persist: 'authn.sessions' });
+```
+
+Every mutation of the three shapes already funnels through `set`, `delete`,
+`clear` or an array mutator, so naming the store names every write to it.
+**A JOURNAL AND NOT THE DIFF NEXT DOOR**, and the two arguments are opposite and
+both right: the directory is diffed because `touchDirectory()` is one choke
+point that does not say which entry moved and the directory is COLD; these
+stores have two to four mutation points each and are HOT, so in postgres mode —
+where the flush delay is 0 — a full sweep would stringify the audit ring on
+every request that touched it.
+
+`persistence_minted.js` carries all of it at length, including the two
+carve-outs: `oauth2.signedMetadataCache` and `xacml_store.parsed` are CACHES,
+and a cache is not minted state.
 
 `memory` is still the default. A run that says nothing about persistence behaves
 exactly as every run before this existed — which is the whole compatibility
@@ -170,6 +219,30 @@ running service: the `POST /admin-api/users/create` succeeded, `/healthcheck`
 answered 200, `/admin/ldap/service` reported `healthy: false` with the connection error, and
 when the database came back the next change wrote the entry made during the
 outage along with the new one.
+
+### IT BINDS NOTHING, AND IT STILL GOES FIRST — THE ORDERING IS A DEPENDENCY
+
+**This moved here from the root `CLAUDE.md`'s *Four modules start listeners*
+section when that file was broken up.** That section lists the four modules
+whose listeners start from `listen()` rather than at require time; this one
+is on it for the same SHAPE of reason and a different specific one.
+
+**THE FIFTH IS `persistence/persistence.js` AND IT BINDS NOTHING, WHICH IS WHY
+IT IS WORTH ADDING TO THIS LIST RATHER THAN A LIST OF ITS OWN.** It is here for
+the same shape of reason and a different specific one: opening a PostgreSQL
+connection pool is ASYNCHRONOUS, and a `require` cannot await. So the store is
+opened, and the directory, the realm registry and the saved appconfig overrides
+are read back, from `persistence.start()` — which `server.js` calls BEFORE the
+HTTP listener binds, and before the four socket families above start.
+
+**It goes first among the five, and that ordering is a dependency rather than
+tidiness.** Between binding and restoring, this service would answer
+`/oauth2/authorize` out of a seeded directory, `/admin/applications` out of an
+empty registry and `/federation/acs/{id}` out of a register with no
+relationships in it — and that last one is a SECURITY surface, where "not
+configured yet" and "disabled" are the same refusal to a caller and very
+different facts. There is no window in which that can happen.
+
 
 ### AND A FAILED OPEN IS FATAL, WHICH IS THE OPPOSITE AND IS NOT AN INCONSISTENCY
 
@@ -319,44 +392,109 @@ early return in that function is load-bearing on the authentication path:
 and `autoCreateUser()`, so without it somebody signing in for the first time
 would be marked as not having signed in.
 
-## The seam: what this is deliberately not yet
+## The seam is closed (2026-09-06)
 
-The ask was persistence, and persistence is what this is. **It is not
-coordination.** Two processes pointed at one database each hold their own copy
-of the directory in memory, each write their own changes down, and neither sees
-the other's until it restarts. That is written here so it is found now, it is
-stated on `/admin/persistence`, and `status().coordinates` is `false`.
+**This section was a checklist of what a later phase would need. Every item on
+it is done.** It opened *"the ask was persistence, and persistence is what this
+is. It is not coordination"* — two processes pointed at one database each held
+their own copy, and neither saw the other's until it restarted. That was written
+here so it would be found rather than discovered, and it is what
+`persistence_replication.js` reverses.
 
-What the next phase needs is already marked. `persistence_postgres.js` emits
-`pg_notify('sts_ldap_change', …)` after each committed transaction, carrying the
-realm, the DNs that moved and a process id; nothing LISTENs to it yet. It is
-there rather than in the later change because the notification has to be inside
-the transaction that made the change, so adding it later means editing that
-function anyway.
+**THE ONE SENTENCE IS: THE CHANGE LOG IS THE CONTRACT AND THE NOTIFICATION IS
+ONLY LATENCY.** `sts_changes` is a monotonic log — `seq bigserial`, an origin, a
+kind, a realm and a key — **written inside the transaction that made the
+change**. A process remembers the highest `seq` it has applied and asks for
+everything after it. That single fact makes every hard part easy: a listener
+that dropped for four seconds misses nothing, the 8000-byte `pg_notify` limit
+stops mattering because the payload is a POINTER and never a row, and the
+database can restart underneath it. So `LISTEN`/`NOTIFY` stays exactly what it
+was — a nudge that wakes the poll early — and is allowed to be lossy.
 
-The checklist, so the phase is a checklist rather than a rediscovery:
+**THAT IS THE ARGUMENT `xacml-pep/` ALREADY MAKES ABOUT ITS OWN PULL**, and
+citing it is the point rather than a flourish: this repository has run that
+trade in production shape once already, in the one other place where the
+alternative was a push nobody could guarantee.
 
-* A `LISTEN sts_ldap_change` on a connection of its own — a pooled client cannot
-  hold a LISTEN, because the pool will hand it to somebody else.
-* Applying the change to the in-memory Map rather than reloading the realm, and
-  doing it inside `realms.run()` so the ambient realm is right.
-* Ignoring this process's OWN notifications, which is what the process id in the
-  payload is for.
-* A decision about `ldap.maxEntries`, which is a ceiling on what this PROCESS
-  holds and stops meaning that when the store is shared.
-* The `directoryVersion` counter and the group index it feeds, which are
-  per-process and would need bumping on an inbound change.
-* **Nothing about tokens, sessions or codes**, which are not in this database
-  and are not going to be: a token minted by one process is signed by that
-  process's key, and the key is regenerated per start. Sharing a directory does
-  not make two of these services one.
+**AN ORM WAS THE OBVIOUS ANSWER AND IT DOES NOT FIT**, for a reason about this
+service rather than about any ORM. The authority here is an IN-MEMORY MAP, read
+SYNCHRONOUSLY by every protocol module inside a request; the database is a
+write-behind mirror of it. What is needed is cache coherence, not data access.
+An ORM solves the layer below that, would put a second schema definition beside
+`postgres/schema.sql` for the two to drift apart, and routing reads through it
+would make every one of those synchronous lookups an `await` — a rewrite of the
+service rather than a feature.
+
+The old checklist, as it was answered:
+
+* The `LISTEN` is on a connection of its own — a pooled client cannot hold one,
+  because the pool hands it to somebody else. `watchChanges()`.
+* The change is applied to the in-memory Map rather than reloading the realm,
+  inside `realms.run()` so the ambient realm is right. **That is the single most
+  likely bug in the feature and `tests/replication.js` asserts it**: an apply
+  outside a realm context puts realm `acme`'s session in the default realm,
+  silently, and the only symptom is somebody signed in to the wrong place.
+* A process ignores its own rows — in the SQL (`origin <> $2`) and again in
+  `applyRows()`. Belt and braces, because the failure it prevents is the one
+  unbounded one: two processes exchanging one row for ever, both answering
+  correctly the whole time.
+* `ldap.maxEntries` is still a ceiling on what THIS PROCESS holds, and is
+  reported as such.
+* The group index is fed by `touchDirectory()`, and `applyEntry()` goes through
+  it — a replicated write that skipped it would produce exactly the stale groups
+  claim that function exists to prevent.
+* **AND THE LAST ITEM IS REVERSED.** It read *"nothing about tokens, sessions or
+  codes, which are not in this database and are not going to be"*. They are, in
+  product mode, and they replicate through the same log — because a design that
+  coordinated the directory and not the sessions would be a service where two
+  processes agree about who exists and disagree about who is signed in.
+
+### Last writer wins, and the two shapes where that is wrong
+
+A row is whole-valued, so a later write replaces an earlier one — which is
+EXACTLY the semantics a single process already has for two concurrent requests,
+so nothing anybody relies on changes. Two shapes are not like that, and both
+declare it (`merge: 'own'` in `common/realms.js`):
+
+* **A COUNTER.** `nums.callTotal++` is this process's tally. Two processes
+  overwriting one row loses counts and the number stays plausible.
+* **AN APPEND-ONLY RING.** The audit log is a sequence, not a value. Overwriting
+  throws away another process's events; merging into memory and writing back
+  makes each process re-report the other's as its own.
+
+Both write ONE ROW PER ORIGIN and the fan-in happens where the value is
+REPORTED — `audit.js`'s `list()` and `summary()`, `admin_stats.js`'s
+`snapshot()`, `xacml_monitor.js`'s. The test for `own` is one question: **is a
+write to this store an ASSIGNMENT or an INCREMENT?**
+
+### What still does not coordinate
+
+* **The sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's
+  four are bound per process. Coordination is about state.
+* **The replay caches and DPoP `jti` sets CONVERGE rather than synchronise, and
+  that is a security statement.** Between a write in one process and its arrival
+  in another there is a window the size of `persistence.pollInterval` in which a
+  proof one process refused is accepted by another. Sticky sessions close it;
+  nothing here does.
+* **A realm's signing keys are not adopted mid-life.** `applyKeysChange()` logs
+  and does nothing: taking a new key would strand everything this process has
+  already signed. Rotation across processes is a rolling restart, which is what
+  it is everywhere else.
 
 ## Adding a driver
 
-Implement the seven-function contract `persistence.js` calls —
-`open`, `close`, `loadDirectory`, `loadRealms`, `loadOverrides`,
-`saveDirectory`, `saveRealms`, `saveOverrides` — and add the mode to `MODES`
-here AND to `enumValues` on `persistence.mode` in `common/config.js`. Those two
+Implement the contract `persistence.js` calls — `open`, `close`,
+`loadDirectory`, `loadRealms`, `loadOverrides`, `saveDirectory`, `saveRealms`,
+`saveOverrides` — and add the mode to `MODES` here AND to `enumValues` on
+`persistence.mode` in `common/config.js`.
+
+**TWO GROUPS ARE OPTIONAL AND ARE TESTED FOR BY NAME**, which is what lets the
+`ldif` driver have neither and be a smaller store rather than a broken one:
+`loadMinted`/`saveMinted`/`purgeMinted` (minted state — `persistence_minted.js`'s
+`supports()`), and `origin`/`latestChangeSeq`/`changesSince`/`readEntry`/
+`readMinted`/`watchChanges`/`purgeChanges` (coordination —
+`persistence_replication.js`'s). A driver missing either group is REPORTED on
+`/admin/persistence` with the reason rather than silently doing less. Those two
 lists are two copies of one fact; `start()` checks them against each other and
 says so rather than trusting them.
 
@@ -451,3 +589,146 @@ written by 16 stops an 18 container with "database files are incompatible with
 server". `docker compose down -v` is the answer and costs nothing here: that
 volume holds the directory, the realm registry and the appconfig overrides —
 the three things somebody TYPED — and never anything this service minted.
+
+## A FOURTH THING PERSISTS, AND IT IS THE FIRST THAT IS A SECRET (2026-09-06)
+
+This directory's header has said since it was written that **three things
+persist** — the embedded directory, the trust realm registry and the runtime
+appconfig overrides — and that **nothing this service MINTS ever does**, because
+the signing key is regenerated on every start and a token that outlived it would
+verify against nothing.
+
+**The second half of that is now conditional on the MODE.** In `product` mode
+the signing keys are generated ONCE and read back, because a token issued
+yesterday has to verify today — which is most of the difference between a mock
+and an identity provider. In `development` mode nothing changed and nothing
+will: a key regenerated per start is what makes two instances impossible to
+confuse, since the `kid` is derived from the key material.
+
+### What goes in the store is CIPHERTEXT, and neither driver ever holds a key
+
+`common/keystore.js` encrypts with AES-256-GCM before anything reaches a driver,
+so `keys.json` and `sts_keys.material` hold `$aesgcm$1$salt$iv$tag$body` and
+nothing else. That is what makes it acceptable for private keys to live beside
+the directory in the same store — and it is asserted rather than assumed:
+`tests/keystore.js` checks that no `BEGIN` survives into the stored form.
+
+**The key that opens it is never in the store, never in the configuration and
+never generated by this service.** `common/secrets.js` reads it from one of five
+places — a mounted file (the default), AWS Secrets Manager, GCP Secret Manager,
+Azure Key Vault or HashiCorp Vault.
+
+### Product mode REQUIRES a store, and this is where that bites
+
+`persistence.mode=memory` with `keys.source=persisted` is a configuration that
+cannot work, and `keystore.start()` refuses it by name rather than starting and
+generating a key every time. That is the same decision this directory already
+made about a store that was configured and could not be opened — see the
+*failed-open-is-fatal* argument above — and it is sharper here:
+
+> **A service that cannot read its own signing key must not come up generating a
+> new one.** Every token, assertion and signed document it ever issued stops
+> verifying at that moment, silently, at somebody else's relying party, with
+> nothing in any log here to point at.
+
+So a KEK that does not decrypt the stored material is FATAL, and the message
+says so at length and names both fixes: correct the key, or set
+`keys.source=generated` to accept a new key on every start, which is what
+development mode does.
+
+### The schema version moved to 2
+
+`sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm
+id. `SCHEMA_VERSION` was 1 over three tables and is 2 over four — nothing reads
+it yet, which is exactly why leaving it behind would have made the one thing it
+is for useless.
+
+### The write is queued, not awaited, and the window is the one already there
+
+`helpers.js` builds a key set inside a PROPERTY READ — `STS.privateKey` on a
+Proxy — so it cannot await a write. A realm created at runtime therefore
+generates its keys synchronously and has them written a moment later; if the
+process dies between the two it generates different ones next time. That is the
+same window `schedule()`'s write delay already gives everything else in this
+store, and it is stated rather than closed because closing it would mean making
+every signature in this service asynchronous.
+
+## THE SCHEMA IS BUILT BY SOMEBODY ELSE NOW, AND THIS SERVICE CANNOT CHANGE IT (2026-09-06)
+
+**Until this date the role this service dialled with had to be able to `CREATE
+TABLE`.** `persistence_postgres.js` carried the whole schema as `CREATE TABLE IF
+NOT EXISTS` and ran the list on every `open()`, and `docker-compose.yml` dialled
+as `sts` — the cluster's bootstrap superuser. Nothing was wrong with the schema;
+what was wrong is that a mock identity service which can create a table can also
+alter, truncate and drop one, and the only thing standing between the two was
+that this driver happened not to.
+
+There are two roles now and the split is the whole change:
+
+| Role | What it is | What it may do |
+|---|---|---|
+| `sts` | the OWNER — the cluster's bootstrap user, what `postgres/schema.sql` is run as | everything, and it is used ONCE |
+| `sts_app` | what `persistence.databaseUrl` dials | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the six tables; `USAGE` and NOT `CREATE` on the schema |
+
+`postgres/schema.sql` creates both halves and is the file to read; it is plain
+SQL taking psql variables, so an operator runs it by hand against their own
+database and `postgres/apply-schema.sh` runs the same file inside the compose
+stack's database on the start that creates the cluster. **`postgres/CLAUDE.md`
+carries the deployment half and this section carries the driver half.**
+
+### `open()` probes, and it had to
+
+The obvious reading is that `IF NOT EXISTS` already handles a schema somebody
+else built, so the driver could be left alone. It does not:
+
+> **`CREATE TABLE IF NOT EXISTS` checks `CREATE` on the schema BEFORE it checks
+> whether the table exists.** PostgreSQL's `parse_utilcmd.c` says so in a
+> comment on the line that does it — *"this also checks permissions on the
+> creation namespace, possibly causing a permission failure before the IF NOT
+> EXISTS test is performed"*. `CREATE INDEX IF NOT EXISTS` is worse by one step:
+> it takes the table's OWNERSHIP first.
+
+So the old `open()` would have been refused on every single start, by six
+statements that had nothing to do, with `42501 permission denied for schema
+sts`. That is measured rather than reasoned: as `sts_app`, against the schema
+this script builds, `CREATE TABLE IF NOT EXISTS sts_keys` is refused and `CREATE
+INDEX IF NOT EXISTS sts_ldap_entries_realm` is refused with *must be owner of
+table*.
+
+`open()` therefore asks `to_regclass` for the whole list in one query — which
+needs no privilege at all and answers NULL rather than raising — and issues a
+`CREATE` only for what is missing. **The CREATEs stay and must stay**: `node
+server.js` against an empty local database, which is what the default connection
+string is for, has no script to have been run and builds its own schema exactly
+as it always did. What changed is only that it stops doing so when there is
+nothing to build.
+
+**A `42501` out of `open()` is caught and re-thrown with the answer in it** —
+build the schema with `postgres/schema.sql`, and if the objects ARE there check
+the search path. It stays fatal, because a failed open has been fatal since
+2026-08-28 and this changes what is SAID rather than what happens.
+
+### A schema of its own, and the search path that goes with it
+
+The tables are in a schema called `sts` rather than in `public`, for one reason:
+**a schema is where `CREATE` is granted**, so "read and write the rows and do not
+change the shape" is expressible as `USAGE` without `CREATE` on a schema this
+service owns, without touching a `public` that every database has. The script
+sets `search_path` on the DATABASE, so every role that connects finds the tables
+and this driver goes on naming them unqualified — which is what keeps it a
+driver for PostgreSQL rather than for this stack.
+
+**The default `"$user", public` would have been a trap and not an error**: the
+owner is called `sts` and so is the schema, so the owner would have found the
+tables through `"$user"` and `sts_app` would not.
+
+### Two copies of the DDL, and what pays for them
+
+`tests/postgres_schema.js` reads `postgres/schema.sql` and this module's
+exported `SCHEMA`, and fails on a `CREATE` either one has and the other does
+not, on a schema version they disagree about, on a grant to the application role
+that is not exactly those four verbs, and on the role name having moved in one
+of the three files that spell it. Without it, a column added here and not there
+gives a database one column short and a service that is not allowed to add it —
+arriving at a person as a permission error naming neither the column nor the
+file.

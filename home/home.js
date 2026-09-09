@@ -100,9 +100,22 @@ const realms = require('../common/realms');
 // that does not is exactly the kind of small lie that costs somebody ten
 // minutes.
 const config = require('../common/config');
-// For the version line only. `admin_api.js` reads it the same way, which is the
-// precedent for requiring the manifest rather than threading a constant.
-const VERSION = require('../package.json').version;
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
+// THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
+// from this repository.
+//
+// **IT USED TO BE `require('../package.json').version` AND THAT WAS A DIFFERENT
+// NUMBER.** The manifest holds M.N.0 — a valid semver with the patch pinned to
+// zero, because npm insists on three parts and the third one there is a
+// placeholder. The build number is the third part of the REAL version and the
+// manifest has nowhere to put it, so this page reported `0.9.0` for every build
+// ever made and told a reader nothing about which one they were looking at.
+// `load()` reads the record the image build stamped. See common/version.js.
+const version = require('../common/version');
+const APP_VERSION = version.load();
+const VERSION = APP_VERSION.version;
+const BUILD_INFO = version.buildInfo(APP_VERSION);
 
 // ---------------------------------------------------------------------------
 // THE FOUR LINKS.
@@ -196,7 +209,14 @@ function homePage() {
     '<h1>mock-sts</h1>' +
     '<p class="sub">A permissive mock identity service that speaks sixteen ' +
     'protocol families. It exists to exercise CLIENTS.</p>' +
-    '<p class="ver">version ' + xmlEscape(VERSION) + '</p>' +
+    // THE VERSION, WITH ITS PROVENANCE IN THE TOOLTIP. The number is what a
+    // person quotes in a bug report; the build instant, the commit and whether
+    // this is a stamped artifact or a checkout are what somebody needs when two
+    // instances of the same M.N do different things. A title attribute rather
+    // than a second line because this is the front door and the version is not
+    // what anybody came for.
+    '<p class="ver" title="' + xmlEscape(BUILD_INFO) + '">version ' +
+    xmlEscape(VERSION) + '</p>' +
     '<div class="warn">It checks no password, validates no access token and ' +
     'attests no workload. Do not put this port on a public address.</div>' +
     '<ul>' +
@@ -210,7 +230,7 @@ function homePage() {
     linkRow(CONSOLE_PATH, 'The admin console on this instance', false,
             'Everything this process has done, and the settings that change ' +
             'what its protocol endpoints do. ' +
-            (config.value('admin.authRequired')
+            (mode.gatesConsole()
               ? 'It asks you to sign in, and nothing else here does — any ' +
                 'username, no password checked.'
               : 'It is open: admin.authRequired is off on this instance.') +

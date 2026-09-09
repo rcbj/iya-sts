@@ -130,30 +130,47 @@ const IAT_SKEW_SECONDS = 300;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const seenJtis = realms.map();
+const seenJtis = realms.map({ persist: 'dpop.seenJtis' });
 
 // Server-supplied nonces (sections 8 and 9). OFF by default: the mechanism is a
 // second round trip on the first request of every session, so a deployment opts
 // in. `requireNonces()` is read per request rather than captured at require
 // time, so a test can turn it on and off without restarting the service.
-let nonceMode = false;
+// SHARED AND PERSISTED, NOT A MODULE VARIABLE (2026-09-08). It was
+// `let nonceMode = false`, which is exactly as much state as it looks like and
+// one process's worth of it. `POST /oauth2/dpop-nonce-mode` is the only thing
+// that writes it, that path FANS OUT (it carries no session), and the request
+// that arms nonce mode therefore armed ONE request worker — after which the
+// server demanded a nonce from a third of the callers and accepted anything
+// from the rest. `sts_dpop.js` reported it exactly: a nonce the server never
+// issued was accepted 200, because the worker answering had never been told
+// nonces were required at all.
+//
+// `sharedMap` and not `realms.obj()`, which is per realm: this switch has been
+// service-wide since it was written, `nonceModeOn()` is read by handlers in
+// every realm, and making it per-realm here would be a behaviour change
+// smuggled in with a replication fix. One key, one row — the same shape
+// `krb5.principals` uses and for the same reason.
+const nonceModeState = realms.sharedMap({ persist: 'dpop.nonceMode',
+                                          scope: 'shared' });
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const issuedNonces = realms.map();
+const issuedNonces = realms.map({ persist: 'dpop.issuedNonces' });
 const NONCE_TTL_SECONDS = 300;
 
 function setNonceMode(on) {
   log.debug('Entering setNonceMode(). on=' + on);
-  nonceMode = on === true;
-  log.debug('Leaving setNonceMode(). DPoP nonces are ' + (nonceMode ? 'REQUIRED' : 'not required'));
-  return nonceMode;
+  nonceModeState.set('on', on === true);
+  log.debug('Leaving setNonceMode(). DPoP nonces are ' +
+            (nonceModeOn() ? 'REQUIRED' : 'not required'));
+  return nonceModeOn();
 }
 
 function nonceModeOn() {
-  return nonceMode === true;
+  return nonceModeState.get('on') === true;
 }
 
 function issueNonce() {

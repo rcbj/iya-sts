@@ -874,8 +874,55 @@ function prune(resource) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// ONE ROW OF EITHER TABLE, AS IT IS PUBLISHED (2026-09-06).
+//
+// **IT IS HERE BECAUSE IT WAS IN TWO PLACES AND THEY HAD ALREADY DRIFTED.**
+// `/admin/scim` and `GET /admin-api/scim` render the mapping from
+// `admin-ui/admin.js`'s own projection; `GET /scim` renders it from
+// `scim.js`'s. The two carried different sets of members — one had `required`,
+// `schema` and `note`, the other did not — so the same table published at two
+// endpoints of one service described itself differently depending on which one
+// you asked. Nothing failed, because nothing read either of them: they were
+// documentation, and documentation that disagrees with itself is the shape of
+// defect this repository's "one copy of each fact" rule exists for.
+//
+// What turned it up was a reader: `tests/vendored/sts_directory_bulk_load_scim.js`
+// BUILDS every resource it sends out of this table rather than out of a copy,
+// and `type`, `parent` and `extension` are what make that possible — two rows
+// both map to `phoneNumbers` and only `type` tells `telephoneNumber` from
+// `mobile`, five rows are members of one `addresses` entry and only `parent`
+// says so, and an extension member goes under a URN rather than at the top
+// level. Adding those three to one of the two projections would have left the
+// other still unusable, and a reader unable to say which endpoint was right.
+//
+// So the projection is HERE, beside the table it projects, and both endpoints
+// call it. This module is a LIBRARY — rule 3d-iii, `scim/CLAUDE.md` — so it
+// registers nothing and either caller may require it.
+function describeRow(row) {
+  return { scim: row.scim, ldap: row.ldap, kind: row.kind,
+           // `type` and `parent` are null rather than absent where a row has
+           // none, so that a client can tell "this mapping has no type" from
+           // "this document does not report types" — which is exactly the
+           // question the job above had to answer about the version of this
+           // service it is running against.
+           type: row.type || null, parent: row.parent || null,
+           extension: !!row.extension, readOnly: !!row.readOnly,
+           required: !!row.required,
+           schema: row.schema || '', note: row.note || '' };
+}
+
+function describeMapping() {
+  return {
+    user: USER_ATTRIBUTES.map(describeRow),
+    group: GROUP_ATTRIBUTES.map(describeRow)
+  };
+}
+
 module.exports = {
   USER_SCHEMA: USER_SCHEMA,
+  describeRow: describeRow,
+  describeMapping: describeMapping,
   GROUP_SCHEMA: GROUP_SCHEMA,
   ENTERPRISE_SCHEMA: ENTERPRISE_SCHEMA,
   USER_ATTRIBUTES: USER_ATTRIBUTES,

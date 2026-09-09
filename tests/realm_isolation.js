@@ -43,6 +43,29 @@
 //
 // If a THIRD store is ever found to have been left process-wide for the same
 // retired reason, it belongs in this file rather than in one of its own.
+//
+// ---------------------------------------------------------------------------
+// THE THIRD ONE TURNED UP ON 2026-09-06 AND IS THE SCIM COUNTERS.
+//
+// `admin_stats.js`'s `scimCounts` was a plain object beside a file in which
+// every other store — the endpoint calls, the token registry, the artifact
+// list, the identity register, the revocation set, the claim sets — is
+// `realms.map()`, `realms.arr()` or `realms.obj()`. Same shape of leak and the
+// same retired reason: `/scim/v2` is realm-prefixed like every other endpoint
+// here and writes into a directory that has been a SUBTREE PER REALM since
+// 2026-08-25, so a provisioning client working in `/realm/acme` created
+// entries in acme and was counted in the default realm's totals. One page
+// reporting traffic that happened somewhere else, beside a directory count
+// that was correctly partitioned — which is exactly what the register did.
+//
+// It surfaced when `/admin/scim/monitor` was written, because that page draws
+// the counters and the directory side by side and the disagreement stops being
+// something a reader has to notice across two tabs.
+//
+// What is asserted here is the DECLARATION, as it is for the other two: a
+// store that holds per-realm state is `realms.obj()` and not `{}`. The
+// counters' own contract — a refused caller is not a client, an absent
+// measurement is null, a counter cannot throw — is `tests/scim_monitor.js`.
 // ===========================================================================
 
 // Deleted rather than set, for the reason config_realm_layer.js gives: a
@@ -260,7 +283,104 @@ function checkPurge(t) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. WITH NO REALM DEFINED, NOTHING ABOVE IS OBSERVABLE.
+// 5. THE SCIM COUNTERS. The third store, added 2026-09-06.
+//
+// Two directions, because a store that is per realm in one direction only is
+// the leak with extra steps: what happens inside a realm must not be visible
+// outside it, and what happened outside must not appear inside. The register
+// above is asserted both ways for the same reason.
+// ---------------------------------------------------------------------------
+function checkScimCounters(t) {
+  t.log.info('the SCIM traffic counters');
+
+  // A known state to measure from. This is the counters' own reset — there is
+  // deliberately no console control that calls it — and it clears THIS
+  // REALM'S, which is the whole property under test.
+  stats.resetScimForTests();
+  stats.recordScim({ operation: 'create', resourceType: 'User', status: 201,
+                     ok: true, authScheme: 'basic', principal: 'iso-outside',
+                     ms: 1, bytes: 1 });
+  const outsideBefore = stats.scimMonitorSnapshot();
+  t.equal(outsideBefore.calls, 1,
+          'the default realm has taken one SCIM call');
+
+  withRealm(t, 'iso-scim', function (realm) {
+    const inside = realms.run(realm, function () {
+      stats.recordScim({ operation: 'delete', resourceType: 'Group',
+                         status: 204, ok: true, authScheme: 'bearer',
+                         principal: 'iso-inside', isClient: true,
+                         ms: 2, bytes: 2 });
+      return stats.scimMonitorSnapshot();
+    });
+
+    t.equal(inside.calls, 1,
+            'THE REALM COUNTS ITS OWN CALL AND NOT THE ONE OUTSIDE IT. This ' +
+            'was 2 until the counters were declared realms.obj(), which is ' +
+            'the whole of the leak: a client provisioning under /realm/acme ' +
+            'was counted in the default realm\'s totals, beside a directory ' +
+            'count that was correctly partitioned');
+    t.equal(inside.realm.id, 'iso-scim',
+            'and the snapshot says which realm it is for, so a reader cannot ' +
+            'mistake one for the other');
+    t.check(inside.clients.length === 1 &&
+            inside.clients[0].principal === 'iso-inside',
+            'the client list is the realm\'s own too — the register above ' +
+            'leaked in exactly this way, and a client table is the same kind ' +
+            'of claim about who has been here',
+            'clients: ' + inside.clients.map(function (row) {
+              return row.principal;
+            }).join(', '));
+
+    const outsideAfter = stats.scimMonitorSnapshot();
+    t.equal(outsideAfter.calls, 1,
+            'AND THE OTHER DIRECTION: the realm\'s call did not appear in ' +
+            'the default realm either. A store that partitions one way only ' +
+            'is the leak with extra steps');
+    t.check(!outsideAfter.clients.some(function (row) {
+              return row.principal === 'iso-inside';
+            }),
+            'nor did its client', 'iso-inside');
+  });
+
+  // A removed realm takes its counters with it, which is what `realms.obj()`
+  // means and is the case an HTTP caller cannot see: "purged" and "a realm
+  // that never had any traffic" answer identically from outside.
+  const ghost = realms.create({ id: 'iso-scim-ghost', name: 'iso-scim-ghost',
+                                description: 'Created by ' + __filename });
+  if (ghost.ok) {
+    realms.run(ghost.realm, function () {
+      stats.recordScim({ operation: 'list', resourceType: 'User', status: 200,
+                         ok: true, authScheme: 'basic', principal: 'iso-ghost',
+                         ms: 1, bytes: 1 });
+    });
+    realms.remove('iso-scim-ghost');
+    const remade = realms.create({ id: 'iso-scim-ghost',
+                                   name: 'iso-scim-ghost',
+                                   description: 'Created by ' + __filename });
+    if (remade.ok) {
+      const back = realms.run(remade.realm, function () {
+        return stats.scimMonitorSnapshot();
+      });
+      t.equal(back.calls, 0,
+              'a realm removed and remade has none of the old one\'s ' +
+              'traffic — the counters went with it');
+      realms.remove('iso-scim-ghost');
+    } else {
+      t.bad('the throwaway realm could not be remade',
+            (remade.errors || []).join(' '));
+    }
+  } else {
+    t.bad('the throwaway realm could not be created',
+          (ghost.errors || []).join(' '));
+  }
+
+  // Left as it was found, so that a later file in the same run is not looking
+  // at this one's traffic.
+  stats.resetScimForTests();
+}
+
+// ---------------------------------------------------------------------------
+// 6. WITH NO REALM DEFINED, NOTHING ABOVE IS OBSERVABLE.
 //
 // The property the whole realm design rests on, asserted here for the two
 // stores this file is about: in a service with no realms defined there is
@@ -296,6 +416,7 @@ function run(t) {
   checkSameName(t);
   checkRevocation(t);
   checkPurge(t);
+  checkScimCounters(t);
   checkDefaultUnchanged(t);
 }
 

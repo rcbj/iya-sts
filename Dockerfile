@@ -123,7 +123,53 @@ COPY . ./
 # service, this image exists to run `server.js`, and nothing in it would ever
 # call them. `npm test` inside this image therefore does not work, exactly as
 # deliberately as before; package.json is copied for its dependency list.
-RUN rm -rf ./tests
+#
+# **`xacml-pep` GOES THE SAME WAY, SINCE 2026-09-05, AND FOR THE SAME REASON
+# ONE STEP FURTHER OUT.** That directory is a SECOND CONTAINER — a remote XACML
+# Policy Enforcement Point with its own Dockerfile, its own package.json and
+# its own thirty-line `common/helpers.js` shim. `server.js` requires none of
+# it and nothing in this image ever could. It is in the context because THAT
+# image is built from this same context (its Dockerfile copies the engine out
+# of `xacml/` at build time, which is what keeps one copy of the evaluator in
+# the tree), and a context has one ignore file — so the exclusion belongs here
+# beside its reason rather than in `.dockerignore`, where it would break the
+# very build it exists for.
+#
+# The shim is the specific thing worth not shipping: it is a file called
+# `common/helpers.js` that exports two functions, and a copy of it inside an
+# image whose real `common/helpers.js` is the identity service's is a trap
+# laid for whoever next reads a stack trace.
+RUN rm -rf ./tests ./xacml-pep
+# ---------------------------------------------------------------------------
+# FIX THIS IMAGE'S BUILD NUMBER (M.N.O) AND SHIP IT IN version.json.
+#
+# The version is M.N from the repo-root VERSION file plus a build number, and
+# the build number is decided HERE — at image build time — rather than at
+# startup. That is the whole reason this line exists: a service that computed
+# its build number when the process started would report a different one every
+# time the container restarted, which makes "which build is this" unanswerable
+# in exactly the situation where it is asked. See common/version.js.
+#
+# It runs AFTER `COPY . ./` because it needs the VERSION file and the module,
+# and after the `rm` above because neither is in the two directories removed.
+# It is the LAST layer that touches the source, so a rebuild of an unchanged
+# tree still produces a new build number — which is correct: that is a
+# different artifact.
+#
+# GIT_COMMIT is a build argument because .dockerignore excludes .git, so there
+# is no history in the build context for `git rev-parse` to read. Pass it and
+# the version's provenance names a commit; leave it and the commit is simply
+# absent, which is a missing tooltip and nothing else. BUILD_NUMBER overrides
+# the UTC build instant — a CI run number, say — and it is then the caller's
+# job to keep it unique and increasing.
+#
+# `cat` afterwards so the record is in the build log: when somebody asks which
+# build an image is, the answer is in the log of the build that made it as well
+# as in the image.
+ARG BUILD_NUMBER=
+ARG GIT_COMMIT=
+RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
+    node common/version.js --stamp . && cat version.json
 # The service selects its configuration (log level) with CONFIG_FILE, the same
 # way api and client do. The compose files override this per stack.
 #
@@ -135,10 +181,10 @@ RUN rm -rf ./tests
 ENV CONFIG_FILE=./env/local.js
 
 # 8081 is the HTTP service. The rest are the listeners that are NOT HTTP and so
-# are not on it: 88 is the KDC (TCP and UDP), 389 the LDAP directory, 636 the
-# same directory over TLS, 8443 the TLS endpoint that asks for a client
-# certificate and 9443 the one that requires it. EXPOSE documents them; each
-# compose file decides which it publishes.
+# are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected test
+# service, 389 the LDAP directory, 636 the same directory over TLS, 8443 the TLS
+# endpoint that asks for a client certificate and 9443 the one that requires it.
+# EXPOSE documents them; each compose file decides which it publishes.
 #
 # The four raw-socket ports were named in that sentence long before they were
 # listed below it, which made the sentence false in the direction that matters:
@@ -159,6 +205,15 @@ EXPOSE 389
 EXPOSE 636
 EXPOSE 8443
 EXPOSE 9443
+# 8888 IS THE KERBEROS-PROTECTED TEST SERVICE (krb5.servicePort), and it was
+# missing from this list until 2026-09-07 — found by `tests/readme_ports.js`,
+# which holds the README's ports table to config.js and this file to the table.
+# It is a raw TCP listener like 88 and 389, it is bound on every start, and the
+# sentence above enumerating "the listeners that are NOT HTTP" never mentioned
+# it either. Nothing failed, and nothing could: EXPOSE publishes nothing, so an
+# omission here costs exactly one thing — `docker run -P` leaves that port
+# unmapped, which is the one command that reads this.
+EXPOSE 8888
 # The two SPIFFE gRPC listeners over TCP: 8092 is the Workload API and 8181 the
 # SPIRE Server API. 8181 rather than SPIRE's own 8081 because that is this
 # service's HTTP port, so a client configured for a real spire-server has one

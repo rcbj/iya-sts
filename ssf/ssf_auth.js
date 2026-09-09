@@ -57,6 +57,8 @@
 const { log, hasScope, capturingResponse, capturedDescription } =
   require('../common/helpers');
 const config = require('../common/config');
+// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+const mode = require('../common/mode');
 const dpop = require('../oauth-oidc/dpop');
 
 // The `authorization_schemes` this transmitter publishes. `spec_urn` is the
@@ -82,9 +84,12 @@ const SCHEMES = [
 // all. The same value and the same reasoning as SCIM's.
 const REFUSED_PASSWORD = 'invalid';
 
+// THE MODE, since 2026-09-06, where this read `ssf.authRequired`. That setting
+// is gone with the other three: "is authentication required here" had four
+// answers across this service and now has one. See common/mode.js.
 function authRequired() {
   log.debug('Entering authRequired().');
-  const on = !!config.value('ssf.authRequired');
+  const on = mode.gatesSharedSignals();
   log.debug('Leaving authRequired(). ' + on);
   return on;
 }

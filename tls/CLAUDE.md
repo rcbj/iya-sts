@@ -17,6 +17,39 @@ in `server.js` (rule 6); the main-port half needs no require order at all, becau
 crosses a module boundary and no network one: it is generated per start, held in
 memory, and `GET /tls/server-certificate` publishes the certificate alone.
 
+## The truststore reaches the MAIN listener too, since 2026-09-06
+
+`POST /tls/trust` filled the client truststore for 8443 and 9443. It now fills
+it for the main HTTPS port as well, and that is one function
+(`trustClientCertificatesOn()`) plus one registration in `server.js`.
+
+**WHY IT DID NOT BEFORE, AND WHY THAT STOPPED BEING RIGHT.** The main port has
+always been `requestCert: true, rejectUnauthorized: false` — asked for, never
+required — because RFC 8705 certificate-bound tokens need a certificate to be
+ASKED for there, and section 3 binds to the certificate rather than to anybody's
+opinion of it. With no `ca` passed, `socket.authorized` was false for every
+client certificate ever presented on that port, and reading it would have been
+reading a constant. That cost nothing while token binding was the only reader.
+
+It stopped being right when the remote XACML PEP arrived. That caller has to be
+RECOGNISED — its DN resolved to a directory entry, a group and a role — and
+recognition is precisely what an unverified certificate cannot support: a DN
+read off a certificate that chains to nothing is a name the caller chose for
+itself.
+
+**THE POSTURE ON THAT PORT IS UNCHANGED.** A certificate that chains to nothing
+still completes the handshake and still binds a token. What the truststore adds
+is that a certificate which DOES chain is now known to, and
+`oauth-oidc/mtls.js`'s `peerVerified()` is where the two are told apart —
+carrying node's own `authorizationError` out whole, because that string is what
+tells somebody which of a dozen things went wrong.
+
+Three listeners share one anchor list, so a single `POST /tls/trust` covers all
+of them and `clearAnchors()` empties all of them. A listener created outside
+this module registers rather than being required, for the ordinary reason:
+`server.js` requires this module, so this module cannot require it back.
+
+
 ## The serial number is random, and a constant one was a browser-only bug
 
 The self-signed certificate this module mints is regenerated at every start,
@@ -108,7 +141,51 @@ the one place a reader goes when a handshake is failing.
 
 ---
 
-## A verified client certificate is not a login
+## A verified client certificate IS a login now, and no revocation is checked
+
+**THIS SECTION SAID THE OPPOSITE UNTIL 2026-09-05 AND ITS HEADING WAS "A
+verified client certificate is not a login".** The old text is below, kept
+rather than deleted, because it was a good argument and knowing exactly what it
+protected is how to avoid losing that.
+
+* **A request on a connection carrying a verified client certificate starts a
+  sign-on session** for the certificate's common name — or its RFC 4514 subject
+  where it has none — and the response carries the session cookie. Cookies are
+  not port-scoped, so a browser that presents a certificate to 9443 comes away
+  signed in on the main port too, which is single sign-on and is the same thing
+  every other family here already gives it.
+* **What did NOT change is the strength of the claim.** Verification still means
+  one thing exactly: OpenSSL built a chain from what the client sent to an anchor
+  somebody POSTed to `/tls/trust`. **No revocation is checked**, so a revoked
+  certificate verifies here and would not verify anywhere that matters. Every
+  report this module emits says so in the same breath as the session —
+  `authentication.revocationChecked` is `false` beside `authentication.authenticated`
+  being `true`, in one object, so neither can be read alone.
+* **Why it changed.** PKI client-certificate authentication is a real, deployed
+  way for a person to sign in to a web application, and this service exists to
+  exercise clients of exactly that kind. Every other family here resolves the
+  same tension the same way and always has — the KDC issues tickets to anybody
+  with the one shared password, the sign-in screen checks nothing, LDAP refuses
+  no bind — and all three start real sessions. **The permissiveness lives in what
+  is ACCEPTED, not in refusing to record what was accepted.** This listener was
+  the one place that made the opposite choice, and what it cost was that a global
+  sign-out could not end a way in that nothing on `/admin/sessions` could see.
+* **The identity is the COMMON NAME and the record is the SUBJECT**, and they are
+  deliberately different strings. A certificate naming `CN=alice` signs in the
+  same alice the password screen, the KDC and the SAML profile do — one entry per
+  person whatever they authenticated with, a rule this repository keeps in eight
+  places. What goes in the DIRECTORY is the certificate's own full subject,
+  because that is the identity the certificate asserts.
+* **`amr` is `["swk"]`** — RFC 8176's software key — and `acr` is `"1"`. One
+  factor, and a factor whose private key sits in a file: claiming `hwk` would
+  say a hardware key was used and this service cannot know that.
+* **One session per connection at most.** The cookie comes back on the next
+  request and is honoured, so six requests on one connection are one sign-in —
+  the same property `recordClientCertificate()` gets by living on
+  `secureConnection`, reached differently because a cookie needs a response to be
+  written on and that event has none.
+
+### The argument that used to be here
 
 * **A verified client certificate on the TLS listeners is not a login**, and no
   revocation is checked there. Verification means one thing exactly: OpenSSL built a
@@ -118,6 +195,11 @@ the one place a reader goes when a handshake is failing.
   verify anywhere that matters. All of that is stated in the report itself rather
   than left to be discovered — a mock that quietly turned a certificate into an
   identity would teach a client something false about every server it will ever meet.
+
+  *Every sentence there about VERIFICATION still holds. The one that stopped
+  holding is "no session starts", and the reason it was written — that a mock
+  must not overstate what a chain check proved — is now carried by
+  `revocationChecked: false` sitting beside the session in the same report.*
   **It IS recorded, which is a different claim and the two must not be merged.** When
   a handshake completes with a certificate that verified, `tls_server.js` calls
   `stats.recordAuthentication()` — the same funnel every other family uses — so the

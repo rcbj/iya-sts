@@ -50,6 +50,10 @@ const { log } = require('../common/helpers');
 const config = require('../common/config');
 const msgs = require('./krb5_messages.js');
 const kcrypto = require('./krb5_crypto.js');
+// PER PROCESS AND NOT PER REALM — see the store below. Required only for
+// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
+// move a route or join a cycle.
+const realms = require('../common/realms');
 const prim = require('./krb5_primitives.js');
 const gss = require('./krb5_gss.js');
 const principals = require('./krb5_principals.js');
@@ -76,7 +80,19 @@ function replayWindowSeconds() {
   return clockSkewSeconds() * 2;
 }
 const MAX_REPLAY_ENTRIES = 10000;
-const replayCache = new Map();
+// -------------------------------------------------------------------------
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
+// is a plain Map that reports its writes so product mode can write them down;
+// `scope: 'shared'` is what says the store deliberately has no realm in it,
+// which is the discriminator `tests/realm_isolation.js` checks against.
+// -------------------------------------------------------------------------
+// **PERSISTING A REPLAY CACHE IS A CORRECTNESS FIX AND NOT A CONVENIENCE.**
+// Until this, a restart emptied it — so every Authenticator this service had
+// already refused became replayable again for as long as the clock skew
+// window allows. A mock is allowed to be permissive about passwords and is
+// not allowed to be accidentally permissive about replay.
+const replayCache = realms.sharedMap({ persist: 'krb5.replayCache',
+                                       scope: 'shared' });
 
 function replayKey(authenticator) {
   return authenticator.crealm + '/' + authenticator.cname.name.join('/') + '/' +

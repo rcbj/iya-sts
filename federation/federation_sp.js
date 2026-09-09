@@ -182,7 +182,7 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // would have let one realm's flood evict another realm's in-flight sign-ins,
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
-const contexts = realms.map();
+const contexts = realms.map({ persist: 'federation_sp.contexts' });
 const MAX_CONTEXTS = 500;
 
 // The longest `application` a context will carry. A client_id has no length
@@ -670,7 +670,40 @@ function completeSignIn(req, res, record, result) {
   // authentication this sign-in produces is recorded with the partner's own
   // facts on it — including the mapped attributes, which reach the directory
   // through the identity funnel and by no other route.
-  const session = authn.startSession(res, mapped.username, amr, result.acr || '', via, detail);
+  // `request` so a federated sign-in REPLACES whatever session this browser
+  // was on rather than leaving the previous one alive beside it.
+  const session = authn.startSession(res, mapped.username, amr,
+                                     result.acr || '', via,
+                                     Object.assign({ request: req,
+                                                     application: record.fedApplication || '' },
+                                                   detail));
+  // -------------------------------------------------------------------------
+  // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06), and a null is how
+  // `startSession()` says so — it never throws, because two of its callers
+  // wrap it in a `try` that treats a failure as bookkeeping.
+  //
+  // **THIS IS THE SURFACE WHERE THE GATE MATTERS MOST**, and it is the one that
+  // never asked. A federated assertion arrives from a partner and the person
+  // authenticated somewhere else entirely: everything this service knows about
+  // them came out of somebody else's document. An application narrowed to a
+  // role refused a password sign-in here and admitted the same name through a
+  // partner, which is the shape of hole this directory's own header says its
+  // bugs are — security bugs rather than fidelity bugs.
+  //
+  // The refusal is a PAGE and not a redirect back to the partner: the assertion
+  // verified, so there is nothing for the partner to retry and bouncing the
+  // browser there would loop.
+  if (!session) {
+    log.info('federation: the issuance policy refused a session for ' +
+             mapped.username + ' arriving through ' + record.fedId + '.');
+    return refuse(res, record, 403, 'The issuance policy refused the session',
+      'The assertion verified and the partner is configured — this service ' +
+      'will not start a session for ' + mapped.username + ' because the ' +
+      'issuance policy said no. That is a POLICY decision rather than a ' +
+      'problem with the assertion or with the partner, so retrying will not ' +
+      'change it. The role an application requires is on /admin/roles and the ' +
+      'document that decides is on /admin/xacml.');
+  }
   log.info('federation: ' + mapped.username + ' signed in through ' + record.fedId +
            ' (' + protocolLabel + ' from ' + (record.fedPeer || 'an unnamed partner') +
            '). ' + mapped.mapped.length + ' attribute(s) mapped, ' +
@@ -1949,8 +1982,20 @@ app.get(BASE_PATH, function (req, res) {
       'metadata for that partner. Unsigned, deliberately.</td></tr></table>' +
     '<p class="note">The base URL this service sees itself at is <code>' + xmlEscape(base) +
     '</code>, so the URLs above are absolute from there.</p>' +
+    // **`/portal` AND NOT `/authn/login`, WHICH IS NOT A PAGE ANYBODY CAN BE
+    // SENT TO.** That endpoint draws a form for a PENDING AUTHENTICATION
+    // RECORD and answers `There is no sign-in waiting under that id` to a
+    // request naming none, so this link was an error page for as long as it
+    // existed. `/portal` has no session either, so `requireSignIn()` there
+    // calls `beginAuthentication()` and the browser arrives at the very screen
+    // this link promises — with the partner buttons on it, which is the whole
+    // point of the sentence around it — and lands on the reader's own account
+    // page once they have used one. The record is minted when the link is
+    // PRESSED rather than when this page is drawn, which is what keeps it from
+    // expiring on a page somebody left open. `portal/portal.js` carries the
+    // full argument; the same mistake was in two other files on 2026-09-06.
     '<p><a href="/admin/federation">Configure relationships in the console</a> · ' +
-    '<a href="/authn/login">The sign-in screen</a>' +
+    '<a href="/portal">The sign-in screen</a>' +
     (config.value('federation.loginButtons')
       ? ', which offers every usable partner as a button'
       : ' (federation.loginButtons is off, so no partner is offered there)') + '</p>';

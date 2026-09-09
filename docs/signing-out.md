@@ -142,6 +142,29 @@ omitted.
 **Back-channel logout is a different specification and is not implemented.** The
 metadata says so.
 
+## The Sign out button on the console and the portal
+
+This service's own two web surfaces each have a **Sign out** button of their
+own — at the top of every page of `/admin`, and at the top of every page of
+`/portal`:
+
+| Endpoint | What it ends |
+|---|---|
+| `POST /admin/signout` | the console's session **and the sign-on session behind it** |
+| `POST /portal/signout` | the portal's session **and the sign-on session behind it** |
+
+**Each ends two sessions, and it has to.** Both surfaces are ordinary OpenID
+Connect clients of this service (`sts-admin-console` and `sts-user-portal`), so
+they hold a session of their own on top of the sign-on session you have with
+the identity provider. A button that ended only the application's session would
+sign nobody out: the next page runs the authorization code flow, meets the
+sign-on session that is still live, and lets you back in with nothing typed.
+
+**They are the NARROW sign-out.** What they do not touch is anything already
+issued to other applications — access and refresh tokens, Kerberos tickets,
+credential offers, LDAP binds. `/logout` below is the one that ends those, and
+the portal draws a button for it at the foot of its **Overview** page.
+
 ## The other two doors
 
 | | Who it is for | Difference |

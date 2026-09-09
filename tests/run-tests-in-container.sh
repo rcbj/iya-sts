@@ -138,7 +138,11 @@ waitForTheService()
 runTheSuite()
 {
   echo "Running the whole suite against ${STS_URL}."
-  node tests/tools/run-report.js "--service-url=${STS_URL}" "$@"
+  # WHERE THE REPORT GOES. The mode matrix runs this container once per mode
+  # and hands a directory per mode, so three runs do not overwrite each other;
+  # unset, run-report.js's own default applies and a hand-run is unchanged.
+  node tests/tools/run-report.js "--service-url=${STS_URL}" \
+    ${STS_TEST_REPORT_DIR:+"--report-dir=${STS_TEST_REPORT_DIR}"} "$@"
   return $?
 }
 

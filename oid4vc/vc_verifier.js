@@ -79,6 +79,15 @@ const config = require('../common/config');
 // does NOT claim about the holder.
 const stats = require('../common/admin_stats');
 const { VCI_JWT_TYPES, VCI_VCT } = require('./vc_configs');
+
+// The input validator. A LEAF (rule 3): registers no route, closes no cycle.
+const validation = require('../common/validation');
+// The credential formats this issuer actually offers, read off the table that
+// defines them rather than written out again.
+const VCI_FORMATS = Array.from(new Set(
+  Object.keys(require('./vc_configs').VCI_CONFIGS).map(function (id) {
+    return require('./vc_configs').VCI_CONFIGS[id].format;
+  }).filter(Boolean)));
 // What this Verifier asks for, and which credential format it asks for it in.
 // Configuration rather than a constant since /admin/vc-verifier-config existed: a
 // library like dpop.js and vc_claims.js, registering no route, so requiring it
@@ -123,7 +132,7 @@ const VP_DCQL_ID = vpConfig.DCQL_ID;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vpTransactions = realms.map();
+const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
 
 // id -> state, so a Request Object fetched by reference can find its transaction.
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -131,7 +140,7 @@ const vpTransactions = realms.map();
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vpRequests = realms.map();
+const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests' });
 
 function sweepVpTransactions() {
   const now = Date.now();
@@ -271,6 +280,36 @@ function vpRequestQuery(req, record) {
 }
 
 // The Verifier's own web page — where a same-device presentation starts.
+// ---------------------------------------------------------------------------
+// THE FOUR SCALAR PARAMETERS THESE PAGES TAKE.
+//
+// **THE FORMAT LIST IS DERIVED FROM `VCI_CONFIGS` AND NEVER RETYPED.** Which
+// credential formats this issuer offers is that table's statement — three of
+// them today (`dc+sd-jwt`, `jwt_vc_json`, `ldp_vc`) — and a list written out
+// here would be the second copy that goes stale the day a fourth is added.
+// Same argument `sts_metadata.js` makes about reading the router.
+//
+// **`wallet` IS TYPED AS A URI AND THAT IS THE ONE THAT MATTERS.** It is a URL
+// this service builds into a link and a QR code for somebody to follow, so a
+// `javascript:` or `data:` scheme here is script execution on the machine of
+// whoever scans it. `vt.uri` refuses the executable schemes; it deliberately
+// does NOT constrain the host, because pointing this at a wallet on a laptop is
+// the whole reason the parameter exists.
+//
+// `mode` and `by` are CASE-SENSITIVE, matching their call sites, which compare
+// with `===` and lower-case nothing.
+// ---------------------------------------------------------------------------
+const OID4VC_QUERY = validation.z.looseObject({
+  mode: validation.types.opt(validation.types.oneOf(
+    ['same-device', 'cross-device', 'deferred', 'direct'])),
+  by: validation.types.opt(validation.types.oneOf(['value', 'reference'])),
+  format: validation.types.opt(validation.types.oneOf(VCI_FORMATS)),
+  wallet: validation.types.opt(validation.types.uri),
+  state: validation.types.opt(validation.types.opaque),
+  credential_configuration_ids: validation.types.opt(
+    validation.z.string().max(validation.CAP.SCOPE))
+});
+
 app.get('/oid4vp/verifier', function (req, res) {
   log.debug("Entering the verifier web page. format=" + (req.query.format || 'dc+sd-jwt'));
   const base = baseUrlOf(req);
@@ -279,6 +318,11 @@ app.get('/oid4vp/verifier', function (req, res) {
   // because the format is the VERIFIER's choice and a wallet cannot convert a
   // credential into another one. Without carrying it through these links, every
   // button below would start a dc+sd-jwt request whatever the holder has.
+  const askedPage = validation.check(req, 'query', OID4VC_QUERY);
+  if (!askedPage.ok) {
+    log.debug('Leaving the verifier web page. ' + askedPage.detail);
+    return res.status(400).type('text/plain').send(askedPage.detail + '\n');
+  }
   const pageFormat = String(req.query.format || '');
   // Recognised through the configuration's own lookup rather than compared here,
   // which is what makes `?format=dc+sd-jwt` work: a plus in a query string is a
@@ -377,6 +421,11 @@ app.get('/oid4vp/verifier', function (req, res) {
 app.get('/oid4vp/start', function (req, res) {
   log.debug("Entering the presentation start endpoint. mode=" + (req.query.mode || 'same-device') +
             ", format=" + (req.query.format || 'dc+sd-jwt'));
+  const askedStart = validation.check(req, 'query', OID4VC_QUERY);
+  if (!askedStart.ok) {
+    log.debug('Leaving the presentation start endpoint. ' + askedStart.detail);
+    return res.status(400).type('text/plain').send(askedStart.detail + '\n');
+  }
   const byReference = String(req.query.by || '') === 'reference';
   const mode = String(req.query.mode || 'same-device');
   // Which credential format to ask for. Anything unrecognised — and a link that
@@ -950,6 +999,12 @@ app.post('/oid4vp/response', async function (req, res) {
     // The wallet refused, which is a legitimate answer (section 8.4).
     record.verdict = { ok: false, refused: true, error: String(body.error),
                        errorDescription: String(body.error_description || ''), checks: [], at: new Date().toISOString() };
+    // THROUGH THE STORE, so the verdict is not a fact only this process holds:
+    // `vpTransactions` is `realms.map({persist})` and its journal sees `set()`
+    // rather than a field stamped on the object it handed out. The status
+    // endpoint a wallet polls may well be answered by another process, which
+    // would otherwise report the transaction as still outstanding for ever.
+    vpTransactions.set(state, record);
     res.status(200).type('application/json').send(JSON.stringify({
       redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' + encodeURIComponent(state)
     }));
@@ -978,6 +1033,7 @@ app.post('/oid4vp/response', async function (req, res) {
                  detail: 'vp_token must be a JSON object keyed by the DCQL credential query id ("' +
                          VP_DCQL_ID + '"), each value an array of presentations.' }]
     };
+    vpTransactions.set(state, record);  // through the store, as above
     res.status(400).type('application/json').send(JSON.stringify({
       error: 'invalid_request',
       error_description: 'vp_token is not the JSON object OID4VP section 8.1 defines.'
@@ -1006,6 +1062,7 @@ app.post('/oid4vp/response', async function (req, res) {
     sub: verified.sub,
     presentation: presentations[0]
   };
+  vpTransactions.set(state, record);  // through the store, as above
   logArtifact('OID4VP verification result', verified.ok ? 'accepted' : 'REFUSED', record.verdict);
 
   if (!verified.ok) {
