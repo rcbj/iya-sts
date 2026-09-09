@@ -412,10 +412,23 @@ can never take, or tear down, the `sts` container a plain `docker compose up`
 gives somebody), why it persists NOTHING, why the image is REBUILT every run,
 and why a stack that will not come up is a FAILED run rather than a quiet fall
 back to the host — all in `../local-run-tests.sh`'s header. The containerized
-runner's three — no published port at all, no postgres, and the tests image
-built from the SAME context behind `Dockerfile.dockerignore` — are in
-`../docker-compose-run-tests.yml` and `Dockerfile`, the latter with a guard that
-says so rather than failing later inside node.
+runner's three — no published port at all, a database with NO VOLUME, and the
+tests image built from the SAME context and the SAME `.dockerignore` as the
+service — are in `../docker-compose-run-tests.yml` and `Dockerfile`, the latter
+with a guard that says so rather than failing later inside node.
+
+**TWO OF THOSE THREE WERE WRITTEN DIFFERENTLY AND BOTH WERE OVERTAKEN.** This
+said "no postgres", which was true while the suite ran once in `memory`; two of
+the three modes in `tools/modes.sh` are DEFINED by having a store, and until
+2026-09-09 they brought the mock up with `persistence.mode` set and nothing to
+connect to — so the service refused to start, correctly and naming the store,
+and two modes ran nothing at all. What that bullet was actually defending is
+kept by the missing volume rather than by the missing service: the cluster
+lives in the container's writable layer and the teardown between modes takes it
+with the container, so no mode and no run can start from another's leavings. It
+said "behind `Dockerfile.dockerignore`" too, which is the BuildKit arrangement
+that lasted one build — `../.dockerignore`'s own header is the record of why
+there is one rule set and the service image deletes what it does not want.
 
 **THE TOOLING IS IN `tools/`, AND THAT IS THE ONE DECISION IN IT WORTH
 ARGUING.** `run.js` discovers a test as *any `.js` file in this directory that
@@ -610,6 +623,7 @@ Two rules that are not optional here:
 | `directory_indexes.js` | that the two caches over the directory never cost the property they exist beside: a write is visible to the very next read, however many kept-index writes surround it. The username index across creates, `invent: true`, and the TWO-WRITE shape a SCIM create actually is; the group index across a group create, a membership write and person writes on either side of it; and that the two answer separately, since one shared "is it current" flag is the tidy-looking mistake |
 | `readme_ports.js` | **the README's *The ports* table, against the table that decides the ports.** It exists because that section is the exact shape this repository has been bitten by twice — the root CLAUDE.md's *a number written here as well went stale twice* — and because **the one mechanism this service already has for keeping a list honest cannot see any of it**: `/admin/sts-metadata` walks the live Express router, and a raw socket registers no route, so nine of the ten bindings are invisible to it. So it is held to `config.js`'s `SETTINGS` instead, in BOTH directions: a binding with no row (the failure people expect) and **a row naming no setting** (what a RENAME produces, and the one that goes unnoticed, because the table still looks complete). Defaults are compared too — a row naming the right setting and the wrong number is worse than a missing row, because a reader acts on it. Plus the COUNT in the prose above the table, asserted as *port settings + 1* rather than against a constant, so the KDC's second socket stays accounted for; and the Dockerfile's `EXPOSE` set against the same list, `88/udp` named separately. **In process because every claim is a comparison between two FILES in this repository** — the same shape as `postgres_schema.js` and `xacml_pep.js`'s COPY-set check. **It found two things on its first run**: the Dockerfile had never `EXPOSE`d 8888, the Kerberos test service, and neither had the comment above that list enumerating "the listeners that are NOT HTTP"; and a table row cited `spiffe.authRequired`, which stopped existing on 2026-09-06 when `global.mode` replaced it. Mutation-tested against a renamed setting, a wrong default, a bumped count and a deleted EXPOSE |
 | `worker_pool.js` | the four ways moving a computation into another process goes wrong: that a worker computes the SAME BYTES (literal equality for the nine deterministic algorithms; cross-verification for the three whose ECDSA half is randomized and must be), that the event loop is genuinely FREE while it does — counted in timer ticks, against an unpooled control that manages none — that a session's jobs go to one worker and unnamed ones spread, and that a SIGKILLed worker FAILS its jobs with a sentence rather than leaving a promise nobody settles. Plus `workers.count = 0` producing the same bytes here, and a realm being refused the setting at both ends |
+| `ldap_logout.js` | **a sign-out reaching a directory connection the process answering has neither seen nor can close** (2026-09-09). In LDAP the connection IS the session (RFC 4511 section 4.2), and a request worker binds no port — so `boundConnections()` there answered "there are none", the sign-out driver had nothing to end, and a global logout in `dispatch` mode reported that it had ended everything while a bound connection went on being signed in. Four claims: that a mirrored process reads the front process's list and that no socket rides along in it; that a sign-out driven through the real `logout.terminate()` ASKS the process holding the socket and reports the row ended; that an ask which cannot be made or is refused reports the connection NOT ended, with the reason, rather than claiming success — which is the original bug one layer up; and that the two processes spell the header the same way, since a rename in either is silent in both. **The end-to-end job cannot say which half broke, and in one launcher it was not asking at all** — `sts_global_logout` sees only a socket that is still open, so "the worker never saw it" and "the worker could not close it" look identical from there; and until 2026-09-09 that job dialled 389 on the HOST under `./local-run-tests.sh`, got ECONNREFUSED, noted it and passed. This file needs no port and cannot degrade to green that way |
 
 **`sts_portal_sessions.js` IS THE NEWEST OWNED JOB (2026-09-06)** and it covers
 five claims nothing else did over HTTP: that a sign-in at `/admin` and one at

@@ -294,6 +294,30 @@ const IS_REQUEST_WORKER = !!process.env.STS_REQUEST_WORKER;
 // ---------------------------------------------------------------------------
 const PEER_CERT_HEADER = 'x-sts-peer-certificate';
 
+// ---------------------------------------------------------------------------
+// AND THE ONE THAT CARRIES A SIGN-OUT BACK OUT OF A WORKER (2026-09-09).
+//
+// In LDAP the connection IS the session (RFC 4511 section 4.2), so the only
+// sign-out that protocol has is the socket closing — and the socket belongs to
+// THIS process, which is the one that called listen(). A worker running
+// `/logout` can decide that a directory connection must end and cannot end it.
+//
+// **IT RIDES THE RESPONSE RATHER THAN THE IPC CHANNEL BESIDE IT, AND THAT IS
+// THE WHOLE POINT.** A `process.send()` from the worker would arrive here on a
+// different channel from the answer it belongs to, so the answer could reach
+// the client first and a sign-out would once again report a connection ended
+// while it was still open — the exact bug this fixes, made rarer and harder to
+// see rather than fixed. The header is IN the answer, and this process closes
+// the socket before it forwards a byte of it, so the order is a property of the
+// mechanism and not of a race.
+//
+// STRIPPED FROM WHAT THE CLIENT SENT, like the two above and for a sharper
+// reason: it names an identity whose directory connections are to be closed, so
+// a client that could set it could sign anybody out of the directory. It is
+// deleted on the way in before anything else touches the request.
+// ---------------------------------------------------------------------------
+const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
+
 // THE TICKET THIS REQUEST WAS DISPATCHED UNDER, told to the worker so that the
 // worker can say which tickets its flush covered — see receiveCommitted().
 // Stripped from what the client sent, exactly like the two above: nothing a
@@ -743,6 +767,83 @@ function receivePublishedKeys(entry, published) {
   sendKeys(entry, realmId);
 }
 
+// ---------------------------------------------------------------------------
+// THE DIRECTORY HALF OF THE POOL (2026-09-09), AND IT IS TWO WAYS ROUND.
+//
+// The front process holds the LDAP listeners and therefore every bound
+// connection; a request worker holds the session that decides one should end.
+// So the LIST goes out to the workers and the INSTRUCTION comes back:
+//
+//   publishDirectoryConnections()   here → every worker, on every change
+//   closeDirectoryConnections()     a worker → here, on the response it rode
+//
+// `ldap_server.js` IS REQUIRED LAZILY, INSIDE BOTH, and that is a rule rather
+// than a convenience: this module is loaded by `server.js` before the protocol
+// stack and by `request_worker.js` as part of it, and a require at the top of
+// this file would pull the whole directory — and its eight `/admin/ldap/*`
+// console pages — into the router at a point of its own choosing. The same
+// lazy-require-inside-the-one-function shape `xacml_admin.js` uses on
+// `xacml.js`, for the same reason. By the time either of these runs the module
+// is loaded and it is a cache hit.
+// ---------------------------------------------------------------------------
+function directory() {
+  return require('../ldap/ldap_server');
+}
+
+function publishDirectoryConnections(rows) {
+  const snapshot = rows || [];
+  workers.forEach(function (one) {
+    if (!one.child || !one.child.connected) {
+      return;
+    }
+    try {
+      one.child.send({ ldapConnections: snapshot });
+    } catch (e) {
+      // A worker that is on its way out. It will be replaced with a fresh
+      // snapshot at fork; what is lost meanwhile is one sign-out's view of the
+      // directory in a process that is about to stop answering.
+      log.debug('request_pool: could not publish directory connections to ' +
+                'worker ' + one.pid + ': ' + e.message);
+    }
+  });
+}
+
+// Called with whatever the worker put in the header — one or more identity
+// keys, comma separated and percent-encoded, because a key is a username and a
+// header is bytes.
+function closeDirectoryConnections(header) {
+  const raw = String(header || '');
+  if (!raw) {
+    return;
+  }
+  raw.split(',').forEach(function (encoded) {
+    let key = '';
+    try {
+      key = decodeURIComponent(encoded.trim());
+    } catch (e) {
+      // Not percent-encoding. The worker wrote this header, so this is a bug
+      // here rather than input from anywhere — said out loud rather than
+      // silently closing nothing.
+      log.warn('request_pool: a worker asked for a directory sign-out with a ' +
+               'key this process could not decode (' + encoded + '): ' +
+               e.message);
+      return;
+    }
+    if (!key) {
+      return;
+    }
+    try {
+      const dropped = directory().dropConnectionsFor(key);
+      log.info('request_pool: a request worker signed ' + key + ' out of the ' +
+               'directory; ' + dropped.length + ' connection(s) closed in ' +
+               'this process, which is the one holding them.');
+    } catch (e) {
+      log.warn('request_pool: could not close the directory connections a ' +
+               'worker asked to end for ' + key + ': ' + e.message);
+    }
+  });
+}
+
 function broadcastKeys(realmId, blob, except) {
   workers.forEach(function (other) {
     if (other === except || !other.child || !other.child.connected) {
@@ -803,7 +904,13 @@ function fork() {
                  keys: keystore.sharedAll(),
                  kek: keystore.ephemeralKek(),
                  vciRequestEncKeyPem: vciRequestEncKeyPem,
-                 bbsKeyPair: bbsKeyPairB64 });
+                 bbsKeyPair: bbsKeyPairB64,
+                 // WHAT IS BOUND ON THE DIRECTORY RIGHT NOW. A worker that
+                 // started with an empty list and was never told otherwise
+                 // would answer a sign-out for a connection made before it
+                 // existed with "there is nothing to end" — which is the bug
+                 // this whole mechanism is about, narrowed to one worker.
+                 ldapConnections: directory().connectionSnapshot() });
   } catch (e) {
     log.error('request_pool: could not start worker ' + child.pid + ': ' +
               e.message);
@@ -1446,6 +1553,16 @@ function start() {
   keystore.setKeyPublisher(function (realmId, blob) {
     broadcastKeys(realmId, blob, null);
   });
+
+  // AND THE DIRECTORY'S CONNECTION LIST, for the same reason and installed at
+  // the same point: a client can be bound on 389 before the first worker is
+  // ready — the listeners start from `listen()` in server.js and nothing waits
+  // for this pool — and a worker forked afterwards is handed the current
+  // snapshot at `begin`. So the two paths together cover every ordering. See
+  // publishDirectoryConnections().
+  directory().setConnectionWatcher(function (rows) {
+    publishDirectoryConnections(rows);
+  });
   log.info('request_pool: starting ' + wanted + ' request worker(s). Each ' +
            'loads the whole protocol stack and binds no protocol port.');
   const forks = [];
@@ -1817,6 +1934,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // ---------------------------------------------------------------------
   delete headers[PEER_CERT_HEADER];
   delete headers[PEER_AUTHORIZED_HEADER];
+  // Nothing a client says about whose directory connections should close may be
+  // believed. See LDAP_DROP_HEADER.
+  delete headers[LDAP_DROP_HEADER];
   // THE POOL'S OWN COOKIE IS THE POOL'S. Removed from what the worker sees so
   // that no handler can come to depend on a routing detail, and so that it
   // cannot be confused with an application cookie by anything that enumerates
@@ -1946,8 +2066,23 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // it never presents back on a browser cookie.
       learn(entry, answer);
     }
+    // ------------------------------------------------------------------
+    // THE SOCKETS THIS ANSWER SAYS TO CLOSE, CLOSED BEFORE IT GOES OUT.
+    //
+    // BEFORE `res.status()` and not after the pipe: everything below writes to
+    // the client, and the promise this mechanism makes is that a sign-out which
+    // says a directory connection ended is answering about a socket that is
+    // already gone. See LDAP_DROP_HEADER.
+    // ------------------------------------------------------------------
+    closeDirectoryConnections(answer.headers[LDAP_DROP_HEADER]);
     res.status(answer.statusCode);
     Object.keys(answer.headers).forEach(function (name) {
+      // The worker's instruction to this process, and no business of the
+      // client's — for the reason the hop-by-hop headers below are dropped, and
+      // because a header naming an identity key has no place on a page.
+      if (name === LDAP_DROP_HEADER) {
+        return;
+      }
       // Hop-by-hop headers belong to the connection this process made and not
       // to the one the client made. Passing them on is how a proxy breaks
       // keep-alive for its own clients.
@@ -2283,6 +2418,15 @@ module.exports = {
   SESSION_COOKIE: SESSION_COOKIE,
   POOL_COOKIE: POOL_COOKIE,
   PEER_CERT_HEADER: PEER_CERT_HEADER,
+  // THE SPELLING, EXPORTED SO THAT IT CAN BE COMPARED WITH THE WORKER'S. Both
+  // ends name this header and neither can read the other's constant at
+  // runtime — the two processes share no memory — so the only thing that can
+  // catch a rename is a test holding them side by side. tests/ldap_logout.js
+  // does exactly that.
+  LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  // The two halves of the directory mirror, exported for that same test: what
+  // this process does with the header a worker sent, without a worker.
+  closeDirectoryConnections: closeDirectoryConnections,
   // For tests/request_routing.js — the routing decisions are pure functions and
   // are asserted directly rather than by starting a pool.
   mutationKeyOf: mutationKeyOf,

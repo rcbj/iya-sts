@@ -6216,6 +6216,116 @@ OPERATIONS.forEach(function (operation) {
 // ---------------------------------------------------------------------------
 const liveConnections = new Set();
 
+// ---------------------------------------------------------------------------
+// AND THE SAME QUESTION ASKED IN A PROCESS THAT HOLDS NO SOCKETS (2026-09-09).
+//
+// `common/request_pool.js` runs the whole protocol stack in N request workers,
+// and a worker BINDS NOTHING — `common/request_worker.js` loads this module for
+// its HTTP views and never calls `listen()`. So the Set above is permanently
+// empty there, and every question about directory connections was answered
+// "there are none" by the process that answers `/logout`.
+//
+// **THAT IS NOT A DEGRADED ANSWER, IT IS A WRONG ONE, AND IT WAS SILENT.** The
+// sign-out driver in ../logout/logout.js ends what `collect()` finds; an empty
+// list is nothing to end and nothing to report, so a global logout in dispatch
+// mode said it had ended everything while a bound LDAP connection — which IS
+// the session, RFC 4511 section 4.2 — went on being signed in. It cost a whole
+// mode of the suite: `sts_global_logout` failed on "the bound LDAP connection
+// is still open" and nothing else in the run said why.
+//
+// TWO HOOKS AND NOT ONE, because reading and closing fail differently:
+//
+//   * `setConnectionMirror()` answers WHAT IS OPEN. The front process pushes a
+//     snapshot whenever the set changes, and a worker's boundConnections()
+//     reads it. A mirror rather than a request-and-wait because every caller of
+//     boundConnections() is SYNCHRONOUS — `collect()` is called inside a
+//     forEach over the families — and making one of them asynchronous means
+//     making terminate() asynchronous and every one of its seven callers with
+//     it. **IT IS A SNAPSHOT AND IT IS ALLOWED TO BE STALE**, by exactly the
+//     interval between a connection changing and the next push: a row that has
+//     gone is reported as "already closed" by the drop below, and a row that
+//     has just arrived is caught by the next sign-out. What it may never be is
+//     EMPTY on a service that has connections, which is what it was.
+//   * `setRemoteDropper()` CLOSES. Only the process holding the socket can, so
+//     a worker states the intent and the front process performs it. See that
+//     function's header for why it goes out ON THE RESPONSE rather than over
+//     the IPC channel beside it.
+//
+// A process with neither installed is a process that holds its own sockets, and
+// behaves exactly as this module always has — which is every process this
+// service has ever run in until dispatching was turned on.
+// ---------------------------------------------------------------------------
+let connectionMirror = null;
+let remoteDropper = null;
+
+// Filled by common/request_worker.js, with the rows the front process has just
+// published — every push replaces the whole snapshot, because a delta would be
+// a second thing to get wrong for no saving on a list this short.
+//
+// **INSTALLING IT IS WHAT MAKES THIS A MIRRORED PROCESS**, and the first push
+// is what says so in the log: there is no separate "am I a worker" flag here,
+// because the question this module actually has is "can I reach these sockets",
+// and holding somebody else's snapshot is exactly the answer no.
+//
+// **AN ARRAY INSTALLS AND ANYTHING ELSE UNINSTALLS**, which is the difference
+// between "the front process is holding nothing" and "there is no front
+// process holding anything for me". The first is an ordinary empty snapshot —
+// a service nobody has bound to — and must leave this process mirrored; the
+// second is how a test puts itself back to holding its own sockets.
+function setConnectionMirror(rows) {
+  log.debug("Entering setConnectionMirror().");
+  const first = connectionMirror === null;
+  if (!Array.isArray(rows)) {
+    connectionMirror = null;
+    log.debug("Leaving setConnectionMirror(). Not mirrored.");
+    return;
+  }
+  connectionMirror = rows.slice(0);
+  if (first) {
+    log.info('ldap: this process holds no directory listener, so its view of ' +
+             'bound connections is the front process\'s — see ' +
+             'common/request_pool.js. A sign-out here states what it wants ' +
+             'closed and the process holding the socket closes it.');
+  }
+  log.debug("Leaving setConnectionMirror(). " + connectionMirror.length +
+            " connection(s).");
+}
+
+// Filled by the same module, with a function that carries a key to the front
+// process. It returns nothing: what it has to promise is not a value but an
+// ORDER — that the socket is closed before the answer to this request reaches
+// the client — and the mechanism that keeps that promise is the response
+// itself.
+function setRemoteDropper(fn) {
+  log.debug("Entering setRemoteDropper().");
+  remoteDropper = (typeof fn === 'function') ? fn : null;
+  log.debug("Leaving setRemoteDropper().");
+}
+
+// The rows the mirror is holding. A worker asking before the front process has
+// pushed anything gets an empty list, which is the truth about a service that
+// has just started rather than a failure.
+function mirroredConnections() {
+  log.debug("Entering mirroredConnections().");
+  const rows = (connectionMirror || []).slice(0);
+  log.debug("Leaving mirroredConnections(). " + rows.length + " row(s).");
+  return rows;
+}
+
+// Take rows out of the snapshot the moment they have been asked for, so that
+// the next call in the same sign-out does not report them again. The front
+// process's next push replaces the whole snapshot and is the authority; this is
+// only about the seconds in between, and it is the same bookkeeping the
+// single-process path does with `liveConnections.delete()`.
+function forgetMirrored(key) {
+  log.debug("Entering forgetMirrored(). key=" + key);
+  const wanted = String(key || '');
+  connectionMirror = (connectionMirror || []).filter(function (row) {
+    return !(row.key && row.key === wanted);
+  });
+  log.debug("Leaving forgetMirrored(). " + connectionMirror.length + " left.");
+}
+
 servers.forEach(function (one) {
   // `one.server` is the net.Server (or tls.Server) ldapjs built; see
   // node-ldapjs/lib/server.js, where it is assigned in the constructor. The TLS
@@ -6226,7 +6336,11 @@ servers.forEach(function (one) {
   ['connection', 'secureConnection'].forEach(function (event) {
     one.server.on(event, function (socket) {
       liveConnections.add(socket);
-      socket.on('close', function () { liveConnections.delete(socket); });
+      publishConnectionsSoon();
+      socket.on('close', function () {
+        liveConnections.delete(socket);
+        publishConnectionsSoon();
+      });
     });
   });
 });
@@ -6237,6 +6351,16 @@ servers.forEach(function (one) {
 // on /logout and a row on /admin/users name one person rather than two.
 function boundConnections() {
   log.debug("Entering boundConnections().");
+  // A PROCESS WITH NO LISTENER ANSWERS OUT OF THE MIRROR. See the block above:
+  // the Set below can only ever be empty here, and answering "none" out of it
+  // is how a sign-out came to report that it had ended everything while a bound
+  // connection stayed open.
+  if (connectionMirror) {
+    const mirrored = mirroredConnections();
+    log.debug("Leaving boundConnections(). " + mirrored.length +
+              " mirrored connection(s).");
+    return mirrored;
+  }
   const out = [];
   liveConnections.forEach(function (socket) {
     const dn = (socket.ldap && socket.ldap.bindDN) ? String(socket.ldap.bindDN) : '';
@@ -6282,6 +6406,54 @@ function boundConnections() {
 function dropConnectionsFor(key) {
   log.debug("Entering dropConnectionsFor(). key=" + key);
   const wanted = String(key || '');
+  // -------------------------------------------------------------------------
+  // IN A REQUEST WORKER, SAY WHAT IS TO BE CLOSED AND LET THE OWNER CLOSE IT.
+  //
+  // The socket belongs to the front process and nothing here can reach it —
+  // there is no file descriptor to destroy, and a `destroy()` on a mirrored row
+  // would be a method call on a plain object. So the intent travels, and the
+  // rows this returns come from the mirror: they are what the front process
+  // held when it last published, which is what the caller is about to report as
+  // ended.
+  //
+  // THEY ARE REMOVED FROM THE MIRROR TOO, so that the second call for the same
+  // person finds nothing left and says "already closed" — which is what the
+  // single-process path does, and ../logout/logout.js's ldap family depends on
+  // it: a global logout calls this once per row and every call after the first
+  // must not re-report the same connection.
+  // -------------------------------------------------------------------------
+  if (connectionMirror) {
+    const mine = mirroredConnections().filter(function (row) {
+      return row.key && row.key === wanted;
+    }).map(function (row) {
+      return { id: row.id, dn: row.dn, secure: row.secure, port: row.port };
+    });
+    // -----------------------------------------------------------------------
+    // A FAILED ASK THROWS, AND THAT IS THE POINT RATHER THAN AN OVERSIGHT.
+    //
+    // ../logout/logout.js's driver catches whatever a family's terminate()
+    // throws and records the row as NOT ended, with the message. Returning the
+    // rows here instead would report "the directory connection was closed"
+    // about a socket nobody had been asked to close — which is the bug this
+    // whole mechanism exists to fix, restated one layer up. A sign-out that
+    // cannot reach the process holding the socket has to SAY so.
+    // -----------------------------------------------------------------------
+    if (!remoteDropper) {
+      throw new Error('this process holds no directory listener and no way to ' +
+        'ask the one that does, so ' + mine.length + ' connection(s) bound as ' +
+        wanted + ' cannot be closed from here');
+    }
+    try {
+      remoteDropper(wanted);
+    } catch (e) {
+      throw new Error('the process holding these connections could not be ' +
+        'asked to close them: ' + e.message);
+    }
+    forgetMirrored(wanted);
+    log.debug("Leaving dropConnectionsFor(). " + mine.length +
+              " asked of the front process.");
+    return mine;
+  }
   const dropped = [];
   boundConnections().forEach(function (row) {
     if (!row.key || row.key !== wanted) return;
@@ -6522,10 +6694,98 @@ server.bind('', function (req, res, next) {
   if (req.connection) {
     req.connection.stsBoundAt = Date.now();
   }
+  // AND TELL THE REQUEST WORKERS, because this is the event that matters to
+  // them: an unbound socket is nobody's session and a bound one is, so a
+  // snapshot taken before this line is a snapshot in which this person is not
+  // signed in. **A TICK LATER, because the DN this bind established is not on
+  // the connection yet** — see publishConnectionsSoon().
+  publishConnectionsSoon();
   res.end();
   log.debug('Leaving the LDAP bind handler. The bind succeeded.');
   return next();
 });
+
+// ---------------------------------------------------------------------------
+// THE OTHER END OF THE MIRROR: THIS PROCESS TELLING THE WORKERS.
+//
+// Filled by common/request_pool.js in the FRONT process, which is the one that
+// holds the sockets. It is an inverted hook for rule 3e's reason read in the
+// usual direction: this module is required at 21 and the pool is a library the
+// listener process loads before anything, so a require from here to there would
+// be this file reaching up into the process's own bootstrap.
+//
+// **A SNAPSHOT IS PUSHED ON CHANGE AND NOT ON A TIMER.** Three things change
+// it — a connection arriving, a connection closing, and a BIND, which is the
+// one that turns an anonymous socket into somebody's session and is therefore
+// the only one that can make a row worth ending. A poll would put a sign-out's
+// correctness on an interval; there are single-digit numbers of these events in
+// an ordinary run.
+// ---------------------------------------------------------------------------
+let connectionWatcher = null;
+
+function setConnectionWatcher(fn) {
+  log.debug("Entering setConnectionWatcher().");
+  connectionWatcher = (typeof fn === 'function') ? fn : null;
+  log.debug("Leaving setConnectionWatcher().");
+}
+
+// What travels: everything boundConnections() reports EXCEPT the socket, which
+// is the one member that cannot cross a process boundary and the one no reader
+// but dropConnectionsFor() has ever used.
+function connectionSnapshot() {
+  log.debug("Entering connectionSnapshot().");
+  const rows = boundConnections().map(function (row) {
+    return { id: row.id, dn: row.dn, key: row.key, secure: row.secure,
+             port: row.port, boundAt: row.boundAt };
+  });
+  log.debug("Leaving connectionSnapshot(). " + rows.length + " row(s).");
+  return rows;
+}
+
+// Called from the three places the set can change. Guarded, because a watcher
+// that threw would take down a bind — publishing is bookkeeping and a bind is
+// the protocol.
+function publishConnections() {
+  if (!connectionWatcher) {
+    return;
+  }
+  try {
+    connectionWatcher(connectionSnapshot());
+  } catch (e) {
+    log.warn('ldap: the connection watcher failed: ' + e.message +
+             '. A request worker may be holding a stale list of connections, ' +
+             'so a sign-out there could miss one.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A TICK LATER, AND THAT IS NOT A PRECAUTION — IT IS WHERE THE DN IS.
+//
+// **ldapjs sets `conn.ldap.bindDN` AFTER the handler chain has run**, in
+// `node-ldapjs/lib/server.js` at the point where it finds no handler left:
+// `conn.ldap.bindDN = DN.fromString(req.dn)`. So a snapshot taken INSIDE the
+// bind handler is a snapshot of an anonymous connection — every row carries an
+// empty DN, `consoleKeyFor()` therefore derives no key, and `logout.js`'s ldap
+// family filters on exactly that key. The first version of this published
+// there and a worker's mirror filled up with rows belonging to nobody: the
+// sign-out found nothing to end, which is the original bug wearing the
+// mechanism that was meant to fix it.
+//
+// It also COALESCES, which the connect and close sites want anyway: a client
+// that opens and closes several connections in a burst publishes once.
+// ---------------------------------------------------------------------------
+let publishScheduled = false;
+
+function publishConnectionsSoon() {
+  if (!connectionWatcher || publishScheduled) {
+    return;
+  }
+  publishScheduled = true;
+  setImmediate(function () {
+    publishScheduled = false;
+    publishConnections();
+  });
+}
 
 // --- add -------------------------------------------------------------------
 server.add('', function (req, res, next) {
@@ -10759,6 +11019,23 @@ module.exports = {
   // block above boundConnections().
   boundConnections: boundConnections,
   dropConnectionsFor: dropConnectionsFor,
+  // THE FOUR THAT MAKE BOTH OF THE ABOVE WORK IN A PROCESS THAT HOLDS NO
+  // SOCKET (2026-09-09). `setConnectionWatcher()` and `connectionSnapshot()`
+  // are the FRONT process's half, filled and read by common/request_pool.js;
+  // `setConnectionMirror()` and `setRemoteDropper()` are a request worker's,
+  // filled by common/request_worker.js. A process that uses none of them is a
+  // process that holds its own listeners and behaves as this module always
+  // has. See the block above boundConnections().
+  setConnectionWatcher: setConnectionWatcher,
+  connectionSnapshot: connectionSnapshot,
+  // EXPORTED FOR ONE ASSERTION, and it is the assertion that keeps the whole
+  // mechanism honest: that a publish requested from inside a handler is
+  // DELIVERED AFTER that handler returns. ldapjs sets the bound DN once the
+  // chain is exhausted, so a snapshot taken any earlier belongs to nobody —
+  // see publishConnectionsSoon(). tests/ldap_logout.js pins it.
+  publishConnectionsSoon: publishConnectionsSoon,
+  setConnectionMirror: setConnectionMirror,
+  setRemoteDropper: setRemoteDropper,
   // THE ACCOUNT OBSERVER, filled by ssf/risc.js's host ssf/ssf.js at require
   // time. See setAccountObserver()'s header: this is the only direction that
   // works, and it is on the STORE rather than on any one door because the

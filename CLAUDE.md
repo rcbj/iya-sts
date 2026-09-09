@@ -725,6 +725,36 @@ same four startup steps `server.js` runs and from the same file: the store, the
 signing keys, the minted rows, and COORDINATION. What makes dispatch correct is
 that last step, not anything written for the pool.
 
+**AND THERE IS EXACTLY ONE THING THE STORE CANNOT CARRY, WHICH IS WHY THE
+SENTENCE ABOVE NEEDED A SECOND MECHANISM AFTER ALL (2026-09-09): A SOCKET.**
+In LDAP the connection IS the session — RFC 4511 section 4.2 — so the only
+sign-out that protocol has is a file descriptor being closed, and a file
+descriptor belongs to the process that accepted it. The front process holds
+every LDAP connection and a worker holds the session that decides one should
+end. **It was not a degraded answer, it was an inverted one**: a worker's
+connection list was permanently empty, `logout.js` ends what it finds, so a
+global logout in `dispatch` mode reported that it had ended everything while a
+bound connection went on being signed in — green in two modes of the suite and
+red in the third, saying only that the socket was still open.
+
+The list goes OUT to the workers as a snapshot pushed on change, and the
+instruction comes BACK **on the response**, in a header the front process acts
+on before it forwards a byte of the answer. That is the whole of why it is not
+a `process.send()`: a second channel races the answer it belongs to, and a
+client told a connection had ended while it was still open is the very bug
+being fixed, made rarer and harder to see. `ldap/CLAUDE.md` argues both halves,
+`common/request_pool.js`'s `LDAP_DROP_HEADER` argues the ordering, and
+`tests/ldap_logout.js` pins all of it in process — including the one part that
+looks like a detail and is not: the snapshot is taken a TICK after the bind
+handler, because ldapjs sets the bound DN only once the handler chain has
+returned, and a snapshot taken any earlier belongs to nobody.
+
+**THE RULE THAT COMES OUT OF IT** is worth more than the mechanism: a store is
+shared by coordination, and anything that is NOT a row in a store — a socket, a
+timer, a listener — is held by one process and reachable from no other. There
+is one such thing today. A second would need this argument made again rather
+than this mechanism copied.
+
 **DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
 Everything else about the pool degrades — no workers means the front process
 does the work, a dead worker is a 502, a pool that gave up handles everything
