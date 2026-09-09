@@ -200,6 +200,7 @@
 // ===========================================================================
 
 const { spawn, spawnSync, execFileSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -209,6 +210,7 @@ const service = require('./service');
 const trust = require('./trust');
 const manifest = require('../vendored/MANIFEST.js');
 const coverage = require('./coverage-report');
+const adminApiToken = require('./admin-api-token');
 
 const { testFiles } = require('../run');
 
@@ -1026,6 +1028,124 @@ async function waitForExternalService(url, log, timeoutMs) {
                   'nothing here started it and nothing here can restart it.');
 }
 
+// ---------------------------------------------------------------------------
+// THE MANAGEMENT API'S CREDENTIAL, WHEN THIS RUNNER IS THE ONE STARTING THE
+// SERVICE (2026-09-09).
+//
+// `/admin-api` requires an OAuth 2.0 access token, and twenty-three jobs drive
+// it. Both docker launchers mint one before any job runs and hand it here as
+// `STS_ADMIN_API_TOKEN` — but there are three paths on which NO launcher does
+// that, and all three share one trait: the service is a throwaway this runner
+// started itself.
+//
+//   * `./run-coverage.sh`, which never passes --service-url because V8
+//     collects from inside the process it measures
+//   * `./local-run-tests.sh --no-docker`, where STS_URL is only ever assigned
+//     inside composeUp()
+//   * a bare `node tests/tools/run-report.js`
+//
+// Until this existed all three ran the whole protocol half against a gated API
+// with no credential, and the report named nineteen broken tests instead of
+// one missing token. The coverage job in CI is where that was found.
+//
+// **THE SECRET HAS TO BE PINNED BEFORE THE SERVICE STARTS, WHICH IS WHY THIS
+// IS TWO FUNCTIONS AND NOT ONE.** `applications.js` seeds `sts-management-api`
+// with a secret minted at every start, readable only THROUGH the API it
+// unlocks — so a secret chosen after the child is up is a secret nobody can
+// use. `adminApi.clientSecret` exists for exactly this, and its environment
+// variable is what `service.js` inherits along with the rest of process.env.
+//
+// A FRESH ONE PER RUN rather than a constant, for the launchers' stated
+// reason: it lives as long as one throwaway service, it never reaches a
+// repository, and two runs on one machine cannot lend each other a token.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PORTS THE THROWAWAY SERVICE ACTUALLY BOUND, HANDED TO EVERY JOB.
+//
+// `tests/tools/service.js` picks a free BLOCK of nine and passes each to the
+// service under the environment variable that service reads for it — so the
+// name of a port in `instance.ports` is already the name a job would look it
+// up by. Handing the whole block over is therefore one line of policy rather
+// than a list that has to be extended every time a job learns to dial another
+// listener.
+//
+// **IT IS A LIST THAT WAS BEING EXTENDED ONE FAILURE AT A TIME, WHICH IS WHY
+// THIS IS A LOOP.** `STS_LDAP_URL` was added on 2026-09-06 for the bulk-load
+// job. On 2026-09-09 the same run showed `sts_global_logout` dialling 389 for
+// its directory bind and 9443 for its mutual-TLS sign-in, getting ECONNREFUSED
+// from both, NOTING each and passing — two protocols' worth of sign-in that no
+// run starting its own service had ever exercised. Any listener added to that
+// block from now on is covered without anybody remembering to add it.
+//
+// **A LAUNCHER'S ANSWER ALWAYS WINS**, the same precedence `STS_LDAP_URL`
+// above uses: a variable already in this process's environment was put there
+// by ./local-run-tests.sh or ./docker-run-tests.sh, which arranged the socket
+// themselves and know where it is. This only answers for the service THIS
+// runner started, and answers nothing at all when it started none — the
+// compose stacks reach this with no `instance`, and their defaults stand.
+// ---------------------------------------------------------------------------
+function chosenPorts(instance) {
+  const out = {};
+  const ports = (instance && instance.ports) || {};
+  Object.keys(ports).forEach(function (name) {
+    if (process.env[name]) {
+      return;
+    }
+    out[name] = String(ports[name]);
+  });
+  return out;
+}
+
+function pinTheManagementApiSecret() {
+  log.debug('Entering pinTheManagementApiSecret().');
+  // A caller who set either name already MEANS it — `./local-run-tests.sh`
+  // exports the first before it brings a container up, and a person debugging
+  // a stack by hand sets the second. Overwriting one here would mint a token
+  // against a secret the running service has never heard of.
+  if (process.env.ADMIN_API_CLIENT_SECRET ||
+      process.env.STS_ADMIN_API_CLIENT_SECRET) {
+    log.debug('Leaving pinTheManagementApiSecret(). One was handed in.');
+    return;
+  }
+  const secret = crypto.randomBytes(24).toString('base64')
+    .replace(/[/+=]/g, '').slice(0, 24);
+  // BOTH NAMES, and they are read by different processes. The service reads
+  // ADMIN_API_CLIENT_SECRET (config.js's `adminApi.clientSecret`) and inherits
+  // it through service.js's copy of process.env; `admin-api-token.js` and the
+  // one job that mints tokens of its own read STS_ADMIN_API_CLIENT_SECRET.
+  // Setting one and not the other is a service that pinned a secret nothing
+  // can present, or a minter presenting one the service did not pin.
+  process.env.ADMIN_API_CLIENT_SECRET = secret;
+  process.env.STS_ADMIN_API_CLIENT_SECRET = secret;
+  log.debug('Leaving pinTheManagementApiSecret(). Pinned one for this run.');
+}
+
+// The token itself, once that service is answering. Handed to every job by the
+// same two lines a launcher's token goes through, so there is one mechanism.
+//
+// **IT IS NOT FATAL, WHICH IS THE OPPOSITE OF WHAT THE LAUNCHERS DO, AND THE
+// DIFFERENCE IS WHAT HAS ALREADY HAPPENED BY THIS POINT.** A launcher fails
+// here having run nothing: exiting costs a report that does not exist yet.
+// This runner has started a service and is about to run every job in the
+// manifest, most of which never touch that API — so aborting would throw away
+// the unit half and the coverage to protect the nineteen. The failure is not
+// silent either way: `sts_admin_api_auth.js` is a job whose whole purpose is
+// to name a missing token, and this logs at error naming the same thing.
+async function mintTheManagementApiToken(url) {
+  log.debug('Entering mintTheManagementApiToken().');
+  try {
+    process.env.STS_ADMIN_API_TOKEN = await adminApiToken.tokenFor(url);
+    log.info('minted an /admin-api access token (admin:read admin:write, ' +
+             'audience ' + adminApiToken.audienceFor(url) + ')');
+  } catch (e) {
+    log.error('could not mint an /admin-api access token from ' + url + ': ' +
+              e.message + '. Every job that drives that API will answer 401. ' +
+              'adminApi.authRequired=false restores the open API if that is ' +
+              'what you want.');
+  }
+  log.debug('Leaving mintTheManagementApiToken().');
+}
+
 async function main() {
   log.debug('Entering main().');
   const opts = parseArgs(process.argv.slice(2));
@@ -1150,6 +1270,11 @@ async function main() {
       instance = null;
     }
   } else if (haveProtocolJobs) {
+    // BEFORE the child starts, and that ordering is the whole of it — see
+    // pinTheManagementApiSecret(). The seeded client's secret is minted at
+    // startup and readable only through the API it unlocks, so this is the
+    // last moment at which a run can choose one it will be able to present.
+    pinTheManagementApiSecret();
     try {
       instance = await service.start({
         log: log,
@@ -1201,6 +1326,28 @@ async function main() {
                'failure naming DEPTH_ZERO_SELF_SIGNED_CERT or a browser ' +
                'interstitial is this and not the service.');
     }
+  }
+
+  // ---- the token the jobs will drive /admin-api with ---------------------
+  //
+  // ONLY FOR A SERVICE THIS RUNNER STARTED, and only when nobody handed one
+  // in. A launcher that brought a container up minted its own before calling
+  // this file — that is the ordinary path and this must not step on it.
+  //
+  // AN EXTERNAL SERVICE WITH NO TOKEN IS WARNED ABOUT RATHER THAN FIXED, and
+  // the reason is the same ordering as above: that service chose its own
+  // client secret while starting, this runner cannot know it, and reading it
+  // back goes through the API that is asking for the token. Whoever started
+  // the service is who can mint against it.
+  if (instance && !instance.external && !process.env.STS_ADMIN_API_TOKEN) {
+    await mintTheManagementApiToken(instance.url);
+  } else if (instance && instance.external && !process.env.STS_ADMIN_API_TOKEN) {
+    log.warn('a service was handed in with --service-url and no ' +
+             'STS_ADMIN_API_TOKEN came with it. /admin-api requires an ' +
+             'access token, so every job that drives it will answer 401. ' +
+             'Both launchers mint one; a stack started by hand needs ' +
+             'tests/tools/admin-api-token.js run against it, or ' +
+             'adminApi.authRequired=false.');
   }
 
   // ---- run them ---------------------------------------------------------
@@ -1346,7 +1493,31 @@ async function main() {
         STS_LDAP_URL: process.env.STS_LDAP_URL ||
           (instance.ports && instance.ports.LDAP_PORT
             ? 'ldap://localhost:' + instance.ports.LDAP_PORT
+            : ''),
+        // ---------------------------------------------------------------
+        // THE DIRECTORY'S PORT UNDER THE NAME A JOB LOOKS IT UP BY, AND THAT
+        // IS NOT THE NAME THE SERVICE READS IT FROM.
+        //
+        // The service takes `LDAP_PORT` (README.md's *Configuration* table is
+        // the authority, and `service.js`'s PORT_VARS uses those spellings);
+        // `sts_global_logout.js` reads **`STS_LDAP_PORT`**. Every other
+        // listener in that block is spelt the same on both sides, so the loop
+        // below covers it — this one has to be said, and saying it is what the
+        // loop cannot do for itself.
+        //
+        // It matters because the failure is SILENT: the job dialled 389, the
+        // bind was refused, it noted "LDAP bind did not sign in" and PASSED.
+        // The assertion that a sign-out reaches a directory connection was
+        // therefore not being made in any run that starts its own service.
+        // ---------------------------------------------------------------
+        STS_LDAP_PORT: process.env.STS_LDAP_PORT ||
+          (instance.ports && instance.ports.LDAP_PORT
+            ? String(instance.ports.LDAP_PORT)
             : '')
+      // AND THE REST OF THE BLOCK, under the names they already share. See
+      // chosenPorts(): a job that dials a DEFAULT port on the throwaway path
+      // is a job driving nothing.
+      }, chosenPorts(instance), {
       // THE TWO TRUST VARIABLES, AND THEY GO LAST SO NOTHING ABOVE CAN SHADOW
       // THEM. `NODE_EXTRA_CA_CERTS` is read by node ONCE at child start, which
       // is why it can only be handed to a job and never set for this runner;

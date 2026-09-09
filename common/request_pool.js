@@ -1669,6 +1669,84 @@ function readYourWrite() {
 // barrier.
 let generation = 0;
 
+// ---------------------------------------------------------------------------
+// AND BUMPED WHEN **THIS** PROCESS WRITES, WHICH IT DOES MORE THAN IT LOOKS
+// (2026-09-09).
+//
+// The generation moved only in receiveCommitted(), on a WORKER's announcement.
+// That is the whole story for anything that arrives over the dispatched HTTP
+// port — and this process answers on five more socket families that are never
+// dispatched at all, because they are not `app`: the two TLS listeners have a
+// handler of their own (`tls_server.js`), the directory has its own protocol,
+// and so do the KDC and SPIFFE's gRPC pair. Every session, principal and entry
+// minted there is written by THIS process, and no worker was ever told.
+//
+// **THE SYMPTOM WAS A SIGN-OUT THAT LEFT A SESSION BEHIND.** A verified client
+// certificate on 9443 starts a sign-on session (2026-09-05); the session is
+// minted here, `/logout` is answered by a worker, and the worker's own copy of
+// the session store had never heard of it — so a global sign-out reported
+// ending everything and left a live way in. It is intermittent by nature: the
+// worker gets there eventually on the replication poll, so the failure depends
+// on how long the run takes to reach the sign-out.
+//
+// **THE COUNTER IS THE SIGNAL AND IT IS THE RIGHT ONE.**
+// `persistence.changeRowsWritten()` counts rows COMMITTED to the change log,
+// so it moves when there is something a worker can actually pull — never
+// merely when this process changed its own memory. Bumping on that is the same
+// contract receiveCommitted() keeps for a worker: the generation moves once
+// the write is fetchable, and the barrier does the waiting.
+//
+// It is sampled at DISPATCH rather than pushed from the writer, and that is
+// deliberate: the alternative is every one of those five socket families
+// learning about this pool, which is the coupling `worker.js` and the
+// request-worker design have avoided from the start. A comparison of two
+// integers on a request that was about to cross a process boundary anyway is
+// not a cost worth avoiding.
+//
+// The FIRST sample bumps nothing. This process writes plenty on the way up —
+// seeding the directory, the realm registry, the applications — and all of it
+// is in the store before a worker forks, so a bump there would send every
+// worker through a barrier to fetch what it already had.
+// ---------------------------------------------------------------------------
+let localWritesSeen = -1;
+
+function noteLocalWrites(written) {
+  if (!readYourWrite()) {
+    return false;
+  }
+  const count = Number(written) || 0;
+  if (localWritesSeen < 0) {
+    localWritesSeen = count;
+    return false;
+  }
+  if (count <= localWritesSeen) {
+    return false;
+  }
+  // The delta is read BEFORE the baseline moves, which is the ordinary shape
+  // of this mistake and prints "0 change row(s)" for ever when it is got wrong.
+  const added = count - localWritesSeen;
+  localWritesSeen = count;
+  generation++;
+  log.debug('noteLocalWrites(): this process committed ' + added +
+            ' change row(s) of its own; the generation is now ' + generation +
+            ', so every worker catches up before it answers again.');
+  return true;
+}
+
+// What this process has committed, asked of the store rather than remembered.
+// `persistence` is required HERE for the reason every other require in this
+// file is lazy: it sits above the protocol modules in the require order and a
+// top-level require would pull it into the router's position.
+function localWriteCount() {
+  try {
+    return require('../persistence/persistence').changeRowsWritten();
+  } catch (e) {
+    // No store, or none that counts. Nothing to notice, which is the honest
+    // answer for a process that cannot have written a change row.
+    return 0;
+  }
+}
+
 // Methods that may write. HEAD and GET are the whole of the other list, and
 // OPTIONS is a preflight — anything else is treated as a write.
 const READ_ONLY_METHODS = { GET: true, HEAD: true, OPTIONS: true };
@@ -1851,6 +1929,10 @@ function middleware() {
     // that comes after.
     awaitCommitConfirmations(entry).then(function () {
       const ticket = dispatchTicket(entry);
+      // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
+      // the generation is read — a bump after this line would be a bump this
+      // request does not wait for. See noteLocalWrites().
+      noteLocalWrites(localWriteCount());
       const wanted = generation;
       if (entry.generation >= wanted) {
         proxy(entry, req, res, wanted, ticket);
@@ -2424,6 +2506,11 @@ module.exports = {
   // catch a rename is a test holding them side by side. tests/ldap_logout.js
   // does exactly that.
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  // THIS PROCESS'S OWN WRITES MOVING THE GENERATION, exported so that
+  // tests/front_process_writes.js can drive it without a store, a fork or a
+  // socket: it takes the count rather than reading it, precisely so that the
+  // decision is testable apart from the thing that counts.
+  noteLocalWrites: noteLocalWrites,
   // The two halves of the directory mirror, exported for that same test: what
   // this process does with the header a worker sent, without a worker.
   closeDirectoryConnections: closeDirectoryConnections,

@@ -119,6 +119,26 @@ are worth knowing because neither is about testing:
   (`--no-docker`, and every coverage run), where `run-report.js` builds the URL
   from `instance.ports.LDAP_PORT` — by NAME rather than `base + 5`, so a
   listener added to that block in the middle cannot silently move it.
+* **AND THE THIRD ARRANGEMENT DID NOT REACH THE COVERAGE RUN UNTIL 2026-09-09,
+  BECAUSE THE IMAGE ANSWERED FIRST.** `tests/Dockerfile` carries `ENV
+  STS_LDAP_URL=ldap://sts:389` for the compose stack, and `run-report.js` reads
+  `process.env.STS_LDAP_URL || <the throwaway port>` so that a LAUNCHER's answer
+  wins — which it cannot tell from an image default. Under `./run-coverage.sh`
+  there is no `sts` host at all (the service is a child of the runner, in the
+  same container), so both bulk-load LDAP jobs died on `getaddrinfo ENOTFOUND
+  sts`. `./run-coverage.sh` empties it with `-e STS_LDAP_URL=`, which is the
+  third variable it empties for exactly this reason — `STS_TEST_SERVICE_URL`
+  and `XACML_PEP_URL` were already there and carry the same argument.
+* **THE PORTS OF THAT THROWAWAY SERVICE ARE ALL HANDED OVER NOW, not one at a
+  time as each job's failure is noticed.** `chosenPorts()` passes every entry of
+  `instance.ports` under the name it was bound with, a launcher's own value
+  always winning. What forced it: `sts_global_logout` dials the directory on
+  `STS_LDAP_PORT` and the mutual-TLS listener on `STS_MTLS_PORT`, got
+  ECONNREFUSED from both on the throwaway path, NOTED each and PASSED — two
+  protocols' worth of sign-in that no run starting its own service had ever
+  exercised. **`STS_LDAP_PORT` still has a line of its own** because it is the
+  one name that differs on the two sides: the service reads `LDAP_PORT` and the
+  job reads `STS_LDAP_PORT`, so the loop cannot match them.
 
 **THE SUITE TRIPPED THE RATE LIMITER UNTIL 2026-09-06, AND THAT IS WORTH
 KNOWING BECAUSE OF WHAT IT LOOKED LIKE.** `security.rateLimitPerAddress` ships
@@ -248,6 +268,50 @@ builds the image and starts a container of its own, and where there is no daemon
 unchecked. That is the one skip in this directory and it is a narrow one: an
 intended job that did not run is otherwise a FAILURE here, and the exception is
 for something deliberately left out.
+
+**THAT SELF-STARTED CONTAINER HAD NO CLIENT CERTIFICATE UNTIL 2026-09-09, AND
+THE COMMENT ABOVE IT SAID SO WHILE CALLING THE TWO DEPLOYMENTS IDENTICAL.** It
+read "configured IDENTICALLY to the one the launchers start — no client
+certificate, no anchor", which was true of both until 2026-09-06, the day
+`/xacml/pep/*` began requiring a VERIFIED chain holding `REMOTE_PEPS`. The
+launchers were taught to mint one; this path was not, so the container
+registered as an unauthenticated caller and the PDP refused it with a 403. **No
+run ever reached it**: both launchers take the attach path, and the two that
+take this one were red on `/admin-api`'s own gate from the same day, dying in
+the preflight 136ms earlier. One masked gate hid another, which is the argument
+for fixing the first one where every path can see it.
+
+**THE IDENTITY IS CREATED RATHER THAN FOUND, AND THAT FOLLOWS FROM THE NAME.**
+An authenticated registration is named by the PDP from the CERTIFICATE and never
+from the body — `xacml.js` argues it: a PEP that could name itself while holding
+a certificate could take over somebody else's row, which is the one thing in
+that family that would be a security bug rather than a fidelity one. The job's
+`PEP_NAME` is its container's hostname and the `?pep=` on every pull, so the
+common name has to be that too. The launchers get this free by pinning both to
+the seeded `remote-pep-1`; a container whose name must be unique per run cannot,
+so the job writes the entry and the `remote-peps` membership through
+`/admin-api` first — **the same two writes `ldap_server.js`'s seed comment
+already describes** ("a deployment using a different common name adds its own
+member to this group"), performed rather than described.
+
+One assertion moved with it: the row's identity DN is matched as
+`(cn|uid)=<name>` rather than `cn=`. What it claims is WHICH ENTRY the
+certificate resolved to, and that is the RDN's value; which attribute carries it
+is a property of the door the entry came in through — the seed writes `cn=` and
+`POST /admin-api/users/create` writes `uid=`. Naming `cn=` was asserting the
+seed.
+
+**AND `./run-coverage.sh` WAS NOT TAKING THAT PATH AT ALL, WHICH IS A THIRD
+THING THE 401 HID.** `docker-compose-run-tests.yml` gives the `tests` service a
+DEFAULT `XACML_PEP_URL=http://xacml-pep:9090` — right for `./docker-run-tests.sh`,
+which brings that container up beside the service. The coverage run uses
+`--no-deps` and starts no such container, so the variable named a host that does
+not exist, and the job read a non-empty `XACML_PEP_URL` as *a launcher provided
+one*, attached to it, and waited out its timeout against nothing. That launcher
+now empties it, exactly as it already empties `STS_TEST_SERVICE_URL` and for the
+same reason — and with it empty the job takes the self-start path, finds no
+docker socket in that container, and is reported SKIPPED with the reason. **A
+skip is honest there; a timeout against a container nobody started is not.**
 
 **THE CONTAINER IS POINTED AT A REALM THAT DOES NOT EXIST WHEN IT STARTS**, and
 that is the arrangement rather than a defect: `PEP_PDP_URL` is decided when the
@@ -622,8 +686,10 @@ Two rules that are not optional here:
 | `version.js` | **M.N.O, and the fact that every one of its failure modes is QUIET** — a wrong version still renders, still serves, still answers 200, and nothing anywhere goes red. That the repo-root `VERSION` file is `M.N` and nothing else (a stray third component, a `v` prefix or a trailing comment is ignored and the version silently becomes `0.0`, which is the module's deliberate never-fail-a-build behaviour and is exactly why the FILE has to be checked and not only the parser); that `BUILD_NUMBER` and `GIT_COMMIT` override, since a CI system setting one that was ignored would report a number nobody could match back to a build; and **that the stamp survives a restart** — two `load()` calls returning the same record, which is the entire reason a stamp exists rather than the version being computed at startup. Plus a corrupt stamp falling back rather than throwing, because six modules read this at require time and a throw is a service that does not start over a file whose job is to be printed in a footer. **The last section is the one that would have caught the state this replaced**: five surfaces draw a version and two of them read `package.json`, whose patch is a placeholder, so every build ever made reported `0.9.0` — so it asserts the SOURCE each module reads and not the string it renders, because two pages reading two different sources agree perfectly right up until they stop. **In process because two claims choose how the process was started** (a directory with a stamp and one without, twice) **and one is a property of the SOURCE TREE** (the manifests in step with VERSION), which no running service could be asked. **The over-HTTP half is in two owned jobs**: `admin_api.js`'s `everySurfaceReportsTheSameBuild()` — which is what caught the one-record bug, since a container never shows it — and `sts_xacml_remote_pep.js`, for the seventh surface. It failed on itself the first time it ran, and the fix is written down in it: the two files that document having STOPPED reading `package.json` say so in a comment containing the pattern, so the check strips full-line comments — a maintainer must never have to choose between deleting the explanation and deleting the check |
 | `directory_indexes.js` | that the two caches over the directory never cost the property they exist beside: a write is visible to the very next read, however many kept-index writes surround it. The username index across creates, `invent: true`, and the TWO-WRITE shape a SCIM create actually is; the group index across a group create, a membership write and person writes on either side of it; and that the two answer separately, since one shared "is it current" flag is the tidy-looking mistake |
 | `readme_ports.js` | **the README's *The ports* table, against the table that decides the ports.** It exists because that section is the exact shape this repository has been bitten by twice — the root CLAUDE.md's *a number written here as well went stale twice* — and because **the one mechanism this service already has for keeping a list honest cannot see any of it**: `/admin/sts-metadata` walks the live Express router, and a raw socket registers no route, so nine of the ten bindings are invisible to it. So it is held to `config.js`'s `SETTINGS` instead, in BOTH directions: a binding with no row (the failure people expect) and **a row naming no setting** (what a RENAME produces, and the one that goes unnoticed, because the table still looks complete). Defaults are compared too — a row naming the right setting and the wrong number is worse than a missing row, because a reader acts on it. Plus the COUNT in the prose above the table, asserted as *port settings + 1* rather than against a constant, so the KDC's second socket stays accounted for; and the Dockerfile's `EXPOSE` set against the same list, `88/udp` named separately. **In process because every claim is a comparison between two FILES in this repository** — the same shape as `postgres_schema.js` and `xacml_pep.js`'s COPY-set check. **It found two things on its first run**: the Dockerfile had never `EXPOSE`d 8888, the Kerberos test service, and neither had the comment above that list enumerating "the listeners that are NOT HTTP"; and a table row cited `spiffe.authRequired`, which stopped existing on 2026-09-06 when `global.mode` replaced it. Mutation-tested against a renamed setting, a wrong default, a bumped count and a deleted EXPOSE |
+| `admin_api_token_wiring.js` | **every path that runs a job arranges an `/admin-api` access token, which is a claim about the LAUNCHERS and therefore one no job can make.** It exists because the gate that landed on 2026-09-09 taught the two docker launchers to mint and missed the third path — the throwaway `run-report.js` starts itself, which is `./run-coverage.sh`, `--no-docker` and a bare `run-report.js`. CI's coverage job then ran the whole protocol half against a gated API with no credential and reported **nineteen failures for one missing token**, two of which described a SAML defect that did not exist. `sts_admin_api_auth.js` already fails loudly on an empty token and did exactly that — **detection was never the gap**; what nothing could see is the launcher that never minted one, because a launcher is not something a job can look at. So it asserts both docker launchers still call `tools/admin-api-token.js` and export the result, and that `run-report.js` pins a client secret, starts the service and mints — **in that order**, which is the assertion the file is really for: the seeded client reads `adminApi.clientSecret` while it is being seeded, so a secret chosen after the child is up is one the running service never heard of, and the failure that produces names a client secret and says nothing about ordering. Plus the `--service-url` case being REPORTED rather than silently tolerated, and the preload still being attached, since a token minted and never presented is the same outcome as never minting one. **In process because every claim is a comparison between FILES in this repository** — `readme_ports.js`'s shape, and nothing here starts a service or mints anything. Mutation-tested against removing the pin |
 | `worker_pool.js` | the four ways moving a computation into another process goes wrong: that a worker computes the SAME BYTES (literal equality for the nine deterministic algorithms; cross-verification for the three whose ECDSA half is randomized and must be), that the event loop is genuinely FREE while it does — counted in timer ticks, against an unpooled control that manages none — that a session's jobs go to one worker and unnamed ones spread, and that a SIGKILLed worker FAILS its jobs with a sentence rather than leaving a promise nobody settles. Plus `workers.count = 0` producing the same bytes here, and a realm being refused the setting at both ends |
 | `ldap_logout.js` | **a sign-out reaching a directory connection the process answering has neither seen nor can close** (2026-09-09). In LDAP the connection IS the session (RFC 4511 section 4.2), and a request worker binds no port — so `boundConnections()` there answered "there are none", the sign-out driver had nothing to end, and a global logout in `dispatch` mode reported that it had ended everything while a bound connection went on being signed in. Four claims: that a mirrored process reads the front process's list and that no socket rides along in it; that a sign-out driven through the real `logout.terminate()` ASKS the process holding the socket and reports the row ended; that an ask which cannot be made or is refused reports the connection NOT ended, with the reason, rather than claiming success — which is the original bug one layer up; and that the two processes spell the header the same way, since a rename in either is silent in both. **The end-to-end job cannot say which half broke, and in one launcher it was not asking at all** — `sts_global_logout` sees only a socket that is still open, so "the worker never saw it" and "the worker could not close it" look identical from there; and until 2026-09-09 that job dialled 389 on the HOST under `./local-run-tests.sh`, got ECONNREFUSED, noted it and passed. This file needs no port and cannot degrade to green that way |
+| `front_process_writes.js` | **that a write by the process holding the UNDISPATCHED sockets marks every request worker stale** (2026-09-09). The read-your-write generation moved in one place — a worker announcing its commit — and this process answers on five socket families that never reach a worker at all: the two TLS listeners (their own handler, not `app`), the directory, the KDC and SPIFFE's gRPC pair. So a sign-on session minted by a client certificate on 9443 was invisible to the worker answering `/logout`, and a global sign-out reported ending everything while leaving a live way in. **Intermittent by construction** — the worker catches up on the replication poll, so it failed once in a three-mode run and passed when the job was run alone, which is the least useful evidence there is. The decision underneath is a comparison of two integers and that is what is asserted: the first sample is a baseline, a growing count moves it by one, a repeated or BACKWARDS count moves nothing, and with `workers.readYourWrite` off nothing moves at all. `noteLocalWrites()` takes the count rather than reading it, precisely so the decision is testable apart from the store that counts |
 
 **`sts_portal_sessions.js` IS THE NEWEST OWNED JOB (2026-09-06)** and it covers
 five claims nothing else did over HTTP: that a sign-in at `/admin` and one at
@@ -1127,7 +1193,8 @@ either twenty-odd edits saying the same thing, or one place saying it once.
 |---|---|
 | `tools/admin-api-token.js` | Mints the token. The seeded `sts-management-api` client, `client_credentials`, `resource=<base>/admin-api`. It is the ONE place the client id, the grant and the form shape are written down. |
 | `tools/attach-admin-token.js` | Presents it. Preloaded into every job by `run-report.js` with `--require`; it wraps global `fetch` and `http`/`https.request` and adds the header to `/admin-api` calls that do not already carry one. |
-| the launchers | Mint it once per mode, before any job runs, and hand it over as `STS_ADMIN_API_TOKEN`. |
+| the two DOCKER launchers | Mint it once per mode, before any job runs, and hand it over as `STS_ADMIN_API_TOKEN`. They have to: the service is a CONTAINER they brought up, so nothing downstream can choose its client secret. |
+| `tools/run-report.js` | Mints it for a service **it** started — the throwaway. It pins `ADMIN_API_CLIENT_SECRET` before the child starts and mints once it answers. See *The third path* below. |
 
 **WHY A PRELOAD AND NOT A SHARED CLIENT.** A shared client is the right answer
 for a suite being written today. Adopting one across twenty-odd files that each
@@ -1144,11 +1211,12 @@ test. **A job that means to drive `/admin-api` UNAUTHENTICATED sends
 `Authorization: none`**, which the shim leaves alone and the service reads as no
 token at all.
 
-**THE FAILURE IS THE RUN'S AND NOT THE JOB'S.** Both launchers mint the token
-before starting anything and abort the mode if they cannot: without one, every
-job that touches that API reports a 401 and the report names twenty problems
-where there is one. `docker-run-tests.sh` mints it **once per mode** rather than
-once per run, which is the one thing about it that is easy to get wrong — the
+**THE FAILURE IS THE RUN'S AND NOT THE JOB'S.** Both docker launchers mint the
+token before starting anything and abort the mode if they cannot: without one,
+every job that touches that API reports a 401 and the report names twenty
+problems where there is one. `docker-run-tests.sh` mints it **once per mode**
+rather than once per run, which is the one thing about it that is easy to get
+wrong — the
 token is SIGNED by a key this service regenerates on every start, and that
 launcher tears its whole stack down between modes. (The remote PEP's client
 certificate is the opposite and is minted once, because it is anchored by a CA
@@ -1164,6 +1232,49 @@ hypothetical — it was inert in both compose files for the first day of this
 feature's life, and nothing failed, because development mode does not verify a
 client secret at the token endpoint. It would have failed the moment anybody
 ran the suite in RFC 9700 mode or against a product-mode stack.
+
+### The third path, and it is where this went wrong (2026-09-09)
+
+**"THE LAUNCHERS MINT IT" WAS NOT A COMPLETE SENTENCE AND THIS SECTION SAID IT
+ANYWAY.** There are three ways a job here reaches a service and only two of them
+go through a launcher that mints:
+
+* `./local-run-tests.sh` and `./docker-run-tests.sh` — a CONTAINER they started,
+  and they mint against it
+* **`./run-coverage.sh`, `./local-run-tests.sh --no-docker`, and a bare `node
+  tests/tools/run-report.js`** — a THROWAWAY `run-report.js` started itself
+
+The gate landed with the first two taught and the third untouched, and the third
+is what CI's coverage job runs. That job drove the whole protocol half against a
+gated API with no credential: **57 passed, 19 failed**, and only seventeen of
+the nineteen mentioned the API at all. `sts_saml_encryption` reported that this
+identity provider would not encrypt an assertion — 14 failures, every algorithm
+pair — because the service provider certificate it writes through `/admin-api`
+was refused and it does not assert that write. `sts_saml11` reported eleven
+SAML 1.1 defects for the same reason. **Two jobs describing a protocol bug that
+did not exist is what a missing credential looks like from the report**, and it
+is why the fix went into `run-report.js` rather than into a fourth copy of the
+minting block.
+
+**THE ORDERING IS THE LOAD-BEARING PART.** `applications.js` seeds
+`sts-management-api` with a secret minted at every start, readable only THROUGH
+the API it unlocks — so the secret has to be pinned BEFORE the child starts and
+the token asked for AFTER it answers. That is two functions rather than one, and
+`tests/admin_api_token_wiring.js` pins the direction between them: the failure a
+reversed pair produces names a client secret and says nothing about ordering.
+
+**A SERVICE HANDED IN WITH `--service-url` IS WARNED ABOUT RATHER THAN FIXED.**
+This runner cannot know the secret a service somebody else started chose, and
+reading it back goes through the API that is asking for the token. Whoever
+started it is who can mint against it — so the runner says that, at `warn`, in
+one line, instead of letting nineteen jobs say it badly.
+
+**AND IT IS NOT FATAL HERE, WHICH IS THE OPPOSITE OF WHAT THE LAUNCHERS DO.** A
+launcher fails having run nothing; exiting costs a report that does not exist
+yet. `run-report.js` has by then started a service and is about to run every job
+in the manifest, most of which never touch that API — so aborting would throw
+away the unit half and the coverage to protect the nineteen. It logs at `error`
+naming the cause, and `sts_admin_api_auth.js` is still there to fail on it.
 
 ### `sts_admin_api_auth.js` is the gate's own job, and it exists because hand-verification is not a test
 

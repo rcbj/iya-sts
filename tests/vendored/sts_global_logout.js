@@ -380,15 +380,48 @@ async function kerberos(username) {
 // the SAME person the other nine protocols did — one identity, ten doors —
 // which is what makes a single global sign-out the right question to ask.
 // ---------------------------------------------------------------------------
+// A serial that differs per person and per certificate. Hex, because that is
+// what a serial is, and short enough to read in a log line.
+function serialFor(username, suffix) {
+  let hash = 0;
+  String(username).split("").forEach(function (ch) {
+    hash = ((hash * 31) + ch.charCodeAt(0)) & 0xffffff;
+  });
+  return hash.toString(16).padStart(6, "0") + suffix;
+}
+
 function makeCertificate(username) {
   const forge = require("node-forge");
   const caKeys = forge.pki.rsa.generateKeyPair(2048);
   const ca = forge.pki.createCertificate();
   ca.publicKey = caKeys.publicKey;
-  ca.serialNumber = "01";
+  ca.serialNumber = serialFor(username, "01");
   ca.validity.notBefore = new Date(Date.now() - 60000);
   ca.validity.notAfter = new Date(Date.now() + 3600 * 1000);
-  const caName = [{ name: "commonName", value: "global-logout test CA" }];
+  // ---------------------------------------------------------------------
+  // THE CA'S NAME CARRIES THE USERNAME, AND THAT IS NOT DECORATION.
+  //
+  // This function is called once per SCENARIO and mints a fresh CA KEY every
+  // time. With one fixed name, the two scenarios posted two different keys
+  // under the SAME subject DN to `/tls/trust` — and a truststore holding two
+  // anchors with one subject is a truststore that verifies against whichever
+  // it finds first. The second scenario's handshake was then refused with
+  // `RSA_padding_check_PKCS1_type_1:invalid padding`, which is openssl saying
+  // "I checked this signature with the wrong public key".
+  //
+  // **AND THE JOB PASSED**, because a refused sign-in here is NOTED and the
+  // scenario carries on with nine protocols instead of ten — so half the
+  // certificate-session coverage in this suite was quietly absent, in every
+  // stack, for as long as there have been two scenarios. It surfaced on
+  // 2026-09-09 only because the throwaway path started reaching this listener
+  // at all.
+  //
+  // The serial goes with it for the same reason: an issuer DN and a serial are
+  // what a certificate is IDENTIFIED by, and two different certificates
+  // claiming both is the shape that confuses a cache as well as a store.
+  // ---------------------------------------------------------------------
+  const caName = [{ name: "commonName",
+                    value: "global-logout test CA for " + username }];
   ca.setSubject(caName);
   ca.setIssuer(caName);
   ca.setExtensions([{ name: "basicConstraints", cA: true }]);
@@ -397,7 +430,7 @@ function makeCertificate(username) {
   const leafKeys = forge.pki.rsa.generateKeyPair(2048);
   const leaf = forge.pki.createCertificate();
   leaf.publicKey = leafKeys.publicKey;
-  leaf.serialNumber = "02";
+  leaf.serialNumber = serialFor(username, "02");
   leaf.validity.notBefore = new Date(Date.now() - 60000);
   leaf.validity.notAfter = new Date(Date.now() + 3600 * 1000);
   leaf.setSubject([{ name: "commonName", value: username },
