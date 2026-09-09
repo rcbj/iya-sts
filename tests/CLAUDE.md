@@ -412,10 +412,23 @@ can never take, or tear down, the `sts` container a plain `docker compose up`
 gives somebody), why it persists NOTHING, why the image is REBUILT every run,
 and why a stack that will not come up is a FAILED run rather than a quiet fall
 back to the host — all in `../local-run-tests.sh`'s header. The containerized
-runner's three — no published port at all, no postgres, and the tests image
-built from the SAME context behind `Dockerfile.dockerignore` — are in
-`../docker-compose-run-tests.yml` and `Dockerfile`, the latter with a guard that
-says so rather than failing later inside node.
+runner's three — no published port at all, a database with NO VOLUME, and the
+tests image built from the SAME context and the SAME `.dockerignore` as the
+service — are in `../docker-compose-run-tests.yml` and `Dockerfile`, the latter
+with a guard that says so rather than failing later inside node.
+
+**TWO OF THOSE THREE WERE WRITTEN DIFFERENTLY AND BOTH WERE OVERTAKEN.** This
+said "no postgres", which was true while the suite ran once in `memory`; two of
+the three modes in `tools/modes.sh` are DEFINED by having a store, and until
+2026-09-09 they brought the mock up with `persistence.mode` set and nothing to
+connect to — so the service refused to start, correctly and naming the store,
+and two modes ran nothing at all. What that bullet was actually defending is
+kept by the missing volume rather than by the missing service: the cluster
+lives in the container's writable layer and the teardown between modes takes it
+with the container, so no mode and no run can start from another's leavings. It
+said "behind `Dockerfile.dockerignore`" too, which is the BuildKit arrangement
+that lasted one build — `../.dockerignore`'s own header is the record of why
+there is one rule set and the service image deletes what it does not want.
 
 **THE TOOLING IS IN `tools/`, AND THAT IS THE ONE DECISION IN IT WORTH
 ARGUING.** `run.js` discovers a test as *any `.js` file in this directory that

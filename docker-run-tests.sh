@@ -16,9 +16,13 @@
 # differ in one way worth knowing before porting anything between them: that
 # stack has ten services and has to PROVISION most of them — Keycloak realms, a
 # WS-Federation side-car, two walt.id services, browser bundles — before a test
-# can run. This one has two services and provisions nothing at all, because the
-# service under test accepts any client, any entityID and any username on first
-# sight. That is what it is for.
+# can run. This one has four and provisions almost nothing, because the service
+# under test accepts any client, any entityID and any username on first sight.
+# That is what it is for. The two things it does prepare are CREDENTIALS rather
+# than configuration, each is obtained FROM the service, and both are therefore
+# minted once per MODE — the remote PEP's client certificate and an /admin-api
+# access token — because the stack is torn down between modes and a fresh
+# service remembers neither.
 #
 # ---------------------------------------------------------------------------
 # WHICH LAUNCHER TO USE, AND WHY THERE ARE TWO.
@@ -54,6 +58,9 @@
 #   ./docker-run-tests.sh
 #   ./docker-run-tests.sh --no-build          # reuse the images already built
 #   ./docker-run-tests.sh --keep-stack        # leave it up to look at
+#   ./docker-run-tests.sh --modes=dispatch    # one mode of tests/tools/modes.sh
+#                                             # rather than all three, in that
+#                                             # file's own spelling
 #   ./docker-run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -153,6 +160,14 @@ do
   case "$1" in
     --no-build)   BUILD=0 ;;
     --keep-stack) KEEP_STACK=1 ;;
+    # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
+    # ./local-run-tests.sh has had `--modes=` since the matrix arrived, and the
+    # asymmetry cost an afternoon: the failure being chased was in `dispatch`,
+    # on a listener only THIS stack publishes, so reproducing it meant running
+    # `memory` and `postgres` first every time. Same spelling and same meaning
+    # as the other launcher's, so what a developer learns on one works on the
+    # other. A run with no `--modes=` is unchanged: all three, in order.
+    --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}" ;;
     --verbose)    set -x ;;
     -h|--help)    usage; exit 0 ;;
     *)            STS_TEST_ARGS="${STS_TEST_ARGS} $1" ;;
@@ -572,23 +587,32 @@ mintAdminApiToken()
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# THE PEP'S CREDENTIAL, ONCE PER MODE, AGAINST A SERVICE THAT IS ALREADY UP.
+#
+# **IT WAS ONCE PER RUN UNTIL 2026-09-09 AND THAT WAS WRONG THE MOMENT THIS
+# LAUNCHER GREW MODES.** The truststore is a Map in the service's process, this
+# loop tears the stack DOWN between modes, and the mock generates a fresh
+# self-signed server certificate on every start — so mode 2 and mode 3 met a
+# service whose truststore had never been filled, while their PEP container
+# came up beside it and started registering. It failed in `postgres` and
+# `dispatch` with UNABLE_TO_GET_ISSUER_CERT_LOCALLY, and passed in `memory`
+# for a reason worth knowing: compose recreates a container when the resolved
+# configuration changes, so the FIRST mode reused the container this ran
+# against and the other two did not.
+#
+# It is not `mintAdminApiToken`'s neighbour by accident: both are credentials
+# obtained FROM the service and both are therefore per mode. The window is the
+# same one — after `up -d sts` and before the `up` that starts the PEP and the
+# runner — and it is the only window there is, because pep.js reads its
+# certificate files at process start and never again.
+#
+# A FAILURE HERE IS A WARNING AND NOT THE MODE'S FAILURE, which is unchanged:
+# one job asserts what an unauthenticated PEP cannot do, and the rest of the
+# suite has no opinion about this certificate at all.
+# ---------------------------------------------------------------------------
 mintThePepCredential()
 {
-  echo "Bringing up the mock STS alone, so its truststore can be filled"
-  echo "before the remote PEP that has to pass through it starts."
-  if ! docker_compose -f "${COMPOSE_FILE}" up -d sts;
-  then
-    echo "The service would not start." >&2
-    return 1
-  fi
-  STACK_UP=1
-
-  if ! waitForStsHealthy;
-  then
-    echo "The remote PEP's certificate cannot be minted without it." >&2
-    return 1
-  fi
-
   rm -rf "${XACML_PEP_CERT_DIR}"
   mkdir -p "${XACML_PEP_CERT_DIR}"
   echo "Minting the remote PEP's client certificate (${XACML_PEP_SUBJECT})"
@@ -632,35 +656,6 @@ mintThePepCredential()
   return 0
 }
 
-if ! mintThePepCredential;
-then
-  echo "" >&2
-  echo "Could not prepare the stack. Nothing was run." >&2
-  exit 1
-fi
-
-# THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK — and
-# APPENDED HERE rather than in the block above, because the block above runs
-# before this certificate exists.
-#
-# The truststore is a Map in the service's process that ANY job can empty:
-# `POST /tls/trust/clear` needs no credential, and a job exercising the
-# truststore is entitled to use it. Nothing noticed until 2026-09-06, when a
-# client certificate stopped being a turnstile — this container's pull, its
-# heartbeat and its PIP queries all resolve a VERIFIED chain now, so one such
-# job left it authenticating as nobody for the rest of the run, reporting
-# UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor posted correctly before
-# anything started.
-#
-# **THE FIX IS NOT TO STOP OTHER JOBS CLEARING IT.** It is for the job that
-# DEPENDS on this anchor to re-establish it, which is what every other
-# credential in that file already does for itself. It travels as TEXT because
-# the runner container cannot see the directory the PEP mounts.
-if [ -f "${XACML_PEP_CERT_DIR}/ca.crt" ];
-then
-  COMPOSE_ENV+=("XACML_PEP_CA_PEM=$(cat "${XACML_PEP_CERT_DIR}/ca.crt")")
-fi
-
 echo "Bringing up ${COMPOSE_PROJECT}: the mock STS, the remote PEP and the"
 echo "test runner."
 if [ -n "${STS_TEST_ARGS}" ];
@@ -691,6 +686,13 @@ MODES_FAILED=()
 MODE_COUNT="${#RUN_MODES[@]}"
 MODE_INDEX=0
 
+# THE STACK'S ENVIRONMENT AS IT IS BEFORE ANY MODE HAS ADDED TO IT. Each pass
+# rebuilds COMPOSE_ENV from this rather than appending to whatever the last one
+# left, which is the same rule modes.sh states about the modes themselves: a
+# mode that inherited the previous mode's settings would be a mode that never
+# ran, reported as a pass.
+BASE_COMPOSE_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
+
 for MODE in "${RUN_MODES[@]}";
 do
   MODE_INDEX=$((MODE_INDEX + 1))
@@ -715,20 +717,34 @@ do
   MODE_ENV+=("STS_TEST_REPORT_DIR=/usr/src/sts/tests/report/${MODE}")
 
   # -------------------------------------------------------------------------
-  # THE SERVICE FIRST, THEN ITS TOKEN, THEN THE RUNNER (2026-09-09).
+  # THE SERVICE FIRST, THEN ITS CREDENTIALS, THEN THE RUNNER (2026-09-09).
   #
-  # This loop used to be one `up`. It is two now for the reason
-  # mintThePepCredential() is not inside it: a credential that has to be
-  # obtained FROM the service cannot be obtained after the container that
+  # This loop used to be one `up`. It is two because a credential that has to
+  # be obtained FROM the service cannot be obtained after the container that
   # spends it has started, and `--abort-on-container-exit` means the runner
-  # begins the moment compose brings it up.
+  # begins the moment compose brings it up. Both credentials live in the gap:
+  # the PEP's certificate, whose anchor has to be in the truststore before that
+  # container's first handshake, and the management API's token.
   #
   # `up -d sts` starts its dependencies too, so the database comes with it in
   # the two modes that have one.
   # -------------------------------------------------------------------------
+  #
+  # THE MODE'S VARIABLES REACH COMPOSE THROUGH COMPOSE_ENV AND NOT THROUGH
+  # `env`. `docker_compose` is a SHELL FUNCTION — tests/tools/compose.sh — so
+  # `env NAME=value docker_compose ...` asks the kernel to execute a program by
+  # that name and gets `env: 'docker_compose': No such file or directory`, which
+  # is what every mode of this launcher did on its first run. That function
+  # already prefixes COMPOSE_ENV onto the compose command for the `sudo` reason
+  # its own header gives, so a mode has a channel and needs no second one.
+  COMPOSE_ENV=(
+    ${BASE_COMPOSE_ENV[@]+"${BASE_COMPOSE_ENV[@]}"}
+    ${MODE_ENV[@]+"${MODE_ENV[@]}"}
+  )
+
   STACK_UP=1
   MODE_RC=0
-  if ! env "${MODE_ENV[@]}" docker_compose -f "${COMPOSE_FILE}" up -d sts;
+  if ! docker_compose -f "${COMPOSE_FILE}" up -d sts;
   then
     echo "The mock STS would not start in mode ${MODE}. Nothing was run." >&2
     MODE_RC=1
@@ -737,15 +753,43 @@ do
     echo "The mock STS never became healthy in mode ${MODE}. Nothing was" >&2
     echo "run — see the container log captured below." >&2
     MODE_RC=1
-  elif ! mintAdminApiToken;
-  then
-    MODE_RC=1
   else
-    MODE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
-    env "${MODE_ENV[@]}" \
+    # THE PEP'S CERTIFICATE FIRST, because the anchor has to be in this
+    # service's truststore before the container that presents it starts — and
+    # the `up` below is what starts it. See the function's header.
+    mintThePepCredential
+
+    # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
+    #
+    # The truststore is a Map in the service's process that ANY job can empty:
+    # `POST /tls/trust/clear` needs no credential, and a job exercising the
+    # truststore is entitled to use it. Nothing noticed until 2026-09-06, when
+    # a client certificate stopped being a turnstile — this container's pull,
+    # its heartbeat and its PIP queries all resolve a VERIFIED chain now, so
+    # one such job left it authenticating as nobody for the rest of the run,
+    # reporting UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor posted
+    # correctly before anything started.
+    #
+    # **THE FIX IS NOT TO STOP OTHER JOBS CLEARING IT.** It is for the job that
+    # DEPENDS on this anchor to re-establish it, which is what every other
+    # credential in that file already does for itself. It travels as TEXT
+    # because the runner container cannot see the directory the PEP mounts.
+    #
+    # Read per mode, because the certificate above is minted per mode.
+    if [ -f "${XACML_PEP_CERT_DIR}/ca.crt" ];
+    then
+      COMPOSE_ENV+=("XACML_PEP_CA_PEM=$(cat "${XACML_PEP_CERT_DIR}/ca.crt")")
+    fi
+
+    if ! mintAdminApiToken;
+    then
+      MODE_RC=1
+    else
+      COMPOSE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
       docker_compose -f "${COMPOSE_FILE}" up \
         --abort-on-container-exit --exit-code-from tests
-    MODE_RC=$?
+      MODE_RC=$?
+    fi
   fi
   MODES_RUN+=("${MODE}")
   if [ "${MODE_RC}" -ne 0 ];
