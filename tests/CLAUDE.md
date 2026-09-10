@@ -690,6 +690,7 @@ Two rules that are not optional here:
 | `worker_pool.js` | the four ways moving a computation into another process goes wrong: that a worker computes the SAME BYTES (literal equality for the nine deterministic algorithms; cross-verification for the three whose ECDSA half is randomized and must be), that the event loop is genuinely FREE while it does — counted in timer ticks, against an unpooled control that manages none — that a session's jobs go to one worker and unnamed ones spread, and that a SIGKILLed worker FAILS its jobs with a sentence rather than leaving a promise nobody settles. Plus `workers.count = 0` producing the same bytes here, and a realm being refused the setting at both ends |
 | `ldap_logout.js` | **a sign-out reaching a directory connection the process answering has neither seen nor can close** (2026-09-09). In LDAP the connection IS the session (RFC 4511 section 4.2), and a request worker binds no port — so `boundConnections()` there answered "there are none", the sign-out driver had nothing to end, and a global logout in `dispatch` mode reported that it had ended everything while a bound connection went on being signed in. Four claims: that a mirrored process reads the front process's list and that no socket rides along in it; that a sign-out driven through the real `logout.terminate()` ASKS the process holding the socket and reports the row ended; that an ask which cannot be made or is refused reports the connection NOT ended, with the reason, rather than claiming success — which is the original bug one layer up; and that the two processes spell the header the same way, since a rename in either is silent in both. **The end-to-end job cannot say which half broke, and in one launcher it was not asking at all** — `sts_global_logout` sees only a socket that is still open, so "the worker never saw it" and "the worker could not close it" look identical from there; and until 2026-09-09 that job dialled 389 on the HOST under `./local-run-tests.sh`, got ECONNREFUSED, noted it and passed. This file needs no port and cannot degrade to green that way |
 | `front_process_writes.js` | **that a write by the process holding the UNDISPATCHED sockets marks every request worker stale** (2026-09-09). The read-your-write generation moved in one place — a worker announcing its commit — and this process answers on five socket families that never reach a worker at all: the two TLS listeners (their own handler, not `app`), the directory, the KDC and SPIFFE's gRPC pair. So a sign-on session minted by a client certificate on 9443 was invisible to the worker answering `/logout`, and a global sign-out reported ending everything while leaving a live way in. **Intermittent by construction** — the worker catches up on the replication poll, so it failed once in a three-mode run and passed when the job was run alone, which is the least useful evidence there is. The decision underneath is a comparison of two integers and that is what is asserted: the first sample is a baseline, a growing count moves it by one, a repeated or BACKWARDS count moves nothing, and with `workers.readYourWrite` off nothing moves at all. `noteLocalWrites()` takes the count rather than reading it, precisely so the decision is testable apart from the store that counts |
+| `teardown_bounds.js` | **that a stack which will not come down is not a verdict on the tree** (2026-09-10). CI's `tests` job was reported as a failure for a tree with nothing wrong with it: all three modes ran, the last finished 78 of 78, the report was written and the runner exited 0 — and then `up --abort-on-container-exit`, which stops the stack once the runner is done, sat on `Container sts-postgres-docker-tests  Stopping` for twenty-three minutes until the job's wall clock cancelled the run. **No compose flag covers that**: `up` already waits ten seconds and already follows with SIGKILL (the `xacml-pep` container spends all ten on every run), so the kill was reached and did not land, and the only lever left is to stop WAITING. Three claims: every teardown has a wall clock; **a bound that is REACHED is not turned into a test failure** — the mode's real verdict is recovered from the runner container, which has already exited and whose exit code docker has recorded; and the CI job's own timeout stays above the sum of ours, so the bound that fires can always explain itself. The middle one is load-bearing — without it the bound is a NEW way to throw a green suite away, arriving sooner than the CI timeout did and just as wrong — and it is available at all only because `up --abort-on-container-exit --exit-code-from tests` does two separable things and only the first decides anything. **In process because every claim is a comparison between FILES** — the two launchers, the compose helper they share and the workflow that runs one of them — which is `admin_api_token_wiring.js`'s shape and for its reason: a launcher is not something a job can look at, so the only run that would have caught this is the one that had already lost. Thirteen mutants, all caught |
 
 **`sts_portal_sessions.js` IS THE NEWEST OWNED JOB (2026-09-06)** and it covers
 five claims nothing else did over HTTP: that a sign-in at `/admin` and one at
@@ -1078,7 +1079,7 @@ trip over convenient data is the shape that passes while proving nothing**, and
 the only reason that was found before it was committed is that the mutation
 round is mandatory here.
 
-## TWO CI-ONLY FAILURES, AND WHAT EACH ONE TEACHES (2026-08-30)
+## THREE CI-ONLY FAILURES, AND WHAT EACH ONE TEACHES (2026-08-30, 2026-09-10)
 
 Both were found by a manual `workflow_dispatch` of `.github/workflows/tests.yml`
 on `develop`, both were invisible on a developer machine, and neither was a
@@ -1177,6 +1178,59 @@ sync, never an edit here.
 demands exactly one POST and still demands a refusal; the userinfo job still
 drives every advertised algorithm. What changed is how long the harness is
 willing to wait to find out.
+
+### The third was not a test at all: a teardown that would not finish (2026-09-10)
+
+**THE SUITE PASSED AND THE JOB WAS REPORTED AS A FAILURE.** All three modes
+ran; the last of them finished `78 job(s), 78 passed, 0 failed, 0 skipped, 1441
+assertion(s)`, wrote its report and exited 0. Then `up
+--abort-on-container-exit` — which stops the rest of the stack once the runner
+is done — printed `Container sts-postgres-docker-tests  Stopping` and sat there
+for **twenty-three minutes**, until the job hit its 45-minute wall clock and
+GitHub cancelled it: no summary, no exit code, and only the `if: always()`
+upload step to show for the run.
+
+Nothing was wrong with the tree, and nothing in this repository could have
+prevented the hang. Modes one and two stopped that same container in 0.17s and
+0.48s; the run the day before stopped it three times out of three. **No compose
+flag covers it either**: `up` already takes a shutdown grace, already defaults
+to ten seconds and already follows with SIGKILL — the `xacml-pep` container
+spends every one of those ten seconds on every run and dies on the kill — so
+the kill was reached and did not land. A stop that outlives SIGKILL is a wedged
+daemon or a process the kernel will not interrupt.
+
+**What this repository decides is what happens NEXT, and the answer was "wait
+for ever, then lose the run".** It is now two bounds this script reaches ITSELF
+(`STS_MODE_TIMEOUT`, `STS_TEARDOWN_TIMEOUT`), and the difference that matters is
+that a bound reached HERE can say what happened, capture the container logs,
+keep the report and still give the mode a verdict, where the CI timeout catches
+things only by throwing the run away.
+
+**THE RECOVERY IS THE PART TO GET RIGHT, NOT THE BOUND.** `up
+--abort-on-container-exit --exit-code-from tests` does two separable things and
+only the first is the suite: it runs the stack until the runner exits, and THEN
+stops everything else before reporting that runner's code. So by the time the
+second half can hang, the answer already exists on a stopped container.
+`recoverModeVerdict()` asks docker for it. Without that, a bound would simply be
+a faster way to throw a green suite away.
+
+**AND THE FIRST VERSION OF THAT RECOVERY WAS CONFIDENTLY WRONG IN THE ONE CASE
+NOBODY WOULD CHECK.** Reaching the bound SIGTERMs compose, and compose answers a
+SIGTERM by stopping the stack — the runner included. So a suite that was still
+going is a container that has EXITED by the time the recovery looks at it,
+killed 137 by a teardown this launcher caused. Read as a verdict, the mode fails
+for the right reason by accident and the launcher announces *THE SUITE FINISHED*
+about a run four minutes from finishing. **128+N is a signal and not an answer**;
+only a smaller code is something the runner decided.
+
+**It was found by forcing the bound on a real run** (`STS_MODE_TIMEOUT=100
+./docker-run-tests.sh --modes=memory`), which is the only way it could have
+been: every in-process assertion about the recovery was green, and the five
+cases were verified against real exited containers before the wiring was driven
+end to end. **A timing fix that has only been seen to pass has not been shown to
+fix anything** — the same sentence the first of these three failures ends with.
+
+`tests/teardown_bounds.js` is the guard, thirteen mutants, all caught.
 
 ## EVERY JOB CARRIES AN `/admin-api` ACCESS TOKEN NOW (2026-09-09)
 

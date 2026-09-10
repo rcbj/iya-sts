@@ -73,11 +73,25 @@ jobs:
   # ---------------------------------------------------------------------------
   tests:
     runs-on: ubuntu-latest
-    # The suite itself is about a minute and the two images are several more; a
-    # hung browser job is caught by run-report.js's own per-job watchdog. This
-    # is the outer bound for a runner that has wedged — without it a stuck job
-    # holds a runner for six hours.
-    timeout-minutes: 45
+    # THE OUTER BOUND, AND IT IS DELIBERATELY NOT THE ONE THAT SHOULD FIRE.
+    #
+    # A hung browser job is caught by run-report.js's own per-job watchdog, and
+    # since 2026-09-10 a hung DOCKER call is caught by ./docker-run-tests.sh's
+    # own two (STS_MODE_TIMEOUT and STS_TEARDOWN_TIMEOUT). Those bounds explain
+    # themselves, capture the container logs, keep the report and still give
+    # the mode the verdict the suite reached; this one cancels the job and
+    # leaves none of that. So it has to sit ABOVE the sum of theirs, which is
+    # what tests/teardown_bounds.js asserts in both directions.
+    #
+    # 45 MINUTES UNTIL THAT DAY, AND IT IS WHAT LOST THE RUN. Three modes take
+    # 21m on a fast runner and 34m on a slow one; the run that raised this had
+    # finished all three green and was cancelled at 45m because compose spent
+    # twenty-three of those minutes failing to stop a database container. The
+    # number was thin on its own account and the wedge only made it visible.
+    #
+    # Not larger, for the reason it exists at all: without a number here a
+    # stuck job holds a runner for six hours.
+    timeout-minutes: 60
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git

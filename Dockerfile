@@ -151,7 +151,14 @@ COPY . ./
 # from this same context, where a file the context does not carry is an ENOENT
 # reported as a failing test rather than a skip. So they are in the context and
 # come out here, and this image carries exactly what it did before.
-RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile
+#
+# **AND `.github/workflows/tests.yml` JOINED THEM ON 2026-09-10**, one step
+# further out again: tests/teardown_bounds.js asserts that the CI job's own
+# timeout sits above the sum of the two ./docker-run-tests.sh reaches itself,
+# so the workflow is the subject of a test and has to be in the context. The
+# rest of `.github` is still excluded and nothing here reads any of it.
+RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
+           ./.github
 # ---------------------------------------------------------------------------
 # FIX THIS IMAGE'S BUILD NUMBER (M.N.O) AND SHIP IT IN version.json.
 #

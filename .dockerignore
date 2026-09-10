@@ -36,6 +36,13 @@
 # copies the context whole — before that they were left out by not being named.
 docs
 .github
+# ...EXCEPT THE ONE WORKFLOW THAT IS THE SUBJECT OF A TEST (2026-09-10). This is
+# the block below's argument a fourth step out: tests/teardown_bounds.js reads
+# `./docker-run-tests.sh`'s own two wall clocks and this job's `timeout-minutes`
+# and asserts the second is above the sum of the first — which is a claim about
+# two files, one of which is a CI definition. `pages.yml` and
+# `build-container.yml` stay out, because nothing asserts anything about them.
+!.github/workflows/tests.yml
 CLAUDE.md
 **/CLAUDE.md
 COVERAGE.md
