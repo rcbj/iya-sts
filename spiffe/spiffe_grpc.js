@@ -372,6 +372,50 @@ function sessionForCaller(caller) {
 // at the call site reads as "SPIRE's rule, then ours".
 function policyRefusal(caller, method) {
   log.debug('Entering policyRefusal(). method=' + method);
+  // -----------------------------------------------------------------------
+  // THE POLICY DECIDES ABOUT A CALLER THIS SERVICE CAN NAME, AND THIS SURFACE
+  // HAS CALLERS IT CANNOT (2026-09-10).
+  //
+  // **THIS IS THE ONE GATED SURFACE WHERE AN ANONYMOUS CALLER IS THE
+  // SPECIFICATION RATHER THAN A MISTAKE.** The SPIRE Server API's TCP port
+  // asks for a client certificate and does not require one, because
+  // `AttestAgent` has to be reachable by an agent that HAS NO SVID YET and
+  // `GetBundle` by whoever is about to trust this trust domain. Both are
+  // marked `any` in SPIRE's own table in `spiffe_auth.js`, copied from that
+  // project's `policy_data.json`, and `authorize()` above has already let them
+  // through by the time this runs.
+  //
+  // The built-in `access-control` policy then refused them. Its
+  // `requireAuthenticated` conjunct is ON by default and is CORRECT for what
+  // it was written for — the sign-in screen's "continue without signing in"
+  // session, which is a real subject that declined to authenticate and has no
+  // business on the console, the management API, the portal or SCIM. A caller
+  // here that presented nothing is not that: it is not a subject at all, there
+  // is no session and no name, and the policy was being asked to decide about
+  // nobody. It answered Deny, so the bootstrap of the whole trust domain was
+  // closed on an unedited service — while `xacml.enforceAccess`'s own
+  // description promised that the layer "changes nothing on an unedited
+  // service", and the note at the call site below said the built-in document
+  // "permits, because it asks for a role only where somebody has required
+  // one". Three places said one thing and the service did another.
+  //
+  // So the question is asked about a caller with a NAME, and skipped for one
+  // without. Nothing is widened by that: every method SPIRE's table restricts
+  // is refused BEFORE this runs, with UNAUTHENTICATED when nothing was
+  // presented — so the only calls this exempts are the ones SPIRE itself
+  // defines as open to anybody. An operator narrowing this surface by policy
+  // is unaffected, because a policy about a named subject is still asked.
+  //
+  // It also restores what `spiffe.authRequired` off is documented to mean.
+  // With that setting off `authorize()` returns null without consulting the
+  // table at all, so EVERY method reached this gate with an unauthenticated
+  // caller and was refused — turning the mock's own "nothing is checked"
+  // switch into the most closed configuration it has.
+  // -----------------------------------------------------------------------
+  if (!caller || !caller.authenticated || !caller.spiffeId) {
+    log.debug('Leaving policyRefusal(). No subject to decide about.');
+    return null;
+  }
   const session = sessionForCaller(caller);
   const answer = accessGate.check({
     resource: accessGate.RESOURCE.SPIRE_SERVER_API,
@@ -847,5 +891,11 @@ module.exports = {
   buildServer: buildServer,
   bindOne: bindOne,
   serverApiCredentials: serverApiCredentials,
+  // Exported for `tests/spire_api_access_policy.js`, which drives the two
+  // decisions this function makes directly: the claim is about a DECISION and
+  // not about an endpoint, so driving it over gRPC would mean standing up two
+  // listeners and a certificate to assert one branch. That is the same
+  // argument `tests/access_policy.js` makes at its own head.
+  policyRefusal: policyRefusal,
   enabled: enabled
 };
