@@ -1079,6 +1079,17 @@ const ROUTES = [
         builtAt: APP_VERSION.builtAt,
         stamped: APP_VERSION.stamped === true,
         openapi: base + BASE + '/openapi.json',
+        // ------------------------------------------------------------
+        // **READ FROM THE SETTING SINCE 2026-09-10; IT WAS THE LITERAL
+        // `false`.** This API began requiring an access token on
+        // 2026-09-09 and this field went on saying it did not — which a
+        // caller could only ever read by presenting the credential the
+        // field denied needing. The startup banner had the same bug and
+        // was fixed the same day; this one and the OpenAPI document were
+        // missed, and `admin_api_spec.js`'s own header argues why that
+        // matters more for the document than for either sentence.
+        // ------------------------------------------------------------
+        protected: config.value('adminApi.authRequired') === true,
         // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09 and this field
         // still names it, because a client that read it wants to know
         // where the explorer IS rather than which path space it is in.
@@ -1086,7 +1097,6 @@ const ROUTES = [
         // no way to carry.
         docs: base + '/admin/api-explorer',
         console: base + '/admin',
-        protected: false,
         operations: operationSummaries()
       });
       log.debug("Leaving the management API index.");
@@ -1106,9 +1116,7 @@ const ROUTES = [
                       description: 'An OpenAPI 3.1.0 document.' },
     handler: function (req, res) {
       log.debug("Entering the OpenAPI document endpoint.");
-      sendJson(res, 200, spec.buildSpec(ROUTES, {
-        baseUrl: baseUrlOf(req), version: VERSION
-      }));
+      sendJson(res, 200, spec.buildSpec(ROUTES, specOptions(req)));
       log.debug("Leaving the OpenAPI document endpoint.");
     } },
 
@@ -9984,8 +9992,46 @@ log.info('The management API is at ' + BASE + ': ' +
              'reach for when nobody holds a console role: POST ' + BASE +
              '/rbac/grant.'));
 
+// ---------------------------------------------------------------------------
+// WHAT THE OPENAPI DOCUMENT IS BUILT FROM, IN ONE PLACE.
+//
+// `admin_api_spec.js` is a pure function over the route table and takes every
+// fact about the running service as an option — that is its own rule, and it
+// is what keeps the document from describing one moment. The cost of that rule
+// is that each CALLER has to supply those facts, and there are three: this
+// file's `/admin-api/openapi.json`, and the two in
+// `admin-ui/api_explorer.js` (the console's copy of the document, and the
+// `?format=json` view that counts its operations).
+//
+// **THREE CALLERS ASSEMBLING THE SAME OPTIONS BY HAND IS THREE ANSWERS
+// WAITING TO DIVERGE**, and one of them already had: the gate's state was not
+// among the options at all, so the document said no credential was needed by
+// an API that requires one. So the options are gathered HERE, beside the table
+// they describe, and a fourth caller gets the same three facts by asking
+// rather than by remembering. `tests/admin_api_document_security.js` asserts
+// that every call site goes through this function.
+// ---------------------------------------------------------------------------
+function specOptions(req) {
+  log.debug("Entering specOptions().");
+  const options = {
+    baseUrl: baseUrlOf(req),
+    version: VERSION,
+    // The one that was missing. `=== true` rather than a truthy test because
+    // this becomes a claim in a published document: an unset value is the
+    // setting's default, which config.js already resolves, and anything else
+    // here would be this file inventing a policy.
+    authRequired: config.value('adminApi.authRequired') === true
+  };
+  log.debug("Leaving specOptions(). authRequired=" + options.authRequired);
+  return options;
+}
+
 module.exports = {
   BASE: BASE,
+  // The three facts the OpenAPI document is built from, gathered in one place
+  // so that this file's document and the console explorer's cannot disagree
+  // about what this API requires. See specOptions().
+  specOptions: specOptions,
   // The table, so that the parent project's tests can assert what this file
   // covers against what the console offers rather than against a list somebody
   // typed into a test.

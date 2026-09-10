@@ -164,9 +164,7 @@ function tokenFor(req, gate) {
 // a second copy of a large thing in a reply whose subject is the PAGE.
 function explorerJson(req) {
   const gate = admin.gateStateFor(req);
-  const document = spec.buildSpec(adminApi.ROUTES, {
-    baseUrl: baseUrlOf(req), version: VERSION
-  });
+  const document = spec.buildSpec(adminApi.ROUTES, adminApi.specOptions(req));
   const paths = Object.keys(document.paths || {});
   let operations = 0;
   paths.forEach(function (one) {
@@ -252,10 +250,14 @@ app.get(PATH, function (req, res) {
 // ---------------------------------------------------------------------------
 app.get(PATH + '/openapi.json', function (req, res) {
   log.debug("Entering the API explorer's OpenAPI document.");
+  // THE OPTIONS COME FROM `admin_api.js` rather than being assembled here.
+  // This page serves a SECOND copy of that API's document — on the console's
+  // own path, so that it arrives on the session the page was drawn with — and
+  // two copies built from two sets of facts is two documents. The one that
+  // used to be missing from both is the gate's state.
   res.set('Cache-Control', 'no-store').type('application/json')
-     .send(JSON.stringify(spec.buildSpec(adminApi.ROUTES, {
-       baseUrl: baseUrlOf(req), version: VERSION
-     }), null, 2));
+     .send(JSON.stringify(spec.buildSpec(adminApi.ROUTES,
+                                         adminApi.specOptions(req)), null, 2));
   log.debug("Leaving the API explorer's OpenAPI document.");
 });
 

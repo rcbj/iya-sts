@@ -88,10 +88,18 @@ would teach you something false about every real server you will ever meet.
 **The admin console at `/admin` asks for a sign-in and a role** — `admin.authRequired`,
 on by default — and the roles are two ordinary groups in the embedded directory.
 It is a turnstile and not a lock: no password is checked at that screen either,
-and `/admin-api` is not gated at all, so anybody who can reach this port can
-grant themselves both roles through it. The console can revoke tokens, add
+so anybody who can reach this port can sign in as anybody and — while neither
+role group has a member — hold both roles. The console can revoke tokens, add
 claims to every future token and assertion, and create people in the directory.
 Do not put this on a public address.
+
+**`/admin-api` requires an OAuth 2.0 access token** since 2026-09-09 —
+audienced to this API, carrying `admin:read` to read and `admin:write` to
+change anything. Ask the token endpoint for one with the client-credentials
+grant as the seeded `sts-management-api` client, whose secret is
+`adminApi.clientSecret`, and send `resource=<base>/admin-api` so the audience is
+right. `adminApi.authRequired=false` restores the open API, which is what this
+paragraph described until that date.
 
 **Federation is the one feature that refuses by default, and that is deliberate.**
 Everywhere else this service accepts what it is given. It cannot do that where it

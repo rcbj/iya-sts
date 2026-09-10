@@ -188,24 +188,71 @@ async function theDocumentIsServedAndWellFormed() {
     "than at the top of the file; got " + doc.openapi);
   assert.ok(doc.info && doc.info.title && doc.info.version,
     "it should name and version itself.");
-  assert.ok(/(nothing here is|not) protected/i.test(doc.info.description),
-    "and its description must say the API is unprotected. Every other page " +
-    "of this console says so where a reader will see it, and a machine-" +
-    "readable document that omitted it would be the one artifact a person " +
-    "could act on without being told.");
+  // -------------------------------------------------------------------
+  // **THE DESCRIPTION MUST AGREE WITH THE GATE, AND THIS ASSERTION USED TO
+  // REQUIRE THE OPPOSITE (2026-09-10).**
+  //
+  // It read: the description "must say the API is unprotected" — correct, and
+  // load-bearing, for as long as it was. `/admin-api` began requiring an
+  // access token on 2026-09-09 and this check went on demanding the sentence
+  // that denied it, so the suite was holding the document to a claim the
+  // service had stopped making. That is the shape of a test outliving its
+  // subject: it did not go red when the behaviour changed, it went red when
+  // the DOCUMENT was corrected.
+  //
+  // So it is asked against the state rather than against a remembered answer.
+  // `protected` on the index is that state, and the two artifacts must not
+  // disagree — which is the same rule this file already applies to the
+  // console and the API.
+  // -------------------------------------------------------------------
+  const indexForProtection = await get("");
+  if (indexForProtection.protected === true) {
+    assert.ok(/requires an OAuth 2\.0 access token/i.test(doc.info.description),
+      "GET /admin-api reports `protected: true`, so the document's own " +
+      "description must say a token is required. It opens: " +
+      String(doc.info.description).split("\n\n")[1].slice(0, 160));
+    assert.ok(Array.isArray(doc.security) && doc.security.length > 0,
+      "and `security` must not be the empty array, which is OpenAPI for " +
+      "\"no credential is needed\" — the one statement a client generated " +
+      "from this document cannot recover from, because it will not send a " +
+      "header the document never mentioned. It is " +
+      JSON.stringify(doc.security) + ".");
+  } else {
+    assert.ok(/(nothing here is|not) protected/i.test(doc.info.description),
+      "GET /admin-api reports `protected: false` (adminApi.authRequired is " +
+      "off), so the description must say the API is unprotected. Every other " +
+      "page of this console says so where a reader will see it, and a " +
+      "machine-readable document that omitted it would be the one artifact a " +
+      "person could act on without being told.");
+  }
   assert.ok(Array.isArray(doc.servers) && doc.servers.length === 1 &&
             doc.servers[0].url === base,
     "servers[0].url should be this service as the request reached it (" +
     base + "), so a document fetched through a published port names an " +
     "address the caller can use; got " +
     JSON.stringify(doc.servers));
-  assert.ok(Array.isArray(doc.security) && doc.security.length === 0,
-    "security should be an EMPTY ARRAY rather than absent: that is how " +
-    "OpenAPI states 'this needs no credential', which is true here and worth " +
-    "stating rather than leaving to be inferred from a missing member.");
-  assert.ok(!doc.components.securitySchemes,
-    "and there should be no securityScheme at all, since nothing here " +
-    "checks one.");
+  // -------------------------------------------------------------------
+  // AND THE SAME QUESTION IN THE SCHEMA RATHER THAN THE PROSE. Both branches
+  // are the original assertion, one of them inverted: the point it was making
+  // — that `security` is a STATEMENT and must be present either way — is what
+  // survives the gate arriving.
+  // -------------------------------------------------------------------
+  if (indexForProtection.protected === true) {
+    const schemes = (doc.components || {}).securitySchemes || {};
+    assert.ok(schemes.oauth2 && schemes.bearerAuth,
+      "a `security` requirement naming a scheme the document does not define " +
+      "is a document no tool can act on. components.securitySchemes holds " +
+      (Object.keys(schemes).join(", ") || "nothing") + ".");
+  } else {
+    assert.ok(Array.isArray(doc.security) && doc.security.length === 0,
+      "security should be an EMPTY ARRAY rather than absent: that is how " +
+      "OpenAPI states 'this needs no credential', which is what " +
+      "adminApi.authRequired=false means and is worth stating rather than " +
+      "leaving to be inferred from a missing member.");
+    assert.ok(!doc.components.securitySchemes,
+      "and there should be no securityScheme at all, since nothing here " +
+      "checks one.");
+  }
 
   const paths = Object.keys(doc.paths);
   assert.ok(paths.length > 25,
@@ -244,7 +291,11 @@ async function theDocumentIsServedAndWellFormed() {
     "operationIds must be unique, or a generated client has two methods of " +
     "one name.");
   log.info("[document] OK — OpenAPI " + doc.openapi + ", " + paths.length +
-           " paths, " + ids.length + " operations, no security scheme.");
+           " paths, " + ids.length + " operations, " +
+           (Array.isArray(doc.security) && doc.security.length
+             ? Object.keys((doc.components || {}).securitySchemes || {}).length +
+               " security scheme(s)."
+             : "no security scheme."));
   log.debug("Leaving theDocumentIsServedAndWellFormed().");
   return doc;
 }
@@ -255,8 +306,20 @@ async function theIndexAgreesWithTheDocument(doc) {
   log.debug("Entering theIndexAgreesWithTheDocument().");
   log.info("=== The index ===");
   const index = await get("");
-  assert.strictEqual(index.protected, false,
-    "the index must say so in a field as well as in prose.");
+  // **THE FIELD MUST AGREE WITH THE DOCUMENT, RATHER THAN BE A REMEMBERED
+  // VALUE (2026-09-10).** This read `strictEqual(index.protected, false)` —
+  // written when nothing here checked a credential, and left demanding it
+  // after `/admin-api` grew a token gate. What the assertion is FOR is that
+  // the index says so in a field as well as in prose, and that survives the
+  // switch being thrown either way; the constant did not.
+  const documentIsGuarded = Array.isArray(doc.security) && doc.security.length > 0;
+  assert.strictEqual(index.protected, documentIsGuarded,
+    "the index must say in a field what the OpenAPI document says in its " +
+    "`security`, and they disagree: the index reports `protected: " +
+    JSON.stringify(index.protected) + "` while the document's security is " +
+    JSON.stringify(doc.security) + ". These are the two machine-readable " +
+    "answers to \"does this API need a credential\" and a client may read " +
+    "either one.");
   const documented = [];
   Object.keys(doc.paths).forEach(function (path) {
     Object.keys(doc.paths[path]).forEach(function (method) {

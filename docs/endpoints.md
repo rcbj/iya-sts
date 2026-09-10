@@ -22,7 +22,9 @@ Both are **behind the console gate** since the page moved into `/admin` on
 screen and the second is a `401 login_required`, because a redirect to an HTML
 login screen is not an answer a program can read. Sign in at `/authn/login`
 (any username; no password is checked anywhere here), or set
-`ADMIN_AUTH_REQUIRED=false`. Nothing under `/admin-api` is gated.
+`ADMIN_AUTH_REQUIRED=false`. **Everything under `/admin-api` needs an OAuth 2.0
+access token** audienced to that API (`admin:read` to read, `admin:write` to
+write); `ADMIN_API_AUTH_REQUIRED=false` turns that off.
 
 ## What that page is
 

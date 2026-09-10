@@ -24,7 +24,12 @@ THE RULE IS EXACTLY INVERTED FOR THEM.** `sts_metadata.js`, `admin_api.js`,
 `sts_delegated_permissions_example.js`, `sts_consent.js`,
 `sts_xacml_endpoints.js`, `sts_xacml_editor.js`, `sts_xacml_remote_pep.js` and
 `sts_roles.js` among them drive this
-service's OWN `/admin` console and its `/admin-api`. **THE MANIFEST IS THE
+service's OWN `/admin` console and its `/admin-api`. **TWO OF THEM DRIVE NO
+CONSOLE AND ARE OWNED HERE FOR A DIFFERENT REASON** — `sts_route_inputs.js` and
+`sts_metadata_anonymous.js` READ THIS WORKING TREE, one for the route list it
+probes and the other for the protocol-family table it checks its coverage
+against, so a copy over there would be reading the pinned `sts/` gitlink rather
+than the service that is running. **THE MANIFEST IS THE
 COUNT AND THIS SENTENCE IS NOT** — it used to open by naming a number, and the
 number went stale twice before anybody noticed, which is the drift a manifest
 exists to stop. The first four ran from the parent's
@@ -857,6 +862,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | Test | What it covers |
 |---|---|
 | `tests/vendored/sts_metadata.js` **(ours)** | the `/admin/sts-metadata` drift checks — that the page lists exactly what the router registers, that every method reaches a handler, that every link resolves, and that no specification claim is idle |
+| `tests/vendored/sts_metadata_anonymous.js` **(ours)** | **EVERY METADATA DOCUMENT THIS SERVICE PUBLISHES, FETCHED BY A CALLER HOLDING NOTHING** — nineteen of them across ten protocol families, plus the two RFC 8414 issuer-path forms and the per-partner SAML documents. The row above is about the INDEX and this one is about the documents, and they fail for opposite reasons: one goes red when the page and the router disagree, the other when a document a client must read BEFORE it can authenticate stops answering somebody who cannot yet authenticate. Five questions of each: 200 with no redirect, the media type the specification names, a shape (the issuer this service claims, a non-empty key set, a signature on the SAML metadata, and no PRIVATE member on any published key), no `Set-Cookie`, and `Cache-Control: no-store` — that last one found `/sts/cert` served without it, which is a certificate this process regenerates on every start being cacheable. **Four gated surfaces are driven as CONTROLS** (`/admin-api/status`, `/scim/v2/Users`, `/xacml/policies`, `/admin/sts-metadata`), each refusing differently, because the failure this file has to rule out is its own: a fetch that follows redirects reports the console open to strangers, since `/admin/sts-metadata`'s 303 ends at a sign-in screen answering 200. **The /admin-api control sends `Authorization: none`** and a section of its own says why — `tools/attach-admin-token.js` is preloaded into every job and would otherwise attach the run's admin token to a request written to carry nothing. Coverage is checked against THIS TREE: every family in `sts_metadata.js`'s `PROTOCOLS` either publishes a document here or is named in `NO_PUBLIC_METADATA` with its reason (Kerberos and SPNEGO have no such document, LDAP's is the rootDSE on a socket no stack publishes to this job), and every `/.well-known` path this tree REGISTERS is accounted for |
 | `tests/vendored/admin_api.js` **(ours)** | the management API at `/admin-api`: its OpenAPI document, the PARITY it exists to keep — every `/admin` page and every action of its four handlers has an operation, read off this service's own answers rather than off a list in the test — every documented schema property checked against a live reply, and that a revocation made through the API is dead at `/oauth2/introspect`. It restores everything it changes, including the tokens its bulk revocations touched |
 | `tests/sts_dpop.js` | RFC 9449 end to end over HTTP: all twelve section 4.3 checks, the `cnf.jkt` binding on access and refresh tokens, `dpop_jkt`, `jti` replay, and the nonce handshake in both shapes. Almost entirely negatives, because a DPoP server that issues bound tokens and accepts good proofs looks finished and can be worth nothing |
 | `tests/oauth2_sts_endpoints.js` | every endpoint the RFC 8414 metadata advertises answers, and every token verifies against the advertised JWKS |

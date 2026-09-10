@@ -659,7 +659,12 @@ const SCHEMAS = {
                  description: 'Where the console every operation mirrors is.' },
       protected: {
         type: 'boolean',
-        description: 'Always false. Nothing here checks a credential; see ' +
+        description: 'Whether this API requires an access token ' +
+                     '(`adminApi.authRequired`, on by default). It read ' +
+                     '"always false" until 2026-09-10, having been written ' +
+                     'when that was true and left behind when the gate ' +
+                     'arrived — so a client could read this field only by ' +
+                     'presenting the credential it says is unnecessary. See ' +
                      'the description at the top of this document.'
       },
       operations: {
@@ -4594,13 +4599,71 @@ const SCHEMAS = {
     }, PAGING_PROPERTIES))
 };
 
-// The prose at the top of the document. It is long on purpose: the first thing
-// anybody pointing a tool at this needs to know is that it is unprotected and
-// that four of its operations change what the PROTOCOL endpoints do.
-const DESCRIPTION = [
-  'The management API of the mock STS: everything the /admin console ' +
-  'shows and everything it can change, over JSON, with no browser.',
+// ---------------------------------------------------------------------------
+// THE PROSE AT THE TOP OF THE DOCUMENT, AND IT IS A FUNCTION OF THE GATE
+// SINCE 2026-09-10 BECAUSE IT USED TO BE A FLAT CONTRADICTION OF IT.
+//
+// It is long on purpose: the first thing anybody pointing a tool at this needs
+// to know is whether it is protected and that four of its operations change
+// what the PROTOCOL endpoints do.
+//
+// **IT SAID "Nothing here is protected" FOR A DAY AFTER IT STOPPED BEING
+// TRUE.** `/admin-api` began requiring an OAuth 2.0 access token on
+// 2026-09-09; the startup banner was taught to read `adminApi.authRequired`
+// and this document was not, so the one artifact a machine reads went on
+// stating the opposite of what every one of its 238 operations would do. That
+// is worse than a stale comment: `security: []` is OpenAPI's way of saying a
+// credential is not needed, so a generated client sent none and was refused
+// everywhere, and the sentence a person read told them the refusal was a bug.
+//
+// Both states are still real — `adminApi.authRequired` is the off switch and
+// it restores the open API exactly — so the paragraph is written twice rather
+// than hedged once. The OFF text is the original, verbatim, because it is the
+// argument for the switch.
+// ---------------------------------------------------------------------------
+function describe(authRequired) {
+  log.debug("Entering describe(). authRequired=" + authRequired);
+  const protection = authRequired ? PROTECTED_PARAGRAPH : OPEN_PARAGRAPH;
+  log.debug("Leaving describe().");
+  return [DESCRIPTION_OPENING, protection].concat(DESCRIPTION_REST)
+    .join('\n\n');
+}
 
+const DESCRIPTION_OPENING =
+  'The management API of the mock STS: everything the /admin console ' +
+  'shows and everything it can change, over JSON, with no browser.';
+
+// ---------------------------------------------------------------------------
+// THE GATE, WHEN IT IS ON — which is the default.
+// ---------------------------------------------------------------------------
+const PROTECTED_PARAGRAPH =
+  '**Every operation here requires an OAuth 2.0 access token, and this ' +
+  'document says which scope each one needs.** Ask this service\'s own token ' +
+  'endpoint for one: `grant_type=client_credentials` as the seeded client ' +
+  '`sts-management-api` (its secret is `adminApi.clientSecret`), ' +
+  '`scope=admin:read admin:write`, and **`resource=<this server>/admin-api`** ' +
+  '— that last parameter is what puts this API in the token\'s `aud`, and a ' +
+  'token audienced at anything else is refused however good it is. A GET ' +
+  'needs `admin:read` and everything else needs `admin:write`; they are ' +
+  'checked as a XACML access decision against the built-in ADMIN_READ and ' +
+  'ADMIN_WRITE roles, so the requirement is stated in the same policy ' +
+  'document as every other access decision in this service. **The credential ' +
+  'is service-wide**: the token is verified against the DEFAULT realm\'s key ' +
+  'and audienced without a realm prefix wherever it is presented, for the ' +
+  'reason the console\'s two roles are groups in the default realm — a ' +
+  'per-realm one would let anybody who can create a realm mint themselves an ' +
+  'administrator. `adminApi.authRequired` turns this off and restores the ' +
+  'open API exactly; what follows is what that means. **AND IT IS STILL ' +
+  'WORTH STATING PLAINLY**: a holder of this token can revoke every token ' +
+  'this service has issued and change what the next one contains. That is ' +
+  'fine on a laptop or a compose network and is not fine on a public ' +
+  'address, which was already true of /oauth2/token — it will mint a token ' +
+  'for any username asked of it.';
+
+// ---------------------------------------------------------------------------
+// AND WHEN IT IS OFF (`adminApi.authRequired: false`). The original text.
+// ---------------------------------------------------------------------------
+const OPEN_PARAGRAPH =
   '**Nothing here is protected, and that is a decision rather than an ' +
   'oversight.** This service checks no end-user password anywhere — the ' +
   'username typed at its sign-in screen simply becomes the identity in every ' +
@@ -4623,8 +4686,10 @@ const DESCRIPTION = [
   'this port can revoke every token this service has issued and change ' +
   'what the next one contains. That is fine on a laptop or a compose ' +
   'network and is not fine on a public address, which was already true of ' +
-  '/oauth2/token — it will mint a token for any username asked of it.',
+  '/oauth2/token — it will mint a token for any username asked of it.';
 
+// The paragraphs that are true whichever way the switch is set.
+const DESCRIPTION_REST = [
   '**Four groups of operations change what the protocol endpoints do**, ' +
   'rather than only reporting on them. Revoking a token is the same ' +
   'revocation RFC 7009\'s /oauth2/revoke performs, so introspection, ' +
@@ -4643,7 +4708,86 @@ const DESCRIPTION = [
   'says which control it is.',
 
   'All state is in memory and dies with the process.'
-].join('\n\n');
+];
+
+// ===========================================================================
+// THE SECURITY HALF OF THE DOCUMENT.
+//
+// **THE SCOPE A GIVEN OPERATION NEEDS IS DECIDED BY ITS METHOD, AND THE
+// AUTHORITY IS THE GATE RATHER THAN THIS FILE.** `admin_api.js`'s
+// `app.use(BASE, ...)` middleware reads `req.method === 'GET' ? 'admin:read' :
+// 'admin:write'`, and `scopeForMethod()` below is that one line written a
+// second time — which is a duplication worth naming, because a document that
+// disagrees with the gate is exactly the failure this whole change is about.
+// `tests/admin_api_document_security.js` compares the two over every operation
+// in the table, so the copy cannot drift silently.
+//
+// TWO SCHEMES, and they describe the same credential from the two ends a
+// reader arrives from:
+//
+//   * `oauth2` (client credentials) is what the API actually wants and where
+//     it comes from — the token endpoint, the two scopes, the client. It is
+//     the accurate description, and it is the one a tool can act on.
+//   * `bearerAuth` (http/bearer) is for the reader who already HAS a token —
+//     out of a launcher's environment, out of the console's explorer, out of
+//     a shell — and wants to paste it into a tool's Authorize box. Nothing
+//     but a header, which is all such a reader needs.
+//
+// **`resource` HAS NO FIELD IN OPENAPI AND IT IS THE PARAMETER MOST LIKELY TO
+// BE MISSED**, so it is in the scheme's own description rather than left to
+// the prose at the top: a token minted without it carries the wrong `aud` and
+// is refused by a gate that has just told the caller the credential was good
+// enough to parse. Being explicit here is the difference between a five-second
+// fix and reading a middleware.
+// ===========================================================================
+function scopeForMethod(method) {
+  return String(method).toUpperCase() === 'GET' ? 'admin:read' : 'admin:write';
+}
+
+function securitySchemesFor(baseUrl) {
+  log.debug("Entering securitySchemesFor().");
+  const schemes = {
+    oauth2: {
+      type: 'oauth2',
+      description: 'An access token from this service\'s own token endpoint. ' +
+        'Ask as the seeded client `sts-management-api`, whose secret is the ' +
+        '`adminApi.clientSecret` setting, and **send ' +
+        '`resource=' + String(baseUrl || '') + '/admin-api`** with the ' +
+        'request: OpenAPI has no field for RFC 8707\'s resource indicator ' +
+        'and it is what puts this API in the token\'s `aud`, without which ' +
+        'every call here is refused 401.',
+      flows: {
+        clientCredentials: {
+          tokenUrl: String(baseUrl || '') + '/oauth2/token',
+          scopes: {
+            'admin:read': 'Read anything this API exposes (every GET).',
+            'admin:write': 'Change anything this API can change ' +
+                           '(every other method).'
+          }
+        }
+      }
+    },
+    bearerAuth: {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      description: 'The same token, pasted. Use this when you already hold ' +
+        'one — from a launcher\'s `STS_ADMIN_API_TOKEN`, from the console\'s ' +
+        'API explorer, or from a shell — rather than minting one here.'
+    }
+  };
+  log.debug("Leaving securitySchemesFor().");
+  return schemes;
+}
+
+// What one operation requires. Two alternatives rather than one, because the
+// schemes above are two ways to present the same credential and OpenAPI reads
+// a LIST of requirement objects as "any one of these will do". The bearer
+// entry carries an empty array because scopes are meaningless outside oauth2 —
+// naming them there would be a document that validators reject.
+function securityFor(method) {
+  return [{ oauth2: [scopeForMethod(method)] }, { bearerAuth: [] }];
+}
 
 // One operation, as OpenAPI wants it. `entry` is a row of admin_api.js's route
 // table and `action` is one of its actions, or null for a plain route.
@@ -4719,6 +4863,25 @@ function operationOf(entry, action) {
 function buildSpec(routes, options) {
   log.debug("Entering buildSpec().");
   const opts = options || {};
+  // ---------------------------------------------------------------------
+  // **THE GATE'S STATE ARRIVES AS AN OPTION AND DEFAULTS TO ON.**
+  //
+  // It is not read from `config` here, and the header of this file is why:
+  // this module must not require anything that holds state, or the document
+  // becomes a description of one moment rather than of the API. `baseUrl` and
+  // `version` already arrive the same way — from a caller that has the
+  // request in its hand — and `adminApi.authRequired` is one more such fact.
+  // `admin_api.js`'s `specOptions()` is the one place all three are gathered,
+  // so a fourth caller cannot assemble a different answer.
+  //
+  // **THE DEFAULT IS THE SETTING'S OWN DEFAULT, AND THE DIRECTION MATTERS.** A
+  // caller that forgets to pass it makes a document that OVER-states the
+  // requirement, which costs a client one unnecessary token; the other
+  // default would reproduce the exact bug this option was added for, where a
+  // client is told no credential is needed by an API that refuses it 238 ways.
+  // ---------------------------------------------------------------------
+  const authRequired = opts.authRequired === undefined
+    ? true : opts.authRequired === true;
   const paths = {};
   const tags = [];
   routes.forEach(function (entry) {
@@ -4729,33 +4892,57 @@ function buildSpec(routes, options) {
     if (!entry.actions) {
       paths[entry.path] = paths[entry.path] || {};
       paths[entry.path][method] = operationOf(entry, null);
+      if (authRequired) {
+        paths[entry.path][method].security = securityFor(method);
+      }
       return;
     }
     entry.actions.forEach(function (action) {
       const path = entry.route.replace(':action', action.action);
       paths[path] = paths[path] || {};
       paths[path][method] = operationOf(entry, action);
+      if (authRequired) {
+        paths[path][method].security = securityFor(method);
+      }
     });
   });
   log.debug("Leaving buildSpec().");
+  const components = { schemas: SCHEMAS };
+  if (authRequired) {
+    components.securitySchemes = securitySchemesFor(opts.baseUrl);
+  }
   return {
     openapi: '3.1.0',
     info: {
       title: 'mock STS management API',
       version: opts.version || '0.0.0',
-      description: DESCRIPTION,
+      description: describe(authRequired),
       license: { name: 'MIT' }
     },
     servers: [{ url: opts.baseUrl || '/', description: 'This service.' }],
     tags: tags.map(function (name) {
       return { name: name, description: TAG_DESCRIPTIONS[name] || '' };
     }),
-    // Empty rather than absent, and it is a statement rather than an omission:
-    // an empty security array is how OpenAPI says "this operation needs no
-    // credential", which is exactly true of every operation here.
-    security: [],
+    // ---------------------------------------------------------------------
+    // THE DOCUMENT-WIDE DEFAULT, AND EVERY OPERATION STATES ITS OWN AS WELL.
+    //
+    // Redundant on purpose. A tool's Authorize box reads THIS one — so it has
+    // to name both scopes, which is what the token a reader will actually
+    // hold carries — while the per-operation entries say the narrower truth,
+    // that a GET needs only `admin:read`. Neither alone is both actionable
+    // and accurate.
+    //
+    // **AN EMPTY ARRAY IS NOT AN OMISSION, IT IS THE OPPOSITE CLAIM**, and
+    // that is why it may only appear when the gate is off: OpenAPI reads
+    // `security: []` as "no credential is needed", which is exactly what
+    // `adminApi.authRequired: false` means and exactly what this document
+    // wrongly said while the gate was on.
+    // ---------------------------------------------------------------------
+    security: authRequired
+      ? [{ oauth2: ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
+      : [],
     paths: paths,
-    components: { schemas: SCHEMAS }
+    components: components
   };
 }
 

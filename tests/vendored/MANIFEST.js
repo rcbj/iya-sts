@@ -138,8 +138,15 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // `sts_admin_console.js`, `sts_delegated_permissions_example.js`,
 // `sts_consent.js`, `sts_global_logout.js`, `sts_portal_sessions.js`,
 // `sts_roles.js`, `sts_roles_builtin.js`, `sts_route_inputs.js`,
+// `sts_metadata_anonymous.js`,
 // `sts_xacml_endpoints.js`, `sts_xacml_editor.js` and
-// `sts_xacml_remote_pep.js` — the later ones of which
+// `sts_xacml_remote_pep.js`. **TWO OF THOSE ARE HERE ON A DIFFERENT ARGUMENT
+// AND DRIVE NO CONSOLE AT ALL**: `sts_route_inputs.js` and
+// `sts_metadata_anonymous.js` READ THIS WORKING TREE — one discovers the route
+// list it probes, the other checks its coverage against `sts_metadata.js`'s
+// own PROTOCOLS table — so a copy over there would read the pinned `sts/`
+// gitlink and check a service that is not the one running. Each argues it in
+// its own header. The rest are the console jobs — the later ones of which
 // are covered by the argument below for the same reason: one builds an example
 // THROUGH `/admin-api` for somebody to read on `/admin`, and another grants a
 // GLOBAL CONSENT through `/admin-api/consent` and then watches a sign-in stop
@@ -206,6 +213,17 @@ const JOBS = [
   { file: 'sts_route_inputs.js',         browser: false, local: true },
   { file: 'sts_global_logout.js',        browser: false, local: true },
   { file: 'sts_metadata.js',             browser: false, local: true },
+  // THE DOCUMENTS THEMSELVES, as opposed to the index that lists them
+  // (2026-09-10). `sts_metadata.js` drives /admin/sts-metadata and signs
+  // into the console to do it; this one holds every metadata document the
+  // protocol families publish — nineteen of them — and holds NOTHING ELSE:
+  // no cookie, no Authorization header, no certificate. Two jobs because
+  // they fail for opposite reasons: one goes red when the index and the
+  // router disagree, the other when a document a client must read before it
+  // can authenticate stops answering somebody who cannot yet authenticate.
+  // It is `local: true` on sts_route_inputs.js's argument — its coverage
+  // check reads this working tree's own PROTOCOLS table.
+  { file: 'sts_metadata_anonymous.js',   browser: false, local: true },
   { file: 'sts_portal_sessions.js',      browser: false, local: true },
   { file: 'sts_roles.js',                browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },

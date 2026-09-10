@@ -388,6 +388,112 @@ async function theRunsOwnToken() {
   log.debug("Leaving theRunsOwnToken().");
 }
 
+// ===========================================================================
+// THE DOCUMENT THIS API PUBLISHES DESCRIBES THE GATE THE SECTIONS ABOVE DRIVE.
+//
+// Every section of this file asks the SERVICE what it does about a credential.
+// This one asks what it SAYS, because until 2026-09-10 the two were opposite
+// and only a person reading both would ever have known: `/admin-api` had
+// required a token since 2026-09-09, and its own OpenAPI document carried
+// `security: []` — which is not silence, it is OpenAPI for "no credential is
+// needed" — no `securitySchemes` at all, and an opening paragraph beginning
+// "Nothing here is protected". A generated client read that, sent nothing, and
+// was refused on all 238 operations.
+//
+// `tests/admin_api_document_security.js` holds the BUILDER to this in process,
+// in both states of the switch. What is left for here is the one thing that
+// file cannot see: that the document a RUNNING, GATED service actually serves
+// is that document — same claim, other end of the wire, and a rendering step,
+// a cache or a second call site between them.
+//
+// It reads the document with the run's own token, which is the only way to
+// read it: the document is behind the gate it describes. That is not a
+// contradiction and it is worth being clear about — the reader who needs it
+// before they have a token gets it from the console's API explorer at
+// `/admin/api-explorer/openapi.json`, on a session instead, and the 401 body
+// this API returns names the grant, the scopes and the `resource` in the
+// meantime.
+// ===========================================================================
+async function theDocumentDescribesTheGate() {
+  log.debug("Entering theDocumentDescribesTheGate().");
+  log.info("=== what the published document says about the gate ===");
+
+  const doc = await fetchJson(base + "/admin-api/openapi.json",
+                              { headers: { Authorization: "Bearer " + RUN_TOKEN } });
+  check("the OpenAPI document is served to a token holder", function () {
+    assert.strictEqual(doc.status, 200,
+      "GET /admin-api/openapi.json answered " + doc.status + " to the run's " +
+      "own token: " + doc.text.slice(0, 200));
+  });
+  const document = doc.body || {};
+
+  check("and it states that a credential is required", function () {
+    assert.ok(Array.isArray(document.security) && document.security.length > 0,
+      "the document's top-level `security` is " +
+      JSON.stringify(document.security) + ". An EMPTY array is OpenAPI for " +
+      "\"no credential is needed\" and this API refuses every call without " +
+      "one — that combination is what a client generated from this document " +
+      "cannot recover from, because it will not send a header the document " +
+      "never mentioned.");
+  });
+
+  check("and offers a scheme for presenting one", function () {
+    const schemes = (document.components || {}).securitySchemes || {};
+    assert.ok(schemes.oauth2 && schemes.bearerAuth,
+      "components.securitySchemes holds " +
+      (Object.keys(schemes).join(", ") || "nothing") + ". A `security` " +
+      "requirement naming a scheme the document does not define is a " +
+      "document no tool can act on.");
+  });
+
+  check("the token endpoint it names is this service's", function () {
+    const flow = (((document.components || {}).securitySchemes || {}).oauth2 ||
+                  {}).flows || {};
+    const url = (flow.clientCredentials || {}).tokenUrl || "";
+    assert.ok(url.indexOf(base) === 0,
+      "the document sends a client to " + url + " for a token and this " +
+      "service is at " + base + ". `servers[0].url` is built from the " +
+      "request, and this must be too, or a document fetched through a proxy " +
+      "or a published port names an address the reader cannot reach.");
+  });
+
+  // THE SCOPE PER OPERATION, AGAINST THE GATE'S OWN RULE — asserted here as
+  // well as in process because this is the copy a client actually reads.
+  check("every operation names the scope its method needs", function () {
+    const wrong = [];
+    Object.keys(document.paths || {}).forEach(function (path) {
+      Object.keys(document.paths[path]).forEach(function (method) {
+        const wanted = method.toUpperCase() === "GET" ? "admin:read"
+                                                      : "admin:write";
+        const security = document.paths[path][method].security || [];
+        const named = (security[0] || {}).oauth2 || [];
+        if (named.length !== 1 || named[0] !== wanted) {
+          wrong.push(method.toUpperCase() + " " + path + " -> " +
+                     JSON.stringify(security));
+        }
+      });
+    });
+    assert.deepStrictEqual(wrong.slice(0, 5), [],
+      wrong.length + " operation(s) declare a scope the gate would not ask " +
+      "for. A GET needs admin:read and everything else needs admin:write, " +
+      "which is one line in the middleware this file drives:\n  " +
+      wrong.slice(0, 5).join("\n  "));
+  });
+
+  const index = await fetchJson(base + "/admin-api",
+                                { headers: { Authorization: "Bearer " + RUN_TOKEN } });
+  check("and the index says it is protected", function () {
+    assert.strictEqual((index.body || {}).protected, true,
+      "GET /admin-api reports `protected: " +
+      JSON.stringify((index.body || {}).protected) + "` on a service that " +
+      "just refused every one of the sections above. It was the literal " +
+      "`false` until 2026-09-10 — a field a caller could only read by " +
+      "presenting the credential it denied needing.");
+  });
+
+  log.debug("Leaving theDocumentDescribesTheGate().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving the management API's gate at " + base + ".");
@@ -398,6 +504,7 @@ async function test() {
   await withTheWrongAudience();
   await theTwoScopes();
   await insideARealm();
+  await theDocumentDescribesTheGate();
 
   // A FLOOR ON THE COUNT, for the reason sts_roles.js gives: a section that
   // stops being called takes its assertions with it and the run still says

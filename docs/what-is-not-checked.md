@@ -285,10 +285,20 @@ every page says so. There is no password anywhere here to bootstrap an
 administrator with and the roster dies with the process, so an empty roster opens
 rather than closes; `admin.openWhenEmpty` turns that off.
 
-**`/admin-api` is not gated at all.** It is what a test drives and it is the way
-back in when nobody holds a role — and it means anybody who can reach this port
-can grant themselves both roles through it. Do not put this service on a public
-address.
+**`/admin-api` takes an access token, and it is a DIFFERENT credential from the
+console's.** Not a session but an OAuth 2.0 access token audienced to that API,
+carrying `admin:read` to read and `admin:write` to change anything — which
+become the built-in `ADMIN_READ` and `ADMIN_WRITE` roles, so the requirement is
+stated in the same access policy as every other decision here. It is still a
+turnstile: this service mints that token for the asking, to the seeded
+`sts-management-api` client whose secret is `adminApi.clientSecret`.
+
+**`adminApi.authRequired=false` restores the open API exactly**, and that is
+worth knowing rather than hidden: an ungated `/admin-api` is what a test drives
+with no secret to hold, and it is the way back in when nobody holds a console
+role. What it also means is that anybody who can reach the port can grant
+themselves both roles through it. Do not put this service on a public address
+either way.
 
 ## A logout cannot recall what has already been issued
 

@@ -1158,6 +1158,16 @@ keys, and every document that carries or describes the key is served
 `Cache-Control: no-store`. If you add a document that publishes the key, it needs
 that header too.
 
+**THAT SECOND RULE IS ENFORCED SINCE 2026-09-10 AND WAS BEING BROKEN WHEN IT
+STARTED BEING.** `tests/vendored/sts_metadata_anonymous.js` asks it of every
+metadata document at once — nineteen of them — and `/sts/cert` was the one
+served without the header: a WS-Trust STS certificate this process mints at
+startup and throws away at exit, cacheable by anything between here and a
+client that would then be checking today's signatures against the certificate
+of a service no longer running. That job is the enforcement for the sentence
+above; add a document that publishes a key and it fails until the row is
+there.
+
 
 
 ## Versioning: M.N.O, and the number is fixed when an artifact is BUILT

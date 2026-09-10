@@ -856,9 +856,18 @@ function handleRst(rawBody, contentType, options) {
            body: envelope(version, trustNs + '/RSTRC/IssueFinal', rstrc) };
 }
 
+// **`no-store`, LIKE EVERY OTHER DOCUMENT HERE THAT DESCRIBES A KEY.** This
+// certificate is made when the process starts and is thrown away when it stops
+// — the same fact CLAUDE.md's *The signing key is regenerated on every start*
+// rests on — so a cached copy outlives the key it names, and a client that
+// re-read it from a proxy would be checking this service's signatures against
+// the certificate of a service that is no longer running. It was the ONE
+// metadata document in this service served without the header, which
+// tests/vendored/sts_metadata_anonymous.js found by asking the same question of
+// all nineteen of them at once.
 app.get('/sts/cert', function (req, res) {
   log.debug("Entering the STS certificate endpoint.");
-  res.type('text/plain').send(STS.certPem);
+  res.type('text/plain').set('Cache-Control', 'no-store').send(STS.certPem);
   log.debug("Leaving the STS certificate endpoint.");
 });
 

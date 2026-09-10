@@ -134,12 +134,19 @@ const STYLE = [
 // is on the page even when the fetch of that document fails — the one moment
 // somebody is most likely to be poking at this service from somewhere it should
 // not be reachable from.
+// **IT SAID "Nothing here is protected" UNTIL 2026-09-10**, which was true of
+// this API until the day before that and is false now — and it is corrected
+// rather than deleted because `page()` is the standalone explorer, which a
+// deployment running `adminApi.authRequired=false` could still serve. The
+// wording holds in BOTH states on purpose: what a reader needs from a warning
+// is what this surface can DO, and that does not change with the gate.
 const BANNER =
-  '<div class="warn"><strong>Nothing here is protected.</strong> This ' +
-  'service checks no credential anywhere, so neither does its management ' +
-  'API. Anyone who can reach this port can revoke every token it has issued ' +
-  'and change what the next one contains. Fine on a laptop or a compose ' +
-  'network; not fine on a public address.</div>';
+  '<div class="warn"><strong>This is every control the admin console has.</strong> ' +
+  'It takes an OAuth 2.0 access token unless <code>adminApi.authRequired</code> ' +
+  'is off, and that credential is a turnstile like every other one here — this ' +
+  'service mints it for the asking. Whoever can call this API can revoke every ' +
+  'token it has issued and change what the next one contains. Fine on a laptop ' +
+  'or a compose network; not fine on a public address.</div>';
 
 // ---------------------------------------------------------------------------
 // `realmPrefix` IS THE ONE THING THIS PAGE NEEDS THAT NO OTHER PAGE HERE DOES.
