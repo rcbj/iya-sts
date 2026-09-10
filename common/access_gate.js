@@ -88,6 +88,19 @@ const config = require('./config');
 // It is still a POLICY decision either way — the same document decides all
 // seven, and `xacml.enforceAccess` is the one switch that stops it deciding.
 //
+// **AND ONE OF THE FIVE HAS CALLERS THERE IS NOBODY TO DECIDE ABOUT
+// (2026-09-10).** The SPIRE Server API's TCP port asks for a client
+// certificate and does not require one — `AttestAgent` is reached by an agent
+// that has no SVID yet and `GetBundle` by whoever is about to trust the trust
+// domain, both `any` in SPIRE's own table — so an anonymous caller there is
+// the specification rather than a mistake. The `access-control` document's
+// `requireAuthenticated` conjunct refused every one of them, which closed the
+// bootstrap on an unedited service and made the paragraph above untrue for
+// that surface. `spiffe_grpc.js`'s policyRefusal() therefore asks about a
+// caller it can NAME and skips one it cannot; nothing is widened, because
+// every method SPIRE restricts is already refused before the gate is reached.
+// See tests/spire_api_access_policy.js.
+//
 // **EACH ONE ASKS AFTER ITS OWN CHECK AND NEVER INSTEAD OF IT.** The console's
 // two roles, SCIM's six RFC 7644 schemes and SPIRE's per-method table are
 // unchanged and still decide first; this is the layer above them, so a
