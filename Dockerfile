@@ -139,7 +139,26 @@ COPY . ./
 # `common/helpers.js` that exports two functions, and a copy of it inside an
 # image whose real `common/helpers.js` is the identity service's is a trap
 # laid for whoever next reads a stack trace.
-RUN rm -rf ./tests ./xacml-pep
+#
+# **AND THREE FILES AT THE PACKAGE ROOT, SINCE 2026-09-09, FOR THE SAME REASON
+# A THIRD STEP OUT.** `README.md`, `docker-compose.yml` and this Dockerfile
+# were excluded in `.dockerignore` until that day, on the true grounds that
+# nothing reads them at runtime. What that overlooked is that they are the
+# SUBJECT of three in-process jobs — tests/readme_ports.js checks the README's
+# ports table against config.js and against the EXPOSE lines below it, and
+# tests/postgres_schema.js checks the application role in docker-compose.yml
+# against postgres/schema.sql — and those jobs run in the TESTS image, built
+# from this same context, where a file the context does not carry is an ENOENT
+# reported as a failing test rather than a skip. So they are in the context and
+# come out here, and this image carries exactly what it did before.
+#
+# **AND `.github/workflows/tests.yml` JOINED THEM ON 2026-09-10**, one step
+# further out again: tests/teardown_bounds.js asserts that the CI job's own
+# timeout sits above the sum of the two ./docker-run-tests.sh reaches itself,
+# so the workflow is the subject of a test and has to be in the context. The
+# rest of `.github` is still excluded and nothing here reads any of it.
+RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
+           ./.github
 # ---------------------------------------------------------------------------
 # FIX THIS IMAGE'S BUILD NUMBER (M.N.O) AND SHIP IT IN version.json.
 #

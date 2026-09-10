@@ -347,6 +347,9 @@ STS_LDAP_HOST_PORT=""
 # do not share a project — compose scopes containers, networks and volumes by
 # it, so two runs sharing one would tear down each other's stack.
 COMPOSE_PROJECT="${STS_TEST_COMPOSE_PROJECT:-mock-sts-tests}"
+# Every `down` in this file runs under it — see stackTeardown(). Seconds,
+# and overridable, exactly as in ./docker-run-tests.sh.
+STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 STS_TEST_CONTAINER="sts-tests"
 STS_TEST_PG_CONTAINER="sts-tests-postgres"
 # ---------------------------------------------------------------------------
@@ -1061,7 +1064,13 @@ composeUp()
   # was found by running the teardown and looking, which is the only way this
   # kind of thing is ever found. `--remove-orphans` does NOT cover it: a
   # profiled service is defined in the file, so it is not an orphan.
-  docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
+  #
+  # BOUNDED since 2026-09-10, for ./docker-run-tests.sh's reason and with the
+  # same default: a `down` that never returns holds a run open after
+  # everything it was asked to do has finished. That launcher's version of
+  # this cost CI a green suite; this one would cost a developer a terminal.
+  docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
+    "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
     down --remove-orphans --volumes > /dev/null 2>&1 || true
 
   if [ "${BUILD}" = "1" ];
@@ -1127,8 +1136,25 @@ composeUp()
       # never came up leaves the job to fail on its own connect with a message
       # naming both launchers rather than on a URL this script promised.
       export STS_LDAP_URL="ldap://localhost:${STS_LDAP_HOST_PORT}"
+      # -------------------------------------------------------------------
+      # AND THE PORT ON ITS OWN, BECAUSE TWO JOBS ASK TWO DIFFERENT QUESTIONS
+      # (2026-09-09).
+      #
+      # `sts_directory_bulk_load_ldap` reads the URL above. `sts_global_logout`
+      # builds its own from the SERVICE's hostname and `STS_LDAP_PORT` — which
+      # this launcher did not set, so it dialled 389 on the host, got
+      # ECONNREFUSED, and reported "LDAP bind did not sign in" as a note.
+      #
+      # **THE JOB THEN PASSED**, which is the part worth writing down: the one
+      # assertion in this suite that proves a sign-out reaches a directory
+      # connection was quietly not being made in this launcher at all, and the
+      # containerized one made it because its runner shares a network with the
+      # service and 389 is simply there. That is how a real defect in
+      # `dispatch` mode reached a green local run.
+      # -------------------------------------------------------------------
+      export STS_LDAP_PORT="${STS_LDAP_HOST_PORT}"
       echo "The directory's own socket is published at ${STS_LDAP_URL} for" \
-           "sts_directory_bulk_load_ldap."
+           "sts_directory_bulk_load_ldap and sts_global_logout."
       composePepUp
       return 0
     fi
@@ -1253,7 +1279,13 @@ stackTeardown()
   # `--profile xacml` for the reason composeUp() gives at its own `down`: the
   # remote PEP container is in a profile, and a `down` without it leaves that
   # container running and the network undeletable.
-  docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
+  #
+  # BOUNDED since 2026-09-10, for ./docker-run-tests.sh's reason and with the
+  # same default: a `down` that never returns holds a run open after
+  # everything it was asked to do has finished. That launcher's version of
+  # this cost CI a green suite; this one would cost a developer a terminal.
+  docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
+    "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
     down --remove-orphans --volumes > /dev/null 2>&1 || true
   STACK_UP=0
 }
@@ -1661,7 +1693,13 @@ do
     # with this mode's containers on the same compose project. Between modes
     # the removal is unconditional; the LAST mode's stack is what --keep-stack
     # is about, and that one is never reached by this branch.
-    docker_compose "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
+    #
+    # BOUNDED since 2026-09-10, for ./docker-run-tests.sh's reason and with the
+    # same default: a `down` that never returns holds a run open after
+    # everything it was asked to do has finished. That launcher's version of
+    # this cost CI a green suite; this one would cost a developer a terminal.
+    docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
+      "${COMPOSE_FILE_ARGS[@]}" --profile xacml \
       down --remove-orphans --volumes > /dev/null 2>&1 || true
     STACK_UP=0
   fi

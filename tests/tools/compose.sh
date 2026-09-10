@@ -1,12 +1,13 @@
 #
 # tests/tools/compose.sh — how this repository's two launchers talk to docker.
 #
-# SOURCED, never run: it defines two functions and sets nothing. Both
+# SOURCED, never run: it defines three functions and sets nothing. Both
 # ./local-run-tests.sh (which brings up ONE service and drives it from this
 # machine) and ./docker-run-tests.sh (which brings up the service AND the tests
-# container and drives nothing itself) need exactly the same two answers —
-# which compose command is on this machine, and how to hand it the variables
-# a compose file substitutes — so they are here rather than in both.
+# container and drives nothing itself) need exactly the same three answers —
+# which compose command is on this machine, how to hand it the variables a
+# compose file substitutes, and how to stop waiting on one that has wedged — so
+# they are here rather than in both.
 #
 # It lives in tests/tools/ for the reason everything else in this directory
 # does: tools/ is NOT tests. run.js's discovery rule walks tests/*.js and would
@@ -86,5 +87,65 @@ docker_compose()
     return $?
   fi
   env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} ${COMPOSE_CMD} "$@"
+  return $?
+}
+
+# ---------------------------------------------------------------------------
+# THE SAME COMMAND WITH A WALL CLOCK ON IT (2026-09-10), and the reason it
+# exists is a CI run that PASSED and was reported as a failure.
+#
+# On 2026-09-10 the containerized launcher's last mode finished green — 78
+# jobs, 78 passed, the report written, the runner container exited 0 — and then
+# `up --abort-on-container-exit`, which stops the stack once the runner is
+# done, printed `Container sts-postgres-docker-tests  Stopping` and sat there
+# for TWENTY-THREE MINUTES, until the job hit its wall clock and the whole run
+# was cancelled. Modes one and two had stopped the same container in under half
+# a second each; a run the day before stopped it three times out of three. The
+# daemon wedged, and nothing in the tree was wrong.
+#
+# **NO COMPOSE FLAG COVERS THAT AND IT IS WORTH SAYING WHY.** `up` already
+# takes `--timeout` for a container's shutdown grace, it already defaults to
+# ten seconds, and the `xacml-pep` container spends every one of them on every
+# run before being killed — so SIGKILL was reached and did not land. A stop
+# that outlives SIGKILL is a stuck daemon or a process the kernel will not
+# interrupt, and the only lever left is to stop WAITING for it.
+#
+# So: a bound, and a caller that decides what a bound being reached means. It
+# is never a verdict on the tree — see docker-run-tests.sh, which recovers the
+# mode's real answer from the container docker has already recorded the exit
+# code of.
+#
+# `timeout` is coreutils and is on every machine either launcher can run on;
+# where it is missing this degrades to the unbounded call, which is exactly the
+# behaviour that existed before. `--kill-after` because SIGTERM asks compose to
+# stop the stack — the very thing that is stuck — so the ask needs a deadline
+# of its own.
+#
+# THE VARIABLES GO THROUGH `env` HERE RATHER THAN AS BARE `NAME=value` WORDS.
+# `timeout NAME=value docker compose ...` asks the kernel to execute a program
+# called `NAME=value`, which is the same trap this file's header describes
+# about `env docker_compose`, one layer along. `sudo timeout ... env ...` is
+# correct for the sudo path too: sudo empties the environment and `env` fills
+# it back with exactly what the compose file substitutes.
+# ---------------------------------------------------------------------------
+docker_compose_bounded()
+{
+  local seconds="$1"
+  shift
+  local timeoutCmd
+  timeoutCmd="$(command -v timeout 2> /dev/null || true)"
+  if [ -z "${timeoutCmd}" ] || [ -z "${seconds}" ];
+  then
+    docker_compose "$@"
+    return $?
+  fi
+  if [ -n "${DOCKER_SUDO}" ];
+  then
+    sudo "${timeoutCmd}" --kill-after=30s "${seconds}" \
+      env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} ${COMPOSE_CMD} "$@"
+    return $?
+  fi
+  "${timeoutCmd}" --kill-after=30s "${seconds}" \
+    env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} ${COMPOSE_CMD} "$@"
   return $?
 }

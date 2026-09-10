@@ -527,7 +527,7 @@ function dockerQuiet(args) {
 // Everything the PEP container owns, so the teardown has one thing to take
 // down and every failure message has one thing to quote.
 var pep = { url: "", network: "", mode: "", pdpUrl: "", created: false,
-            dir: "", hostPort: 0, containerPort: 9090 };
+            dir: "", certDir: "", hostPort: 0, containerPort: 9090 };
 
 // The last of the container's own log. Every failure message below ends with
 // this, because the interesting failures here are ones where the PEP said
@@ -729,11 +729,101 @@ async function attachToThePep() {
 // ---------------------------------------------------------------------------
 // OR ONE OF THIS JOB'S OWN, WHICH IS WHAT A HAND-RUN AND A COVERAGE RUN GET.
 //
-// Configured IDENTICALLY to the one the launchers start — no client
-// certificate, no anchor, the same intervals — so that what the sections below
-// assert is one deployment rather than two. The only thing that differs is who
-// created it, and therefore who removes it.
+// Configured IDENTICALLY to the one the launchers start — the same intervals,
+// the same bias, and **a client certificate** — so that what the sections
+// below assert is one deployment rather than two. The only thing that differs
+// is who created it, and therefore who removes it.
+//
+// **THAT WORD "IDENTICALLY" WAS A LIE FOR THREE DAYS AND THIS COMMENT SAID IT
+// OUT LOUD.** It read "no client certificate, no anchor", which was an
+// accurate description of both deployments until 2026-09-06 — the day
+// `/xacml/pep/*` began requiring a VERIFIED chain holding `REMOTE_PEPS`. The
+// launchers were taught to mint one (`tests/tools/pep-credential.js`,
+// mounted at `/certs`); this path was not, so a container started here
+// registered as an unauthenticated caller and the PDP refused it with 403.
+//
+// **NOTHING CAUGHT IT BECAUSE NOTHING RAN IT.** Both launchers take the
+// attach path, and the two that take this one — `./run-coverage.sh` and a
+// bare `run-report.js` — were red on `/admin-api`'s own gate from the same
+// day, dying in the preflight 136ms before they reached any of this. One
+// masked gate hid another.
 // ---------------------------------------------------------------------------
+
+// **THE COMMON NAME IS `PEP_NAME` AND THAT IS FORCED, NOT CHOSEN.** An
+// authenticated registration is named by the PDP from the CERTIFICATE and
+// never from the body — `xacml.js` says why in as many words: a PEP that
+// could name itself while holding a certificate could register as somebody
+// else's PEP and take over their row, which is the one thing in this family
+// that would be a security bug rather than a fidelity one. So the CN, the row
+// in `ou=peps`, the `?pep=` every pull carries and this container's hostname
+// are one string, which is exactly what PEP_NAME's own comment already
+// requires of the other three.
+//
+// The LAUNCHERS get this for free by pinning both to the seeded
+// `remote-pep-1`. This path cannot: its container name has to be unique per
+// run, so the identity has to be created rather than found — which is the
+// same two directory writes a real second enforcement point costs, and
+// `ldap_server.js`'s seed comment describes them exactly ("a deployment using
+// a different common name adds its own member to this group").
+function containerSubject() {
+  return "CN=" + PEP_NAME + ",OU=remote-peps,O=mock-sts tests";
+}
+
+// The entry and the membership, in THIS RUN'S REALM — the directory is per
+// realm, so the seeded `remote-peps` group in the default realm is not the one
+// the PDP will read when it resolves this certificate.
+async function provisionTheContainersIdentity() {
+  log.debug("Entering provisionTheContainersIdentity().");
+  const made = await postJson(api("/users/create"), { username: PEP_NAME });
+  assert.ok(made.status === 200,
+    "POST /admin-api/users/create should put " + PEP_NAME + " in " + REALM +
+    "'s directory; it answered " + made.status + ". A client certificate " +
+    "whose subject resolves to NO entry is an unauthenticated caller however " +
+    "well it verifies, so the registration below would be refused with a 403 " +
+    "naming REMOTE_PEPS and nothing would say the entry was the missing part.");
+  const joined = await postJson(api("/groups/add-member"),
+                                { group: "remote-peps", member: PEP_NAME });
+  assert.ok(joined.status === 200,
+    "POST /admin-api/groups/add-member should put " + PEP_NAME + " in " +
+    "cn=remote-peps; it answered " + joined.status + ". That group is what " +
+    "`roles.remotePepGroup` names and the built-in REMOTE_PEPS role is " +
+    "computed from — the certificate says WHO and this says WHETHER, and " +
+    "without it the chain verifies perfectly and is still refused.");
+  log.debug("Leaving provisionTheContainersIdentity().");
+}
+
+async function mintTheContainersCredential() {
+  log.debug("Entering mintTheContainersCredential().");
+  await provisionTheContainersIdentity();
+  const cred = await credentials.mint({ subject: containerSubject() });
+  const posted = await credentials.trustAnchor(base, cred.anchorPem);
+  assert.ok(posted.ok,
+    "POST /tls/trust should accept the Root CA for the PEP container this " +
+    "job is about to start; it answered " + posted.status + ". Without the " +
+    "anchor that container's certificate verifies against nothing, it " +
+    "registers as an unauthenticated caller, and the PDP refuses it with a " +
+    "403 naming REMOTE_PEPS.");
+
+  // ON DISK BECAUSE `pep.js` READS FILES, and in a directory of this job's
+  // own rather than the launcher's `tests/report/pep-credential`: two runs on
+  // one machine must not share it, and this one is removed with the
+  // container. `mkdtemp` rather than a name built from the stamp, so the
+  // collision cannot be constructed at all.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mock-sts-pep-cert-"));
+  // The leaf FOLLOWED BY THE INTERMEDIATE, which is what `certPem` already
+  // is — the service holds only the root, so a container sending the leaf
+  // alone presents a chain that cannot be built.
+  fs.writeFileSync(path.join(dir, "pep.crt"), cred.certPem, { mode: 0o644 });
+  // 0644 AND NOT 0600, deliberately: the mount is read-only and the process
+  // inside that image is not this user, so a key only this user can read is a
+  // container that starts and quietly has no certificate.
+  fs.writeFileSync(path.join(dir, "pep.key"), cred.keyPem, { mode: 0o644 });
+  log.info("Minted the PEP container's client certificate (" + cred.subject +
+           ") and trusted its Root CA. It is mounted at /certs.");
+  log.debug("Leaving mintTheContainersCredential().");
+  return dir;
+}
+
 async function startThePep() {
   log.debug("Entering startThePep().");
   buildTheImage();
@@ -755,11 +845,23 @@ async function startThePep() {
     // start, so no image, CA bundle or environment can hold an anchor for it —
     // which is why `docker-compose.yml` sets this too and why `pep.js` logs it
     // on every start rather than once.
-    PEP_TLS_INSECURE: "true"
+    PEP_TLS_INSECURE: "true",
+    // THE CLIENT CERTIFICATE, WHICH IS WHAT THE PDP'S GATE ASKS FOR. The
+    // launchers pass these two through docker-compose as XACML_PEP_TLS_CERT /
+    // XACML_PEP_TLS_KEY onto the same names; here the mount below is /certs
+    // for the same reason it is there.
+    PEP_TLS_CERT: "/certs/pep.crt",
+    PEP_TLS_KEY: "/certs/pep.key"
   };
 
+  pep.certDir = await mintTheContainersCredential();
+
   const create = ["create", "--name", PEP_NAME, "--hostname", PEP_NAME,
-                  "--network", pep.network];
+                  "--network", pep.network,
+                  // READ-ONLY: this container has no business writing to a
+                  // private key, and the mount is the only thing standing
+                  // between a test credential and the image.
+                  "--volume", pep.certDir + ":/certs:ro"];
   if (pep.mode === "bridge") {
     // PUBLISHED ON THE LOOPBACK AND ON A PORT DOCKER CHOOSES. This job reaches
     // the PEP from outside the network, and a fixed 9090 would collide with the
@@ -842,6 +944,20 @@ function stopThePep() {
     log.info("Removed the PEP container " + PEP_NAME + ".");
   }
   pep.created = false;
+  // AND THE CREDENTIAL, WHICH OUTLIVES THE CONTAINER BY NOTHING. It is a
+  // private key in the machine's temp directory; leaving it there would be
+  // this job's one durable side effect, and the realm it deliberately leaves
+  // behind is a realm rather than a key. Failure to remove it is a warning
+  // and never the thing that fails a passing run.
+  if (pep.certDir) {
+    try {
+      fs.rmSync(pep.certDir, { recursive: true, force: true });
+    } catch (e) {
+      log.warn("Could not remove the PEP container's credential directory " +
+               pep.certDir + ": " + e.message);
+    }
+    pep.certDir = "";
+  }
   log.debug("Leaving stopThePep().");
 }
 
@@ -1263,7 +1379,16 @@ async function itRegistersAndPulls() {
     assert.strictEqual(there.row.authenticated, true,
       "the row should record that a certificate proved something; it says " +
       there.row.authenticated);
-    assert.ok(String(there.row.identity).indexOf('cn=' + PEP_NAME) >= 0,
+    // **EITHER RDN ATTRIBUTE, AND THAT IS NOT A WEAKENING.** What is being
+    // asserted is WHICH ENTRY the certificate resolved to, and the entry is
+    // named by the RDN's VALUE. Which ATTRIBUTE carries it is a property of
+    // the door the entry came in through: `ldap_server.js` seeds
+    // `cn=remote-pep-1` and `POST /admin-api/users/create` writes `uid=`. The
+    // launchers meet the first because they reuse the seeded identity; a
+    // self-started container has to create one, so it meets the second. An
+    // assertion naming `cn=` was asserting the seed.
+    assert.ok(new RegExp('^(cn|uid)=' + PEP_NAME + ',', 'i')
+      .test(String(there.row.identity)),
       "AND THE IDENTITY IS THE DIRECTORY ENTRY THE CERTIFICATE RESOLVED TO, " +
       "not the name in the body — which is the whole of how this PEP got " +
       "past the access policy: that entry is a member of cn=remote-peps, " +

@@ -1238,6 +1238,53 @@ rule this directory keeps at every other door.
 untouched rather than hidden — a family that vanished when its setting was off
 would make a global logout look complete.
 
+### And the process that answers `/logout` usually holds no socket (2026-09-09)
+
+Everything above is written as though one process owned the listener, the list
+and the sign-out. Since 2026-09-07 that is the exception: `workers.dispatch`
+sends `/logout` — and every other page — to a REQUEST WORKER, and a worker
+binds no protocol port at all. Its `liveConnections` is therefore permanently
+empty.
+
+**That did not degrade the sign-out, it inverted it.** `boundConnections()`
+answered "there are none"; the driver in `logout/logout.js` ends what
+`collect()` finds; nothing was found, so nothing was ended and nothing was
+reported — and a global logout said it had ended everything while a bound
+connection went on being signed in. It was green in two modes of the suite and
+red in the third, with `sts_global_logout` reporting only that the socket was
+still open.
+
+The two halves are fixed by two different mechanisms, because they fail
+differently:
+
+* **SEEING one** is a MIRROR. The front process pushes a snapshot — on a
+  connection arriving, on one closing, and on a BIND, which is the event that
+  turns an anonymous socket into somebody's session — and a worker's
+  `boundConnections()` answers out of it. It is allowed to be stale by the
+  interval between those events and the push, and what it may never be is empty
+  on a service that has connections. A request-and-wait instead of a mirror
+  would mean making `boundConnections()` asynchronous, and with it
+  `terminate()` and all seven of its callers.
+* **CLOSING one** is an ASK, and it goes out **on the response** rather than
+  over the IPC channel beside it. Only the process holding the socket can close
+  it; the worker names the identity in a header, and the front process closes
+  the sockets before it forwards a byte of the answer. That ordering is the
+  whole point: a `process.send()` would arrive on a different channel from the
+  answer it belongs to, so the client could be told a connection had ended
+  while it was still open — the same bug, made rarer and harder to see.
+  `common/request_pool.js`'s `LDAP_DROP_HEADER` carries the argument and
+  `common/request_worker.js` holds the other end.
+
+**An ask that cannot be made THROWS**, and that is deliberate: the driver
+records the row as not ended, with the reason, where returning the rows would
+report "the directory connection was closed" about a socket nobody had been
+asked to close. A process with neither hook installed is one that holds its own
+listeners and behaves exactly as this file describes above — which is every
+process this service ran in until dispatching was turned on.
+
+`tests/ldap_logout.js` holds all of it in process, and `sts_global_logout`
+drives a real bind over 389 in the containerized stack.
+
 ---
 
 ## THREE ATTRIBUTES UNDER `ou=applications` NOW MEAN SOMETHING ONLY IN PAIRS (2026-09-01)

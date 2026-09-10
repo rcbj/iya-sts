@@ -231,8 +231,8 @@ decision here is stated in. One middleware on the base path covers all 232
 operations by construction.
 
 **The two things the old sentence was defending are both still true.** A test
-still drives it — the launchers mint a token before any job runs and hand it to
-every one of them, so no job holds a secret — and it is still the way back in,
+still drives it — a token is minted before any job runs and handed to every one
+of them, so no job holds a secret — and it is still the way back in,
 through `adminApi.authRequired`, which restores the open API exactly.
 **`adminApi.clientSecret` is the setting that makes the first of those possible
 at all**: the seeded client's secret is otherwise minted per start and readable
@@ -240,6 +240,16 @@ only THROUGH the API it unlocks, so a deployment that does not pin it has an
 administrative surface nobody can obtain a token for. `mgmt-api/CLAUDE.md`
 argues all of it and keeps the three original reasons verbatim, because they
 are the argument for the off switch.
+
+**"THE LAUNCHERS MINT IT" IS WHAT THAT SENTENCE SAID FOR A DAY AND IT WAS NOT
+COMPLETE.** Three paths reach a job and only two go through a launcher that
+mints: the third is the THROWAWAY service `tests/tools/run-report.js` starts
+itself, which is `./run-coverage.sh`, `./local-run-tests.sh --no-docker` and a
+bare `run-report.js`. CI's coverage job is the first of those, and it ran the
+whole protocol half against a gated API with no credential — **nineteen
+failures for one missing token**, two of them describing a SAML defect that did
+not exist. `run-report.js` mints for a service it started; `tests/CLAUDE.md`
+argues the ordering and `tests/admin_api_token_wiring.js` pins it.
 
 **The Workload API is the opposite case and the distinction matters**: it
 authenticates nobody because its specification says it MUST NOT — a workload has
@@ -725,6 +735,36 @@ same four startup steps `server.js` runs and from the same file: the store, the
 signing keys, the minted rows, and COORDINATION. What makes dispatch correct is
 that last step, not anything written for the pool.
 
+**AND THERE IS EXACTLY ONE THING THE STORE CANNOT CARRY, WHICH IS WHY THE
+SENTENCE ABOVE NEEDED A SECOND MECHANISM AFTER ALL (2026-09-09): A SOCKET.**
+In LDAP the connection IS the session — RFC 4511 section 4.2 — so the only
+sign-out that protocol has is a file descriptor being closed, and a file
+descriptor belongs to the process that accepted it. The front process holds
+every LDAP connection and a worker holds the session that decides one should
+end. **It was not a degraded answer, it was an inverted one**: a worker's
+connection list was permanently empty, `logout.js` ends what it finds, so a
+global logout in `dispatch` mode reported that it had ended everything while a
+bound connection went on being signed in — green in two modes of the suite and
+red in the third, saying only that the socket was still open.
+
+The list goes OUT to the workers as a snapshot pushed on change, and the
+instruction comes BACK **on the response**, in a header the front process acts
+on before it forwards a byte of the answer. That is the whole of why it is not
+a `process.send()`: a second channel races the answer it belongs to, and a
+client told a connection had ended while it was still open is the very bug
+being fixed, made rarer and harder to see. `ldap/CLAUDE.md` argues both halves,
+`common/request_pool.js`'s `LDAP_DROP_HEADER` argues the ordering, and
+`tests/ldap_logout.js` pins all of it in process — including the one part that
+looks like a detail and is not: the snapshot is taken a TICK after the bind
+handler, because ldapjs sets the bound DN only once the handler chain has
+returned, and a snapshot taken any earlier belongs to nobody.
+
+**THE RULE THAT COMES OUT OF IT** is worth more than the mechanism: a store is
+shared by coordination, and anything that is NOT a row in a store — a socket, a
+timer, a listener — is held by one process and reachable from no other. There
+is one such thing today. A second would need this argument made again rather
+than this mechanism copied.
+
 **DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
 Everything else about the pool degrades — no workers means the front process
 does the work, a dead worker is a 502, a pool that gave up handles everything
@@ -771,6 +811,39 @@ about the callers rather than about the pool.
 different shape from `pull()` beside it on purpose: `pull()` returns at once
 when a catch-up is already running, which is right for a timer and useless for
 a caller that needs to know it is up to date.
+
+**AND THE GENERATION MOVES FOR THIS PROCESS'S OWN WRITES TOO, SINCE
+2026-09-09 — IT DID NOT, AND THAT IS A SECOND BUG OF THE SAME FAMILY AS THE
+LDAP ONE ABOVE.** It was bumped in exactly one place: a WORKER announcing that
+its flush had committed. That is the whole story for the dispatched HTTP port,
+and **this process answers on five more socket families that are never
+dispatched** — the two TLS listeners (which have a handler of their own rather
+than going through `app`), the directory, the KDC and SPIFFE's gRPC pair.
+Everything minted there is written by the front process, and no worker was ever
+marked stale for it.
+
+The symptom was a sign-out that left a session behind. A verified client
+certificate on 9443 starts a sign-on session; the session is minted here,
+`/logout` is answered by a worker, and that worker's copy of the session store
+had never heard of it — so a global sign-out reported ending everything and
+left a live way in. **It is intermittent by construction**: the worker gets
+there on the replication poll, so whether the sign-out is correct depends on
+how long the run took to reach it, which is why it failed once in a three-mode
+run and passed when the same job was run alone.
+
+The signal is `persistence.changeRowsWritten()`, sampled at DISPATCH and
+compared with the last value seen. It counts rows COMMITTED to the change log,
+so it moves only when there is something a worker can actually pull — the same
+contract `receiveCommitted()` keeps for a worker. It is sampled rather than
+pushed from the writer because the alternative is five socket families each
+learning about this pool. `tests/front_process_writes.js` pins the decision,
+which is a comparison of two integers.
+
+**THE TWO FIXES TOGETHER ARE THE RULE**: a store is shared by coordination and
+a socket is not, so anything the front process holds needs a mechanism of its
+own — the LDAP connection needed a mirror and an ask, and everything the front
+process MINTS needed the barrier to know it had. Neither was found by reasoning
+about the design; both were found by one job in one mode.
 
 ## The require order in `server.js` IS the route order
 

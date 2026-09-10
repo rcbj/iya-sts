@@ -440,9 +440,12 @@ accident — `app.use('/admin', ...)` matches on segment boundaries, so
 `/admin-api` never matched the console's gate and never should.
 
 **THE THREE REASONS BELOW SURVIVE, TWO OF THEM INTACT.** A test still drives
-this API — both launchers mint a token before any job runs and hand it to every
-one of them, which is `tests/tools/admin-api-token.js` and its preloaded shim,
-so no job holds a secret. It is still the way back in — through
+this API — a token is minted before any job runs and handed to every one of
+them, which is `tests/tools/admin-api-token.js` and its preloaded shim, so no
+job holds a secret. **Who mints it depends on who started the service**: a
+launcher for a container it brought up, and `tests/tools/run-report.js` itself
+for the throwaway it starts — a distinction this file called "both launchers"
+until the coverage run that had neither. `tests/CLAUDE.md` argues it. It is still the way back in — through
 `adminApi.authRequired`, which restores the open API exactly. What is no longer
 true by default is the third: anybody who can reach this port can no longer
 grant themselves both roles here.
@@ -450,8 +453,10 @@ grant themselves both roles here.
 **AND IT ACQUIRED A BOOTSTRAP HOLE THAT HAS TO BE CLOSED BY CONFIGURATION.**
 The seeded `sts-management-api` client's secret is minted at every start and is
 readable only THROUGH the API it unlocks, so a service that has restarted is a
-service nobody can get a token for. `adminApi.clientSecret` pins it, both
-launchers set it per run, and a deployment that does not set it has an
+service nobody can get a token for. `adminApi.clientSecret` pins it, every path
+that starts a service for the suite sets it per run — **before that service
+starts, which is the whole of the ordering**, since the seeded client reads it
+while it is being seeded — and a deployment that does not set it has an
 administrative surface it cannot reach.
 
 ---

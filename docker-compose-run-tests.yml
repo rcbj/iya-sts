@@ -1,9 +1,11 @@
 # docker-compose-run-tests.yml — THE WHOLE SUITE, IN CONTAINERS.
 #
-# Two services on a private bridge network: `sts`, this repository built from
-# its own Dockerfile, and `tests`, this repository's suite built from
-# tests/Dockerfile with a Chrome in it. The tests container drives the service
-# by its compose DNS name and exits with the suite's status;
+# Four services on a private bridge network: `sts`, this repository built from
+# its own Dockerfile; `tests`, this repository's suite built from
+# tests/Dockerfile with a Chrome in it; `postgres`, the store the two
+# persisting modes of tests/tools/modes.sh run on; and `xacml-pep`, the remote
+# enforcement point one job drives the seam to. The tests container drives the
+# service by its compose DNS name and exits with the suite's status;
 # ./docker-run-tests.sh brings the pair up with --exit-code-from tests and takes
 # them down again.
 #
@@ -33,11 +35,19 @@
 # ---------------------------------------------------------------------------
 # WHAT THIS STACK DELIBERATELY DOES NOT HAVE.
 #
-#   NO POSTGRES. `persistence.mode=memory`, so nothing is written down and the
-#   second run cannot start from the first run's leavings. The one job that
-#   would need a database — the parent suite's sts_persistence_postgres.js — is
-#   not vendored here, because it starts its own database with docker and this
-#   container has no docker in it.
+#   NO PERSISTENCE BETWEEN RUNS — WHICH IS NOT THE SAME AS NO DATABASE, AND
+#   THIS BULLET SAID "NO POSTGRES" UNTIL 2026-09-09. It was written when this
+#   stack ran once, in `persistence.mode=memory`; tests/tools/modes.sh runs the
+#   suite three times now and two of those modes ARE a database. So there is a
+#   `postgres` service below, and what the bullet was actually defending is
+#   kept by other means: that service has NO VOLUME, so its cluster lives in
+#   the container's writable layer and the `down --volumes` between modes takes
+#   it with the container. Every mode starts on a database that has never been
+#   written to, which is also the only thing that makes postgres/apply-schema.sh
+#   run at all — the entrypoint runs it on the start that CREATES a cluster and
+#   never again. The one job that would need a database of its own — the parent
+#   suite's sts_persistence_postgres.js — is still not vendored here, because it
+#   starts one with docker and this container has no docker in it.
 #   NO DOCKER IN THE TESTS CONTAINER, AND THAT NOW COSTS A SECOND JOB. Since
 #   2026-09-06 tests/vendored/sts_xacml_remote_pep.js builds the xacml-pep image
 #   and runs it as a container on the service's network, so it needs a daemon
@@ -69,6 +79,89 @@
 version: '2.4'
 
 services:
+  # ---------------------------------------------------------------------------
+  # THE STORE THE TWO PERSISTING MODES RUN ON (2026-09-09).
+  #
+  # tests/tools/modes.sh runs the suite three times and two of those modes are
+  # defined by having a database: `postgres` persists and coordinates, and
+  # `dispatch` adds request workers that COORDINATE THROUGH IT. Until this
+  # service existed both of them brought the mock up with STS_PERSISTENCE_MODE
+  # set and nothing to connect to, and the mock refused to start — correctly,
+  # and naming the store — so two of the three modes ran nothing at all.
+  #
+  # **IT IS docker-compose.yml's POSTGRES SERVICE WITH THE VOLUME TAKEN OFF,
+  # AND THAT IS THE ONE DIFFERENCE THAT MATTERS.** There is nowhere for a
+  # cluster to survive to: it lives in the container's writable layer, and
+  # ./docker-run-tests.sh runs `down --volumes` between every mode and after
+  # the last, so each mode gets a database that has never been written to. That
+  # is what this stack's "the second run cannot start from the first run's
+  # leavings" rule means once a mode has a store at all — and it is also the
+  # only reason the schema is ever built, since the image runs
+  # /docker-entrypoint-initdb.d ON THE START THAT CREATES A CLUSTER and never
+  # again. A named volume here would give mode 2 a schema, mode 3 mode 2's rows,
+  # and the next RUN both.
+  #
+  # NO PUBLISHED PORT, for the reason the `sts` service gives about 8081 and
+  # more sharply: 5432 is the assigned port, and the host most likely to run
+  # this stack is a host already running a database on it.
+  # ---------------------------------------------------------------------------
+  postgres:
+    # DIFFERENT FROM docker-compose.yml's `sts-postgres`, so that this run's
+    # teardown can never reach the database of a mock somebody is keeping up —
+    # the same rule, and the same reason, as the `sts` container name below.
+    container_name: ${STS_TEST_POSTGRES_CONTAINER_NAME:-sts-postgres-docker-tests}
+    # The host in STS_DATABASE_URL above. Not the container name: that one is
+    # per project and this one is what the connection string spells.
+    hostname: postgres
+    # POSTGRES 18 and not -alpine, matching docker-compose.yml: the three
+    # scripts below are bash, which the alpine variant does not ship. The
+    # major-version-specific data directory that file warns about cannot bite
+    # here, because there is no volume to carry an older cluster in.
+    image: postgres:18
+    environment:
+      # The bootstrap superuser: what initdb creates, what the healthcheck
+      # probes with, and what runs postgres/schema.sql. The service dials as
+      # STS_DB_APP_USER instead — see STS_DATABASE_URL on `sts`.
+      - POSTGRES_USER=sts
+      - POSTGRES_PASSWORD=sts
+      - POSTGRES_DB=sts
+      # The application role, created by apply-schema.sh with the rights to
+      # change ROWS and not the schema. Spelt here and again in the connection
+      # string, which is the duplication docker-compose.yml explains and
+      # tests/postgres_schema.js is what notices if only one of them moves.
+      - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
+      - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+    volumes:
+      # THE SCRIPTS ONLY. See the header: no data volume, deliberately.
+      - ./postgres/generate-tls.sh:/usr/local/bin/generate-tls.sh:ro
+      # Turns every `host` rule in pg_hba.conf into `hostssl`, so a plaintext
+      # dial is refused rather than merely discouraged.
+      - ./postgres/require-tls.sh:/docker-entrypoint-initdb.d/00-require-tls.sh:ro
+      # `10-` so it sorts after the TLS hardening. The DDL is mounted OUTSIDE
+      # /docker-entrypoint-initdb.d on purpose — the entrypoint runs every
+      # *.sql in there itself, with no way to pass the role name and password.
+      - ./postgres/apply-schema.sh:/docker-entrypoint-initdb.d/10-apply-schema.sh:ro
+      - ./postgres/schema.sql:/usr/local/share/sts/schema.sql:ro
+    # The key pair is made BEFORE the server starts, because `ssl_cert_file` is
+    # read when it boots and an initdb script runs after that. `exec` so
+    # postgres keeps pid 1 and still receives the stop signal.
+    command: >
+      bash -c '/usr/local/bin/generate-tls.sh &&
+      exec docker-entrypoint.sh postgres
+      -c ssl=on
+      -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      -c ssl_key_file=/var/lib/postgresql/tls/server.key'
+    healthcheck:
+      # ACCEPTING CONNECTIONS, not merely started — the `sts` service waits on
+      # this, and without the wait a persisting mode is a coin toss between a
+      # service that starts and one that refuses to, since a store that cannot
+      # be opened is fatal.
+      test: ["CMD-SHELL", "pg_isready -U sts -d sts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   # ---------------------------------------------------------------------------
   # THE SERVICE UNDER TEST, AND THE POINT IS THAT IT IS THE IMAGE.
   #
@@ -148,17 +241,40 @@ services:
       - ADMIN_API_CLIENT_SECRET
       # NOT A TUNING CHOICE. A suite that persisted would be a suite whose
       # second run started from the first run's leavings, which is the failure
-      # that looks like a flaky test and is not one. It is also why there is no
-      # postgres service in this file and no volume on this one.
+      # that looks like a flaky test and is not one.
+      #
       # THE MODE MATRIX DECIDES THIS NOW. It was hardcoded `memory`, which was
       # right while there was one run; tests/tools/modes.sh runs the suite three
       # times and this is one of the settings it varies. The default keeps a
       # hand-run of this file behaving as it did.
+      #
+      # **THE SENTENCE THAT USED TO FOLLOW WAS "it is also why there is no
+      # postgres service in this file and no volume on this one", AND HALF OF
+      # IT SURVIVED THE MATRIX.** The volume is still refused and the service
+      # is not: the leavings this is defending against are the PREVIOUS RUN'S,
+      # and a database container with no volume in it cannot have any. See the
+      # `postgres` service below.
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}
+      # WHERE THE TWO PERSISTING MODES DIAL, and it is `sts_app` rather than
+      # the owner: postgres/schema.sql builds a role with SELECT, INSERT,
+      # UPDATE and DELETE on the rows and no CREATE anywhere, so this service
+      # cannot change the schema of the store it persists to. The same string
+      # docker-compose.yml uses, spelt again here for the reason that file
+      # gives — a connection string is one string and compose cannot build it
+      # from the parts.
+      #
+      # `sslmode=require` IS NOT DECORATION. postgres/require-tls.sh rewrites
+      # every `host` rule in pg_hba.conf to `hostssl`, so a plaintext dial is
+      # REFUSED by that container — and the service says so at startup when the
+      # string does not ask for TLS, which is a warning printed just before a
+      # connection failure that reads as something else.
+      #
+      # Ignored entirely in `memory` mode, where nothing opens a store.
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app:sts_app@postgres:5432/sts?sslmode=require}
       # TLS ON THE MAIN PORT (2026-08-30), so that the suite drives the mock
       # over the scheme every stack in this ecosystem drives it over. It was
       # http here and https in the parent project's three compose files, which
@@ -183,6 +299,23 @@ services:
     # outside while it is being reconfigured by the admin jobs. `docker compose
     # -f docker-compose-run-tests.yml run --service-ports sts` is the way to
     # look at one by hand.
+    # THE DATABASE MUST BE ACCEPTING CONNECTIONS BEFORE THIS STARTS, in the two
+    # modes that have one: a configured store that cannot be opened does not
+    # make this service log and carry on, it makes it REFUSE TO START. This is
+    # the one thing in this file that needs compose format 2.4's `condition:`,
+    # which is the format the header keeps for the healthcheck anyway.
+    #
+    # IT COSTS `memory` MODE A DATABASE IT NEVER DIALS, and that is deliberate
+    # rather than overlooked. ./local-run-tests.sh suppresses it there with
+    # `--no-deps`, which works because that launcher starts exactly one service;
+    # this one also runs `up` over the whole file to start the runner, so the
+    # same suppression would have to be a hand-written list of services that
+    # goes stale the moment one is added. A database nothing connects to is a
+    # few seconds and no behaviour — STS_PERSISTENCE_MODE is what decides
+    # whether this service opens a store, and in `memory` it opens none.
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       # The scheme follows the mode in this service — oauth2.rfc9700 derives
       # global.https — so the probe decides which module to use the same way
@@ -411,6 +544,26 @@ services:
       # on every start and this stack is torn down between modes.
       # ---------------------------------------------------------------------
       - STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}
+      # ---------------------------------------------------------------------
+      # AND THE SECRET THAT MINTED IT, WHICH IS NOT THE SAME THING AND IS
+      # NEEDED BY EXACTLY ONE JOB. `sts_admin_api_auth` drives the gate rather
+      # than passing through it: it asks the token endpoint for tokens this run
+      # was NOT given — one scope at a time, and one audienced elsewhere — and
+      # a token cannot be narrowed after it is signed, so the run's own is no
+      # use to it. It needs the seeded client's secret, which the launcher pins
+      # per run as `adminApi.clientSecret` and passes to the service beside
+      # this.
+      #
+      # It reached the SERVICE and not the runner until 2026-09-09, so that job
+      # failed on the first containerized run with an assertion naming this
+      # variable — which is the right report and is the launcher's omission
+      # rather than the job's. run-report.js forwards it to the jobs under the
+      # `STS_`-prefixed name.
+      #
+      # BARE, for the reason ADMIN_API_CLIENT_SECRET on the `sts` service is
+      # bare: an empty value is what a hand-run of this file has, and that must
+      # go on behaving as it did.
+      - ADMIN_API_CLIENT_SECRET
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the

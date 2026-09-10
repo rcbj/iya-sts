@@ -397,6 +397,43 @@ else
     # run says "start your own service" over the compose file's and the image's
     # own https://sts:8081.
     -e STS_TEST_SERVICE_URL=
+    # AND THE REMOTE PEP'S URL, EMPTY FOR THE SAME REASON AND FOUND THE SAME
+    # WAY — a coverage run that had been red for something else, so nothing
+    # had ever reached this far.
+    #
+    # `docker-compose-run-tests.yml` gives the `tests` service a DEFAULT
+    # `XACML_PEP_URL=http://xacml-pep:9090`, which is right for
+    # ./docker-run-tests.sh: that launcher brings the PEP up beside the
+    # service and the job attaches to it. **This run uses `--no-deps` and
+    # starts no such container**, so the variable names a host that does not
+    # exist — and `sts_xacml_remote_pep.js` reads a non-empty XACML_PEP_URL as
+    # "a launcher provided one", attaches to it, and waits out its timeout
+    # against nothing.
+    #
+    # Emptied, that job takes its OTHER path: build an image and start a PEP
+    # of its own. There is no docker socket in this container — deliberately,
+    # see that compose file — so `haveDocker()` says no and the runner reports
+    # the job SKIPPED with the reason, which is the documented outcome for a
+    # run that cannot start one. A skip is honest here; a timeout against a
+    # container nobody started is not.
+    -e XACML_PEP_URL=
+    # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
+    # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
+    # this far before.
+    #
+    # `tests/Dockerfile` bakes `ENV STS_LDAP_URL=ldap://sts:389` for the
+    # compose stack, where the runner shares a network with the service. **This
+    # run has no `sts` host**: the service is a child process of the runner,
+    # inside this container, on a block of nine ports the runner chose. So both
+    # bulk-load LDAP jobs failed with `getaddrinfo ENOTFOUND sts` — correctly,
+    # and naming a variable that looked deliberately set.
+    #
+    # run-report.js reads this as `process.env.STS_LDAP_URL || <the throwaway
+    # service's own port>`, so EMPTY is how this run says "you started the
+    # directory, you know where it is". The `||` cannot tell an image default
+    # from a launcher's answer, and that is the whole reason this line has to
+    # exist rather than being inferred.
+    -e STS_LDAP_URL=
     -e "STS_TEST_CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     -e "LOG_LEVEL=${LOG_LEVEL:-info}"
   )

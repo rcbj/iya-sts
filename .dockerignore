@@ -36,13 +36,43 @@
 # copies the context whole — before that they were left out by not being named.
 docs
 .github
+# ...EXCEPT THE ONE WORKFLOW THAT IS THE SUBJECT OF A TEST (2026-09-10). This is
+# the block below's argument a fourth step out: tests/teardown_bounds.js reads
+# `./docker-run-tests.sh`'s own two wall clocks and this job's `timeout-minutes`
+# and asserts the second is above the sum of the first — which is a claim about
+# two files, one of which is a CI definition. `pages.yml` and
+# `build-container.yml` stay out, because nothing asserts anything about them.
+!.github/workflows/tests.yml
 CLAUDE.md
 **/CLAUDE.md
-README.md
 COVERAGE.md
 SECURITY.md
 LICENSE.md
 clean.sh
+
+# ---------------------------------------------------------------------------
+# THREE OF THEM CAME BACK ON 2026-09-09, AND THE REASON IS THE SAME ONE THE
+# BLOCK BELOW GIVES ABOUT `tests`: THIS FILE SERVES TWO IMAGES THAT WANT
+# OPPOSITE THINGS.
+#
+# `README.md`, `Dockerfile` and `docker-compose.yml` are still not read at
+# runtime and are still not wanted in the service image. But they ARE the
+# subject of three in-process jobs — tests/readme_ports.js reads the README's
+# ports table and this image's own EXPOSE lines, and tests/postgres_schema.js
+# reads the application role out of docker-compose.yml and checks it against
+# postgres/schema.sql — and those jobs run in the TESTS image, where an absent
+# file is not a skip but `ENOENT` reported as a failing test.
+#
+# THAT IS EXACTLY WHAT HAPPENED: both jobs were written on 2026-09-09, both
+# passed on a checkout under `npm test`, and both failed on the first
+# containerized run with an ENOENT naming a file that is plainly in the
+# repository. A test whose subject is a file at the package root cannot see it
+# unless the context carries it.
+#
+# The service image is unchanged: its Dockerfile removes all three in the same
+# `rm` it already removes `tests` and `xacml-pep` with, where the reason sits
+# beside the instruction.
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # `tests` IS NOT EXCLUDED HERE, AND IT WAS UNTIL 2026-08-29. THIS FILE IS SHARED
 # BY TWO IMAGES NOW AND THEY WANT OPPOSITE THINGS FROM IT.
@@ -73,9 +103,9 @@ clean.sh
 # The `test` script in package.json still does not work inside the service
 # image, deliberately, because that image has no tests directory by the time it
 # is finished.
-docker-compose.yml
+# `docker-compose.yml` and `Dockerfile` ARE NOT HERE ANY MORE — see the block
+# above; the service image removes them instead.
 docker-compose-run-tests.yml
-Dockerfile
 .dockerignore
 
 # The test REPORT, which `tests` no longer covers. It is generated, timestamped

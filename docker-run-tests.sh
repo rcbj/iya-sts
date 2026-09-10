@@ -16,9 +16,13 @@
 # differ in one way worth knowing before porting anything between them: that
 # stack has ten services and has to PROVISION most of them — Keycloak realms, a
 # WS-Federation side-car, two walt.id services, browser bundles — before a test
-# can run. This one has two services and provisions nothing at all, because the
-# service under test accepts any client, any entityID and any username on first
-# sight. That is what it is for.
+# can run. This one has four and provisions almost nothing, because the service
+# under test accepts any client, any entityID and any username on first sight.
+# That is what it is for. The two things it does prepare are CREDENTIALS rather
+# than configuration, each is obtained FROM the service, and both are therefore
+# minted once per MODE — the remote PEP's client certificate and an /admin-api
+# access token — because the stack is torn down between modes and a fresh
+# service remembers neither.
 #
 # ---------------------------------------------------------------------------
 # WHICH LAUNCHER TO USE, AND WHY THERE ARE TWO.
@@ -54,6 +58,9 @@
 #   ./docker-run-tests.sh
 #   ./docker-run-tests.sh --no-build          # reuse the images already built
 #   ./docker-run-tests.sh --keep-stack        # leave it up to look at
+#   ./docker-run-tests.sh --modes=dispatch    # one mode of tests/tools/modes.sh
+#                                             # rather than all three, in that
+#                                             # file's own spelling
 #   ./docker-run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -63,6 +70,14 @@
 #   CONFIG_FILE=./env/docker-tests.js ./docker-run-tests.sh
 #                                             # or name the file, which then
 #                                             # decides the level by itself
+#   STS_MODE_TIMEOUT=2400 ./docker-run-tests.sh
+#                                             # seconds a single mode may take
+#                                             # before this script stops waiting
+#                                             # on docker (default 1500); see
+#                                             # THE TWO WALL CLOCKS below
+#   STS_TEARDOWN_TIMEOUT=600 ./docker-run-tests.sh
+#                                             # the same for every `down` and
+#                                             # `logs` (default 300)
 #
 # ---------------------------------------------------------------------------
 # WHAT THIS RUN LEAVES BEHIND TO BE READ AFTERWARDS.
@@ -125,6 +140,37 @@ STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
 # Setting CONFIG_FILE in the environment pins one and that block leaves it be.
 CONFIG_FILE="${CONFIG_FILE:-}"
 
+# ---------------------------------------------------------------------------
+# THE TWO WALL CLOCKS, AND WHY A LAUNCHER THAT ALREADY HAS A CI TIMEOUT NEEDS
+# THEM (2026-09-10).
+#
+# tests/tools/compose.sh's docker_compose_bounded() carries the incident: a run
+# whose last mode passed every one of its 78 jobs was reported as a FAILURE,
+# because compose then sat twenty-three minutes trying to stop a database
+# container and the job hit its wall clock with no summary, no exit code and no
+# report uploaded.
+#
+# The job timeout in .github/workflows/tests.yml cannot fix that and is not
+# meant to: it is the backstop for a runner that has wedged, and everything it
+# catches it catches by throwing the run away. These two are the opposite — a
+# bound this script reaches ITSELF, so it can say what happened, capture the
+# container logs, keep the report and give the mode the verdict the suite
+# actually reached.
+#
+#   STS_MODE_TIMEOUT      the suite, once, for one mode. The slowest mode ever
+#                         measured here is `dispatch` at 16m; 25m is that with
+#                         half again on top, which is roughly the spread
+#                         between a fast runner and a slow one.
+#   STS_TEARDOWN_TIMEOUT  every `down`, and the `logs` that precedes it. These
+#                         are seconds of work when they work at all, so five
+#                         minutes is already the pathological case.
+#
+# Both are seconds and both are overridable, because a machine slower than any
+# CI runner is a machine somebody will run this on.
+# ---------------------------------------------------------------------------
+STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-1500}"
+STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
+
 BUILD=1
 KEEP_STACK=0
 STS_TEST_ARGS="${STS_TEST_ARGS:-}"
@@ -153,6 +199,14 @@ do
   case "$1" in
     --no-build)   BUILD=0 ;;
     --keep-stack) KEEP_STACK=1 ;;
+    # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
+    # ./local-run-tests.sh has had `--modes=` since the matrix arrived, and the
+    # asymmetry cost an afternoon: the failure being chased was in `dispatch`,
+    # on a listener only THIS stack publishes, so reproducing it meant running
+    # `memory` and `postgres` first every time. Same spelling and same meaning
+    # as the other launcher's, so what a developer learns on one works on the
+    # other. A run with no `--modes=` is unchanged: all three, in order.
+    --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}" ;;
     --verbose)    set -x ;;
     -h|--help)    usage; exit 0 ;;
     *)            STS_TEST_ARGS="${STS_TEST_ARGS} $1" ;;
@@ -422,7 +476,11 @@ captureOneContainerLog()
     mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
     dest="${CURRENT_DIR}/tests/report/${mode}-${name}"
   fi
-  docker_compose -f "${COMPOSE_FILE}" logs --no-color "${service}" \
+  # BOUNDED for the reason the teardown below is: this runs against a stack
+  # that has just been stopped, and the case worth collecting a log for is
+  # exactly the case where that stop did not go well.
+  docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
+    -f "${COMPOSE_FILE}" logs --no-color "${service}" \
     > "${dest}" 2>&1 || true
   printf '%-12s %s\n' "${label}:" "${dest}"
 }
@@ -444,7 +502,11 @@ teardown()
     echo "  stop it: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} down -v"
     return 0
   fi
-  docker_compose -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+  # BOUNDED. This is the EXIT trap, so an unbounded call here can hold a run
+  # open after everything it was asked to do is finished and reported — which
+  # is the shape of the 2026-09-10 incident, one function along.
+  docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
+    -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
     > /dev/null 2>&1 || true
 }
 trap teardown EXIT
@@ -453,7 +515,8 @@ trap teardown EXIT
 # is about to ask for. Removing it is safe BECAUSE of the project name: this
 # reaches `mock-sts-docker-tests` and can never reach the `sts` container a
 # plain `docker compose up` in this directory creates.
-docker_compose -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
+  -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
   > /dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
@@ -572,23 +635,32 @@ mintAdminApiToken()
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# THE PEP'S CREDENTIAL, ONCE PER MODE, AGAINST A SERVICE THAT IS ALREADY UP.
+#
+# **IT WAS ONCE PER RUN UNTIL 2026-09-09 AND THAT WAS WRONG THE MOMENT THIS
+# LAUNCHER GREW MODES.** The truststore is a Map in the service's process, this
+# loop tears the stack DOWN between modes, and the mock generates a fresh
+# self-signed server certificate on every start — so mode 2 and mode 3 met a
+# service whose truststore had never been filled, while their PEP container
+# came up beside it and started registering. It failed in `postgres` and
+# `dispatch` with UNABLE_TO_GET_ISSUER_CERT_LOCALLY, and passed in `memory`
+# for a reason worth knowing: compose recreates a container when the resolved
+# configuration changes, so the FIRST mode reused the container this ran
+# against and the other two did not.
+#
+# It is not `mintAdminApiToken`'s neighbour by accident: both are credentials
+# obtained FROM the service and both are therefore per mode. The window is the
+# same one — after `up -d sts` and before the `up` that starts the PEP and the
+# runner — and it is the only window there is, because pep.js reads its
+# certificate files at process start and never again.
+#
+# A FAILURE HERE IS A WARNING AND NOT THE MODE'S FAILURE, which is unchanged:
+# one job asserts what an unauthenticated PEP cannot do, and the rest of the
+# suite has no opinion about this certificate at all.
+# ---------------------------------------------------------------------------
 mintThePepCredential()
 {
-  echo "Bringing up the mock STS alone, so its truststore can be filled"
-  echo "before the remote PEP that has to pass through it starts."
-  if ! docker_compose -f "${COMPOSE_FILE}" up -d sts;
-  then
-    echo "The service would not start." >&2
-    return 1
-  fi
-  STACK_UP=1
-
-  if ! waitForStsHealthy;
-  then
-    echo "The remote PEP's certificate cannot be minted without it." >&2
-    return 1
-  fi
-
   rm -rf "${XACML_PEP_CERT_DIR}"
   mkdir -p "${XACML_PEP_CERT_DIR}"
   echo "Minting the remote PEP's client certificate (${XACML_PEP_SUBJECT})"
@@ -632,34 +704,96 @@ mintThePepCredential()
   return 0
 }
 
-if ! mintThePepCredential;
-then
+# ---------------------------------------------------------------------------
+# WHAT A MODE'S BOUND BEING REACHED ACTUALLY MEANS (2026-09-10).
+#
+# `up --abort-on-container-exit --exit-code-from tests` does two things in one
+# call, and only the first of them is the suite: it runs the stack until the
+# runner exits, and THEN stops every other container before reporting that
+# runner's exit code. So by the time the second half can go wrong, the answer
+# already exists — it is recorded on a container that has exited, and docker
+# will hand it over.
+#
+# **THAT IS THE WHOLE OF THIS FUNCTION, AND IT IS WHY THE BOUND IS SAFE TO
+# ADD.** Without it a bound would be a new way to throw a green suite away —
+# faster than the CI timeout did on 2026-09-10, and just as wrong. With it,
+# the two cases the bound can catch are told apart by ASKING:
+#
+#   the runner EXITED      the suite finished and the stop phase is what hung.
+#                          Its exit code is the mode's verdict, exactly as
+#                          `--exit-code-from` would have reported it, and the
+#                          stack being wedged is a warning.
+#   the runner is running   the suite itself did not finish inside the bound.
+#   (or docker cannot      That is a failure of the mode and is reported as
+#    say)                  one — 124 is `timeout`'s own code and is kept.
+#
+# It writes its reasoning to stderr and the code to stdout, because it is read
+# through a command substitution. `docker inspect` and not `compose ps`: this
+# has to work while compose is the thing that is stuck, and the container name
+# is one this launcher already pins for the healthcheck loop.
+# ---------------------------------------------------------------------------
+recoverModeVerdict()
+{
+  local mode="$1" bounded="$2" state="" code=""
   echo "" >&2
-  echo "Could not prepare the stack. Nothing was run." >&2
-  exit 1
-fi
-
-# THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK — and
-# APPENDED HERE rather than in the block above, because the block above runs
-# before this certificate exists.
-#
-# The truststore is a Map in the service's process that ANY job can empty:
-# `POST /tls/trust/clear` needs no credential, and a job exercising the
-# truststore is entitled to use it. Nothing noticed until 2026-09-06, when a
-# client certificate stopped being a turnstile — this container's pull, its
-# heartbeat and its PIP queries all resolve a VERIFIED chain now, so one such
-# job left it authenticating as nobody for the rest of the run, reporting
-# UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor posted correctly before
-# anything started.
-#
-# **THE FIX IS NOT TO STOP OTHER JOBS CLEARING IT.** It is for the job that
-# DEPENDS on this anchor to re-establish it, which is what every other
-# credential in that file already does for itself. It travels as TEXT because
-# the runner container cannot see the directory the PEP mounts.
-if [ -f "${XACML_PEP_CERT_DIR}/ca.crt" ];
-then
-  COMPOSE_ENV+=("XACML_PEP_CA_PEM=$(cat "${XACML_PEP_CERT_DIR}/ca.crt")")
-fi
+  echo "Mode ${mode} did not finish within ${STS_MODE_TIMEOUT}s of compose" >&2
+  echo "being asked to run it. Asking docker what the runner actually did." >&2
+  state="$(docker inspect -f '{{.State.Status}}' \
+           "${STS_TESTS_CONTAINER_NAME}" 2>/dev/null || echo unknown)"
+  if [ "${state}" != "exited" ];
+  then
+    echo "The test runner is '${state}' — the SUITE did not finish, so this" >&2
+    echo "mode is a failure. Raise STS_MODE_TIMEOUT if the run was merely" >&2
+    echo "slow; the container log captured below is what says which." >&2
+    echo "${bounded}"
+    return 0
+  fi
+  code="$(docker inspect -f '{{.State.ExitCode}}' \
+          "${STS_TESTS_CONTAINER_NAME}" 2>/dev/null || echo "")"
+  case "${code}" in
+    ''|*[!0-9]*)
+      echo "The test runner had exited but docker would not say with what." >&2
+      echo "Reporting the mode as failed, because a verdict nobody can read" >&2
+      echo "is not a pass." >&2
+      echo "${bounded}"
+      return 0
+      ;;
+  esac
+  # -------------------------------------------------------------------------
+  # 128+N IS A SIGNAL AND NOT A VERDICT, AND THIS BRANCH IS THE ONE THE FIRST
+  # VERSION GOT WRONG.
+  #
+  # Reaching the bound SIGTERMs compose, and compose's own handler answers a
+  # SIGTERM by stopping the stack — the runner container included. So a suite
+  # that was still going when the bound fired is a container that has EXITED by
+  # the time this function looks at it, killed 137 by a teardown this script
+  # caused. Read as a verdict that is a mode failing, which is the right
+  # outcome for the wrong reason and with an explanation that is simply false:
+  # measured on 2026-09-10 with STS_MODE_TIMEOUT=100, the launcher announced
+  # "THE SUITE FINISHED" about a run that was four minutes from finishing.
+  #
+  # A code at or above 128 means the process was signalled. Only a smaller one
+  # is something the runner DECIDED, which is what makes it the answer
+  # `--exit-code-from` would have reported. Written as the POSIX convention
+  # rather than as "0 or 1", so that a runner which grows a third exit code is
+  # not silently mis-read here.
+  # -------------------------------------------------------------------------
+  if [ "${code}" -ge 128 ];
+  then
+    echo "The test runner had exited ${code} — which is a SIGNAL and not an" >&2
+    echo "answer: reaching the bound stops the stack, and that is what killed" >&2
+    echo "it. The suite did not finish, so this mode is a failure. Raise" >&2
+    echo "STS_MODE_TIMEOUT if the run was merely slow." >&2
+    echo "${bounded}"
+    return 0
+  fi
+  echo "The test runner had already exited ${code}: THE SUITE FINISHED and" >&2
+  echo "what hung is compose stopping the rest of the stack. That is the" >&2
+  echo "mode's verdict, and the wedged stack is a warning rather than a" >&2
+  echo "result — see the report and the container logs below." >&2
+  echo "${code}"
+  return 0
+}
 
 echo "Bringing up ${COMPOSE_PROJECT}: the mock STS, the remote PEP and the"
 echo "test runner."
@@ -691,6 +825,13 @@ MODES_FAILED=()
 MODE_COUNT="${#RUN_MODES[@]}"
 MODE_INDEX=0
 
+# THE STACK'S ENVIRONMENT AS IT IS BEFORE ANY MODE HAS ADDED TO IT. Each pass
+# rebuilds COMPOSE_ENV from this rather than appending to whatever the last one
+# left, which is the same rule modes.sh states about the modes themselves: a
+# mode that inherited the previous mode's settings would be a mode that never
+# ran, reported as a pass.
+BASE_COMPOSE_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
+
 for MODE in "${RUN_MODES[@]}";
 do
   MODE_INDEX=$((MODE_INDEX + 1))
@@ -715,20 +856,34 @@ do
   MODE_ENV+=("STS_TEST_REPORT_DIR=/usr/src/sts/tests/report/${MODE}")
 
   # -------------------------------------------------------------------------
-  # THE SERVICE FIRST, THEN ITS TOKEN, THEN THE RUNNER (2026-09-09).
+  # THE SERVICE FIRST, THEN ITS CREDENTIALS, THEN THE RUNNER (2026-09-09).
   #
-  # This loop used to be one `up`. It is two now for the reason
-  # mintThePepCredential() is not inside it: a credential that has to be
-  # obtained FROM the service cannot be obtained after the container that
+  # This loop used to be one `up`. It is two because a credential that has to
+  # be obtained FROM the service cannot be obtained after the container that
   # spends it has started, and `--abort-on-container-exit` means the runner
-  # begins the moment compose brings it up.
+  # begins the moment compose brings it up. Both credentials live in the gap:
+  # the PEP's certificate, whose anchor has to be in the truststore before that
+  # container's first handshake, and the management API's token.
   #
   # `up -d sts` starts its dependencies too, so the database comes with it in
   # the two modes that have one.
   # -------------------------------------------------------------------------
+  #
+  # THE MODE'S VARIABLES REACH COMPOSE THROUGH COMPOSE_ENV AND NOT THROUGH
+  # `env`. `docker_compose` is a SHELL FUNCTION — tests/tools/compose.sh — so
+  # `env NAME=value docker_compose ...` asks the kernel to execute a program by
+  # that name and gets `env: 'docker_compose': No such file or directory`, which
+  # is what every mode of this launcher did on its first run. That function
+  # already prefixes COMPOSE_ENV onto the compose command for the `sudo` reason
+  # its own header gives, so a mode has a channel and needs no second one.
+  COMPOSE_ENV=(
+    ${BASE_COMPOSE_ENV[@]+"${BASE_COMPOSE_ENV[@]}"}
+    ${MODE_ENV[@]+"${MODE_ENV[@]}"}
+  )
+
   STACK_UP=1
   MODE_RC=0
-  if ! env "${MODE_ENV[@]}" docker_compose -f "${COMPOSE_FILE}" up -d sts;
+  if ! docker_compose -f "${COMPOSE_FILE}" up -d sts;
   then
     echo "The mock STS would not start in mode ${MODE}. Nothing was run." >&2
     MODE_RC=1
@@ -737,15 +892,47 @@ do
     echo "The mock STS never became healthy in mode ${MODE}. Nothing was" >&2
     echo "run — see the container log captured below." >&2
     MODE_RC=1
-  elif ! mintAdminApiToken;
-  then
-    MODE_RC=1
   else
-    MODE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
-    env "${MODE_ENV[@]}" \
-      docker_compose -f "${COMPOSE_FILE}" up \
+    # THE PEP'S CERTIFICATE FIRST, because the anchor has to be in this
+    # service's truststore before the container that presents it starts — and
+    # the `up` below is what starts it. See the function's header.
+    mintThePepCredential
+
+    # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
+    #
+    # The truststore is a Map in the service's process that ANY job can empty:
+    # `POST /tls/trust/clear` needs no credential, and a job exercising the
+    # truststore is entitled to use it. Nothing noticed until 2026-09-06, when
+    # a client certificate stopped being a turnstile — this container's pull,
+    # its heartbeat and its PIP queries all resolve a VERIFIED chain now, so
+    # one such job left it authenticating as nobody for the rest of the run,
+    # reporting UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor posted
+    # correctly before anything started.
+    #
+    # **THE FIX IS NOT TO STOP OTHER JOBS CLEARING IT.** It is for the job that
+    # DEPENDS on this anchor to re-establish it, which is what every other
+    # credential in that file already does for itself. It travels as TEXT
+    # because the runner container cannot see the directory the PEP mounts.
+    #
+    # Read per mode, because the certificate above is minted per mode.
+    if [ -f "${XACML_PEP_CERT_DIR}/ca.crt" ];
+    then
+      COMPOSE_ENV+=("XACML_PEP_CA_PEM=$(cat "${XACML_PEP_CERT_DIR}/ca.crt")")
+    fi
+
+    if ! mintAdminApiToken;
+    then
+      MODE_RC=1
+    else
+      COMPOSE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
+      docker_compose_bounded "${STS_MODE_TIMEOUT}" -f "${COMPOSE_FILE}" up \
         --abort-on-container-exit --exit-code-from tests
-    MODE_RC=$?
+      MODE_RC=$?
+      if [ "${MODE_RC}" -ge 124 ];
+      then
+        MODE_RC="$(recoverModeVerdict "${MODE}" "${MODE_RC}")"
+      fi
+    fi
   fi
   MODES_RUN+=("${MODE}")
   if [ "${MODE_RC}" -ne 0 ];
@@ -756,9 +943,16 @@ do
 
   captureContainerLogs "${MODE}"
 
-  # Down between every mode INCLUDING the last — see the header.
-  docker_compose -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
-    > /dev/null 2>&1 || true
+  # Down between every mode INCLUDING the last — see the header. Bounded, so
+  # that a stack which will not come down costs the next mode a warning rather
+  # than the whole run's remaining budget.
+  if ! docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
+       -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+       > /dev/null 2>&1;
+  then
+    echo "The stack did not come down cleanly after mode ${MODE}." >&2
+    echo "That is NOT a verdict on the suite — the mode's result above is." >&2
+  fi
   STACK_UP=0
 done
 
