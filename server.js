@@ -305,11 +305,15 @@ function announce() {
            'service implements is listed at /admin/sts-metadata (add ' +
            '?format=json for the machine-readable form, or use the Download ' +
            'button on the page). It is a console page, so it is behind ' +
-           'admin.authRequired like the rest of /admin; it was at ' +
+           'the console gate like the rest of /admin — a sign-on session and ' +
+           'one of two roles, unconditionally since global.mode replaced ' +
+           'admin.authRequired on 2026-09-06; it was at ' +
            '/sts-metadata until 2026-08-24.');
   log.info('The management API is at /admin-api — every /admin control over JSON, with ' +
            'its OpenAPI 3.1 document at /admin-api/openapi.json and an explorer that ' +
-           'calls it at /admin-api/docs. It is NOT protected either.');
+           'calls it at /admin/api-explorer. It takes an OAuth 2.0 access token ' +
+           'audienced to it, carrying admin:read to read and admin:write to ' +
+           'change anything (adminApi.authRequired).');
   log.info('The admin console is at /admin: /admin/metrics counts every call, token, assertion, ' +
            'ticket and session; /admin/tokens lists every JWT, SAML assertion and Kerberos ticket ' +
            'issued and invalidates access tokens, ID Tokens and refresh tokens (only those three ' +
@@ -620,9 +624,20 @@ serviceState.start().then(function (both) {
   // the pool forks anything — see request_pool.js's setServerCertificate() for
   // why it travels this way round, and tls_server.js for what went wrong when
   // each worker made its own.
+  // **THE CHAIN AND THE ANCHOR TRAVEL WITH IT (2026-09-11), AND LEAVING THEM
+  // BEHIND WAS A REAL FAILURE RATHER THAN AN OMISSION.** A worker was handed
+  // the leaf and the key and nothing else, so it had no chain to present and
+  // — worse — `trustAnchorPems()` fell back to asking `common/pki.js` for the
+  // Root, which in a worker is a Root that worker built itself. The certificate
+  // came from the front process and the anchor came from the worker, they were
+  // from different hierarchies, and `/portal` and `/admin` failed their own
+  // back channel with `unable to get local issuer certificate`. Both halves
+  // have to come from the process that made the certificate.
   const tlsMaterial = tlsServer.serverCertificate();
   requestPool.setServerCertificate({ certPem: tlsMaterial.certPem,
-                                     keyPem: tlsMaterial.privateKeyPem });
+                                     keyPem: tlsMaterial.privateKeyPem,
+                                     chainPem: tlsMaterial.chainPem,
+                                     trustAnchorPem: tlsMaterial.trustAnchorPem });
   // AND THE BBS PAIR, for the same reason and on the same channel. Awaited here
   // because generating one is asynchronous and the pool's start() is not the
   // place to wait — see request_pool.js's setBbsKeyPair(). A failure is logged

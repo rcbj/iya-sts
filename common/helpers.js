@@ -379,12 +379,17 @@ function plainKeySet(realmId, stored) {
     realm: realmId,
     createdAt: stored.createdAt || 0,
     privateKeyPem: stored.privateKeyPem,
-    certPem: stored.certPem,
-    certB64: stored.certB64,
     // Already KeyObjects — `keystore.deserialise()` parsed them on the way in.
-    extraKeys: stored.extraKeys || [],
-    kid: kidOf(stored.certB64)
+    extraKeys: stored.extraKeys || []
   };
+  // **THE SAME CERTIFICATE VIEW AS `lazyKeySet()`, AND IT HAS TO BE THE SAME
+  // ONE.** This set is built from what a SIBLING PROCESS sent; the certificate
+  // that should be published is the one this realm's Issuing CA minted, read
+  // from the store every process shares. A set that kept the self-signed
+  // certificate here would make `/oauth2/jwks` answer a different `x5c` — and
+  // a different `kid` — depending on which worker took the request, which is
+  // the defect `sharedFor()`'s header records in its worst form.
+  certifiedView(set, realmId, stored);
   // The parsed RSA key, for makeStsKeys()'s measured reason: parsing the PEM
   // per signature was 21% of non-idle CPU.
   set.privateKey = crypto.createPrivateKey(set.privateKeyPem);
@@ -397,18 +402,163 @@ function plainKeySet(realmId, stored) {
   return set;
 }
 
+// ===========================================================================
+// THE CERTIFICATE A KEY SET PUBLISHES (2026-09-11).
+//
+// `makeStsKeys()` above is UNCHANGED and still gives every key set a
+// self-signed certificate at the moment it is generated. What changed is which
+// certificate is PUBLISHED: once `common/pki.js` has certified the key under
+// this realm's JOSE Issuing CA, that is the one — so `/sts/cert`, the SAML
+// metadata, the `x5c` on a JWKS entry and everything else that shows a
+// certificate show one that chains to the service Root.
+//
+// **THE SELF-SIGNED ONE IS KEPT AND IS NOT DEAD CODE.** It is what a key set
+// carries in the window between being generated and being certified, what it
+// carries for ever when `pki.autoBuild` is off, and what it falls back to if
+// the hierarchy could not be built — and `pki.start()` deliberately does not
+// stop the service when that happens.
+//
+// **AND THE `kid` DOES NOT FOLLOW IT. IT STAYS WHAT IT ALWAYS WAS.**
+//
+// That was the other way round for an hour and the reasoning is worth keeping,
+// because the obvious answer is the wrong one. `kidOf()` hashes a certificate,
+// so the tempting move is to recompute the kid whenever the published
+// certificate changes — and that makes the kid MOVE at the moment a key is
+// certified. Before the listener binds that is harmless; for a realm created
+// at runtime, whose keys are made lazily on first use, it is a window in which
+// a token can be minted under a name that afterwards belongs to nothing.
+//
+// A `kid` names the KEY. It is derived from the self-signed certificate this
+// key set was born with, which is itself derived from the key and never
+// changes for the life of that key — so the kid is stable from the instant the
+// key exists, the window closes completely, and "keep the startup key
+// generation the same by default" stays literally true: the `kid` a client
+// sees is byte for byte the one it saw before any of this existed.
+//
+// Nothing can observe the difference. RFC 7517 section 4.5 makes `kid` a HINT
+// with no structure, so a name whose derivation mentions a document that is no
+// longer published is a name — and the alternative is a name that moves.
+// ===========================================================================
+// Schedule the certification of a key set that has just been generated. It is
+// a function of its own so that the `require` stays lazy — see
+// `certifiedView()` — and so that the fire-and-forget is written down once
+// rather than at each of the three places a key set is built.
+function certifyLater(realmId, keys) {
+  setImmediate(function () {
+    let pki = null;
+    try {
+      pki = require('./pki');
+    } catch (e) {
+      // No certificate authority in this process. The key set keeps the
+      // self-signed certificate it was born with, which is what this service
+      // did before the hierarchy existed.
+      return;
+    }
+    Promise.resolve(pki.certifyKeySet(realmId, keys)).then(function (done) {
+      if (done && !done.ok && (done.errors || []).length) {
+        log.debug('The "' + realmId + '" realm\'s keys were not certified: ' +
+                  done.errors.join(' '));
+      }
+    }).catch(function (e) {
+      log.error('The "' + realmId + '" realm\'s signing keys could not be ' +
+                'certified under its Issuing CAs: ' + e.message + '. They ' +
+                'still SIGN — what they lack is a certificate chaining to ' +
+                'this service\'s Root.');
+    });
+  });
+}
+
+function certifiedView(set, realmId, stored) {
+  // The certificate this key set was BORN with, captured before the getters
+  // below are installed — they fall back to it, and reading it off the object
+  // they are being defined on would recurse.
+  const selfSignedPem = stored.certPem;
+  const selfSignedB64 = stored.certB64;
+  const published = function () {
+    // `pki.js` is required lazily HERE and not at the top of this file, and it
+    // is the one require in helpers.js that is: that module requires
+    // `keystore.js`, which this file also requires, and hoisting it would put
+    // a certificate authority in the load path of every in-process caller of
+    // helpers — the parent project's Kerberos jobs among them — for a
+    // certificate most of them never look at.
+    let held = null;
+    try {
+      held = require('./pki').publishedCertificateFor(realmId, 'jose', 'RS256');
+    } catch (e) {
+      // The hierarchy is not built, or could not be read. The self-signed
+      // certificate below is the honest answer and the service goes on
+      // exactly as it did before this existed.
+      held = null;
+    }
+    return held;
+  };
+  Object.defineProperty(set, 'certPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      const held = published();
+      return held ? held.certificatePem : selfSignedPem;
+    }
+  });
+  Object.defineProperty(set, 'certB64', {
+    enumerable: true, configurable: true,
+    get: function () {
+      const held = published();
+      return held ? stsCrypto.stripPem(held.certificatePem) : selfSignedB64;
+    }
+  });
+  // The chain UNDER the published certificate — the Issuing CA and the
+  // Intermediate, leaf-first and without the Root. Empty where the key is
+  // self-signed, which is what makes "is this key certified" answerable
+  // without asking the store a second time.
+  Object.defineProperty(set, 'certChainPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      const held = published();
+      return held ? held.chainPem.slice() : [];
+    }
+  });
+  // A PLAIN VALUE, computed once from the self-signed certificate — see the
+  // header. It is assigned rather than left alone because two of the three
+  // callers used to set it themselves and one of them (`makeStsKeys()`'s own
+  // return) already has it; assigning it here makes all three agree by
+  // construction.
+  set.kid = kidOf(selfSignedB64);
+  // **THE SELF-SIGNED CERTIFICATE IS STILL REACHABLE**, and one caller needs
+  // it: `/admin/keys` reports what a key was born with beside what it now
+  // publishes, because "this key is certified" is a claim a reader should be
+  // able to check rather than take.
+  set.selfSignedCertPem = selfSignedPem;
+  // **AND THE BASE64 OF IT, WHICH IS WHAT `keystore.serialise()` WRITES DOWN
+  // (2026-09-11).** It is the same value the getter above answers before this
+  // key is certified, and the whole point is that it goes on answering the
+  // same thing afterwards: a SERIALISED key set is identified by its
+  // certificate in two places — `publishShared()`'s enrichment test and the
+  // `kid` a restored set derives — and both of those are about the KEY, which
+  // does not change when a certificate is issued over it.
+  //
+  // Reading `certB64` there instead was a real defect and not a tidiness
+  // point. Once `pki.js` certified a realm's keys the getter started answering
+  // the CERTIFIED certificate, so a second publish of the same key set no
+  // longer matched the blob already held — which made the post-quantum
+  // enrichment look like a different key set every time. It was refused every
+  // time, and every process in a dispatched service went on signing ML-DSA and
+  // SLH-DSA with eleven keys of its own while publishing somebody else's JWKS.
+  set.selfSignedCertB64 = selfSignedB64;
+  return set;
+}
+
 function lazyKeySet(realmId, stored) {
   log.debug("Entering lazyKeySet(). realm=" + realmId);
   const set = {
     realm: realmId,
     createdAt: stored.createdAt || 0,
-    certPem: stored.certPem,
-    certB64: stored.certB64,
-    // The `kid` is DERIVED rather than stored — see makeStsKeys() — so it is
-    // recomputed here from the certificate exactly as it was computed the first
-    // time. Storing it would be storing a derived value, which is how a store
-    // comes to disagree with itself after a change to the derivation.
-    kid: kidOf(stored.certB64),
+    // `certPem`, `certB64` and `kid` are GETTERS, installed by
+    // `certifiedView()` above: the certificate this key set publishes is the
+    // one `common/pki.js` issued for it where there is one, and the
+    // self-signed one it was born with where there is not. The `kid` is
+    // DERIVED from whichever that is — see makeStsKeys() — so storing it would
+    // be storing a derived value, which is how a store comes to disagree with
+    // itself after a change to the derivation.
     extraKeys: (stored.extraKeys || []).map(function (one) {
       const kid = one.publicJwk && one.publicJwk.kid;
       const entry = { alg: one.alg, publicJwk: one.publicJwk };
@@ -453,6 +603,7 @@ function lazyKeySet(realmId, stored) {
       return held.privateKey;
     }
   });
+  certifiedView(set, realmId, stored);
   log.debug("Leaving lazyKeySet(). " + set.extraKeys.length + " curve key(s).");
   return set;
 }
@@ -574,6 +725,34 @@ const stsKeysFor = realms.keyed(function (realm) {
   // ---------------------------------------------------------------------
   keys.privateKey = crypto.createPrivateKey(keys.privateKeyPem);
   keys.realm = realm.id;
+  // **AND THE CERTIFICATE VIEW, WHICH THIS PATH NEEDS MOST.** The two branches
+  // above build their sets through `lazyKeySet()` and `plainKeySet()` and get
+  // it there; this one is the DEVELOPMENT-MODE path and therefore the default,
+  // so a set returned raw here would be the one most deployments actually use
+  // — publishing the self-signed certificate for ever while the hierarchy sat
+  // beside it, certified and unread. The self-signed pair is SNAPSHOT first,
+  // because the getters fall back to it and reading it off the object they are
+  // being defined on would recurse.
+  certifiedView(keys, realm.id,
+                { certPem: keys.certPem, certB64: keys.certB64 });
+  // ---------------------------------------------------------------------
+  // AND CERTIFY IT UNDER THIS REALM'S OWN ISSUING CAs — ASYNCHRONOUSLY, AND
+  // DELIBERATELY NOT AWAITED (2026-09-11).
+  //
+  // This is a PROPERTY READ, so there is nothing here that can await eight
+  // signatures. It is the same shape as the `keystore.remember()` call below
+  // it and for the same reason: the work is scheduled, a failure is logged
+  // loudly by the module that does it, and nothing is thrown out of whichever
+  // request happened to be the first to touch this realm.
+  //
+  // **NOTHING WAITS ON IT, WHICH IS WHAT MAKES IT SAFE.** The `kid` is already
+  // final — it names the key and not the certificate, see `certifiedView()` —
+  // and until the certificates land this key set publishes the self-signed
+  // certificate it was born with, which is what this service published for its
+  // whole life until today. The default realm never takes this path at all:
+  // `pki.start()` certifies it before the listener binds.
+  // ---------------------------------------------------------------------
+  certifyLater(realm.id, keys);
   log.info('A signing key was generated for the "' + realm.id + '" realm: kid=' +
            keys.kid + '.');
   // WRITE IT DOWN, where the keystore is in use. A no-op in development mode.

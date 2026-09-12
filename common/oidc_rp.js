@@ -147,10 +147,36 @@ const authn = require('../authn/authn');
 // the console, which is what makes them two applications rather than one wearing
 // two paths.
 //
-// `realm` is which realm the flow runs in, and the two answers differ for the
-// reason `applications.js`'s `realmScope` rows argue: the console's gate accepts
-// the DEFAULT realm's session in every realm, so its flow runs there; the portal
-// reads the ambient realm's session, so its flow runs wherever it was reached.
+// **A SURFACE HAS TWO REALMS AND THEY ARE NOT THE SAME QUESTION (2026-09-11).**
+// It had one — `realm`, meaning both — and that one answer is what stopped these
+// two surfaces from sharing a sign-on session anywhere but the default realm.
+//
+// `flowRealm` is where the AUTHORIZATION CODE FLOW runs: which
+// `/oauth2/authorize` the browser is sent to, which `/oauth2/token` the code is
+// redeemed at, and therefore **which realm's sign-on session the authorization
+// endpoint is able to answer out of**. It is `ambient` for both, because that is
+// the whole of single sign-on between them: a person who signed in at
+// `/realm/acme/portal` and then opens `/realm/acme/admin` is answered out of the
+// session they already have, and the sign-in screen is never reached. The
+// console's used to be `default` wherever it was reached, which meant the two
+// surfaces authenticated against two different partitions of `authn.js`'s
+// session store and neither endpoint could see the other's — two sign-ins, in
+// both directions, for one person in one browser.
+//
+// `sessionRealm` is where the surface's OWN session lives, and the console's is
+// still `default` whatever realm it was reached in. That is what `admin.js`
+// calls "sign in once, in one realm, read every realm": one console session,
+// found by the gate from every realm, with the ROLE checked against the default
+// realm's `ou=groups` — so who may administer this service is still decided in
+// one place and a realm nobody could create cannot make anybody an
+// administrator. Moving it to the ambient realm would have bought cross-surface
+// single sign-on by taking the realm switcher away.
+//
+// The consequence is the one thing worth knowing before reading further: **a
+// console session's PARENT lives in a different realm's partition from the
+// session itself**, whenever the console is reached in a realm. `authn.js`
+// carries `derivedFromRealm` for exactly that, and the cascade that ends a
+// derived session with its sign-on session reaches across.
 // ---------------------------------------------------------------------------
 const SURFACES = {
   admin: {
@@ -159,7 +185,8 @@ const SURFACES = {
     label: 'Admin console',
     callbackPath: '/admin/callback',
     cookie: 'sts_mock_admin',
-    realm: 'default',
+    flowRealm: 'ambient',
+    sessionRealm: 'default',
     scopes: ['openid', 'profile', 'email']
   },
   portal: {
@@ -168,7 +195,8 @@ const SURFACES = {
     label: 'User portal',
     callbackPath: '/portal/callback',
     cookie: 'sts_mock_portal',
-    realm: 'ambient',
+    flowRealm: 'ambient',
+    sessionRealm: 'ambient',
     scopes: ['openid', 'profile', 'email']
   }
 };
@@ -215,15 +243,32 @@ function surfaceOf(id) {
   return surface;
 }
 
-// Run `fn` in the realm this surface's flow belongs to. The console's is always
-// the default realm — its gate accepts that realm's session and no other, so a
-// flow run in `acme` would mint a session the gate then refuses, which reads as
-// a sign-in that silently did nothing.
-function inRealmFor(surface, fn) {
-  if (surface.realm === 'default') {
+// Run `fn` in the realm this surface's CODE FLOW belongs to — the authorization
+// request, the token request, the JWKS fetch and the flow record that joins
+// them. Both surfaces answer `ambient` today; the branch stays because the field
+// is what makes the decision readable, and a surface added later may want the
+// other answer.
+function inFlowRealm(surface, fn) {
+  if (surface.flowRealm === 'default') {
     return realms.run(realms.DEFAULT_REALM, fn);
   }
   return fn();
+}
+
+// Run `fn` in the realm this surface's OWN SESSION belongs to. The console's is
+// always the default realm, so that one console session is found by the gate
+// from every realm; the portal's is the realm it was reached in, because a
+// person in `acme` is a different person from the one in the default realm.
+function inSessionRealm(surface, fn) {
+  if (surface.sessionRealm === 'default') {
+    return realms.run(realms.DEFAULT_REALM, fn);
+  }
+  return fn();
+}
+
+// The id of that realm, for the readers that take one rather than running in it.
+function sessionRealmIdOf(surface) {
+  return surface.sessionRealm === 'default' ? realms.DEFAULT_ID : realms.currentId();
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +423,40 @@ function safeReturnTo(value, fallback) {
 }
 
 // ---------------------------------------------------------------------------
+// AND IT COMES BACK INTO THE REALM IT LEFT FROM (2026-09-11).
+//
+// A `Location` header is not markup, so `app.js`'s HTML rewrite — which is what
+// carries the console's several hundred hand-written links into a realm — never
+// sees it. Two callers pass a return address and they were paying that
+// differently by accident: the console passes `req.originalUrl`, which still
+// carries the prefix, and the portal passes the CONSTANT `/portal`. So a person
+// signing in at `/realm/acme/portal` completed the flow in acme, was handed a
+// session in acme, and was then redirected to the DEFAULT realm's portal — which
+// correctly has no session for them, and asks them to sign in again. The
+// symptom is a sign-in that works and then immediately asks again, with nothing
+// in the flow having failed.
+//
+// It is fixed HERE rather than at the seven `requireSignIn()` call sites,
+// because a prefix somebody has to remember to add is a prefix that will be
+// missing from the eighth. It is IDEMPOTENT for the same reason — the console's
+// address already carries the prefix, and a caller should not have to know which
+// kind it is holding.
+//
+// The default realm's prefix is empty, so this is inert there: the bytes of
+// every redirect in a service with no realms defined are untouched.
+// ---------------------------------------------------------------------------
+function inThisRealm(path) {
+  const prefix = realms.currentPrefix();
+  if (!prefix) {
+    return path;
+  }
+  if (path === prefix || path.indexOf(prefix + '/') === 0) {
+    return path;
+  }
+  return prefix + path;
+}
+
+// ---------------------------------------------------------------------------
 // THE BACK CHANNEL.
 //
 // One function for both calls it makes, because they differ only in the method
@@ -392,7 +471,16 @@ function backChannel(options) {
     let anchor = null;
     if (useHttps) {
       try {
-        anchor = require('../tls/tls_server').serverCertificate().certPem;
+        // **THE ANCHOR AND NOT THE CERTIFICATE.** Since 2026-09-11 this
+        // listener's certificate is a LEAF of this service's own Root, so
+        // pinning it puts a certified certificate in a truststore and no
+        // path terminates there — `unable to get local issuer certificate`,
+        // reported by the console as *Signing in did not complete*, which is
+        // this flow correctly describing a token request that never got a
+        // connection. `trustAnchorPems()` answers the Root while there is
+        // one and the self-signed certificate while there is not, so this
+        // call site does not have to know which.
+        anchor = require('../tls/tls_server').serverCertificate().trustAnchorPem;
       } catch (e) {
         log.debug('Leaving backChannel(). No server certificate: ' + e.message);
         resolve({ ok: false,
@@ -611,7 +699,7 @@ function beginSignIn(req, res, surfaceId, options) {
   log.debug('Entering beginSignIn(). surface=' + surfaceId);
   const surface = surfaceOf(surfaceId);
   const opts = options || {};
-  return inRealmFor(surface, function () {
+  return inFlowRealm(surface, function () {
     const found = clientOf(surface);
     if (!found.ok) {
       log.error('oidc_rp: the ' + surface.label + ' cannot start a sign-in. ' +
@@ -653,7 +741,7 @@ function beginSignIn(req, res, surfaceId, options) {
       verifier: pkce.verifier,
       redirectUri: redirectUri,
       issuer: null,
-      returnTo: safeReturnTo(opts.returnTo, opts.fallback || '/'),
+      returnTo: inThisRealm(safeReturnTo(opts.returnTo, opts.fallback || '/')),
       startedAt: Date.now()
     });
 
@@ -727,7 +815,7 @@ async function handleCallback(req, res, surfaceId) {
                   'browser here and not by being opened directly.' };
   }
 
-  return inRealmFor(surface, async function () {
+  return inFlowRealm(surface, async function () {
     const flow = flows.get(state);
     // SPENT ON SIGHT, whatever happens next. A state is single use: the second
     // presentation of one is either a browser reloading a page it should not
@@ -877,11 +965,24 @@ async function handleCallback(req, res, surfaceId) {
     }
 
     // ---------------------------------------------------------------------
-    // AND THE SESSION. `sid` is what joins it to the sign-on session the
-    // authorization endpoint answered out of — see startRelyingPartySession(),
-    // where the cascade that ends one with the other is argued.
+    // AND THE SESSION, WHICH IS NOT ALWAYS IN THE REALM THE FLOW JUST RAN IN.
+    //
+    // The flow ran in the AMBIENT realm — that is what made the sign-on session
+    // it was answered out of the same one the other surface reached — and the
+    // console's own session lives in the DEFAULT realm's partition wherever it
+    // was reached, because that is what lets one console session read every
+    // realm. So the two are stated separately rather than both being "here":
+    // `parentRealm` says where the sign-on session named by `sid` lives, and
+    // `inSessionRealm()` says where this session is created.
+    //
+    // `sid` is what joins them — see startRelyingPartySession(), where the
+    // cascade that ends a derived session with its sign-on session is argued and
+    // where the parent is now looked up in the realm named here rather than
+    // assumed to be in its own.
     // ---------------------------------------------------------------------
-    const session = authn.startRelyingPartySession({
+    const parentRealm = realms.currentId();
+    const session = inSessionRealm(surface, function () {
+      return authn.startRelyingPartySession({
       res: res,
       username: username,
       claims: claims,
@@ -895,7 +996,13 @@ async function handleCallback(req, res, surfaceId) {
       surface: surface.id,
       label: surface.label,
       clientId: surface.clientId,
-      cookie: surface.cookie
+      cookie: surface.cookie,
+      // WHERE THE PARENT LIVES. Absent means "the same realm as this session",
+      // which is what every session made before 2026-09-11 meant and what the
+      // portal still means; the console says `acme` while being created in the
+      // default realm's partition.
+      parentRealm: parentRealm
+      });
     });
     log.info('oidc_rp: ' + username + ' completed the authorization code flow ' +
              'for the ' + surface.label + ' and holds session ' + session.id +
@@ -911,9 +1018,8 @@ async function handleCallback(req, res, surfaceId) {
 // ---------------------------------------------------------------------------
 function sessionFor(req, surfaceId) {
   const surface = surfaceOf(surfaceId);
-  return authn.relyingPartySessionOf(
-    req, surface.cookie,
-    surface.realm === 'default' ? realms.DEFAULT_ID : undefined);
+  return authn.relyingPartySessionOf(req, surface.cookie,
+                                     sessionRealmIdOf(surface));
 }
 
 // Ending one. The surface's own cookie is cleared and the session goes through
@@ -924,7 +1030,7 @@ function endSessionFor(req, res, surfaceId, via) {
   const surface = surfaceOf(surfaceId);
   const session = sessionFor(req, surfaceId);
   if (session) {
-    inRealmFor(surface, function () {
+    inSessionRealm(surface, function () {
       authn.endSessionById(session.id, via || 'the ' + surface.label);
     });
   }

@@ -258,12 +258,41 @@ async function register(options) {
   if (answer.status !== 200 && answer.status !== 201) {
     const why = (answer.body && answer.body.error_description) ||
                 answer.text || ('the PDP answered ' + answer.status);
+    // ---------------------------------------------------------------------
+    // WHAT THIS SENTENCE SAID UNTIL IT WAS FIXED, AND WHY IT MATTERED.
+    //
+    // It read "THIS PEP STILL ENFORCES — GET /xacml/pep/policies needs no
+    // credential", which stopped being true on 2026-09-06 when the three
+    // /xacml/pep/* endpoints went behind a verified client certificate
+    // holding REMOTE_PEPS. `xacml-pep/CLAUDE.md` recorded that correction for
+    // its prose and this string was missed — so an operator whose certificate
+    // was missing or unrecognised was told, on the same `GET /` page whose
+    // `holding.lastPullWhy` carried the PDP's 403 about REMOTE_PEPS, that the
+    // pull needed no credential. The one place the two disagreed was the one
+    // place somebody was reading to find out which it was.
+    //
+    // **REGISTERING IS STILL NOT WHAT LETS THIS PEP DECIDE**, and that half
+    // is unchanged: it buys a row on the PDP's console and an address for the
+    // nudge. What is no longer safe to say is anything about the PULL, and
+    // the reason is that this branch covers refusals that need OPPOSITE
+    // readings — 401 and 403 are the credential, and the pull is refused too;
+    // 400 (the register is full, the name is taken) and 501 (remote PEPs are
+    // turned off on that service) leave a credentialed PEP pulling and
+    // enforcing perfectly. So it names both and points at the one field that
+    // answers it for this deployment rather than guessing.
+    // ---------------------------------------------------------------------
     registration = { registered: false, name: options.name, attempts: attempts,
                      why: 'The PDP refused the registration (' +
-                          answer.status + '): ' + why + ' THIS PEP STILL ' +
-                          'ENFORCES — GET /xacml/pep/policies needs no ' +
-                          'credential. It is retried on every poll (attempt ' +
-                          attempts + ').' };
+                          answer.status + '): ' + why + ' Registering buys a ' +
+                          'row on the PDP console and an address for the ' +
+                          'nudge, not the ability to decide — but the PULL ' +
+                          'needs the same credential, since GET ' +
+                          '/xacml/pep/policies requires the REMOTE_PEPS ' +
+                          'role. So a refusal about a certificate or that ' +
+                          'role will have refused the pull as well, and one ' +
+                          'about anything else will not: holding.lastPullWhy ' +
+                          'is what says which happened here. It is retried ' +
+                          'on every poll (attempt ' + attempts + ').' };
     complain('xacml-pep: ' + registration.why);
     log.debug('Leaving register(). Refused.');
     return registration;

@@ -216,19 +216,48 @@ function description(req) {
           'the middle. Set global.https to serve it over TLS.'
     },
     authorities: {
+      // WHERE THE AUTHORITY CAME FROM, first, because it decides what every
+      // other field here means — see `spiffe_ca.js`'s `state()`.
+      source: state.authoritySource,
+      realm: state.realm,
       x509: state.x509Authorities.map(function (authority) {
         return { id: authority.id, active: authority.active,
+                 source: authority.source,
                  keyType: authority.keyType, subject: authority.subject,
                  notAfter: authority.notAfter };
       }),
+      // WHAT SIGNS an SVID and WHAT A CONSUMER TRUSTS are two lists now and
+      // this document has to publish both: the bundle carries the second, and
+      // a reader with only the first cannot tell what to install.
+      trustAnchors: state.trustAnchors.map(function (anchor) {
+        return { id: anchor.id, source: anchor.source, subject: anchor.subject,
+                 notAfter: anchor.notAfter };
+      }),
+      // The certificates that travel WITH an SVID, between the leaf and the
+      // anchor. Empty on the self-signed path.
+      chainSubjects: state.chainSubjects.slice(),
       jwt: state.jwtAuthorities.map(function (authority) {
         return { kid: authority.id, active: authority.active,
                  keyType: authority.keyType, alg: authority.alg };
       }),
-      note: 'Generated per start and held in memory, exactly like the STS ' +
-            'signing key and the TLS certificate. A workload holding a bundle ' +
-            'from before a restart will fail to verify every SVID minted ' +
-            'after it.'
+      note: state.authoritySource === 'pki'
+        ? 'The X.509 authority is this realm\'s SPIFFE Issuing CA under this ' +
+          'service\'s own Root CA — see /admin/pki — so the trust anchor a ' +
+          'consumer installs is that Root, which every realm shares and which ' +
+          'also covers 8443, 9443, LDAPS 636, the main port and every token ' +
+          'this service signs. An SVID carries the Issuing CA and this ' +
+          'realm\'s Intermediate in its own chain. In DEVELOPMENT mode the ' +
+          'Root is generated per start like every other key here; in PRODUCT ' +
+          'mode the keystore keeps it, so a bundle survives a restart. The ' +
+          'JWT authority has no certificate and is generated per start in ' +
+          'either mode.'
+        : 'This realm has NO certificate authority, so the X.509 authority is ' +
+          'SELF-SIGNED and IS the trust anchor — generated per start and held ' +
+          'in memory, exactly like the STS signing key and the TLS ' +
+          'certificate. A workload holding a bundle from before a restart ' +
+          'will fail to verify every SVID minted after it. Build the realm\'s ' +
+          'certificate authority on /admin/pki to put this authority under ' +
+          'this service\'s Root instead.'
     },
     workloadApi: {
       service: 'SpiffeWorkloadAPI',
@@ -286,8 +315,8 @@ function description(req) {
       'Workload Endpoint specification says the endpoint "MUST NOT require ' +
       'any direct authentication of its clients" and that "Transport Layer ' +
       'Security MUST NOT be required" — a workload has no root of trust until ' +
-      'this call gives it one. So spiffe.authRequired deliberately does not ' +
-      'reach this surface.',
+      'this call gives it one. So the mutual TLS the SPIRE Server API requires ' +
+      'deliberately does not reach this surface, and no mode changes that.',
       'NOTHING VERIFIES AN ASSERTED SELECTOR. With ' +
       'spiffe.acceptAssertedSelectors on, a Workload API caller may send its ' +
       'own selectors in a metadata header and they are matched as though ' +
@@ -317,7 +346,7 @@ function description(req) {
       'never as a check this service makes.'
     ].concat(auth.authRequired() ? [] : [
       'AND, RIGHT NOW, NOTHING ON THE SPIRE SERVER API EITHER. ' +
-      'spiffe.authRequired is OFF, so that port is plain gRPC, no caller is ' +
+      'Authentication is off there, so that port is plain gRPC, no caller is ' +
       'identified, the per-method table below is not applied, and anybody who ' +
       'can reach it can create a registration entry granting any identity in ' +
       'this trust domain and then collect an SVID for it. The `admin` and ' +
@@ -342,7 +371,7 @@ function description(req) {
       'domain whose key verified it.',
       'A registration entry whose SPIFFE ID is invalid, belongs to another ' +
       'trust domain, or sits under the reserved /spire path.',
-      'AttestAgent for a banned agent, and — with spiffe.authRequired on — a ' +
+      'AttestAgent for a banned agent, and a ' +
       'join token this server did not mint, one that has expired, one ' +
       'presented twice, and one minted for a named agent and presented by ' +
       'another. A join token is the one attestation payload here this ' +
@@ -358,9 +387,10 @@ function description(req) {
       'one signed, one outside its validity window (spiffe.clockSkew), one ' +
       'with no URI subjectAltName, one with several, and one whose SPIFFE ID ' +
       'names a different trust domain from the authority that signed it.',
-      'RenewAgent for a caller that is not the agent it would renew — which ' +
-      'with spiffe.authRequired off is every caller, so the method answers ' +
-      'Unimplemented in that mode with the reason it used to give always.',
+      'RenewAgent for a caller that is not the agent it would renew — which, ' +
+      'on a port where nothing identifies a caller, is every caller, so the ' +
+      'method answers Unimplemented there with the reason it used to give ' +
+      'always.',
       'Appending an authority to this trust domain\'s own bundle, which would ' +
       'publish a signing key nothing here holds.',
       'RefreshBundle, which would have this service fetch a URL somebody ' +
@@ -487,10 +517,10 @@ function page(document) {
         'is deliberately untouched by this: its specification says a client ' +
         'MUST NOT be required to authenticate.'
       : '<strong>And the SPIRE Server API is not authenticating anybody ' +
-        'either, because <code>spiffe.authRequired</code> is off.</strong> ' +
+        'either.</strong> ' +
         'That port is plain gRPC and anybody who can reach it can create a ' +
         'registration entry granting any identity here and then collect an ' +
-        'SVID for it. Turn the setting on — it needs a restart, because it ' +
+        'SVID for it. Restart with it on — the socket is bound once, because it ' +
         'decides how the socket is bound — to get the behaviour of a real ' +
         'spire-server.') +
     '</p>' +
@@ -508,6 +538,12 @@ function page(document) {
     esc(document.bundle.schemeNote) + '</p>' +
 
     '<h2>The trust domain\'s authorities</h2>' +
+    // **THE TABLE ANSWERS "WHAT SIGNS" AND THE ONE BELOW IT ANSWERS "WHAT DO
+    // I TRUST".** They were one table until 2026-09-11, because a self-signed
+    // authority is both. Merging them again would be the single most
+    // misleading thing this page could do about key material: a reader who
+    // installed the SPIFFE Issuing CA as an anchor would have something that
+    // works until the first rotation and then stops, with no error naming it.
     '<table><tr><th>Kind</th><th>Id</th><th>Key</th><th>State</th></tr>' +
     document.authorities.x509.map(function (a) {
       return '<tr><td>X.509</td><td><code>' + esc(a.id) + '</code></td><td>' +
@@ -520,7 +556,22 @@ function page(document) {
         (a.active ? 'active' : 'retired, still published') + '</td></tr>';
     }).join('') +
     '</table>' +
-    '<p class="note">' + esc(document.authorities.note) + '</p>' +
+    (document.authorities.chainSubjects.length
+      ? '<p>An X509-SVID travels with its chain: ' +
+        document.authorities.chainSubjects.map(function (subject) {
+          return '<code>' + esc(subject) + '</code>';
+        }).join(' &rarr; ') + '. The anchor below is NOT sent with it — it is ' +
+        'what the bundle publishes.</p>'
+      : '') +
+    '<h3>What a consumer trusts</h3>' +
+    '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
+    document.authorities.trustAnchors.map(function (a) {
+      return '<tr><td><code>' + esc(a.id) + '</code></td><td>' +
+        esc(a.subject) + '</td><td>' + esc(a.notAfter) + '</td></tr>';
+    }).join('') +
+    '</table>' +
+    '<p class="' + (document.authorities.source === 'pki' ? 'note' : 'warn') +
+    '">' + esc(document.authorities.note) + '</p>' +
 
     '<h2>The Workload API</h2>' +
     '<table><tr><th>Address</th><th>State</th><th>What a caller presents</th></tr>' +
@@ -664,9 +715,9 @@ async function bindAll(server, surface) {
   //                                  the private socket a real `spire-server`
   //                                  CLI uses, whose access control is the
   //                                  filesystem.
-  //   SPIRE Server API, TCP          MUTUAL TLS when `spiffe.authRequired` is
-  //                                  on, which is the default, and plain when
-  //                                  it is not.
+  //   SPIRE Server API, TCP          MUTUAL TLS, always, since
+  //                                  `spiffe.authRequired` was removed on
+  //                                  2026-09-06.
   //
   // That last line is the one that changes what an existing caller sees, which
   // is why the setting is RESTART-ONLY: a flag that was runtime for its checks
@@ -718,7 +769,7 @@ async function bindAll(server, surface) {
           ? 'Mutual TLS. Verify this server against the trust bundle, present ' +
             'your own X509-SVID, and expect to be authorized per method.'
           : (surface === 'server'
-              ? 'None — spiffe.authRequired is off, so this port is plain ' +
+              ? 'None — authentication is off, so this port is plain ' +
                 'gRPC and every method is open to everybody.'
               : 'None, and there must be none: the Workload Endpoint ' +
                 'specification forbids requiring one. The deployment secures ' +

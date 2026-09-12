@@ -154,6 +154,16 @@ const audit = require('./audit');
 // requiring a role nobody holds.
 const roles = require('./roles');
 
+// THE KEY-ENCRYPTION KEY, for the one attribute in this table that is a PRIVATE
+// KEY (2026-09-10). It is a LIBRARY and registers nothing, and it requires
+// `config`, `crypto`, `mode`, `realms` and `secrets` — none of which requires
+// this file — so this cannot close a cycle and cannot move a route. It is the
+// SAME module `common/keystore.js` seals this service's own signing keys and
+// `common/pki.js`'s certificate authority hierarchy with, and the same one
+// `common/credentials.js` seals an authenticator's shared secret with. See
+// SEALED_FIELDS below for why an application's issued signing key joins them.
+const keystore = require('./keystore');
+
 // ---------------------------------------------------------------------------
 // THE KINDS. One per way an application can present itself to this service.
 //
@@ -549,6 +559,51 @@ const SCHEMA = {
       what: 'What to call it on a page. A registration supplies one; otherwise the ' +
             'identifier is the name, because inventing a friendly name for an opaque id ' +
             'would be inventing a fact.' },
+    // ---------------------------------------------------------------------
+    // WHERE THIS APPLICATION LIVES, added 2026-09-10 for /portal/applications.
+    //
+    // That page lists the applications a person may be signed in to, and until
+    // this attribute existed it named them without being able to say where any
+    // of them was. A name and a client_id are not somewhere you can go.
+    //
+    // **IT IS DECLARED AND IS NEVER DERIVED, WHICH IS THE WHOLE OF THE
+    // DECISION.** The first attempt computed an address from the redirect URIs
+    // already on the entry — take the ORIGIN of the first http(s) one — and it
+    // was rejected because a redirect URI is a CALLBACK: a browser sent to one
+    // carrying none of the parameters it exists to receive gets an error from
+    // the application rather than its front door, and the origin above it is a
+    // GUESS that is wrong for every application served under a path. A page
+    // that guesses is a page whose links are right often enough that nobody
+    // checks them. So this is a fact somebody states, and where it is absent
+    // the portal draws the row with no link at all and says why.
+    //
+    // **RFC 7591 `client_uri` IS THE SAME FACT and register() writes it here**,
+    // which is what stops this being an attribute only a hand-edited entry ever
+    // carries: that member is defined as "URL string of a web page providing
+    // information about the client", which is exactly the question this answers.
+    // It is `set` rather than `multi` for `appAuthnMechanism`'s reason — an
+    // application has ONE home page, and a list would be a question no page
+    // here has anywhere to ask.
+    //
+    // `labeledURI` (RFC 2079) was the standards-purist alternative and was not
+    // taken: its value is a URI followed by an optional label, so it would need
+    // a grammar and a parser to hold one URL, and it is multi-valued by
+    // definition. An attribute of this registry's own says one thing.
+    //
+    // THE VALUE IS CHECKED WHERE IT IS WRITTEN — http or https and nothing else
+    // — because the one thing this service does with it is put it in an `href`
+    // on a page. See homePageProblem(). `ldapmodify` reaches it like every
+    // other attribute and is not checked, which is why homePageOf() checks
+    // again when it reads.
+    // ---------------------------------------------------------------------
+    { name: 'appHomePageUrl', kind: 'single',
+      from: 'RFC 7591 client_uri, the console, the management API, or by hand',
+      what: 'THE APPLICATION\'S OWN HOME PAGE: where a person goes to reach it, and ' +
+            'therefore where a sign-in to it starts. It is what /portal/applications ' +
+            'links each row to, and an entry without one is drawn there with no link ' +
+            'rather than with a guessed address. DECLARED and never derived — the ' +
+            'redirect URIs beside it are callbacks and not front doors, so nothing ' +
+            'computes this from them. http or https only, because it becomes an href.' },
     { name: 'appKind', kind: 'multi', from: 'every protocol',
       what: 'What this application IS, one value per role it has been seen in. Several ' +
             'is the ordinary case and is the point: an OAuth client that asks for the ' +
@@ -821,6 +876,173 @@ const SCHEMA = {
             'citation attached — the same refusal WS-Federation\'s wreqptr gets. A client that ' +
             'registers only this is told to register `jwks` instead, by name, when it tries to ' +
             'authenticate.' },
+    // -------------------------------------------------------------------
+    // RFC 7521 / RFC 7523 (2026-09-10). SEVEN ATTRIBUTES, and the split
+    // between them is the split between what an OPERATOR says and what this
+    // service ISSUED.
+    //
+    // The first is a DECLARATION and is the whole trust decision: this
+    // application may present assertions under these `iss` values. There is no
+    // permissive reading of it — see `oauth-oidc/assertion_grant.js`, where the
+    // argument is federation's.
+    //
+    // The other six are what a build on /admin/pki wrote here, and they are on
+    // the APPLICATION ENTRY rather than in a store of the PKI module's own for
+    // the reason `applications.js` gives about everything else in this table:
+    // a second store would be a second answer to "what is that client's signing
+    // key", and the second answer would be the one an `ldapsearch` could not
+    // see.
+    // -------------------------------------------------------------------
+    { name: 'oauthAssertionIssuer', kind: 'multi', from: 'by hand',
+      identifier: true,
+      identifierName: 'assertion iss',
+      what: 'THE `iss` VALUES THIS APPLICATION MAY PRESENT IN AN RFC 7523 SECTION 2.1 ' +
+            'AUTHORIZATION GRANT, and it is one of the few DECLARED attributes here that is ' +
+            'READ. A JWT bearer assertion IS the whole authorization — there is no browser, no ' +
+            'password and no consent step in that grant — so accepting one from anybody would ' +
+            'mean anybody who can reach this port getting an access token as anybody. This is ' +
+            'therefore the second feature in this service with no permissive answer available, ' +
+            'beside federation, and `oauth2.jwtBearerRequireRegisteredIssuer` is on by ' +
+            'default.\n\nAn assertion a client issues ABOUT ITSELF names its own client_id as ' +
+            '`iss` and needs no value here: that lookup already succeeds through ' +
+            'oauthClientId, and asking an operator to write the client_id down twice would be ' +
+            'a configuration step with no decision in it. It accumulates, because one ' +
+            'application legitimately asserts under a per-environment issuer name.' },
+    { name: 'oauthAssertionJwks', kind: 'single', from: '/admin/pki',
+      what: 'THE PUBLIC KEYS THIS SERVICE ISSUED THIS APPLICATION, as a JWKS document, each ' +
+            'key carrying `x5c` (its certificate chain) and `x5t#S256`. Written by the Issue ' +
+            'control on /admin/pki and by POST /admin-api/pki/issue.\n\nIt is a SECOND ' +
+            'attribute beside `oauthJwks` and never overwrites it. A client that registered ' +
+            'its own keys and was later issued a pair by an operator has two ways to sign, ' +
+            'both of which somebody deliberately arranged — and writing over the first would ' +
+            'silently end it the moment somebody pressed a button about the second. Both are ' +
+            'read, ORed, by client_auth.js and by assertion_grant.js. Public key material, so ' +
+            'like oauthJwks it is worth nothing to whoever reads this directory.' },
+    { name: 'oauthAssertionCertificate', kind: 'single', from: '/admin/pki',
+      what: 'The leaf certificate, PEM, whose subject is this application and whose issuer is ' +
+            'the realm\'s Issuing CA. The same bytes as the first `x5c` member above, in the ' +
+            'form a person can paste into `openssl x509 -text`.' },
+    { name: 'oauthAssertionCertificateChain', kind: 'single', from: '/admin/pki',
+      what: 'The Issuing CA and the Intermediate CA, PEM, in that order — what a leaf travels ' +
+            'with. The ROOT is deliberately not in it: a root is a trust anchor, and a relying ' +
+            'party that accepted one because it arrived in the chain would be accepting a ' +
+            'certificate that vouched for itself.' },
+    { name: 'oauthAssertionPrivateKey', kind: 'single', from: '/admin/pki',
+      sensitive: true,
+      what: 'THE PRIVATE KEY, PEM. **SEALED AT REST WHEREVER THE KEY-ENCRYPTION KEY OUTLIVES ' +
+            'THE PROCESS** — AES-256-GCM through common/keystore.js, the same mechanism and ' +
+            'the same key that seal this service\'s own signing keys, common/pki.js\'s three ' +
+            'CA key pairs and an authenticator\'s shared secret. So an ldapsearch on TCP 389 ' +
+            'where every bind succeeds, an ldif file, a database row and a backup of either ' +
+            'hold `$aesgcm$…` and not a usable key. The surfaces that come through this module ' +
+            '— /admin/applications and GET /admin-api/applications, both behind a credential — ' +
+            'are handed the PEM, because the seal protects the STORE rather than the console ' +
+            'an operator collects an issued credential from; SEALED_FIELDS argues the split. ' +
+            'In DEVELOPMENT mode it is written in the clear, which is the rule the ' +
+            'authenticator secret beside it follows and for its reason: the key-encryption key ' +
+            'there is ephemeral, so sealing an entry that survives a restart under a key that ' +
+            'does not would make the private half permanent garbage while the certificate came ' +
+            'back. It is never written to the audit log, and this service keeps NO SECOND COPY ' +
+            'of it — common/pki.js hands it over once, at issuance, and forgets it.' },
+    { name: 'oauthAssertionKid', kind: 'single', from: '/admin/pki',
+      what: 'The `kid` of the issued key, derived from the key material as every kid in this ' +
+            'service is (RFC 7638). An assertion naming it in its JWS header narrows the ' +
+            'verification to that key; one naming nothing is tried against every key ' +
+            'registered for this application, which is correct rather than lax.' },
+    { name: 'oauthAssertionExpiresAt', kind: 'single', from: '/admin/pki',
+      what: 'When the issued certificate expires, as a GeneralizedTime. It is a fact about the ' +
+            'CERTIFICATE and not a policy: nothing here refuses an assertion because this date ' +
+            'has passed — what refuses one is the certificate failing to build a path, which ' +
+            'is checked where the chain is checked. Drawn on /admin/pki so that an operator ' +
+            'can see what is about to stop working.' },
+    // -------------------------------------------------------------------
+    // RFC 7522 — THE SAML 2.0 PROFILE OF THE SAME FRAMEWORK (2026-09-11).
+    // SEVEN MORE ATTRIBUTES, AND THE WHOLE POINT OF THEM IS THAT THEY ARE
+    // NOT THE SEVEN ABOVE.
+    //
+    // An application may hold TWO key pairs issued by this realm's
+    // certificate authority — one for RFC 7523 and one for RFC 7522 — and no
+    // code path crosses between the two sets:
+    // `oauth-oidc/saml_assertion_grant.js` never reads an `oauthAssertion*`
+    // attribute and `oauth-oidc/assertion_grant.js` never reads an
+    // `oauthSamlAssertion*` one. So a key pair issued for one profile cannot
+    // sign for the other, and taking one off leaves the other working.
+    //
+    // **THAT SEPARATION IS A DESIGN DECISION RATHER THAN AN ACCIDENT OF
+    // NAMING**, and the reason is that the two profiles verify differently:
+    // a JWT is verified against a JWKS or an x5c chain that reaches this
+    // realm's Root, and a SAML assertion is verified ONLY against a
+    // certificate registered here. One attribute set holding both would make
+    // the second rule unenforceable — the chain path would reach the SAML
+    // certificate too. `oauth-oidc/saml_assertion_grant.js`'s header argues
+    // it at length.
+    //
+    // The first TWO are DECLARED and are what a party registers; the other
+    // five are what an Issue on /admin/pki wrote, and they are the same five
+    // the JWT profile writes with a different spelling of the key handle —
+    // an X.509 key is named by its THUMBPRINT here where a JWS key is named
+    // by its `kid`, because those are the handles the two formats actually
+    // carry.
+    // -------------------------------------------------------------------
+    { name: 'oauthSamlAssertionIssuer', kind: 'multi', from: 'by hand',
+      identifier: true,
+      identifierName: 'SAML assertion Issuer',
+      what: 'THE `<Issuer>` VALUES THIS APPLICATION MAY PRESENT IN AN RFC 7522 SECTION 2.1 ' +
+            'AUTHORIZATION GRANT. It is `oauthAssertionIssuer`\'s sibling for the SAML 2.0 ' +
+            'profile and it is READ for the same reason: a bearer assertion IS the whole ' +
+            'authorization — no browser, no password, no consent step — so accepting one from ' +
+            'anybody would mean anybody who can reach this port getting an access token as ' +
+            'anybody. `oauth2.saml2BearerRequireRegisteredIssuer` is on by ' +
+            'default.\n\nIt is a SEPARATE attribute from the JWT one and not a shared list: a ' +
+            'party trusted to assert in one format has not thereby been trusted to assert in ' +
+            'the other, and an operator who declared an issuer for RFC 7523 must not silently ' +
+            'have declared it for RFC 7522. Compared by Simple String Comparison (RFC 3986 ' +
+            'section 6.2.1), which RFC 7522 section 3 item 1 asks for — no case folding and no ' +
+            'trailing-slash tolerance. It accumulates, for the reason the JWT one does.' },
+    { name: 'oauthSamlAssertionSigningCertificate', kind: 'single', from: 'by hand',
+      what: 'THE CERTIFICATE THIS PARTY SIGNS ITS RFC 7522 ASSERTIONS WITH, PEM, registered by ' +
+            'value. The analogue of `oauthJwks` for a profile whose signatures are XML ' +
+            'Signature rather than JWS — there is no JWKS in SAML, the thing a party registers ' +
+            'IS a certificate.\n\nSeveral PEM blocks may be in one value, because a party ' +
+            'rotating a certificate holds two for as long as assertions signed by the old one ' +
+            'are still in flight. Public key material, so like `oauthJwks` it is worth nothing ' +
+            'to whoever reads this directory.\n\n**A CERTIFICATE ARRIVING IN THE ASSERTION\'S ' +
+            'OWN `<ds:KeyInfo>` IS NOT A SUBSTITUTE FOR THIS.** It is used to choose among what ' +
+            'is registered here and never as a key in its own right, which is where this ' +
+            'profile is stricter than RFC 7523: a chain to this realm\'s Root proves the REALM ' +
+            'issued a key and says nothing about WHICH application holds it, so accepting one ' +
+            'would let an application\'s RFC 7523 leaf sign a SAML assertion.' },
+    { name: 'oauthSamlAssertionCertificate', kind: 'single', from: '/admin/pki',
+      what: 'The leaf certificate this service ISSUED this application for RFC 7522, PEM, ' +
+            'whose subject is the application and whose issuer is the realm\'s Issuing CA. ' +
+            'Written by the Issue control on /admin/pki with the SAML 2.0 purpose chosen, and ' +
+            'by POST /admin-api/pki/issue with `purpose: "saml"`. It is a DIFFERENT ' +
+            'certificate over a DIFFERENT key pair from `oauthAssertionCertificate` beside it, ' +
+            'and its subjectAltName carries the RFC 7522 profile URI so that a certificate ' +
+            'read out of context says which profile it was issued for.' },
+    { name: 'oauthSamlAssertionCertificateChain', kind: 'single', from: '/admin/pki',
+      what: 'The Issuing CA and the Intermediate CA, PEM, in that order — what the leaf above ' +
+            'travels with. The ROOT is deliberately not in it, for the reason the JWT chain ' +
+            'row gives: a relying party that accepted one because it arrived in the chain ' +
+            'would be accepting a certificate that vouched for itself.' },
+    { name: 'oauthSamlAssertionPrivateKey', kind: 'single', from: '/admin/pki',
+      sensitive: true,
+      what: 'THE PRIVATE KEY of the RFC 7522 pair, PEM. **SEALED AT REST WHEREVER THE ' +
+            'KEY-ENCRYPTION KEY OUTLIVES THE PROCESS**, by the same mechanism and under the ' +
+            'same key as `oauthAssertionPrivateKey` beside it — see that row, which argues the ' +
+            'whole of it. This service keeps NO SECOND COPY: common/pki.js hands it over once, ' +
+            'at issuance, and forgets it.' },
+    { name: 'oauthSamlAssertionThumbprint', kind: 'single', from: '/admin/pki',
+      what: 'The SHA-256 thumbprint of the issued certificate, base64url. It is what ' +
+            '`oauthAssertionKid` is for the JWT profile and it is spelt differently because ' +
+            'the two formats carry different handles: a JWS header names a `kid` and an XML ' +
+            'Signature carries the certificate itself, so what matches a presented ' +
+            '<ds:KeyInfo> against what is registered is a thumbprint.' },
+    { name: 'oauthSamlAssertionExpiresAt', kind: 'single', from: '/admin/pki',
+      what: 'When the issued RFC 7522 certificate expires, as a GeneralizedTime. A fact about ' +
+            'the CERTIFICATE and not a policy, exactly as `oauthAssertionExpiresAt` is: ' +
+            'nothing here refuses an assertion because this date has passed. Drawn on ' +
+            '/admin/pki so that an operator can see what is about to stop working.' },
     { name: 'oauthTlsClientAuthSubjectDn', kind: 'single', from: 'by hand',
       identifier: true,
       identifierName: 'subject DN',
@@ -1368,7 +1590,7 @@ const SCHEMA = {
             'presents a token from, or the username it sends in Basic. That surface ' +
             'authenticates its CALLER in any of the six schemes RFC 7644 section 2 names ' +
             'rather than an application identifier, so it writes nothing here; the value is ' +
-            'a declaration, and scim.authRequired is what decides whether a credential is ' +
+            'a declaration, and the SCIM gate is what decides whether a credential is ' +
             'demanded at all.' },
     { name: 'ssfReceiverId', kind: 'multi', from: 'SSF, the console, or by hand',
       identifier: true,
@@ -1609,6 +1831,32 @@ const EDITABLE = {
   oauthTokenEndpointAuthMethod: 'set',
   oauthJwks: 'set',
   oauthJwksUri: 'set',
+  // RFC 7521 / RFC 7523. The declaration is `multi` like every other
+  // identifier attribute here — one application legitimately asserts under a
+  // per-environment issuer name, and a `set` would replace the list with one
+  // value and read afterwards as the others having been forgotten. The six the
+  // PKI page writes are `set`, because each holds ONE answer and a list of two
+  // private keys has no rule for which signs.
+  oauthAssertionIssuer: 'multi',
+  oauthAssertionJwks: 'set',
+  oauthAssertionCertificate: 'set',
+  oauthAssertionCertificateChain: 'set',
+  oauthAssertionPrivateKey: 'set',
+  oauthAssertionKid: 'set',
+  oauthAssertionExpiresAt: 'set',
+  // RFC 7522's seven, the same two kinds for the same two reasons: the
+  // declaration accumulates and the five the PKI page writes each hold ONE
+  // answer. The REGISTERED certificate is `set` and not `multi` because
+  // several PEM blocks go in ONE value — a certificate rotation is two blocks
+  // in one attribute, not two attribute values, so that the whole of what a
+  // party may sign with is replaced in one write.
+  oauthSamlAssertionIssuer: 'multi',
+  oauthSamlAssertionSigningCertificate: 'set',
+  oauthSamlAssertionCertificate: 'set',
+  oauthSamlAssertionCertificateChain: 'set',
+  oauthSamlAssertionPrivateKey: 'set',
+  oauthSamlAssertionThumbprint: 'set',
+  oauthSamlAssertionExpiresAt: 'set',
   oauthTlsClientAuthSubjectDn: 'set',
   oauthTlsClientCertificateThumbprint: 'set',
   oauthConfidential: 'set',
@@ -1687,6 +1935,11 @@ const EDITABLE = {
   // application has one answer to "how do my people sign in", and a list would
   // be a question this attribute has no page to ask.
   appAuthnMechanism: 'set',
+  // The home page, `set` for its row's reason: an application has one. It is
+  // editable AND written by register() from RFC 7591 `client_uri`, which is the
+  // same arrangement oauthRedirectUri has — a registration states it, and an
+  // entry nobody registered has no other way to acquire one.
+  appHomePageUrl: 'set',
   ldapBindDn: 'multi',
   scimClientId: 'multi',
   spiffeWorkloadId: 'multi',
@@ -1975,6 +2228,210 @@ function identifiersOf(source) {
 }
 
 // ---------------------------------------------------------------------------
+// THE APPLICATION'S OWN HOME PAGE, AND THE ONE THING THAT MAY BE DONE WITH IT.
+//
+// Added 2026-09-10 with `appHomePageUrl`, whose schema row above argues why the
+// fact is DECLARED rather than computed from the redirect URIs beside it.
+// These two functions are the whole of the rule that value obeys.
+//
+// **`homePageProblem()` IS THE WRITE-TIME REFUSAL AND `homePageOf()` IS THE
+// READ-TIME ONE, AND BOTH ARE NEEDED.** The doors that go through
+// normaliseFields() and updateApplication() are checked, and `ldapmodify` on
+// TCP 389 is not — it reaches this attribute exactly as it reaches every other
+// one here, which is a property this directory has on purpose and which
+// `ldap/CLAUDE.md` argues. So the reader checks again rather than trusting the
+// store, because the one thing this service does with the value is put it in
+// an `href` on a page somebody is signed in to.
+//
+// **http AND https AND NOTHING ELSE.** That refuses three real cases and one
+// dangerous one. A native client's private-use scheme
+// (`com.example.app:/oauth2redirect`) is not somewhere a browser can be sent
+// from a page; a `urn:` is a NAME rather than an address; a `mailto:` is not a
+// home page. And `javascript:` is the reason the check is a scheme allowlist
+// rather than a blocklist — a registry this service will accept a registration
+// into must not be a way to get a scheme of somebody's choosing into an
+// attribute a page renders as a link.
+//
+// A loopback address is allowed and is the ordinary case here rather than an
+// oversight: this is a mock, and the application being exercised is usually on
+// the same machine as the browser reading the page.
+// ---------------------------------------------------------------------------
+function homePageProblem(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) {
+    return '';
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(text);
+  } catch (e) {
+    // Not an absolute URI at all. The message names what was sent rather than
+    // the exception, which says only "Invalid URL" and would send somebody
+    // looking at their own client.
+    return '"' + text + '" is not an absolute URL. A home page is what ' +
+           '/portal/applications links this application to, so it has to be ' +
+           'somewhere a browser can be sent — `https://expenses.example.com/` ' +
+           'is the shape. A path on its own is relative to whichever page it ' +
+           'is drawn on, which would be this service.';
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return '"' + text + '" has the scheme `' + parsed.protocol + '` and a home ' +
+           'page must be http or https. This value becomes a link on a page ' +
+           'somebody is signed in to, so the schemes are an allowlist rather ' +
+           'than a list of the ones to avoid: a private-use scheme like ' +
+           '`com.example.app:/callback` is a native client\'s redirect URI and ' +
+           'not a web page, and a `urn:` is a name rather than an address.';
+  }
+  return '';
+}
+
+// The home page this entry carries, or '' — which is a state every caller has
+// to DRAW rather than hide, because an entry without one is the ordinary shape
+// of an application nobody has told this registry where to find.
+//
+// It takes a `view()`, a record, or a bare fields object, the three shapes
+// identifiersOf() takes and for its reason.
+function homePageOf(source) {
+  const holder = source || {};
+  const fields = holder.fields || holder;
+  const text = String(fields.appHomePageUrl == null
+    ? '' : fields.appHomePageUrl).trim();
+  if (!text || homePageProblem(text)) {
+    return '';
+  }
+  return text;
+}
+
+// ===========================================================================
+// THE ONE ATTRIBUTE IN THIS TABLE THAT IS A PRIVATE KEY, AND WHAT IS DONE
+// WITH IT (2026-09-10).
+//
+// `/admin/pki` issues an application a signing key pair for RFC 7521 / RFC
+// 7523 and writes it onto that application's own entry, because
+// `common/pki.js` hands one over ONCE and keeps no copy — `ou=applications` is
+// the only place the answer exists. Five of the six attributes it writes are
+// public by construction: a certificate, a chain, a JWKS, a kid and an expiry
+// are all things a relying party is MEANT to be given, and `client_auth.js`
+// and `assertion_grant.js` read the JWKS to verify what the key signs. **The
+// sixth is the private half**, and it is sealed at rest under the same
+// key-encryption key as everything else private this service holds.
+//
+// **IT IS THE SAME MECHANISM AND DELIBERATELY NOT A NEW ONE.**
+// `keystore.seal()` and `keystore.open()` — AES-256-GCM under a key this
+// service never generates and never stores, read from a mounted file or one of
+// four cloud secret stores. That is what seals this service's own signing
+// keys, what seals `common/pki.js`'s three CA key pairs in the `sts_keys` row
+// family, what seals every minted row in product mode, and what
+// `common/credentials.js` seals an authenticator's shared secret with. A key
+// pair issued FROM that hierarchy being the one piece of private key material
+// left in the clear was the gap this closes.
+//
+// **`keystore.persists()` AND NOT `keystore.sealed()`**, which is
+// `writeTotpRecord()`'s rule word for word and for its reason: the question is
+// whether the KEY outlives the process, not whether there is one. Development
+// mode has a key-encryption key — an ephemeral one, so that the request-worker
+// pool can share minted rows — and sealing a DIRECTORY attribute under it
+// would be worse than leaving it clear: the entry survives a restart in the
+// `ldif` and `postgres` stores and the key does not, so the certificate and
+// the chain would come back and the private half would be permanent garbage.
+// So development writes the PEM as it always did, which is also the mode whose
+// whole promise is that nothing it minted survives a restart.
+//
+// **THE VALUE SAYS WHICH IT IS AND NOTHING HAS TO REMEMBER.** A sealed value
+// is `crypto.encryptWithKek()`'s own envelope, which begins `$aesgcm$`; a PEM
+// begins `-----BEGIN`. So `isSealed()` is a prefix test rather than a marker
+// attribute beside it — a second attribute would be a second fact to keep in
+// step, and an entry carried between two modes would be read wrongly the first
+// time the two disagreed.
+//
+// ---------------------------------------------------------------------------
+// SEALED AT REST, OPENED FOR A READER THAT ASKED THIS MODULE.
+//
+// The split is `view()`'s existing one and needed no new shape: `fields` is
+// what THIS MODULE has recorded about the application, and `attributes` is
+// what the ENTRY carries. So `/admin/applications` and
+// `GET /admin-api/applications` — both of which read `fields`, both behind a
+// credential — hand over the PEM exactly as they did, and a dump of the store
+// hands over the ciphertext, because ciphertext is what the store holds. That
+// is every surface that was giving the key away without asking this module:
+// `/admin/ldap/directory`, an `ldapsearch` on TCP 389 where every bind
+// succeeds, an `ldif` file on disk, a `postgres` row, a backup of either.
+//
+// **A VALUE THAT WILL NOT OPEN IS LEFT AS IT IS AND REPORTED.** Rotating the
+// key-encryption key is what produces one, the key pair is unusable either
+// way, and a reader seeing `$aesgcm$…` where a PEM belongs plus a line in the
+// log naming the application is a truer answer than an empty attribute —
+// which would read as *no key pair was ever issued* and is the same
+// distinction `totpOf()` draws about an enrolment.
+// ===========================================================================
+
+// One member. It is a LIST rather than an `if` because the question "is this
+// attribute private key material" is one somebody adding a row to SCHEMA has
+// to answer, and a list is where they will look for it.
+const SEALED_FIELDS = ['oauthAssertionPrivateKey',
+                       'oauthSamlAssertionPrivateKey'];
+
+function isSealed(value) {
+  return String(value == null ? '' : value).indexOf('$aesgcm$') === 0;
+}
+
+// Seal on the way in, where this process holds a key-encryption key that will
+// still be there after a restart. Returns the value to store, or null when
+// sealing was required and failed — which the callers turn into a refusal
+// rather than a write, for `writeTotpRecord()`'s reason: storing a private key
+// in the clear in product mode would put a working signing credential in every
+// directory dump, and doing it silently after being asked not to is worse than
+// refusing.
+function sealFieldValue(name, value) {
+  if (SEALED_FIELDS.indexOf(name) < 0 || !value) {
+    return String(value == null ? '' : value);
+  }
+  if (isSealed(value)) {
+    // ALREADY SEALED. A value copied off one entry onto another through the
+    // console's `set` or `POST /admin-api/applications/set` arrives like this,
+    // and sealing it twice would produce something that opens to ciphertext.
+    return String(value);
+  }
+  if (!keystore.persists()) {
+    return String(value);
+  }
+  const out = keystore.seal(String(value), 'application-private-key');
+  if (!out) {
+    return null;
+  }
+  return out;
+}
+
+// And open on the way out, for `view()`. Takes the whole fields object and
+// returns it unchanged where there is nothing sealed in it, so that the
+// ordinary entry — which carries none of these attributes at all — pays a
+// property lookup and not a copy.
+function openSealedFields(fields, identifier) {
+  let out = fields;
+  SEALED_FIELDS.forEach(function (name) {
+    const value = out[name];
+    if (!value || !isSealed(value)) {
+      return;
+    }
+    const opened = keystore.open(String(value), 'application-private-key');
+    if (!opened) {
+      log.warn('applications: the private key on "' + identifier + '" is ' +
+               'sealed and will not open under this process\'s ' +
+               'key-encryption key — it was written under a different one. It ' +
+               'is reported as it is stored rather than as absent, because ' +
+               'absent would read as no key pair having been issued. Issue ' +
+               'again on /admin/pki.');
+      return;
+    }
+    if (out === fields) {
+      out = Object.assign({}, fields);
+    }
+    out[name] = opened;
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE VALUES A CREATE MAY CARRY, validated whole before anything is written.
 //
 // Same rule the protocol families go through one function above and for the
@@ -2027,6 +2484,36 @@ function normaliseFields(value) {
       errors.push('"' + name + '" holds ONE value and ' + values.length + ' were given. ' +
                   'It is single-valued in the published schema, so the alternative to ' +
                   'refusing this is keeping one of them and discarding the rest silently.');
+      return;
+    }
+    // THE ONE VALUE CHECK ON THIS WALK, and it is here rather than left to
+    // updateApplication() because a create goes through this function and not
+    // through that one. An entry created with a home page nothing may link to
+    // would sit there looking configured while /portal/applications drew it
+    // greyed out, which is the silent half-success this whole function exists
+    // to refuse.
+    if (name === 'appHomePageUrl') {
+      const problem = homePageProblem(values[0]);
+      if (problem) {
+        errors.push(problem);
+        return;
+      }
+    }
+    if (row.kind !== 'multi' && SEALED_FIELDS.indexOf(name) >= 0) {
+      // PRIVATE KEY MATERIAL. Sealed here as well as in updateApplication()
+      // because a create goes through this function and not through that one —
+      // the same reason the home page is checked here.
+      const sealedValue = sealFieldValue(name, values[0]);
+      if (sealedValue === null) {
+        errors.push('"' + name + '" is private key material and this service ' +
+                    'could not encrypt it, so it was not stored. Storing a ' +
+                    'signing key in the clear in product mode would put a ' +
+                    'working credential in every directory dump. The ' +
+                    'key-encryption key is the one /admin/persistence reports ' +
+                    'on.');
+        return;
+      }
+      fields[name] = sealedValue;
       return;
     }
     fields[name] = row.kind === 'multi' ? values : values[0];
@@ -2592,6 +3079,14 @@ function applyRegistrationFields(record, registration) {
     setField(record, 'oauthFrontchannelLogoutSessionRequired',
              meta.frontchannel_logout_session_required ? 'TRUE' : 'FALSE');
   }
+  // RFC 7591 section 2 `client_uri`: "URL string of a web page providing
+  // information about the client". That is the application's home page, which
+  // is the fact appHomePageUrl holds, so a registered client arrives with one
+  // already set and /portal/applications can link it without anybody editing
+  // the entry. Unchecked here on purpose — applyRegistrationFields() records
+  // what a registration SAID, and homePageOf() refuses to draw a link to
+  // anything that is not http or https when it reads.
+  setField(record, 'appHomePageUrl', meta.client_uri);
   setField(record, 'oauthGrantType', meta.grant_types);
   setField(record, 'oauthResponseType', meta.response_types);
   if (meta.scope) setField(record, 'oauthScope', String(meta.scope).split(/\s+/));
@@ -2812,6 +3307,24 @@ function clientConfigOf(identifier) {
     // section 2.5 is recommending them for.
     jwks: fields.oauthJwks === undefined ? '' : String(fields.oauthJwks),
     jwks_uri: fields.oauthJwksUri === undefined ? '' : String(fields.oauthJwksUri),
+    // THE JWKS THIS SERVICE ISSUED, from its own certificate authority
+    // (2026-09-10). A SECOND member beside `jwks` rather than a fallback into
+    // it: the issue path must not overwrite keys a client registered, and a
+    // client holding both was given both deliberately. `client_auth.js` ORs
+    // them and `assertion_grant.js` does the same for the other half of RFC
+    // 7523.
+    assertion_jwks: fields.oauthAssertionJwks === undefined
+      ? '' : String(fields.oauthAssertionJwks),
+    // RFC 7522's two, and they are two MORE members rather than a fallback
+    // into either of the three above: a SAML assertion is verified only
+    // against a certificate registered under these names, and a client that
+    // holds a JWT key pair and no SAML one has nothing registered for that
+    // profile. `saml_assertion_grant.js`'s header argues why the sets may not
+    // be merged.
+    saml_signing_certificate: fields.oauthSamlAssertionSigningCertificate === undefined
+      ? '' : String(fields.oauthSamlAssertionSigningCertificate),
+    saml_assertion_certificate: fields.oauthSamlAssertionCertificate === undefined
+      ? '' : String(fields.oauthSamlAssertionCertificate),
     tls_client_auth_subject_dn: fields.oauthTlsClientAuthSubjectDn === undefined
       ? '' : String(fields.oauthTlsClientAuthSubjectDn),
     certificate_thumbprint: fields.oauthTlsClientCertificateThumbprint === undefined
@@ -3151,7 +3664,7 @@ function updateApplication(identifier, change) {
                                  'one value and read afterwards as the others having been ' +
                                  'forgotten.'] };
   }
-  const value = String(asked.value == null ? '' : asked.value);
+  let value = String(asked.value == null ? '' : asked.value);
   if (mode !== 'set' && !value) {
     log.debug("Leaving updateApplication().");
     return { ok: false, errors: ['A value is required to ' + mode + '.'] };
@@ -3224,6 +3737,18 @@ function updateApplication(identifier, change) {
   // where permissions still hang off it — the console reports those as having
   // no identifier, which is the honest state, and refusing the clear would mean
   // an entry could not be dismantled in any order.
+  // THE HOME PAGE, checked for the reason the base URI below it is: this
+  // function is the ONE door the console form and
+  // `POST /admin-api/applications/update` both go through. Only a `set`
+  // carrying a value — clearing it is how an entry stops naming a home page,
+  // and that is a state /portal/applications draws rather than an error.
+  if (attribute === 'appHomePageUrl' && mode === 'set' && value) {
+    const problem = homePageProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). The home page is not a usable URL.");
+      return { ok: false, errors: [problem] };
+    }
+  }
   if (attribute === 'oauthPermissionBaseUri' && mode === 'set' && value) {
     const problem = permissionBaseProblem(value);
     if (problem) {
@@ -3315,6 +3840,37 @@ function updateApplication(identifier, change) {
       return { ok: false, errors: [problem] };
     }
   }
+  // ---------------------------------------------------------------------------
+  // PRIVATE KEY MATERIAL IS SEALED HERE, WHICH IS BEFORE ANYTHING ELSE IN THIS
+  // FUNCTION TOUCHES THE VALUE — including the sentence that goes to the audit
+  // log, which quotes it. See SEALED_FIELDS: this is the ONE door the console
+  // form, `POST /admin-api/applications/set`, `POST /admin-api/pki/issue` and
+  // `admin-ui/pki_admin.js`'s Issue control all go through, so there is one
+  // place a signing key can be written and one place it is encrypted.
+  //
+  // A CLEAR IS UNTOUCHED — an empty value takes the attribute off, and there is
+  // nothing to seal. A REMOVE cannot reach here with one of these: they are
+  // single-valued, so `mode` is `set`.
+  // ---------------------------------------------------------------------------
+  if (SEALED_FIELDS.indexOf(attribute) >= 0 && value) {
+    const sealedValue = sealFieldValue(attribute, value);
+    if (sealedValue === null) {
+      log.error('applications: a private key for "' + identifier + '" could ' +
+                'not be sealed, so it was NOT written. Storing it in the ' +
+                'clear in product mode would put a working signing credential ' +
+                'in every directory dump.');
+      log.debug("Leaving updateApplication(). The private key could not be sealed.");
+      return { ok: false,
+               errors: ['`' + attribute + '` is private key material and this ' +
+                        'service could not encrypt it, so it was not stored. ' +
+                        'Nothing was written and no key pair is on the entry. ' +
+                        'The key-encryption key is the one ' +
+                        '/admin/persistence reports on; product mode cannot ' +
+                        'run without it.'] };
+    }
+    value = sealedValue;
+  }
+
   const record = loaded.record;
   let changed = false;
   let what = '';
@@ -3518,7 +4074,12 @@ function view(record, entry) {
     // "what has this module recorded about it" rather than "what does the entry
     // carry" — and because dropping it would silently change what a caller of
     // this API had already parsed.
-    fields: record.fields
+    // OPENED, for the one attribute in this table that is private key
+    // material. See SEALED_FIELDS: `fields` is what this module has recorded
+    // about the application and `attributes` above is what the ENTRY carries,
+    // so a caller that came through this module gets the PEM and a dump of the
+    // store gets the ciphertext the store holds.
+    fields: openSealedFields(record.fields, record.identifier)
   };
 }
 
@@ -4327,11 +4888,29 @@ function internalApplications() {
       name: 'Admin console',
       kinds: ['oauth2-client', 'oidc-relying-party'],
       protocols: ['OAuth 2.0 / OIDC'],
-      // THE DEFAULT REALM AND NOWHERE ELSE. See the portal's row below, where
-      // the difference between the two is argued; the console's gate reads the
-      // default realm's session in every realm, so one entry is the whole of
-      // what it needs and one per realm would be a client nothing signs in to.
-      realmScope: 'default',
+      // EVERY REALM SINCE 2026-09-11, AND IT WAS THE DEFAULT REALM AND NOWHERE
+      // ELSE. The old comment read: *the console's gate reads the default
+      // realm's session in every realm, so one entry is the whole of what it
+      // needs and one per realm would be a client nothing signs in to.* The
+      // first clause is still exactly true — `oidc_rp.js`'s `sessionRealm` for
+      // this surface is `default`, so one console session is still found by the
+      // gate from every realm — and the conclusion stopped following when the
+      // console's CODE FLOW moved to the ambient realm.
+      //
+      // It moved so that `/realm/acme/admin` and `/realm/acme/portal` share a
+      // sign-on session: the authorization endpoint can only answer out of the
+      // realm it is reached in, so a console authorizing in the default realm
+      // meant two sign-ins for one person in one browser. That flow presents
+      // `client_id=sts-admin-console` at `/realm/acme/oauth2/authorize`, and an
+      // authorization server has to be able to find the client — so the entry
+      // has to be there. The last clause of the old comment is therefore
+      // reversed: a realm WITHOUT this entry is the one nothing can sign in to.
+      //
+      // **THIS IS NOT A PER-REALM ADMINISTRATOR.** The client is what the flow
+      // authenticates AS; the ROLE is read from the default realm's `ou=groups`
+      // by `admin_rbac.js` and did not move. Somebody who creates a realm gets
+      // a client entry in it and no more access than they had.
+      realmScope: 'every',
       description: 'seeded at startup: this service\'s own admin console at ' +
                    '/admin (applications.seedInternal)',
       attributes: { oauthGlobalConsent: ['openid', 'profile', 'email'] },
@@ -4567,6 +5146,22 @@ module.exports = {
   // word for it. Exported for the delegation pictures — see its header for why
   // the list is built here and not in the renderer.
   identifiersOf: identifiersOf,
+  // THE HOME PAGE, and the rule its value obeys. Both exported: the portal
+  // READS it and the two write doors REFUSE a value nothing may link to, and a
+  // second spelling of "http or https" in the page would be the second opinion
+  // this module exists to prevent.
+  homePageOf: homePageOf,
+  homePageProblem: homePageProblem,
+  // THE SEALED ATTRIBUTE AND THE PREFIX TEST THAT RECOGNISES ONE. Exported for
+  // `admin-ui/admin.js`, whose application page dumps `attributes` — the entry
+  // as the directory holds it — and therefore meets the ciphertext. It shows
+  // the opened value from `fields` beside a note saying the store holds it
+  // encrypted, which is the one place the two halves of view() are drawn
+  // together. `/admin/ldap/applications` deliberately does NOT do that: that
+  // page is headed "the registry as the directory sees it", and an opened
+  // value there would be a page lying about its own subject.
+  SEALED_FIELDS: SEALED_FIELDS,
+  isSealed: isSealed,
   normaliseFields: normaliseFields,
   SCHEMA: SCHEMA,
   seen: seen,

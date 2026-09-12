@@ -151,8 +151,9 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    where a client READS which schemes exist, so demanding a credential to fetch
    it means a client must already know the answer to the question it is asking.
 
-   **A CREDENTIAL THAT WAS PRESENTED AND FAILED IS ALWAYS A REFUSAL**, even with
-   `scim.authRequired` off. A client testing its expired-token path must not get
+   **A CREDENTIAL THAT WAS PRESENTED AND FAILED IS ALWAYS A REFUSAL**, and was
+   one even while `scim.authRequired` could turn the requirement off. A client
+   testing its expired-token path must not get
    a 200 because the endpoint would also have accepted nobody.
 
    **THE ServiceProviderConfig PUBLISHES THREE SCHEMES scimmy CANNOT
@@ -300,7 +301,8 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 * **SCIM WRITES INTO THE DIRECTORY AND IS THE ONE SURFACE HERE THAT ASKS WHO IS
   DOING IT.** The `/scim/v2` endpoints create, replace, patch and DELETE
   accounts, so they are the exception to everything above: a credential is
-  REQUIRED (`scim.authRequired`), all six schemes RFC 7644 section 2 names are
+  REQUIRED — unconditionally, in both modes, `mode.gatesScim()` — all six
+  schemes RFC 7644 section 2 names are
   offered, and the OAuth ones must carry `scim:read` or `scim:write` — the first
   scope requirement anywhere in this service. **It is still a turnstile rather
   than a lock**, which is a different sentence and the one that matters: anybody
@@ -357,8 +359,8 @@ Two things about it are SCIM's own:
   client on the same surface, and keying on the token would give it a second
   row and leave the first until it expired.
 * **An anonymous decision gets no session**, which is not a special case:
-  `scim.authRequired` off, or the open ServiceProviderConfig, means nobody
-  authenticated and a session recording that they had would be untrue.
+  a request that presented nothing — the open ServiceProviderConfig, or, while
+  `scim.authRequired` existed, that setting off — means nobody authenticated and a session recording that they had would be untrue.
 
 **THE POLICY RUNS AFTER THE SCOPE CHECK AND NOT INSTEAD OF IT.** RFC 7644
 section 2's mapping from an authenticated client to an access policy is this

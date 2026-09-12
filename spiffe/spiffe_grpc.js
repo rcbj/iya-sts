@@ -333,9 +333,9 @@ function fromDescriptor(descriptor) {
 // It is hashed because a session id is printed on `/admin/sessions`.
 //
 // **A CALLER THAT AUTHENTICATED NOBODY GETS NO SESSION.** The local Unix
-// socket is trusted by path and presents no credential; `spiffe.authRequired`
-// off means nothing is checked at all. Both reach here with `authenticated`
-// false, and a session recording that somebody signed in would be untrue.
+// socket is trusted by path and presents no credential, and a caller on a port
+// where nothing is checked presents none either. Both reach here with
+// `authenticated` false, and a session recording that somebody signed in would be untrue.
 // ---------------------------------------------------------------------------
 function sessionForCaller(caller) {
   log.debug('Entering sessionForCaller().');
@@ -406,9 +406,9 @@ function policyRefusal(caller, method) {
   // defines as open to anybody. An operator narrowing this surface by policy
   // is unaffected, because a policy about a named subject is still asked.
   //
-  // It also restores what `spiffe.authRequired` off is documented to mean.
-  // With that setting off `authorize()` returns null without consulting the
-  // table at all, so EVERY method reached this gate with an unauthenticated
+  // It also restored what `spiffe.authRequired` off was documented to mean,
+  // while that setting existed. With it off `authorize()` returned null without
+  // consulting the table at all, so EVERY method reached this gate with an unauthenticated
   // caller and was refused — turning the mock's own "nothing is checked"
   // switch into the most closed configuration it has.
   // -----------------------------------------------------------------------
@@ -844,8 +844,20 @@ async function serverApiCredentials() {
     // certificate and silently ignores the rest of. Every authority has to be
     // its own PEM block or a client signed by the second one is refused with
     // no way to tell why.
-    Buffer.from(ca.state().x509Authorities.map(function (authority) {
-      return authority.certificatePem;
+    //
+    // **THE TRUST ANCHORS AND NOT THE AUTHORITIES (2026-09-11), AND THE
+    // DIFFERENCE IS THE WHOLE POINT OF `trustAnchors` BEING A SEPARATE
+    // LIST.** They were the same thing while the SPIFFE authority was
+    // self-signed. It is now this realm's SPIFFE Issuing CA under the service
+    // Root, and an Issuing CA is NOT a trust anchor: OpenSSL will not treat a
+    // non-self-signed certificate in the truststore as one unless it is asked
+    // to with `X509_V_FLAG_PARTIAL_CHAIN`, which node does not expose here.
+    // So handing it the Issuing CA refuses every client with
+    // `unable to get issuer certificate` — a message about the ANCHOR, on a
+    // connection whose chain was complete. The Root anchors it, and a client
+    // presenting [leaf, SPIFFE Issuing CA, Intermediate] builds a path to it.
+    Buffer.from(ca.state().trustAnchors.map(function (anchor) {
+      return anchor.certificatePem;
     }).join('\n'), 'utf8'),
     [{ private_key: Buffer.from(svid.privateKeyPem, 'utf8'),
        cert_chain: Buffer.from(svid.chainPem.join('\n'), 'utf8') }],

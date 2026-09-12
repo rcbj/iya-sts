@@ -88,6 +88,44 @@ var config = {
     activationTtlMinutes: 1440  // Activation link lifetime (minutes)
   },
 
+  // --- TOTP MFA --------------------------------------------------------
+  totp: {
+    enabled: true,           // Offer authenticator apps (TOTP)
+    issuer: "",              // Authenticator app label
+    algorithm: "SHA1",       // HMAC digest
+    digits: 6,               // Digits in a code
+    period: 30,              // Seconds in a step
+    window: 1,               // Steps of clock skew forgiven
+    secretBytes: 20,         // Shared secret length (bytes)
+    enrolmentTtlMinutes: 10  // Unconfirmed enrolment lifetime (minutes)
+  },
+
+  // --- Backup codes ----------------------------------------------------
+  backupCodes: {
+    enabled: true,    // Issue recovery codes with a second factor
+    count: 10,        // Codes in a set
+    length: 10,       // Characters in a code
+    pendingTtlS: 900, // How long an unconfirmed set of recovery codes waits (seconds)
+    groupSize: 5      // Characters between the dashes
+  },
+
+  // --- WebAuthn --------------------------------------------------------
+  webauthn: {
+    enabled: true,                       // Offer security keys (WebAuthn)
+    rpName: "Mock authorization server", // Relying party name
+    rpId: "",                            // RP ID override
+    algorithms: "ES256,RS256",           // Algorithms offered
+    userVerification: "preferred",       // User verification
+    attestation: "direct",               // Attestation conveyance
+    timeoutMs: 60000,                    // Ceremony timeout (ms)
+    authenticatorAttachment: "any",      // Authenticator attachment (CTAP)
+    residentKey: "discouraged",          // Discoverable credential (CTAP resident key)
+    credProps: true,                     // Ask for the credProps extension
+    primaryAllowed: true,                // Allow a key as a PRIMARY credential
+    mfaAllowed: true,                    // Allow a key as a SECOND factor
+    maxKeysPerPerson: 10                 // Keys per person
+  },
+
   // --- Key material ----------------------------------------------------
   keys: {
     source: "auto",                  // Where signing keys come from; restart to apply
@@ -105,6 +143,7 @@ var config = {
   // --- Global ----------------------------------------------------------
   workers: {
     count: 5,                          // Worker processes
+    jobTimeoutS: 120,                  // Worker job timeout (seconds)
     requestCount: 0,                   // Request worker processes; restart to apply
     dispatch: "",                      // Paths handled in a request worker; restart to apply
     fanout: "/scim,/xacml,/admin-api", // Dispatched paths with no session affinity; restart to apply
@@ -130,6 +169,12 @@ var config = {
     refreshIdleSeconds: 86400,                   // Refresh token idle timeout (s)
     revokeRefreshOnLogout: true,                 // Revoke refresh tokens on sign-out
     eddsaCurve: "Ed25519",                       // EdDSA curve
+    jwtBearerGrant: true,                        // JWT bearer authorization grant (RFC 7523 section 2.1)
+    jwtBearerRequireRegisteredIssuer: true,      // Require a registered assertion issuer
+    jwtBearerMaxLifetimeS: 300,                  // Longest assertion lifetime accepted (s)
+    saml2BearerGrant: true,                      // SAML 2.0 bearer authorization grant (RFC 7522 section 2.1)
+    saml2BearerRequireRegisteredIssuer: true,    // Require a registered SAML assertion issuer
+    saml2BearerMaxLifetimeS: 300,                // Longest SAML assertion lifetime accepted (s)
     clientAssertionSkewS: 60,                    // Client assertion clock skew (s)
     accessTokenTtlS: 3600,                       // Access token lifetime (s)
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
@@ -138,6 +183,20 @@ var config = {
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard
     frontchannelLogout: true                     // OpenID Connect Front-Channel Logout
+  },
+
+  // --- PKI -------------------------------------------------------------
+  pki: {
+    crlLifetimeMinutes: 60,      // How long a CRL claims to be fresh
+    distributionBaseUrl: "",     // Base URL published in CRL and OCSP addresses
+    distributionLdapHost: "",    // Host published in LDAP and LDAPS CRL addresses
+    publishCrlToDirectory: true, // Publish every CRL into the embedded directory
+    autoBuild: true,             // Build the certificate authority at startup; restart to apply
+    keyAlgorithm: "rsa-2048",    // Default CA key algorithm
+    signatureAlgorithm: "",      // Default CA signature algorithm
+    organisation: "mock-sts",    // Default organisation name (O=)
+    personSelfService: true,     // Let a person issue their own signing key pair
+    leafLifetimeDays: 365        // Default lifetime of an issued key pair (days)
   },
 
   // --- Management API --------------------------------------------------
@@ -312,6 +371,7 @@ var config = {
     pushAllowedHosts: "",                                                                                                                                 // Push endpoint allowlist
     pushAllowInsecure: false,                                                                                                                             // Allow http:// and untrusted TLS to a receiver
     pushTimeoutMs: 10000,                                                                                                                                 // Push timeout (ms)
+    internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
     maxStreams: 25,                                                                                                                                       // Streams per realm
     maxSubjectsPerStream: 100,                                                                                                                            // Subjects per stream
     maxQueuedEvents: 200,                                                                                                                                 // Queued events per stream
@@ -431,6 +491,7 @@ var config = {
   // --- Persistence -----------------------------------------------------
   persistence: {
     mode: "memory",                                       // Persistence mode; restart to apply
+    metricsTimeoutMs: 5000,                               // Database metrics statement timeout (ms)
     dataDir: "./data",                                    // Data directory; restart to apply
     databaseUrl: "postgres://sts:sts@localhost:5432/sts", // Database connection string; restart to apply
     databaseTlsRejectUnauthorized: false,                 // Verify the database certificate; restart to apply

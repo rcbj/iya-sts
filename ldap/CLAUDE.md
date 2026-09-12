@@ -1505,3 +1505,165 @@ every reader goes through.
   identity there came from the CLIENT CERTIFICATE and never from the body; and
   that an empty container is not a feature that is off, because a PEP pulls and
   converges without ever registering.
+
+## `stsTotpCredential`: THE ONE ATTRIBUTE HERE THAT MAY HOLD A USABLE CREDENTIAL (2026-09-10)
+
+The authenticator app's shared secret, beside `userPassword` and
+`stsWebauthnCredential` on the person's own entry. `readTotp()` and
+`writeTotp()` are the two functions `common/credentials.js` reaches through the
+slot this module fills, and `persons()` beside them is what
+`secondFactorHolders()` walks for the roster on `/admin/users` — which was
+`/admin/mfa` for a few hours on 2026-09-10.
+
+**SINGLE-VALUED, where the security key beside it is multi-valued**, and the
+reason is in the protocol rather than in a policy: a WebAuthn assertion names
+the credential that produced it, and a TOTP code is six digits and names
+nothing. `writeTotp()` therefore ASSIGNS, so enrolling again replaces; a `null`
+value deletes, which is what an operator's Clear and a person's own removal both
+come down to.
+
+**AND IT IS THE ONE ATTRIBUTE IN THIS DIRECTORY THAT MAY HOLD A CREDENTIAL
+SOMEBODY COULD USE.** `userPassword` and `stsActivationToken` are scrypt hashes
+and are no use to whoever reads them; a WebAuthn public key is published by
+design. **Verifying a one-time code means COMPUTING it**, so the secret cannot
+be hashed — which is arithmetic and not a lapse, and is exactly why that
+mechanism is a SECOND factor and can never be made a first one.
+
+In PRODUCT mode the value arrives here already sealed under the key-encryption
+key, so `/admin/ldap/directory` prints ciphertext; in development it is the
+base32, because that mode's KEK would not survive a restart and sealing would
+mean an authenticator that silently stopped working.
+
+## `stsBackupCodes`: THE SECOND ONE, AND ITS REASON IS NOT ARITHMETIC (2026-09-10)
+
+The recovery codes, on the same entry. `readBackupCodes()` and
+`writeBackupCodes()` are the pair `common/credentials.js` reaches through this
+module's slot, and they are shaped exactly like the TOTP pair above:
+**single-valued** — `writeBackupCodes()` ASSIGNS, because a person holds one set
+and never two, and a `null` value deletes, which is what an operator's Clear
+comes down to.
+
+**SO THE HEADING ABOVE IS NOW HALF TRUE AND THIS SECTION IS WHY.** There are TWO
+attributes here that may hold a credential somebody could use, and the
+difference between them is the thing to keep straight:
+
+* `stsTotpCredential` **cannot** be hashed. Verifying a one-time code means
+  COMPUTING it — that is arithmetic, and no decision was available.
+* `stsBackupCodes` **could** be hashed, and is not. A recovery code is compared
+  against a stored string exactly as a password is, so scrypt would work. What
+  decided it is a product question: **may a person look at their remaining codes
+  again?** This service says yes, on `/portal/mfa`, because a list shown exactly
+  once at the end of an enrolment somebody is rushing through is a list most
+  people close without reading — and the moment it matters is months later.
+  `common/backup_codes.js` argues it at length.
+
+That difference matters to a reader of an ENTRY rather than to this module,
+which holds no key and only ever writes whichever of the two forms it was
+handed. In product mode the value arrives already sealed and
+`/admin/ldap/directory` prints ciphertext; in development it is the codes as the
+person was shown them, because sealing under that mode's per-run key would mean
+a printed recovery list that stopped working at the next restart — which is the
+precise failure the mechanism exists to prevent.
+
+**THE COUNTS ARE OUTSIDE THE CIPHERTEXT ON PURPOSE.** The value is one JSON
+object: a sealed `vault` holding the codes, and `total`, `remaining`,
+`generatedAt` and `lastUsedAt` beside it in the clear. Every page that reports
+on this needs the counts and almost none needs the codes, so a console can say
+*7 of 10 unused* about a set this process cannot decrypt.
+`common/CLAUDE.md` argues both halves. **What is sealed is a question about the
+KEY, and this module has none** — which is why the decision is
+`credentials.js`'s and not this file's.
+
+### Four spellings joined the catalogue and three of them predate this change
+
+`stsWebauthnCredential`, `stsActivationToken` and `stsActivationExpires` had
+been written since 2026-09-06 and were in neither `STANDARD_NAMES` nor
+`OWN_NAMES`, which is the ordinary way that table goes wrong: nothing fails, the
+name simply renders lower-cased on the one page whose job is to show an entry
+faithfully, and the attribute reads as something a foreign client added rather
+than something this service wrote. They were added with `stsTotpCredential`
+rather than left, because a table that is right about the new attribute and
+wrong about its three siblings is worse than one that is wrong about all four.
+
+## THE USER PORTAL'S SLOT, AND THE ONE HOOK HERE THAT HANDS OVER A WHOLE ENTRY (2026-09-11)
+
+`portal.setDirectory({ personEntry })`, filled at this module's require time
+like the eight before it. `/portal`'s Overview draws every standard
+inetOrgPerson attribute a person holds, and this is where it gets them.
+
+**IT IS A SLOT FOR THE ORDINARY REASON** — that module is at 8b and this one at
+21, so a require from there would register every `/ldap` route and all eight
+`/admin/ldap/*` pages ahead of the authorization server and the console, and a
+require the other way would move every `/portal` route behind the management
+API. Rule 3e's test answers yes both ways round.
+
+**IT HANDS OVER THE WHOLE ENTRY, WHERE `credentials.persons()` DELIBERATELY
+HANDS OVER ONLY NAMES**, and reading the two beside each other is the useful
+part. That one gives the credential store a list to ask itself about, because a
+module holding whole entries starts reading attributes off them and that is how
+a second implementation of *what an enrolment is* gets written. This one's
+whole purpose IS the attributes.
+
+**What stops the portal reading something it should not is therefore not the
+shape of this hook — it is the FIXED LIST at the other end.**
+`common/inetorgperson.js` has no `sts`-prefixed name on it and cannot grow one
+by accident, which is why handing over everything is safe here and would not be
+anywhere else.
+
+It hands over a SHALLOW COPY of the attribute map rather than the stored object:
+a caller holding the real one could write through it, and this module's contract
+is that the store changes through `touchDirectory()`. A shallow copy is enough
+because the value arrays are read and never mutated by anything that draws them.
+
+### And the class definition is merged into `learnName()` like every other schema
+
+`common/inetorgperson.js` is a fourth independently maintained list of LDAP
+spellings — `STANDARD_NAMES` is the first, `vc_claims.js`'s catalogue and the
+SCIM mapping the others — and it names most of the same types. Merged rather
+than trusted, so a disagreement between the page a PERSON reads and the page an
+OPERATOR reads is reported at startup instead of one of them quietly rendering
+`seealso`. It agrees today; the merge is what will say so when it stops.
+
+## `stsAssertion*`: THE THIRD THING ON A PERSON'S ENTRY THAT CAN BE READ BACK AND USED (2026-09-11)
+
+Seven attributes and a slot of their own —
+`personAssertions.setDirectory({ read, write, persons })`, filled at this
+module's require time like the nine before it. A person may hold an **RFC 7523
+signing key pair** now: `stsAssertionIssuer`, `stsAssertionJwks`,
+`stsAssertionCertificate`, `stsAssertionCertificateChain`, `stsAssertionKid`,
+`stsAssertionExpiresAt` and `stsAssertionPrivateKey`.
+`common/person_assertions.js` (rule 3ab) owns what they MEAN — including the one
+refusal the feature exists for, that a person's key may assert about that person
+and about nobody else — and this module owns the store they live in, which is
+the division `applications.js`, `federation.js` and the two XACML registers
+already have with this file.
+
+**SO THE TWO SECTIONS ABOVE ARE NOW THREE.** `stsTotpCredential` cannot be
+hashed, `stsBackupCodes` could be and deliberately is not, and
+**`stsAssertionPrivateKey` is a private key**: sealed under the key-encryption
+key wherever that key outlives the process, in the clear in development where it
+would not survive the restart the entry does, and `/admin/ldap/directory` prints
+whichever of the two it was handed — this module holds no key and never has.
+The other six are PUBLIC by construction: a certificate, a chain, a JWKS, a kid
+and an expiry are all things a relying party is meant to be given, and the
+declaration is a name.
+
+**THE SLOT HANDS OVER CANONICAL SPELLINGS, WHICH NEITHER OF THE TWO SLOTS
+BESIDE IT DOES.** `credentials.persons()` hands over NAMES so that a credential
+store cannot start reading attributes; `portal.setDirectory()` hands over the
+WHOLE ENTRY because its whole purpose is the attributes; this one hands over
+exactly the seven, with their `stsAssertion` capitalisation restored. The
+translation is on THIS side of the slot deliberately: the register then never
+learns that this directory lower-cases an attribute name, which is the fact that
+made `ou=roles` report `0 user(s)` for a role somebody held and `ou=policies`
+draw a disabled policy as enabled.
+
+**AND THE WRITE IS ONE ATTRIBUTE AT A TIME**, where `writeTotp()` and
+`writeBackupCodes()` each write the one they own. That is not a shape
+preference: `common/pki.js` hands a key pair over ONCE and keeps no copy, so a
+write that half-succeeded is a key pair that is GONE with a certificate on the
+entry claiming otherwise — and the caller has to be able to say which of the
+seven failed. Single-valued and assigned, like every other attribute this
+service writes here: two JWKS values would be two public keys under one
+`stsAssertionKid`, and a verifier reading the second would be checking a
+signature against a key nobody meant.

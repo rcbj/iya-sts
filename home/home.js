@@ -14,9 +14,10 @@
 //
 // So this page exists, and it is deliberately SHORT. It carries the logo of the
 // project this service was extracted from, says what this service is called,
-// and offers four links — the repository, its issues, the documentation site,
-// and the admin console on THIS instance. It is a signpost, not a second
-// documentation site.
+// and offers five links — the repository, its issues, the documentation site,
+// and the two surfaces on THIS instance that a person rather than a client
+// goes to: the admin console and the user portal. It is a signpost, not a
+// second documentation site.
 //
 // **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.**
 // `GET /admin/sts-metadata` builds that list by walking the running Express
@@ -118,7 +119,7 @@ const VERSION = APP_VERSION.version;
 const BUILD_INFO = version.buildInfo(APP_VERSION);
 
 // ---------------------------------------------------------------------------
-// THE FOUR LINKS.
+// THE FIVE LINKS.
 //
 // Three of them name the repository this service lives in, and they are
 // written out rather than derived from `package.json` — that manifest carries
@@ -140,6 +141,21 @@ const DOCS_URL = 'https://rcbj.github.io/mock-sts/';
 // because documents that carry absolute URLs have to follow the request. A
 // same-origin link does not have to know any of that.
 const CONSOLE_PATH = '/admin';
+// THE FIFTH LINK, AND IT IS THE SECOND SAME-ORIGIN ONE (2026-09-10). Relative
+// for the reason above rather than for a reason of its own.
+//
+// It is here because the four links above answer *what is this service* and
+// none of them answered *and what is it for ME*. The user portal has existed
+// since 2026-09-06 and the only ways to reach it were to already know the
+// path or to be redirected there by an activation link somebody sent you —
+// so the one surface in this service built for a person rather than for an
+// operator or a client was the one surface with no door on the front page.
+//
+// It lists none of the portal's pages, and that is the same rule this page
+// keeps about endpoints one paragraph up: `portal/portal.js`'s `NAV` is the
+// page list, `sts_metadata.js` reports it, and a set of highlights here would
+// be a second copy that goes stale the first time a page is added there.
+const PORTAL_PATH = '/portal';
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'debugger-logo.png');
 const LOGO_ROUTE = '/logo.png';
@@ -166,6 +182,33 @@ try {
 // a reader who follows a link from here does not arrive somewhere that looks
 // like a different service.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// ONE COPY OF WHAT SIGNING IN HERE MEANS.
+//
+// Both same-origin links below send a reader to a sign-in screen, and what
+// that screen actually CHECKS is a property of the mode rather than of either
+// surface — so it is written once here rather than twice down there, where the
+// two copies would disagree the first time somebody corrected one of them.
+//
+// **IT USED TO BE A CLAUSE ON THE CONSOLE'S ROW READING "it asks you to sign
+// in, and nothing else here does".** That was true when it was written and had
+// stopped being true on 2026-09-06, when the user portal arrived; putting a
+// link to the portal on the same page is what made it wrong in a place a
+// reader could see. It also said "no password checked" unconditionally, which
+// is a DEVELOPMENT-mode fact — `mode.verifiesCredentials()` is what decides it
+// — so the sentence was two small lies on one line in a product deployment.
+//
+// Read per request rather than captured at require time, for the reason this
+// page reads every other conditional fact about the running service that way:
+// it is a front door, and it is drawn from what is true now.
+// ---------------------------------------------------------------------------
+function signInMeans() {
+  return mode.verifiesCredentials()
+    ? 'It asks you to sign in, and this instance is in product mode, so the ' +
+      'password is checked against the account.'
+    : 'It asks you to sign in — any username, and no password is checked.';
+}
 
 function linkRow(href, label, external, note) {
   return '<li><a href="' + xmlEscape(href) + '"' +
@@ -231,11 +274,17 @@ function homePage() {
             'Everything this process has done, and the settings that change ' +
             'what its protocol endpoints do. ' +
             (mode.gatesConsole()
-              ? 'It asks you to sign in, and nothing else here does — any ' +
-                'username, no password checked.'
-              : 'It is open: admin.authRequired is off on this instance.') +
+              ? signInMeans() + ' It also asks for one of two roles.'
+              : 'It is open on this instance.') +
             ' Every endpoint this service registered is listed inside it, ' +
             'at /admin/sts-metadata.') +
+    linkRow(PORTAL_PATH, 'The user portal on this instance', false,
+            'The account pages of whoever is looking at them: how they sign ' +
+            'in to this service, what it holds about them, and where it will ' +
+            'sign them in. ' + signInMeans() + ' It asks for no role, which ' +
+            'is the whole difference from the console above: every page of ' +
+            'it is about the person looking at it, so saying who you are is ' +
+            'the entire question.') +
     '</ul></div></div></body></html>\n';
   log.debug('Leaving homePage().');
   return html;

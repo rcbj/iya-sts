@@ -590,7 +590,7 @@ function applyChange(change) {
                   'opened — no key-encryption key. This process is behind.');
         return false;
       }
-      const text = keystore.open(row.body);
+      const text = keystore.open(row.body, 'minted-rows');
       if (text === null) {
         // Written under a different key-encryption key. Reported once per row
         // rather than thrown: the alternative is replication wedging for ever
@@ -703,7 +703,7 @@ function flush() {
         }
         let body = null;
         try {
-          body = keystore.seal(JSON.stringify(present.value));
+          body = keystore.seal(JSON.stringify(present.value), 'minted-rows');
         } catch (e) {
           // A value with a cycle in it, or a BigInt. Counted and skipped:
           // failing the whole transaction because one store holds something
@@ -868,7 +868,7 @@ function restore() {
         staleHandles.add(row.handle);
         return;
       }
-      const text = keystore.open(row.body);
+      const text = keystore.open(row.body, 'minted-rows');
       if (text === null) {
         droppedUnreadable++;
         return;

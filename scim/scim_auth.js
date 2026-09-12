@@ -1551,7 +1551,7 @@ function authenticate(req, need) {
                scopes: '', isClient: false,
                note: authRequired()
                  ? 'a discovery endpoint, which is open (scim.authDiscovery)'
-                 : 'authentication is turned off (scim.authRequired)' };
+                 : 'authentication is turned off' };
     }
     if (scheme) {
       log.debug("Leaving authenticate(). The scheme " + scheme + " is not offered here.");
@@ -1670,7 +1670,8 @@ function authenticate(req, need) {
 // already the longest function in this file.
 //
 // **AN ANONYMOUS DECISION GETS NO SESSION**, which is not a special case: it
-// means `scim.authRequired` is off or this is the open discovery endpoint, so
+// means authentication is off — unreachable since 2026-09-06 — or this is
+// the open discovery endpoint, so
 // nobody authenticated and there is nothing to hold a session for. It returns
 // null and the policy is asked about an unauthenticated subject — which the
 // built-in policy refuses only if somebody has turned `requireAuthenticated`
@@ -1891,7 +1892,7 @@ function schemeIds() {
 log.info('scim: the SCIM endpoints authenticate through ' +
          enabledSchemes().map(function (row) { return row.name; }).join(', ') +
          (authRequired() ? '. A credential is REQUIRED' : '. A credential is OPTIONAL ' +
-          '(scim.authRequired is off)') + '; every one of them is permissive, and the ' +
+          '(authentication is off)') + '; every one of them is permissive, and the ' +
          'access control policy is on GET /scim.');
 
 module.exports = {

@@ -19,8 +19,8 @@
 //   * **IT IS BEHIND THE CONSOLE'S GATE.** `admin.js` registers one
 //     `app.use('/admin', ...)` above its own routes, express applies middleware
 //     only to routes added after it, and this module is required LAST by
-//     server.js — so this route is guarded by construction. With
-//     `admin.authRequired` on (the default) a browser with no session is sent
+//     server.js — so this route is guarded by construction. A browser with no
+//     session is sent
 //     to the sign-in screen and a caller asking for `?format=json` is refused
 //     401 rather than redirected. That is a change of behaviour for anything
 //     that fetched the old path unauthenticated, and the parent project's
@@ -236,9 +236,10 @@ const SPECS = [
               'admin, downstream — with the Unix socket trusted as `local` ' +
               'the way a real spire-server trusts its private one. RenewAgent ' +
               'stopped being unimplemented because of it: it renews the agent ' +
-              'on the connection. spiffe.authRequired off restores the old ' +
-              'posture, where the port is plain and anybody who reaches it ' +
-              'can create a registration entry granting any identity.' },
+              'on the connection. There is no setting that restores the old ' +
+              'posture, where the port was plain and anybody who reached it ' +
+              'could create a registration entry granting any identity: ' +
+              'spiffe.authRequired was removed on 2026-09-06.' },
   { id: 'rfc4120', name: 'Kerberos v5 (RFC 4120)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4120',
@@ -694,11 +695,32 @@ const SPECS = [
     coverage: 'partial, and the path validation is OpenSSL\'s rather than this service\'s: ' +
               'client certificates are verified against anchors POSTed to /tls/trust at ' +
               'runtime, and the server certificate is self-signed here per start with a ' +
-              'subjectAltName carrying every name this stack is reached by. NO REVOCATION IS ' +
-              'CHECKED — no CRL is fetched and no OCSP responder is consulted — so a revoked ' +
-              'certificate verifies here and would not verify anywhere that matters. Name ' +
+              'subjectAltName carrying every name this stack is reached by. THIS SERVICE ' +
+              'PUBLISHES REVOCATION AND STILL CHECKS NONE, and the two halves of that ' +
+              'sentence must not be run together. Section 5 is implemented: every authority ' +
+              'in /admin/pki signs a CRL, served at /pki/crl/{scope}/{ca} and published into ' +
+              'the directory under ou=crl, and every certificate this service issues names ' +
+              'its own in three schemes. What is unchanged is the VERIFYING side — a ' +
+              'client certificate presented to this service is checked against the anchors on ' +
+              '/tls/trust and no CRL is fetched and no OCSP responder is consulted for it, so ' +
+              'a certificate revoked here still gets in here. Name ' +
               'constraints, policies and path length are enforced only to the extent OpenSSL ' +
               'enforces them, which is to say properly, and by nothing written here.' },
+  { id: 'rfc6960', name: 'Online Certificate Status Protocol (RFC 6960)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc6960',
+    coverage: 'partial, and it is the RESPONDER half only: one responder per certificate ' +
+              'authority at /pki/ocsp/{scope}/{ca}, both transports of appendix A.1 (the DER ' +
+              'POST and the base64 GET), good/revoked/unknown, the revocation reason and ' +
+              'time from section 4.2.1, and the nonce of section 4.4.1 echoed when one is ' +
+              'sent. It signs with the CA ITSELF rather than with a delegated responder ' +
+              'certificate — legal under section 4.2.2.2 and the simplest thing for a ' +
+              'client to verify — so there is no id-kp-OCSPSigning EKU and no ' +
+              'id-pkix-ocsp-nocheck anywhere. NOT DONE: request signatures are neither ' +
+              'required nor verified, there is no responder ID by key hash (it is by name), ' +
+              'no CRL reference extension, no archive cutoff, no service locator, and this ' +
+              'service CONSULTS no responder of anybody else\'s when it verifies a ' +
+              'certificate presented to it.' },
   { id: 'ws-trust', name: 'WS-Trust 1.4 (and 1.0-1.3)',
     where: 'OASIS ws-sx',
     url: 'https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html',
@@ -913,19 +935,98 @@ const SPECS = [
               'button is the whole mechanism. It was ADVERTISED AND MISSING for a long time — ' +
               'every request got a 302 whatever it asked for — which is why the member was ' +
               'removed from the metadata until this existed.' },
-  { id: 'rfc7523', name: 'RFC 7523 — JWT Profile for OAuth 2.0 Client Authentication',
+  { id: 'rfc7521', name: 'RFC 7521 — Assertion Framework for OAuth 2.0 Client Authentication ' +
+                        'and Authorization Grants',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7521',
+    coverage: 'full. It is a FRAMEWORK with no wire format of its own — it defines the two ' +
+              'request parameters (`assertion` and `client_assertion` with its type), the ' +
+              'error vocabulary, and the list of checks — so everything it asks for is ' +
+              'implemented THROUGH RFC 7523, which is the only profile of it anybody uses, and ' +
+              'nothing here is testable without that one. Section 4.1: both parameters, and ' +
+              '`scope`, which is NARROWED against what the assertion carries and never ' +
+              'widened. Section 4.2: an error_description on every refusal, which is most of ' +
+              'oauth-oidc/assertion_grant.js. Section 5.2: the issuer must be one this ' +
+              'authorization server trusts, the assertion must name it as the audience (an ' +
+              'array is allowed and any member may match), the signature must verify, the ' +
+              'expiry is enforced with a configurable skew, and a replay is refused. Section ' +
+              '5.2 (6)\'s invitation to refuse an unreasonable lifetime is taken, at ' +
+              'oauth2.jwtBearerMaxLifetimeS. Section 6.2: `client_id` may be omitted where the ' +
+              'assertion identifies the party. Section 6.3: a `cnf` is CARRIED AND REPORTED ' +
+              'and never enforced — this grant has no parameter in which a presenter could ' +
+              'prove possession of the named key, so demanding one would refuse every ' +
+              'conforming client.' },
+  { id: 'rfc7523', name: 'RFC 7523 — JWT Profile for OAuth 2.0 Client Authentication and ' +
+                         'Authorization Grants',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7523',
-    coverage: 'full for section 2.2 and section 3, which is CLIENT AUTHENTICATION by assertion: ' +
-              'private_key_jwt is verified against the JWKS the client registered and ' +
-              'client_secret_jwt against its secret, with iss and sub both required to be the ' +
-              'client, the audience allowed to be the token endpoint or the issuer (RFC 7523 ' +
-              'and OpenID Connect Core section 9 name different ones and deployments differ), ' +
-              'expiry with a configurable skew, and a jti remembered until the assertion ' +
-              'expires so a replay is refused. An assertion nominating an HMAC alg for ' +
-              'private_key_jwt is REFUSED rather than verified with the public key as a ' +
-              'secret — the classic forgery, and one anybody can perform because the key is ' +
-              'public. NOT implemented: section 2.1, the JWT authorization GRANT, which is a ' +
-              'way of getting a token rather than of authenticating a client.' },
+    coverage: 'full — BOTH sections, since 2026-09-10. Section 2.2 and section 3 are CLIENT ' +
+              'AUTHENTICATION by assertion: private_key_jwt is verified against the JWKS the ' +
+              'client registered, against a JWKS this service ISSUED it from its own ' +
+              'certificate authority, or against an x5c chain that builds a path to this ' +
+              'realm\'s own Root CA — and client_secret_jwt against its secret, with iss and ' +
+              'sub both required to be the client, the audience allowed to be the token ' +
+              'endpoint or the issuer (RFC 7523 and OpenID Connect Core section 9 name ' +
+              'different ones and deployments differ), expiry with a configurable skew, and a ' +
+              'jti remembered until the assertion expires so a replay is refused. An assertion ' +
+              'nominating an HMAC alg for private_key_jwt is REFUSED rather than verified with ' +
+              'the public key as a secret — the classic forgery, and one anybody can perform ' +
+              'because the key is public. Section 2.1 is the JWT AUTHORIZATION GRANT — a way ' +
+              'of getting a token rather than of authenticating a client — and every claim in ' +
+              'section 3 is checked, the five OPTIONAL ones included: `nbf` and `iat` against ' +
+              'the same skew, `iat` also bounding the LIFETIME, `jti` against a replay cache ' +
+              'and REQUIRED here (section 3\'s own last paragraph read literally: an assertion ' +
+              'with no jti cannot be remembered, so accepting one means accepting a bearer ' +
+              'credential this service has no way to spend), other claims carried onto the ' +
+              'issued token, and claim 10 — the assertion may be ENCRYPTED, as a nested JWT in ' +
+              'any of sixteen key management algorithms and six content encryption ones. Both ' +
+              'sections take every JWS algorithm this service verifies, the eleven ' +
+              'post-quantum ones included. WHAT IS NOT PERMISSIVE: the assertion ISSUER must ' +
+              'be declared on an application entry (oauthAssertionIssuer), because an ' +
+              'assertion IS the whole authorization for that grant — no browser, no password, ' +
+              'no consent step — so accepting one from anybody would mean anybody who can ' +
+              'reach this port getting a token as anybody. That refusal and federation\'s are ' +
+              'the only two here that default to ON.' },
+  { id: 'rfc7522', name: 'RFC 7522 — SAML 2.0 Profile for OAuth 2.0 Client Authentication ' +
+                         'and Authorization Grants',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7522',
+    coverage: 'full — BOTH sections, since 2026-09-11, and it is a SEPARATE implementation ' +
+              'from RFC 7523 rather than that one with a format flag. The two are profiles of ' +
+              'one framework and share no code: a JWT is three base64url parts and a claim ' +
+              'set, and this is an XML document with an enveloped XML Signature, a <Conditions> ' +
+              'element and a Recipient attribute that has no JWT equivalent at all. Section 2.1 ' +
+              'is the SAML 2.0 AUTHORIZATION GRANT ' +
+              '(grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer) and section 2.2 is ' +
+              'CLIENT AUTHENTICATION by the same document ' +
+              '(client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer), ' +
+              'whose token_endpoint_auth_method here is `saml2_bearer` — THIS SERVICE\'S OWN ' +
+              'NAME, because that RFC registers none and the IANA registry has no value for ' +
+              'it; it is published in token_endpoint_auth_methods_supported so a client ' +
+              'discovers it rather than reading it here, and nothing on the wire is invented. ' +
+              'All ELEVEN items of section 3 are checked: the <Issuer> by Simple String ' +
+              'Comparison (item 1, no case folding and no trailing-slash tolerance); the ' +
+              '<AudienceRestriction>, which is REFUSED when it does not name this server and ' +
+              'has no off switch (item 2); the <Subject>, which for client authentication MUST ' +
+              'be the client_id (item 3); an expiry from either NotOnOrAfter, EITHER of which ' +
+              'satisfies it (item 4); at least one bearer <SubjectConfirmation> with its ' +
+              'Recipient checked against the token endpoint and its Address READ AND NOT ' +
+              'ENFORCED (item 5); both NotOnOrAfter instants with a configurable skew, an ' +
+              'expired <SubjectConfirmation> DISCARDED rather than made fatal, and a replay ' +
+              'cache on the assertion ID (item 6); the <AuthnStatement>, carried and reported ' +
+              'and never required (item 7); every <AttributeStatement> attribute carried onto ' +
+              'the issued token (item 8); the signature, REQUIRED, an unsigned assertion ' +
+              'refused by name (item 9); an <EncryptedAssertion> and an <EncryptedID> decrypted ' +
+              'with this realm\'s own key (item 10); and the <Conditions> in full, an ' +
+              'unrecognised <Condition> type making the assertion Invalid per SAML core section ' +
+              '2.5.1 rather than being ignored (item 11). WHAT IS NOT PERMISSIVE, and there are ' +
+              'TWO things rather than one: the Issuer must be declared on an application entry ' +
+              '(oauthSamlAssertionIssuer), for the reason RFC 7523\'s must be — and the ' +
+              'assertion is verified ONLY against a certificate registered against that party ' +
+              'under the RFC 7522 attributes. **A certificate in <ds:KeyInfo> that merely ' +
+              'chains to this realm\'s Root is NOT accepted**, which is the one place this ' +
+              'service is stricter here than for RFC 7523: a chain proves the REALM issued a ' +
+              'key and says nothing about which application holds it, so accepting one would ' +
+              'let an application\'s own RFC 7523 leaf sign a SAML assertion. The two profiles ' +
+              'hold SEPARATE key pairs per application, in two attribute sets no verifier ' +
+              'crosses.' },
   { id: 'rfc9700', name: 'RFC 9700 — OAuth 2.0 Security Best Current Practice',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9700',
     coverage: 'partial, AND OFF BY DEFAULT — it is a MODE (oauth2.rfc9700) rather than how this ' +
@@ -985,6 +1086,34 @@ const SPECS = [
               'attesting to an authenticator\'s provenance is the one thing it must not pretend to ' +
               'do. Written independently of the debugger\'s own decoder so the two can be checked ' +
               'against each other (tests/webauthn_cross_impl.js).' },
+  { id: 'rfc4226', name: 'RFC 4226 — HOTP: An HMAC-Based One-Time Password Algorithm',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4226',
+    coverage: 'full for what RFC 6238 needs of it: section 5.3\'s dynamic truncation over ' +
+              'HMAC-SHA-1, SHA-256 or SHA-512, six to eight digits, with the counter as an ' +
+              'eight-byte big-endian value. Asserted against the specification\'s own ' +
+              'Appendix D test vectors (tests/totp.js), which is the point of implementing it ' +
+              'rather than taking a library: the four steps of that truncation have each been ' +
+              'got wrong by somebody, and a published vector is the only check that catches ' +
+              'it. NOT covered: counter-based HOTP as an authentication mechanism — nothing ' +
+              'here holds a counter that advances on use, because the only caller is the ' +
+              'time-based construction below.' },
+  { id: 'rfc6238', name: 'RFC 6238 — TOTP: Time-Based One-Time Password Algorithm',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6238',
+    coverage: 'full, verifier side, as a SECOND FACTOR ONLY: section 4\'s time step over ' +
+              'RFC 4226, all three digests, a settable step and digit count, a symmetric ' +
+              'skew window (section 5.2 recommends at most one step, which is the default), ' +
+              'and section 5.2\'s requirement that a code be accepted ONCE — the accepted ' +
+              'step is stored on the enrolment and anything at or below it is refused by ' +
+              'name. **CODES ARE CHECKED FOR REAL IN BOTH MODES**, which is the one place ' +
+              'besides SPNEGO where this mock verifies an end user\'s credential: a ' +
+              'verifier that accepted any six digits would not be a permissive RFC 6238, it ' +
+              'would be a broken one. Enrolment is the Key Uri Format (otpauth://, Google\'s ' +
+              'convention rather than any RFC) drawn as a QR code and as a transcribable ' +
+              'base32 secret. NOT covered: it can never be a PRIMARY credential — this ' +
+              'service holds the same shared secret the app does, which is fine for proving ' +
+              'possession of the app and is not something to hang an account on; and there ' +
+              'is no resynchronisation protocol, because the window is the whole of what ' +
+              'this offers for a drifting clock.' },
   { id: 'oidc', name: 'OpenID Connect Core 1.0',
     where: 'OpenID Foundation', url: 'https://openid.net/specs/openid-connect-core-1_0.html',
     coverage: 'partial: id_token with nonce, at_hash and c_hash, the three authentication flows, ' +
@@ -1439,6 +1568,182 @@ const ENDPOINTS = [
           'PEP and does not stop it enforcing, because it already holds the ' +
           'engine and the policy. The register is ou=peps in the embedded ' +
           'directory.' },
+  { path: '/admin/pki', group: 'PKI',
+    name: 'The certificate authority this realm holds', specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
+    what: 'THE ONLY SURFACE HERE THAT ISSUES AN X.509 CERTIFICATE TO SOMETHING ' +
+          'THAT IS NOT THIS SERVICE. Builds a three-tier hierarchy for the ' +
+          'trust realm it is reached in — Root CA, Intermediate CA, Issuing ' +
+          'CA, all three in one act or none — and issues signing key pairs ' +
+          'from the bottom of it to applications AND, since 2026-09-11, to ' +
+          'PEOPLE (POST /admin/pki/person, or the same issue action with ' +
+          'target=person), which is what makes RFC ' +
+          '7521 and RFC 7523 usable without an operator moving key material ' +
+          'by hand. The key pair goes onto the application\'s own directory ' +
+          'entry: the private key under oauthAssertionPrivateKey — sealed ' +
+          'under the same key-encryption key as the hierarchy wherever that ' +
+          'key outlives the process, and in the clear in development mode ' +
+          'where it does not — the public half as a JWKS carrying x5c ' +
+          'and x5t#S256, and this service KEEPS NO SECOND COPY — common/pki.js ' +
+          'hands it over once and forgets it. IT REVOKES SINCE 2026-09-11: ' +
+          'every authority on the page signs a CRL and answers OCSP, the ' +
+          'revocation pane puts a serial on an issuer\'s list, and anything ' +
+          'replaced or rotated goes on as `superseded` with nobody asking. ' +
+          'TWO THINGS IT STILL DOES NOT DO, and both are said on the page: it ' +
+          'CONSULTS no revocation list, its own included, so a certificate ' +
+          'revoked here still authenticates here — and taking a key pair off ' +
+          'an application is a THIRD act that puts nothing on any list, it ' +
+          'stops this service ACCEPTING what that key signs; and in ' +
+          'DEVELOPMENT mode the ' +
+          'hierarchy lives exactly as long as the process, which is the rule ' +
+          'the signing key follows and for the same reason. The encoder is ' +
+          'common/vendored/x509.js — the parent project\'s own PKI code, ' +
+          'byte-identical, the same one behind its PKI / X.509 workflow page — ' +
+          'so a certificate issued here and one issued there are built by ONE ' +
+          'encoder. Add ?format=json, or drive it at /admin-api/pki.' },
+  { path: '/admin/pki/certificate', group: 'PKI',
+    name: 'The Certificate & Key Configuration pane',
+    specs: ['rfc5280'],
+    what: 'THE PARENT PROJECT\'S PKI / X.509 WORKFLOW, ON THE SERVER. Where ' +
+          '/admin/pki builds the hierarchy this SERVICE maintains for itself, ' +
+          'this issues an ARBITRARY certificate from any authority whose ' +
+          'private key is here: fourteen profiles (TLS server, TLS client, ' +
+          'code signing, S/MIME, OCSP responder, time stamping, smartcard ' +
+          'logon, Kerberos PKINIT and the three CA tiers), five cryptographic ' +
+          'approaches (classical, pure post-quantum, composite, hybrid), a ' +
+          'subject DN, TWENTY-TWO X.509v3 extension cards — every extension ' +
+          'RFC 5280 defines, the ones in common use that it does not, and ' +
+          'anything at all by OID — a PKCS#10 certification request, and four ' +
+          'keystore formats. POST ONLY: it is the pane\'s own form, and it ' +
+          'answers with a PAGE rather than a redirect because what it hands ' +
+          'back is the FORM — a hundred and fifteen fields, which is not what ' +
+          'a query string is for. THE FORM IS THE STATE: this console is ' +
+          'script-src \'none\', so "apply the profile" is a submit and every ' +
+          'field is re-posted by every button, which is what lets it rewrite ' +
+          'twenty-two extension boxes with no draft kept anywhere. Eight ' +
+          'actions, all mirrored at /admin-api/pki.' },
+  { path: '/admin/pki/person', group: 'PKI',
+    name: 'Issue an assertion key pair to a PERSON',
+    specs: ['rfc5280', 'rfc7521', 'rfc7523'],
+    what: 'RFC 7523 SECTION 2.1 WITH A PERSON AS THE ISSUER. The same `issue` ' +
+          'action /admin/pki takes, with target=person: the key pair is signed ' +
+          'by this realm\'s Issuing CA and written onto that person\'s own ' +
+          'entry in ou=users as stsAssertion* — the JWKS, the certificate, the ' +
+          'chain, the kid, the expiry, and the private half SEALED under the ' +
+          'key-encryption key exactly as an application\'s is. THE ONE RULE ' +
+          'THAT COMES WITH IT: a person\'s assertion may only be about ' +
+          'themselves, `iss` and `sub` must name the same person, and one ' +
+          'naming anybody else is refused — a key issued to one resource owner ' +
+          'is that person\'s credential rather than permission to speak for ' +
+          'the others. A party that may assert about other people is an ' +
+          'APPLICATION with oauthAssertionIssuer declared on it. POST ONLY, ' +
+          'and it answers with a PAGE rather than a redirect because what it ' +
+          'hands back is A PRIVATE KEY: a 303 would put that key in the ' +
+          'browser history, this service\'s access log and the next ' +
+          'request\'s Referer header. It is shown ONCE and there is no read ' +
+          'door for it afterwards. Mirrored at POST /admin-api/pki/issue with ' +
+          'the same target field.' },
+  { path: '/admin/pki/export', group: 'PKI',
+    name: 'Write a key pair out as PEM, DER, JWK or PKCS#12',
+    specs: ['rfc5280'],
+    what: 'THE ONE FORM ON THAT PAGE WHOSE ANSWER IS A FILE rather than a ' +
+          'page, reached by `formaction` on a button of the same form — ' +
+          'markup rather than script. The same export /admin/keys uses ' +
+          '(common/vendored/key_material.js), so a .p12 from here imports ' +
+          'identically into keytool, OpenSSL, Windows and macOS. It needs ' +
+          'ADMIN WRITE, like every other door here that hands over a private ' +
+          'key: reading this console needs Admin Read and taking a key out of ' +
+          'it needs the other role, which is why a GET-shaped act is done as ' +
+          'a POST. A DER export is two files and the PRIVATE one is sent — ' +
+          'this service will not take a zip dependency to send two, and the ' +
+          'public half comes out of the private one with one openssl ' +
+          'command. A REFUSAL IS A PAGE, so a bad password or an impossible ' +
+          'format reads like every other refusal on this console rather than ' +
+          'as a broken download. /admin-api/pki/export is the JSON arm, with ' +
+          'the bytes base64\'d.' },
+  { path: '/pki/crl/:scope/:ca', group: 'PKI',
+    name: 'The certificate revocation list of one authority',
+    specs: ['rfc5280'],
+    what: 'RFC 5280 section 5, DER, as `application/pkix-crl`. ONE PER ' +
+          'CERTIFICATE AUTHORITY and deliberately not one per realm: a CRL is ' +
+          'SIGNED BY AN ISSUER and lists serials that issuer minted, so a ' +
+          'list per realm would be a document with no valid issuer. {scope} ' +
+          'is `default`, a realm id, `service` (the Root) or `process` (the ' +
+          'branch TLS and SPIFFE hang off); {ca} is `root`, `intermediate` or ' +
+          'a use case \u2014 `jose`, `xml`, `assertions`, `tls`, `spiffe`. A ' +
+          '`.crl` suffix is accepted and ignored. THE SCOPE IS IN THE PATH ' +
+          'AND NOT TAKEN FROM THE REALM PREFIX, which is the one routing ' +
+          'decision here: these addresses go INSIDE certificates and are ' +
+          'fetched by clients that know nothing about this service\'s realm ' +
+          'convention, and two of the scopes belong to no realm and could not ' +
+          'otherwise be spelled. It is built and signed ON DEMAND rather than ' +
+          'cached, so thisUpdate is always now; the Cache-Control says the ' +
+          'same thing nextUpdate does, computed from ' +
+          '`pki.crlLifetimeMinutes`. THE SAME DOCUMENT IS IN THE DIRECTORY, ' +
+          'as `certificateRevocationList;binary` under ou=crl (RFC 4523 ' +
+          'section 4), which is what the `ldap://` and `ldaps://` ' +
+          'distribution points in every certificate this service issues ' +
+          'resolve to. Ungated, and it has to be: a relying party fetches ' +
+          'this before it has decided to trust anything.' },
+  { path: '/pki/ocsp/:scope/:ca', group: 'PKI',
+    name: 'The OCSP responder of one authority (POST)',
+    specs: ['rfc6960'],
+    what: 'RFC 6960 over HTTP, appendix A.1.1: the DER request as the body, ' +
+          '`application/ocsp-request` in and `application/ocsp-response` out. ' +
+          'Same {scope} and {ca} as the CRL above, and the same argument for ' +
+          'one responder per authority. It answers `good`, `revoked` or ' +
+          '`unknown`, SIGNS WITH THE CA ITSELF rather than with a delegated ' +
+          'responder certificate, and puts that CA\'s certificate in the ' +
+          'response \u2014 so a client can verify without being configured ' +
+          'with anything but the anchor it already has. THE NONCE IS ECHOED ' +
+          '(section 4.4.1) when one is sent. EVEN A REFUSAL IS AN OCSP ' +
+          'RESPONSE: `malformedRequest` and `unauthorized` are statuses ' +
+          'inside the protocol, so the HTTP status stays 200 and a client can ' +
+          'report what happened rather than guessing from a status code. The ' +
+          'body is read raw and capped at 64KB, which is a thousand times a ' +
+          'real request for one certificate.' },
+  { path: '/pki/ocsp/:scope/:ca/:request', group: 'PKI',
+    name: 'The OCSP responder of one authority (GET)',
+    specs: ['rfc6960'],
+    what: 'THE OTHER TRANSPORT RFC 6960 APPENDIX A.1.1 DEFINES, and the one a ' +
+          'cache can serve: the base64 of the DER request, URL-encoded, as ' +
+          'the last path segment. It needs decoding TWICE \u2014 base64 ' +
+          'contains `+`, `/` and `=`, all of which a client must ' +
+          'percent-encode and some do not, and express has already decoded ' +
+          'the parameter once by the time it arrives \u2014 so a `+` that ' +
+          'came through raw is a space and is put back. Getting that wrong ' +
+          'produces `malformedRequest` for a request that was perfectly well ' +
+          'formed, with no way for the client to tell the two apart. ' +
+          'Identical answer to the POST form.' },
+  { path: '/pki/ca/:scope/:ca', group: 'PKI',
+    name: 'One certificate authority\'s own certificate',
+    specs: ['rfc5280'],
+    what: 'DER, `application/pkix-cert`. This is the `caIssuers` address in ' +
+          'the Authority Information Access extension of every certificate ' +
+          'that authority signed, and it is what lets a client sent an ' +
+          'incomplete chain finish building one. A `.cer` suffix is accepted ' +
+          'and ignored. IT IS THE ONE PLACE THIS SERVICE PUBLISHES A ' +
+          'CERTIFICATE WITH A CACHE HEADER RATHER THAN `no-store`: a CA ' +
+          'certificate is durable by construction \u2014 an authority that ' +
+          'changed would be a different authority with a different name ' +
+          '\u2014 and the `caIssuers` fetch is meant to happen once. No ' +
+          'private key is reachable through it in any scope.' },
+  { path: '/pki/revocation', group: 'PKI',
+    name: 'Every CRL and OCSP responder this service publishes',
+    specs: ['rfc5280', 'rfc6960'],
+    what: 'NON-SPEC, and deliberately here anyway: a person pointing a client ' +
+          'at these endpoints needs to know what the addresses ARE, and ' +
+          'reading them out of a certificate with `openssl x509 -text` is a ' +
+          'poor first step. One row per authority with its subject, how many ' +
+          'certificates it has revoked, and its CRL in all three schemes ' +
+          '(http, ldap, ldaps) beside its OCSP and caIssuers addresses. ' +
+          'NO SERIAL NUMBERS ARE IN IT \u2014 the list of what is revoked is ' +
+          'the CRL, and a JSON copy beside it would be a second answer to the ' +
+          'same question: the one that goes stale, and the one nobody signed. ' +
+          'It says in as many words that this service PUBLISHES revocation ' +
+          'and cannot make anybody consult it, which is true of every ' +
+          'certificate authority and is the reason a client author would ' +
+          'point their stack here. Ungated, because everything in it is ' +
+          'already inside every certificate this service hands out.' },
   { path: '/admin/xacml/monitor', group: 'XACML',
     name: 'What authorization is doing', specs: ['xacml30'],
     what: 'THE ONLY PAGE IN THIS FAMILY ABOUT TRAFFIC rather than ' +
@@ -1526,7 +1831,7 @@ const ENDPOINTS = [
           'stream management, status, subject and verification endpoints, the complex ' +
           'subject members a receiver MUST understand, what an empty subject list means, ' +
           'and the authorization schemes these endpoints accept. NEVER GATED, whatever ' +
-          'ssf.authRequired says, and that is not laxness: a receiver has to be able to ' +
+          'the endpoints it describes require, and that is not laxness: a receiver has to be able to ' +
           'read what the endpoints are before it can authenticate to one, and a ' +
           'transmitter whose discovery document needs a credential is one nothing can ' +
           'bootstrap against. It also answers while ssf.enabled is OFF, so a receiver can ' +
@@ -1789,16 +2094,23 @@ const ENDPOINTS = [
           'are listed so that ignoring them is visible rather than silent. Add ?format=json.' },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server certificate (PEM)',
     specs: ['rfc5280'],
-    what: 'The self-signed certificate every TLS socket in this process presents, as PEM — ' +
-          'both HTTPS listeners and the directory\'s LDAPS listener on 636, which serves this ' +
-          'same certificate and key rather than a second pair. That is a decision about what ' +
-          'a CALLER has to do rather than a saved keypair: one anchor covering 8443, 9443 and ' +
-          '636 is ONE fetch, where two would make an ldapsearch fail with "unable to get local ' +
-          'issuer certificate" against a truststore built for the HTTPS ports — an error that ' +
-          'names nothing and reads as a broken directory. It is REGENERATED ' +
-          'ON EVERY START, like the signing key, so it is an anchor nobody can have baked in ' +
-          'and no cached copy of it stays valid — hence Cache-Control: no-store. Fetch it into ' +
-          'your own truststore rather than switching verification off.' },
+    what: 'Everything a caller needs to VERIFY this service, as PEM: the certificate every TLS ' +
+          'socket in this process presents — both HTTPS listeners, the main port and the ' +
+          'directory\'s LDAPS listener on 636, which serves this same certificate and key ' +
+          'rather than a second pair — followed by the chain between it and this service\'s ' +
+          'own Root CA, and that Root. That is a decision about what a CALLER has to do rather ' +
+          'than a saved keypair: one anchor covering 8443, 9443, the main port and 636 is ONE ' +
+          'fetch, where two would make an ldapsearch fail with "unable to get local issuer ' +
+          'certificate" against a truststore built for the HTTPS ports — an error that names ' +
+          'nothing and reads as a broken directory. SINCE 2026-09-11 THE CHAIN AND THE ROOT ' +
+          'ARE IN THIS DOCUMENT, because the certificate stopped being self-signed that day: ' +
+          'OpenSSL takes a self-signed leaf in a truststore as an anchor and refuses a ' +
+          'certified one, so a caller pinning the leaf alone got that same error about a Root ' +
+          'it had never been given. The LEAF IS FIRST, for a caller that wants only it. It is ' +
+          'REGENERATED ON EVERY START in development mode, like the signing key, so it is an ' +
+          'anchor nobody can have baked in and no cached copy of it stays valid — hence ' +
+          'Cache-Control: no-store. It publishes no private key. Fetch it into your own ' +
+          'truststore rather than switching verification off.' },
   { path: '/tls/trust', group: 'TLS', name: 'Trust a client certificate issuer',
     specs: ['rfc5280'],
     what: 'POST one or more PEM certificates — raw, or as the `certificates` field of a form or ' +
@@ -1818,8 +2130,10 @@ const ENDPOINTS = [
   { path: '/', group: 'Service', name: 'The front page',
     specs: [],
     what: 'What this service is, in one card: the project on GitHub, its ' +
-          'issues, the documentation site, and the admin console on this ' +
-          'instance. It lists NO endpoints on purpose — this page is the ' +
+          'issues, the documentation site, and the two surfaces on this ' +
+          'instance that a person rather than a client goes to — the admin ' +
+          'console and the user portal. It lists NO endpoints on purpose — ' +
+          'this page is the ' +
           'list, it is generated, and a hand-written set of highlights on ' +
           'the front door would be a second copy of it that nothing checks. ' +
           'It was an unrouted path until 2026-08-24, so the answer to the ' +
@@ -1908,7 +2222,7 @@ const ENDPOINTS = [
           'reads it back and no certificate is refused because of it — and, on the ' +
           'other side, the WHOLE ' +
           'per-method authorization table for the SPIRE Server API, whose TCP port is ' +
-          'MUTUAL TLS with an X509-SVID (spiffe.authRequired) — because what comes out of ' +
+          'MUTUAL TLS with an X509-SVID, unconditionally — because what comes out of ' +
           'these surfaces is a credential another service will believe. Add ' +
           '?format=json.' },
   { path: '/spiffe/bundle', group: 'SPIFFE', name: 'The trust bundle',
@@ -2053,9 +2367,9 @@ const ENDPOINTS = [
           'argument was that wsignout1.0 has a cleanup to fan out and a third way to end a ' +
           'session would be a third way to get that wrong, which stopped being true when the ' +
           'fan-outs became functions owned by their own protocol modules. PROTECTED, and it is ' +
-          'the only HTML surface here that is: with ' +
-          'admin.authRequired on (the default) every page needs a sign-on session from ' +
-          '/authn/login and one of two roles held as directory groups — see /admin/rbac. That ' +
+          'the only HTML surface here that is: every page needs a sign-on session from ' +
+          '/authn/login and one of two roles held as directory groups — see /admin/rbac, and ' +
+          'there is no setting that opens it. That ' +
           'is a turnstile and not a lock, exactly as SCIM\'s is: no password is checked ' +
           'anywhere in this service, so the username typed at that screen is the whole of the ' +
           'claim, and /admin-api is NOT gated at all. Turning the setting off restores the ' +
@@ -2261,6 +2575,57 @@ const ENDPOINTS = [
           'admin.readGroup and admin.writeGroup (cn=admin-read, cn=admin-write) decide who may ' +
           'use /admin, and they are ordinary entries listed here like any other. Even those two ' +
           'grant nothing outside that console. See /admin/rbac. Add ?format=json.' },
+  { path: '/admin/backup-codes', group: 'Admin', name: 'Recovery codes',
+    specs: [],
+    what: 'NON-SPEC, AND THE ONLY MECHANISM PAGE ON THIS CONSOLE THAT IMPLEMENTS NO ' +
+          'SPECIFICATION (2026-09-10). The four `backupCodes.*` settings — whether a set is ' +
+          'issued at all, how many codes, how long each is, and how it is grouped for ' +
+          'reading — with the mechanism read from common/backup_codes.js rather than ' +
+          'written down here, which is the rule /admin/crypto-metadata is built on. **A SET ' +
+          'IS ISSUED AUTOMATICALLY AND ONCE**, by the act of enrolling a second factor; ' +
+          'there is no control here, on /admin-api or on /portal that issues one on request. ' +
+          '**THE CODES ARE ENCRYPTED AND NOT HASHED**, which is the opposite of ' +
+          'userPassword and is a product decision rather than an arithmetic one: the person ' +
+          'may read their remaining codes back on /portal/mfa — REVERSED 2026-09-11, when ' +
+          'a set became a scrypt hash shown once at the moment it is generated. ' +
+          'THIS CONSOLE NEVER SHOWS A CODE. Changing these settings affects new sets only ' +
+          'and invalidates nothing — unlike /admin/totp, nothing here was told to an app ' +
+          'this service cannot reach. WHO HOLDS A SET is /admin/users, and the Clear that is ' +
+          'the only route to a second set is on that person\'s own row. Add ?format=json.' },
+  { path: '/admin/totp', group: 'Admin', name: 'TOTP MFA',
+    specs: ['rfc6238', 'rfc4226'],
+    what: 'NON-SPEC. THE AUTHENTICATOR-APP SECOND FACTOR, and the eight parameters RFC 6238 ' +
+          'leaves open: the HMAC digest, the digits, the seconds in a step, the steps of ' +
+          'clock skew forgiven, the shared secret length, the label a phone shows, whether ' +
+          'new enrolments are offered, and how long an unconfirmed one lives. The algorithm ' +
+          'table is READ FROM common/totp.js rather than written down here, which is the ' +
+          'rule /admin/crypto-metadata is built on. **CHANGING THE DIGEST, THE DIGITS OR THE ' +
+          'PERIOD AFFECTS NEW ENROLMENTS ONLY** — an existing secret is verified with the ' +
+          'parameters the QR code told the app, and this service cannot reach into somebody\'s ' +
+          'phone; the skew window is the exception and is live for everybody. **CODES ARE ' +
+          'CHECKED FOR REAL IN BOTH MODES**, which almost nothing else in this service is. ' +
+          'WHO HOLDS ONE is /admin/users, and clearing an enrolment is on that person\'s own ' +
+          'row. Filed under Protocols because it answers *what does the mechanism do* — the ' +
+          'rule /admin/xacml/monitor established, applied to a page that used to be filed by ' +
+          'its other half. Add ?format=json.' },
+  { path: '/admin/webauthn', group: 'Admin', name: 'WebAuthn',
+    specs: ['webauthn'],
+    what: 'NON-SPEC. THE SECURITY-KEY CEREMONY AND WHAT A KEY MAY BE HERE — thirteen ' +
+          'settings in three kinds. THE CEREMONY: the RP name, the RP ID override, the ' +
+          'algorithms offered, the user verification requirement, the attestation ' +
+          'conveyance, the timeout. CTAP2: the authenticator attachment, whether the ' +
+          'credential is discoverable (a resident key), whether credProps is asked for. ' +
+          'POLICY: whether a key may be a primary credential, whether it may be a second ' +
+          'factor, how many one person may hold — which are not WebAuthn at all but what ' +
+          'THIS service does with a key. **NOT ONE OF THESE EXISTED UNTIL 2026-09-10**: ' +
+          'every ceremony parameter was a literal in a string in authn/authn.js. **ONE IS ' +
+          'ENFORCED AND THE REST ARE REQUESTS** — userVerification is checked against the UV ' +
+          'flag inside the bytes the authenticator signed, and nothing signed says what the ' +
+          'browser was asked about attestation, the resident key or the attachment. **NO ' +
+          'ATTESTATION STATEMENT IS VERIFIED** whatever is asked for: no metadata service, ' +
+          'no vendor trust anchor, no model allow-list. The COSE table is read from ' +
+          'authn/webauthn.js, the module that checks the signature. WHO HOLDS A KEY is ' +
+          '/admin/users. Add ?format=json.' },
   { path: '/admin/rbac', group: 'Admin', name: 'Admin roles',
     // rfc4511/rfc4514/rfc4519 because the two roles ARE two ordinary groups in the
     // embedded directory — the same member/groupOfNames machinery /admin/groups
@@ -2281,7 +2646,8 @@ const ENDPOINTS = [
           'in holds both roles and every page says so: this service has no password anywhere ' +
           'to bootstrap an administrator with, so an empty roster OPENS (admin.openWhenEmpty, ' +
           'which can be turned off — and /admin-api, which is NOT gated, is then the only way ' +
-          'back in). None of it is in force while admin.authRequired is off. Add ?format=json.' },
+          'back in). The gate itself is unconditional — admin.authRequired was removed on ' +
+          '2026-09-06. Add ?format=json.' },
   { path: '/admin/scim', group: 'Admin', name: 'SCIM',
     // rfc7643 and rfc7644 because the page reports that surface; rfc4511 and rfc4519
     // because what it reports having done is entries in the embedded directory, and the
@@ -2299,6 +2665,53 @@ const ENDPOINTS = [
           'store, which is why /admin-api needs no POST beside its GET. ' +
           'The bulk count deliberately does not tally with the rest — one Bulk of five ' +
           'creates is one bulk AND five creates. Add ?format=json.' },
+  { path: '/admin/signals', group: 'Admin',
+    name: 'Signals received',
+    specs: ['ssf', 'caep', 'risc'],
+    what: 'NON-SPEC PAGE OVER A SPECIFIED FEED. THIS CONSOLE IS A REGISTERED ' +
+          'SHARED SIGNALS RECEIVER SINCE 2026-09-10, with a stream of its ' +
+          'own (`sts-admin-console`) seeded in EVERY trust realm — which is ' +
+          'one realm more than its CLIENT entry, and the disagreement is ' +
+          'deliberate: a client entry is about signing somebody IN, and the ' +
+          'console\'s gate reads the default realm\'s session wherever it ' +
+          'is reached, whereas a STREAM is about what HAPPENED and events ' +
+          'happen in the realm they happen in. The page lists every Security ' +
+          'Event Token delivered to this console in the realm being read, ' +
+          'with the subject as this receiver read it, whether the signature ' +
+          'verified, whether the audience was right and whether the media ' +
+          'type was. ABOVE THE TABLE IT SAYS WHY NOTHING WOULD ARRIVE: an ' +
+          'empty inbox has five causes and only one of them is "nothing has ' +
+          'happened", so the ones that apply are named — the transmitter ' +
+          'off, the internal receivers off, the stream deleted, ' +
+          '`ssf.pushDelivery` off, or a vocabulary turned off under it. Its ' +
+          'one control clears what is HELD and never the stream.',
+    coverage: 'full for what it claims. It is not the transmitter\'s copy: ' +
+              '/admin/ssf is every stream and what went out on each, and ' +
+              '/admin/caep-sessions and /admin/risc-accounts are what this ' +
+              'service BELIEVES about a session and an account. This is the ' +
+              'only one of the four that goes empty when delivery is broken, ' +
+              'and therefore the only one that can report that it is.' },
+  { path: '/admin/signals/receive', group: 'Admin',
+    name: 'The console\'s Shared Signals receive endpoint',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    effect: 'records a Security Event Token delivered to the admin console',
+    what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY. The console\'s own stream ' +
+          'names this path as its `delivery.endpoint_url`, on this ' +
+          'service\'s loopback address with its TLS certificate pinned. IT ' +
+          'IS THE SECOND PATH UNDER /admin THE CONSOLE GATE DOES NOT GUARD ' +
+          '(the first is /admin/callback) and it is the same shape of ' +
+          'exemption: a push is a server-to-server request and carries no ' +
+          'console session by construction, so the gate could only ever ' +
+          'refuse it. The check moved rather than went away — the stream\'s ' +
+          'own bearer token, compared in constant time, then the `aud`, then ' +
+          'the signature — and it is exempt from the CSRF check for the same ' +
+          'reason, there being no browser and no cookie. See ' +
+          'ssf/ssf_receivers.js.',
+    coverage: 'full for RFC 8935 section 2.1 receipt: the media type, the ' +
+              'authorization header, the 202 with an empty body, and section ' +
+              '2.4\'s {err, description} refusal shape. Poll delivery at ' +
+              'this end is not implemented — this receiver is a push ' +
+              'receiver — and nothing retries.' },
   { path: '/admin/scim/monitor', group: 'Admin', name: 'SCIM metrics',
     // rfc7643 and rfc7644 because what it counts is calls to that surface;
     // rfc7617, rfc7616, rfc6750 and rfc7486 because the per-scheme table is
@@ -2612,6 +3025,65 @@ const ENDPOINTS = [
               'application on FIRST SIGHT, so something no client has ever ' +
               'presented an identifier for and no operator has created is ' +
               'not there to be listed.' },
+  { path: '/portal/signals', group: 'User portal',
+    name: 'Your security activity',
+    specs: ['ssf', 'caep', 'risc'],
+    what: 'NON-SPEC PAGE OVER A SPECIFIED FEED. THIS PORTAL IS A REGISTERED ' +
+          'SHARED SIGNALS RECEIVER SINCE 2026-09-10: it has a stream of its ' +
+          'own (`sts-user-portal`), seeded per trust realm, asking for every ' +
+          'CAEP and every RISC event type, delivered by RFC 8935 PUSH to the ' +
+          'endpoint below. This page draws what arrived, narrowed to the ' +
+          'events whose subject is the SIGNED-IN PERSON. That narrowing is ' +
+          'the whole of the page\'s security: one stream carries events ' +
+          'about everybody this portal serves, because a receiver is told ' +
+          'about the people it serves and there is one of it, so the filter ' +
+          'is on the way OUT and the person is composed from the session and ' +
+          'from nothing else. IT FAILS CLOSED — an identifier this service ' +
+          'cannot resolve to an account (a phone number, an opaque id it did ' +
+          'not compose) is NOT shown, because showing one person another ' +
+          'person\'s account lockout is a disclosure and failing to show ' +
+          'somebody one of their own is an incomplete page. THERE IS NO ' +
+          'CONTROL ON IT: a person may not clear the record of what was said ' +
+          'about their own account, so the Clear is the console\'s at ' +
+          '/admin/signals and this page has none.',
+    coverage: 'full for what it claims. It shows every delivered event this ' +
+              'service could match to the signed-in person and says, on the ' +
+              'page, that a subject it cannot match is left out rather than ' +
+              'guessed at. It is not the transmitter\'s record: what this ' +
+              'service SENT is /admin/ssf, and what it BELIEVES about a ' +
+              'session or an account is /admin/caep-sessions and ' +
+              '/admin/risc-accounts.' },
+  { path: '/portal/signals/receive', group: 'User portal',
+    name: 'The portal\'s Shared Signals receive endpoint',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    effect: 'records a Security Event Token delivered to the user portal',
+    what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, WITH THIS SERVICE AT BOTH ' +
+          'ENDS (2026-09-10). The portal\'s stream names this path as its ' +
+          '`delivery.endpoint_url`, on this service\'s own loopback ' +
+          'address, and `ssf/ssf_http.js` POSTs each SET here as ' +
+          'application/secevent+jwt with the stream\'s ' +
+          '`authorization_header`. IT IS A REAL HTTP REQUEST ON PURPOSE: ' +
+          'handing the event to the page in process would skip the body, the ' +
+          'media type, the authorization header and the signature, which is ' +
+          'everything a receiver does — the argument `common/oidc_rp.js` ' +
+          'makes about redeeming an authorization code in process, made ' +
+          'again for a different protocol. UNAUTHENTICATED BY SESSION AND ' +
+          'NOT UNGUARDED: what it checks is the bearer token on its own ' +
+          'stream, minted per stream and per start and given to nothing but ' +
+          'this service\'s own transmitter, compared in constant time; then ' +
+          'the `aud`, refusing `invalid_audience` for a SET addressed to ' +
+          'anybody else; then the signature. A malformed or misaddressed ' +
+          'token is RECORDED AND REFUSED rather than dropped, because what ' +
+          'arrived is the question being asked. Deliberately NOT rate ' +
+          'limited, which every credential endpoint in that file is: a ' +
+          'limiter would silently drop somebody\'s account-disabled notice ' +
+          'under load.',
+    coverage: 'full for RFC 8935 section 2.1 receipt: the media type, the ' +
+              'authorization header, the 202 with an empty body, and section ' +
+              '2.4\'s {err, description} refusal shape. It does not ' +
+              'implement RFC 8936 poll at this end — this receiver is a push ' +
+              'receiver — and nothing here retries, which is the ' +
+              'transmitter\'s side of the same deliberate omission.' },
   { path: '/portal/keys', group: 'User portal',
     name: 'Your security keys',
     specs: ['webauthn'],
@@ -2626,6 +3098,46 @@ const ENDPOINTS = [
           'expired, which is exactly the defect this portal\'s ' +
           'account-ready page shipped with. A key is enrolled during a ' +
           'sign-in or when an activation link is spent.' },
+  { path: '/portal/mfa', group: 'User portal',
+    name: 'Your authenticator app',
+    specs: ['rfc6238', 'rfc4226'],
+    effect: 'enrols or removes the signed-in person\'s own one-time password secret',
+    what: 'NON-SPEC page over RFC 6238. THE FIRST PAGE IN THIS SERVICE THAT HANDS SOMEBODY A ' +
+          'CREDENTIAL rather than taking one: it mints a shared secret, draws it as a QR ' +
+          'code (an SVG this server rendered, as a data: URI, because every page of this ' +
+          'portal is script-src \'none\') and as a transcribable base32 string beside it, ' +
+          'and asks for a code back. **TWO STEPS, AND THE FIRST WRITES NOTHING** — an ' +
+          'unconfirmed secret on somebody\'s entry would be a second factor they cannot ' +
+          'produce, so nothing reaches the directory until a code proves the app has it. ' +
+          'One secret per person and enrolling again REPLACES, because a six-digit code ' +
+          'names no credential and two secrets would mean trying both. The identity is the ' +
+          'session\'s and there is no parameter for it: a username read from this body ' +
+          'would let anybody signed in enrol THEIR OWN app as somebody else\'s second ' +
+          'factor, which is a takeover rather than a leak.' },
+  { path: '/portal/signing-key', group: 'User portal',
+    name: 'Your own RFC 7523 signing key',
+    specs: ['rfc7521', 'rfc7523', 'rfc5280'],
+    effect: 'issues, replaces or removes the signed-in person\'s own ' +
+            'assertion signing key pair',
+    what: 'NON-SPEC page over RFC 7523 section 2.1. THE SECOND PAGE IN THIS ' +
+          'PORTAL THAT HANDS SOMEBODY A CREDENTIAL rather than taking one, ' +
+          'and the only door in this service where the person a key pair is ' +
+          'FOR is the one who issues it: a leaf signed by this realm\'s ' +
+          'Issuing CA, written onto their own entry as stsAssertion*, with ' +
+          'the private half SHOWN ONCE on the page that comes back and sealed ' +
+          'at rest afterwards — nothing here, on /admin/pki or in /admin-api ' +
+          'opens it again, so generating replaces and there is no second ' +
+          'chance at a copy. **THE KEY\'S WHOLE AUTHORITY IS *this is me***: ' +
+          'an assertion signed with it that names anybody else as `sub` is ' +
+          'refused, on the registered key and on a certificate presented in ' +
+          'x5c alike, because the leaf carries urn:sts-mock:person:<name> as ' +
+          'a URI subjectAltName. The identity is the session\'s and the form ' +
+          'has no name field — one would let anybody signed in write a key ' +
+          'pair onto somebody else\'s entry. Generate is RATE LIMITED where ' +
+          'nothing else on these pages is: an RSA key pair is CPU on the one ' +
+          'thread every protocol here answers on. `pki.personSelfService` ' +
+          'turns the offer off without touching a key anybody already holds, ' +
+          'and a realm with no certificate authority draws no button at all.' },
   { path: '/portal/signout', group: 'User portal',
     name: 'Sign out of the portal', specs: [],
     effect: 'ends the portal session and the sign-on session behind it',
@@ -3064,6 +3576,69 @@ const ENDPOINTS = [
           'shown, only its kind and identifier. ?format=json carries the ' +
           'person, the credentials with the grant on each, the acts and the ' +
           'graph; ?format=svg is the picture alone.' },
+  { path: '/admin/database', group: 'Admin',
+    name: 'What PostgreSQL reports about itself, and this service\'s schema in it',
+    specs: [],
+    what: 'TWENTY PROBES AGAINST POSTGRESQL\'S CATALOG VIEWS, each run, timed ' +
+          'and caught SEPARATELY: the server and its uptime, the database ' +
+          'size, every counter in pg_stat_database, the backends and the ' +
+          'locks they hold, the background writer, the checkpointer, the ' +
+          'write-ahead log and the archiver — then per-table and per-index ' +
+          'statistics, sizes, columns and constraints for the schema this ' +
+          'service owns. **THE SHAPE OF THE PAGE IS DECIDED BY THE SERVER IT ' +
+          'IS POINTED AT**: every statement is a SELECT *, because PostgreSQL ' +
+          'moves these views between major versions — pg_stat_bgwriter has ' +
+          'eleven columns on 16 and four on 17, when the checkpoint counters ' +
+          'moved to a view that does not exist before it — so a page naming ' +
+          'its columns would be wrong on every server but one, and wrong in ' +
+          'the way that reads as a blank cell. **A PROBE THAT FAILED IS A ROW ' +
+          'AND NOT AN ABSENCE**, with PostgreSQL\'s SQLSTATE beside it, ' +
+          'because 42P01 (an older server) and 42501 (this service does not ' +
+          'hold pg_monitor) are different things to do about. IT IS FILED ' +
+          'UNDER MONITORING and /admin/persistence is under Settings, which ' +
+          'is the filing rule rather than a path: that page is what this ' +
+          'service is CONFIGURED to write down and reads the same on a ' +
+          'service that started a second ago, and the numbers here move while ' +
+          'a reader watches. **THERE IS NO QUERY BOX AND THERE MUST NEVER BE ' +
+          'ONE** — the role this service dials with can INSERT, UPDATE and ' +
+          'DELETE on six tables, so a console that could hand it a statement ' +
+          'could empty the directory; every statement is a literal in ' +
+          'persistence/persistence_postgres.js and none is built from ' +
+          'anything a request carries, all of them are catalog reads, and ' +
+          'they are bounded by PostgreSQL\'s own statement_timeout on the ' +
+          'single connection the page borrows. Empty with a sentence saying ' +
+          'WHICH of three reasons unless persistence.mode is postgres. Add ' +
+          '?format=json, or GET /admin-api/database.' },
+  { path: '/admin/encryption', group: 'Admin',
+    name: 'What is encrypted at rest, and how much of it has happened',
+    specs: [],
+    what: 'THE AT-REST HALF OF THIS SERVICE\'S CRYPTOGRAPHY, and it is NOT ' +
+          '/admin/crypto-metadata with fewer fields. That page answers what ' +
+          'this service DOES when it signs, verifies, encrypts or decrypts — ' +
+          'per protocol family, every algorithm table read out of the module ' +
+          'that performs it — and reads identically on a service that ' +
+          'started a second ago, which is why it is filed under Protocols. ' +
+          'This one is TRAFFIC and is filed under Monitoring: the numbers go ' +
+          'up while a reader watches. Six classes of data are SEALED — this ' +
+          'service\'s own signing keys, the certificate authority, the ' +
+          'assertion key pairs /admin/pki issues to applications, ' +
+          'authenticator shared secrets, recovery codes, and (product mode ' +
+          'on postgres only) everything this process mints — all under ONE ' +
+          'key-encryption key, AES-256-GCM with a per-record subkey derived ' +
+          'by HKDF-SHA256 over a random salt. THE COUNTS ARE TAKEN AT THE ONE ' +
+          'FUNNEL both operations pass through rather than at the call ' +
+          'sites, because a total assembled from call sites is wrong the ' +
+          'first time somebody adds another one and is wrong SILENTLY; the ' +
+          'breakdown is by a label each call site passes, and a call site ' +
+          'that passes none is still counted. WHAT IS DELIBERATELY NOT ' +
+          'SEALED IS LISTED BESIDE WHAT IS, each with its reason, because ' +
+          'the question a reader brings is almost always "is THIS ' +
+          'encrypted" and a table of only the yeses answers it by silence. ' +
+          'NO CIPHERTEXT AND NO PLAINTEXT is on the page and it has NO ' +
+          'CONTROL: rotating the key is a deployment act — this service ' +
+          'reads a key and never writes one — and a decrypt-this button ' +
+          'would be the one door onto material no door is supposed to have. ' +
+          'Add ?format=json, or GET /admin-api/encryption.' },
   { path: '/admin/audit', group: 'Admin', name: 'Audit log',
     // rfc4511 is linked because the directory operations are its and they are the
     // largest source of rows here. Nothing else: an audit log is not a protocol,
@@ -3335,7 +3910,7 @@ const ENDPOINTS = [
   // this console.
   // ---------------------------------------------------------------------------
   { path: '/admin/oauth2', group: 'Admin', name: 'OAuth 2.0 / OIDC settings',
-    specs: ['rfc6749', 'oidc', 'rfc9700', 'oidc-fclogout', 'rfc7523'],
+    specs: ['rfc6749', 'oidc', 'rfc9700', 'oidc-fclogout', 'rfc7523', 'rfc7522'],
     effect: 'changes what the authorization server will accept and what it ' +
             'puts into what it issues',
     what: 'NON-SPEC. The thirteen oauth2.* settings, on the page for the ' +
@@ -3548,6 +4123,88 @@ const ENDPOINTS = [
           'This API is not gated at all, which is the same honest consequence ' +
           'every operation here has and is worth saying twice for this one. ' +
           'Mirrors POST /admin/keys/export.' },
+  { path: '/admin-api/pki', group: 'Management API',
+    name: 'The certificate authority this realm holds',
+    specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
+    what: 'NON-SPEC. Everything /admin/pki draws, as JSON: the three CA tiers with ' +
+          'their subjects, serials, validity, algorithms, thumbprints and ' +
+          'CERTIFICATES; the vocabularies a build may ask for; and ONE ROW PER ' +
+          'APPLICATION PER PROFILE for everything holding an issued key pair, ' +
+          'because every fact on such a row — the handle, the expiry, the declared ' +
+          'issuer — is per profile and an application may hold both an RFC 7523 and ' +
+          'an RFC 7522 one. **NO PRIVATE KEY IS EVER IN THIS REPLY**: common/pki.js ' +
+          'drops them on the way out, so a caller here cannot leak the Root\'s key by ' +
+          'forgetting. The certificates are in full, because a certificate is the ' +
+          'half of a pair meant to be handed around. PER REALM, like the hierarchy ' +
+          'itself. `revocation` IS THE REGISTER since 2026-09-11 — one entry per ' +
+          'certificate authority with what it issued, what is on its list, and its ' +
+          'CRL and OCSP addresses in three schemes — and `revocationNote` beside it ' +
+          'is the durable SENTENCE: revocation here is PUBLISHED and never ' +
+          'CONSULTED, so a certificate revoked on this page still authenticates to ' +
+          'this service. They are two members because an empty list and no lists at ' +
+          'all are different answers and one field could only carry one of them. ' +
+          '`residency` is the other limit: in development mode the hierarchy dies ' +
+          'with the process. Mirrors GET /admin/pki.' },
+  { path: '/admin-api/pki/:action', group: 'Management API',
+    name: 'Build a hierarchy, issue a key pair, author a certificate',
+    specs: ['rfc5280'],
+    what: 'NON-SPEC. The TWELVE actions behind two console pages — build, clear, ' +
+          'issue, revoke on /admin/pki, and apply-profile, generate-keys, ' +
+          'generate-alt-keys, issue-certificate, use-key, remove-object, ' +
+          'clear-store, export on the Certificate & Key Configuration pane — ' +
+          'through the same pkiAction() those pages call. **IT RESOLVES RATHER THAN ' +
+          'RETURNING**: issuing is Web Crypto all the way down, so this is one of ' +
+          'the two action handlers in this API that await (/admin-api/ssf is the ' +
+          'other). `issue` HANDS THE PRIVATE KEY OVER ONCE and this service keeps no ' +
+          'second copy of it; `export` returns key material base64\'d, like ' +
+          '/admin-api/keys/export and for its reason. **`revoke` REVOKES NOTHING**: ' +
+          'it takes the key pair off the application, so this service stops ACCEPTING ' +
+          'what that key signs, and the certificate goes on chaining — the reply says ' +
+          'so in those words. `issue` and `revoke` take a `target` of ' +
+          'application (the default) or person — a person\'s key pair goes ' +
+          'onto their ou=users entry as stsAssertion* and may only assert ' +
+          'about themselves. Mirrors POST /admin/pki, POST ' +
+          '/admin/pki/certificate and POST /admin/pki/person.' },
+  { path: '/admin-api/database', group: 'Management API',
+    name: 'PostgreSQL metrics and schema statistics', specs: [],
+    what: 'NON-SPEC. Everything /admin/database draws, as JSON. **IT IS THE ' +
+          'ONE OPERATION ON THIS API WHOSE REPLY SHAPE IS DECIDED BY ' +
+          'SOMETHING OUTSIDE THIS SERVICE**: the members under probes.*.row ' +
+          'and probes.*.rows are PostgreSQL\'s own columns and differ between ' +
+          'major versions, so a client reading a named column should treat ' +
+          'its absence as ordinary rather than as an error. A probe that ' +
+          'failed is a MEMBER with ok:false and PostgreSQL\'s SQLSTATE in ' +
+          '`code`, not an absence. `derived` carries the four ratios ' +
+          'PostgreSQL deliberately does not keep — it stores counters, ' +
+          'because a counter can be subtracted between two readings and a ' +
+          'ratio cannot — all cumulative since `stats_reset`, which is ' +
+          'reported beside them. `schemaDrift` is the one ASSERTION rather ' +
+          'than a measurement: what the driver declares against what the ' +
+          'server has, which nothing else in this service checks. **IT ' +
+          'ANSWERS 200 WITH available:false WHEN THERE IS NO DATABASE** — ' +
+          'persistence.mode defaults to memory, the question was answerable, ' +
+          'and `why` says which of three reasons. No connection string is in ' +
+          'the reply and nothing here changes anything. Mirrors GET ' +
+          '/admin/database.' },
+  { path: '/admin-api/encryption', group: 'Management API',
+    name: 'Encryption at rest', specs: [],
+    what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +
+          'the key-encryption key (present, DURABLE or EPHEMERAL, and which ' +
+          'of the five providers it is read from), the algorithm read out of ' +
+          'common/crypto.js\'s own parameter table, the store, the six ' +
+          'sealed data classes and the three deliberately unsealed ones each ' +
+          'with its reason, and the operation counts. THE TWO KEY FLAGS ARE ' +
+          'DIFFERENT QUESTIONS and both are answered: development mode HAS a ' +
+          'key-encryption key — an ephemeral one, generated per run, so the ' +
+          'request-worker pool can share minted rows — and persists nothing, ' +
+          'so a client reading only `present` would report "encrypted" ' +
+          'about a service whose key dies with the process. `unclassified` ' +
+          'names any label the counters produced that the table has no row ' +
+          'for, reported rather than dropped so that a call site added ' +
+          'without a row shows up instead of quietly not adding up. NO ' +
+          'CIPHERTEXT AND NO PLAINTEXT IS IN THE REPLY and no operation ' +
+          'anywhere opens a sealed value on request. Mirrors GET ' +
+          '/admin/encryption.' },
   { path: '/admin-api/crypto', group: 'Management API', name: 'Cryptography',
     specs: [],
     what: 'NON-SPEC. Everything /admin/crypto-metadata reports, as JSON: every ' +
@@ -3632,6 +4289,65 @@ const ENDPOINTS = [
           'take away. REMOVING a member is not here — it is an ldapmodify, a ' +
           'SCIM PATCH, or POST /admin-api/rbac for the two groups that grant ' +
           'the console. Mirrors POST /admin/groups.' },
+  { path: '/admin-api/backup-codes', group: 'Management API',
+    name: 'Recovery code settings',
+    specs: [],
+    what: 'NON-SPEC. The four `backupCodes.*` settings, with the mechanism beside them — ' +
+          'the alphabet, the bits per code, how they are generated, how they are compared ' +
+          'and how they are stored — read from common/backup_codes.js rather than written ' +
+          'down. **status HAS NO SPECIFICATION COLUMN BECAUSE THERE IS NO SPECIFICATION**: ' +
+          'every field in it is a decision this service made. There is no operation that ' +
+          'ISSUES a set and none that READS a code; POST /admin-api/users/clear-backup-codes ' +
+          'deletes one, which is the only route to a second set. Who holds one is GET ' +
+          '/admin-api/users, which reports the counts and never the codes. There is no POST ' +
+          'beside this one: the forms post set-many to /admin/config. Mirrors ' +
+          'GET /admin/backup-codes.' },
+  { path: '/admin-api/totp', group: 'Management API',
+    name: 'TOTP MFA settings',
+    specs: ['rfc6238', 'rfc4226'],
+    what: 'NON-SPEC. The eight `totp.*` settings, with the RFC 6238 algorithm table beside ' +
+          'them — read from common/totp.js rather than written down, so the report cannot ' +
+          'describe a digest this service does not compute. Changing the digest, the digits ' +
+          'or the period affects NEW enrolments only; the skew window is live for everybody. ' +
+          'There is no POST beside this one and that is not a gap: every form on the page ' +
+          'posts set-many to /admin/config. Mirrors GET /admin/totp.' },
+  { path: '/admin-api/webauthn', group: 'Management API',
+    name: 'WebAuthn settings',
+    specs: ['webauthn'],
+    what: 'NON-SPEC. The thirteen `webauthn.*` settings in three kinds — the CEREMONY (RP ' +
+          'name, RP ID override, algorithms, user verification, attestation conveyance, ' +
+          'timeout), CTAP2 (authenticator attachment, resident key, credProps) and POLICY ' +
+          '(whether a key may be primary, whether it may be a second factor, how many per ' +
+          'person) — with the COSE algorithm table beside them, read from authn/webauthn.js, ' +
+          'the module that checks the signature. **ONE IS ENFORCED AND THE REST ARE ' +
+          'REQUESTS**: userVerification is checked against the UV flag inside the bytes the ' +
+          'authenticator signed. NO ATTESTATION STATEMENT IS VERIFIED whatever is asked for. ' +
+          'There is no POST beside this one: the forms post set-many to /admin/config. ' +
+          'Mirrors GET /admin/webauthn.' },
+  { path: '/admin-api/mfa', group: 'Management API',
+    name: 'Who holds a second factor',
+    specs: ['rfc6238', 'rfc4226', 'webauthn'],
+    what: 'NON-SPEC. One row per person: password, security keys in the `mfa` role, whether ' +
+          'an authenticator app is enrolled, and which of the two they will be asked for. ' +
+          '`totpUsable: false` is the row to look for — an enrolment this process cannot ' +
+          'read, whose holder is REFUSED at the code step rather than let through on one ' +
+          'factor. **THE CONSOLE PAGE THIS MIRRORED IS GONE**: /admin/mfa lasted hours ' +
+          'before splitting into the mechanism pages /admin/totp and /admin/webauthn and a ' +
+          'roster that is now columns on /admin/users. This resource is kept and answers ' +
+          'OUT OF THAT VIEW, so there is one tally rather than two scans. Mirrors ' +
+          'GET /admin/users, and GET /admin-api/users carries the same facts as `factors` ' +
+          'on each row.' },
+  { path: '/admin-api/mfa/:action', group: 'Management API',
+    name: 'Clear a second factor',
+    specs: ['rfc6238', 'webauthn'],
+    effect: 'clears an authenticator enrolment or removes a security key',
+    what: 'NON-SPEC. Two URLs behind one pattern: clear-totp and clear-key. There is ' +
+          'deliberately no ENROL operation — enrolling means being shown a shared secret, ' +
+          'and a management API that handed one out would be an administrative door that ' +
+          'mints a working second factor for any account. Both actions are also ' +
+          'POST /admin-api/users/clear-totp and /clear-key — one switch, two spellings, ' +
+          'because the console control moved and a caller\'s script did not. Mirrors ' +
+          'POST /admin/users.' },
   { path: '/admin-api/rbac', group: 'Management API', name: 'Admin console roles',
     specs: ['rfc4511', 'rfc4514', 'rfc4519'],
     what: 'NON-SPEC. The two console roles with every grant, the four settings behind the ' +
@@ -3640,14 +4356,13 @@ const ENDPOINTS = [
   { path: '/admin-api/rbac/:action', group: 'Management API', name: 'Admin role actions',
     specs: ['rfc4511', 'rfc4514', 'rfc4519'],
     effect: 'grants or revokes access to the admin console',
-    what: 'NON-SPEC. Two URLs behind one pattern: grant and revoke. THIS RESOURCE IS NOT ' +
-          'GATED BY admin.authRequired and neither is anything else under /admin-api, which ' +
-          'is deliberate and has a consequence worth stating: with the console protected and ' +
-          'this open, anybody who can reach this port can grant themselves both roles. It is ' +
-          'the same decision the whole service rests on — /oauth2/token will mint a token for ' +
-          'any username asked of it — and it is what makes this the way back in when the ' +
+    what: 'NON-SPEC. Two URLs behind one pattern: grant and revoke. IT TAKES A DIFFERENT ' +
+          'CREDENTIAL FROM THE CONSOLE IT GRANTS — an access token carrying admin:write ' +
+          'rather than a console session — which is what makes it the way back in when the ' +
           'roster is empty and admin.openWhenEmpty is off, a state from which no browser can ' +
-          'reach the console at all. Granting a role somebody already holds, or revoking one ' +
+          'reach the console at all. IT WAS UNGATED ENTIRELY until 2026-09-09, and the ' +
+          'consequence was worth stating and is now closed: anybody who could reach this port ' +
+          'could grant themselves both roles. Granting a role somebody already holds, or revoking one ' +
           'they do not, answers 200 with changed:false. A person who does not exist CAN be ' +
           'granted a role: the membership dangles until they first sign in. Mirrors ' +
           'POST /admin/rbac.' },
@@ -3873,6 +4588,30 @@ const ENDPOINTS = [
           'receiver has taken in. No Security Event Token in the reply carries a ' +
           'credential — a SET is signed and its `aud` is the stream, which is the whole ' +
           'of what makes it safe to publish here.' },
+  { path: '/admin-api/signals', group: 'Management API',
+    name: 'Signals received', specs: ['openapi', 'ssf', 'caep', 'risc'],
+    what: 'GET /admin/signals over JSON: every Security Event Token ' +
+          'DELIVERED to this service\'s own admin console in the realm the ' +
+          'request was made in, searched with ?sigq= and paged with ' +
+          '?receivedPage=, beside the state of the stream that delivers them. ' +
+          'THE RECEIVING HALF, and it is a resource of its own rather than a ' +
+          'member of /admin-api/ssf for one reason: that one is the ' +
+          'TRANSMITTER\'s view — the streams and what went out on each — and ' +
+          'this one goes empty when delivery is broken while that one does ' +
+          'not, which is the disagreement worth being able to see. The token ' +
+          'itself is not in the reply: it is 1-4kB of base64url per row. ' +
+          'READ `status.why` BEFORE CONCLUDING NOTHING HAPPENED — an empty ' +
+          'inbox has five causes and only one of them is that.' },
+  { path: '/admin-api/signals/:action', group: 'Management API',
+    name: 'Clear the console\'s Shared Signals inbox',
+    specs: ['openapi', 'ssf'],
+    what: 'clear — the one control on /admin/signals, through the same ' +
+          'action function, with the action taken from the URL instead of a ' +
+          'hidden input. IT DROPS WHAT IS HELD AND NOTHING ELSE: the stream ' +
+          'is untouched and goes on delivering (tearing that down is ' +
+          'POST /admin-api/ssf/delete-stream), and every delivery\'s ' +
+          '`ssf.event.receive` row in the audit log stays, there being no ' +
+          'clear operation for that anywhere.' },
   { path: '/admin-api/caep', group: 'Management API', name: 'CAEP',
     specs: ['openapi', 'caep', 'ssf'],
     what: 'GET /admin/caep and /admin/caep-sessions over JSON: the eight event types ' +
@@ -5109,6 +5848,51 @@ const ENDPOINTS = [
           'mfaAuthenticated TRUE. The RP ID is this origin\'s host and is not configurable: ' +
           'WebAuthn binds a ceremony to the calling origin, and that is the whole of its phishing ' +
           'resistance.' },
+  { path: '/authn/backup-code', group: 'Authentication',
+    name: 'Recovery code second-factor step',
+    specs: [],
+    effect: 'establishes the sign-on session once a recovery code verifies, and SPENDS it',
+    what: 'NON-SPEC, AND IT IS THE ONLY AUTHENTICATION STEP HERE THAT IMPLEMENTS NO ' +
+          'SPECIFICATION (2026-09-10). The way back in when the second factor is not to ' +
+          'hand — the phone is lost or flat, the security key is at home. **IT IS NEVER ' +
+          'WHAT A SIGN-IN ASKS FOR**: credentials.mechanismsFor().secondFactor answers ' +
+          'webauthn or totp and never this, so the only way here is a link on one of those ' +
+          'two screens, with a step id the person already holds. THE GET DRAWS THE PAGE FOR ' +
+          'A STEP THAT ALREADY EXISTS and refuses one for somebody who holds no unspent ' +
+          'code — a screen asking for a credential that cannot exist reads as a service ' +
+          'that has lost it. THE POST CHECKS THE CODE FOR REAL IN BOTH MODES and SPENDS it: ' +
+          'a failed spend REFUSES the sign-in, which is the opposite of what /authn/totp ' +
+          'does with its counter and is argued in common/credentials.js — a one-time code ' +
+          'that cannot be counted is replayable for ninety seconds, and a recovery code ' +
+          'that cannot be marked spent works for ever. On success the session records amr ' +
+          '["pwd","otp"] and acr "mfa": RFC 8176 registers no value for a recovery code and ' +
+          'inventing one would put a string in amr that no relying party can look up. Rate ' +
+          'limited by identity AND by address, through the same buckets as the code step. ' +
+          '**IT ISSUES NOTHING AND ENROLS NOBODY** — a set is created by the ACT of ' +
+          'enrolling a second factor, once, in common/credentials.js. This page has NO ' +
+          'SCRIPT: a person reads a string off paper and types it.' },
+  { path: '/authn/totp', group: 'Authentication',
+    name: 'One-time code second-factor step',
+    specs: ['rfc6238', 'rfc4226', 'oidc'],
+    effect: 'establishes the sign-on session once a code verifies',
+    what: 'THE SECOND SECOND FACTOR (2026-09-10). A password step that succeeded for ' +
+          'somebody with an authenticator app enrolled lands here, and this endpoint asks ' +
+          'for the six digits their app is showing. On success the session records amr ' +
+          '["pwd","otp"] — RFC 8176\'s value, whose registry entry names RFC 4226 and RFC ' +
+          '6238 — and acr "mfa", which is the one case where this service can say two ' +
+          'factors honestly. **THE CODE IS CHECKED FOR REAL IN BOTH MODES**, unlike the ' +
+          'password in front of it: a one-time password verifier that accepted any six ' +
+          'digits would not be permissive, it would be broken, and it is the SPNEGO argument ' +
+          'read a second time. Rate limited by identity AND by address, because six digits ' +
+          'is a million values and this is the smallest search space in the service. THE GET ' +
+          'IS THE *use a code instead* LINK from the security-key screen and creates nothing ' +
+          '— it draws the page for a step that already exists, and refuses one for somebody ' +
+          'who holds no enrolment. **IT ENROLS NOBODY**, which is the whole difference from ' +
+          '/authn/webauthn beside it: enrolling means being shown a shared secret, so it ' +
+          'happens at /portal/mfa or while an activation link is spent, and never at a ' +
+          'sign-in screen. This page has NO SCRIPT and is served under the service-wide ' +
+          'script-src \'none\' — a person reads digits and types them, so the exception ' +
+          'the security-key page needs does not apply here.' },
   { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ceremony script',
     specs: ['webauthn'],
     what: 'The script the security-key page runs, in both of its roles — the ceremony a second ' +
@@ -5134,7 +5918,7 @@ const ENDPOINTS = [
           'session did.' },
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449', 'rfc7800', 'rfc9700',
-            'rfc8705', 'rfc8707', 'rfc7523'],
+            'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522'],
     what: 'authorization_code, refresh_token, client_credentials, password, token-exchange, and ' +
           "OID4VCI's pre-authorized_code with tx_code enforcement. An RFC 8693 exchange can " +
           'come back with a REFRESH TOKEN beside the exchanged access token — an ordinary one ' +
@@ -5611,6 +6395,22 @@ const PROTOCOLS = [
           'mutual TLS with an X509-SVID.',
     sockets: 'Both gRPC surfaces are raw sockets: a Unix socket and a TCP ' +
              'port each. Only the bundle endpoint is on the router.' },
+  { name: 'PKI', groups: ['PKI'],
+    specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
+    what: 'A certificate authority for the SERVICE — ONE Root, an ' +
+          'Intermediate per trust realm and per the process, and an ' +
+          'Issuing CA under each per use case (2026-09-11). Was ' +
+          'per-realm: Root, Intermediate, ' +
+          'Issuing — and the signing key pairs it issues to applications and ' +
+          'to people. It ' +
+          'is here because RFC 7521 and RFC 7523 let an application ' +
+          'authenticate, or present an authorization grant, with a signed ' +
+          'assertion instead of a shared secret, and a signing key nobody ' +
+          'vouched for is a key somebody has to move by hand. It is the only ' +
+          'family here that issues an X.509 certificate to something that is ' +
+          'not this service — SPIFFE issues SVIDs and TLS issues its own ' +
+          'listener certificate — and it revokes nothing, ever: no CRL, no ' +
+          'OCSP, and the page says so.' },
   { name: 'SCIM', groups: ['SCIM'],
     specs: ['rfc7642', 'rfc7643', 'rfc7644'],
     what: 'Provisioning, with no store of its own: a POST /scim/v2/Users and ' +
@@ -5639,6 +6439,44 @@ const PROTOCOLS = [
           'person to: registration and assertion ceremonies against a real ' +
           'security key, with the attestation and the authenticator data ' +
           'checked rather than merely parsed.' },
+  { name: 'One-time passwords (TOTP)', groups: ['Authentication'],
+    specs: ['rfc6238', 'rfc4226'],
+    what: 'The other second factor on the sign-in screen every protocol here ' +
+          'sends a person to, and the only credential besides a Kerberos ' +
+          'ticket this mock really CHECKS: the code is computed from the ' +
+          'shared secret and the clock and compared, in both modes, with RFC ' +
+          '6238 section 5.2\'s accept-once rule enforced. Enrolment is a QR ' +
+          'code this server drew, at /portal/mfa or while an activation link ' +
+          'is spent; the person\'s own row on /admin/users is where an operator clears ' +
+          'one, and /admin/totp is where the mechanism is configured.' },
+  { name: 'Recovery codes', groups: ['Authentication'],
+    specs: [],
+    // **THE SECOND CARD ON THIS PAGE THAT IMPLEMENTS NO SPECIFICATION**, and
+    // it is a different case from the User portal's beside it. That one is an
+    // APPLICATION rather than a protocol. This one is genuinely a credential
+    // mechanism — it has an endpoint, a verifier, a store and a lifetime —
+    // and there is simply no document to name: nobody ever wrote one for a
+    // recovery code. The marker says which of the two situations a reader is
+    // looking at, and the `what` below says where the decisions came from
+    // instead.
+    notAProtocol: true,
+    what: 'NOT A PROTOCOL — there is no RFC for a recovery code, and this is the only ' +
+          'credential mechanism in this service without a document behind it. A set of ' +
+          'single-use codes is issued AUTOMATICALLY and ONCE the first time somebody enrols ' +
+          'a second factor, and stands in at /authn/backup-code for whichever of the other ' +
+          'two they cannot produce. It is never what a sign-in asks for and never a first ' +
+          'factor. What every identity provider does converges anyway — a handful of random ' +
+          'strings, each accepted once — so the decisions that are left are this service\'s ' +
+          'own and common/backup_codes.js argues each: fifty bits out of an alphabet with ' +
+          'no confusable pair, because this is the one credential here somebody writes on ' +
+          'paper; HASHED with scrypt since 2026-09-11 — the same form userPassword is ' +
+          'stored in — which is why a set is SHOWN ONCE, at the moment it is generated, ' +
+          'and why nothing on any surface can produce one again (it was ENCRYPTED until ' +
+          'that date, precisely so that /portal/mfa could read a set back, and hashing is ' +
+          'what made that impossible); and a failed spend REFUSES the ' +
+          'sign-in, because a single-use code that cannot be marked spent works for ever. ' +
+          '/admin/backup-codes configures it and /admin/users is where an operator clears a ' +
+          'set — the only route to a second one.' },
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
              'Decentralized Identifiers'],

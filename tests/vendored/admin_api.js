@@ -99,10 +99,12 @@ const CONDITIONAL = {
 // A browser sign-on session for the CONSOLE, which this file needs in exactly
 // two places and could not have needed before 2026-08-24.
 //
-// The API is unprotected and stays that way — mgmt-api/admin_api.js argues that
-// at length, and this test is the first reason it gives. The CONSOLE next door
-// is not: `admin.authRequired` is on by default, so every /admin page needs a
-// session from /authn/login and a console role, and a caller that asks for
+// The API takes an OAuth 2.0 access token since 2026-09-09 — it was unprotected
+// before that, and mgmt-api/CLAUDE.md keeps the three reasons it was, because
+// they are the argument for `adminApi.authRequired`, the off switch. This test
+// being able to drive it is the first of the three. The CONSOLE next door takes
+// a DIFFERENT credential: its gate is unconditional, so every /admin page needs
+// a session from /authn/login and a console role, and a caller that asks for
 // `?format=json` is refused 401 `login_required` rather than redirected,
 // because a redirect to an HTML sign-in screen is not an answer a program can
 // read. That refusal is what failed theReadsAgreeWithTheConsole() below.
@@ -639,7 +641,7 @@ async function theReadsAgreeWithTheConsole(session) {
   assert.ok(consoleTokens.ok,
     "the console's JSON view should answer 200, and it answered " +
     consoleTokens.status + ": " + String(consoleTokens.raw).slice(0, 300) +
-    ". A 401 or a 403 here is the console's own gate (admin.authRequired) " +
+    ". A 401 or a 403 here is the console's own gate " +
     "rather than a broken read — see signInToTheConsole(); a 403 means the " +
     "session is real and the role is not, which happens once some other job " +
     "has granted a role and turned the empty roster into an enforced one.");

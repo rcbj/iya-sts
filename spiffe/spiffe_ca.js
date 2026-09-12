@@ -40,16 +40,28 @@
 // (this repository has no tests yet — see CLAUDE.md).
 //
 // ---------------------------------------------------------------------------
-// EVERYTHING IS GENERATED PER START AND HELD IN MEMORY
+// WHAT IS GENERATED PER START, AND WHAT IS NOT ANY MORE (2026-09-11)
 //
-// Exactly like the signing key in `helpers.js` and the TLS certificate in
-// `tls_server.js`, and for the same two reasons: nothing about a mock is worth
-// persisting, and a certificate committed to a repository is a private key
-// committed to a repository. The consequence for a caller is the one those two
-// already have — the trust bundle changes on every restart, so a workload
-// holding a cached bundle will fail to verify an SVID minted after a restart.
-// That is what `GET /spiffe/bundle` and the bundle endpoint's
-// `spiffe_refresh_hint` are for.
+// This section was unconditional and said EVERYTHING IS GENERATED PER START AND
+// HELD IN MEMORY — *exactly like the signing key in `helpers.js` and the TLS
+// certificate in `tls_server.js`, and for the same two reasons: nothing about a
+// mock is worth persisting, and a certificate committed to a repository is a
+// private key committed to a repository.*
+//
+// **THE SECOND REASON IS UNTOUCHED AND THE FIRST HAS A MODE ON IT NOW.** The
+// X.509 authority is `common/pki.js`'s SPIFFE Issuing CA, so it INHERITS THAT
+// MODULE'S MODE: in development — the default — the hierarchy dies with the
+// process exactly as before, and in PRODUCT mode `keystore.js` keeps it, so the
+// anchor survives a restart. The JWT authority has no certificate and no
+// hierarchy to hang from and is generated per start in either mode.
+//
+// **AND THE CONSEQUENCE FOR A CALLER IS MUCH SMALLER THAN IT WAS, WHICH IS THE
+// POINT OF THE MOVE.** It used to be: *the trust bundle changes on every
+// restart, so a workload holding a cached bundle will fail to verify an SVID
+// minted after a restart.* The bundle is the ROOT now, so it changes when the
+// ROOT does — never, in product mode, and per start in development. A rotation
+// of the authority does not change it at all. `GET /spiffe/bundle` and the
+// endpoint's `spiffe_refresh_hint` are still what a consumer comes back to.
 //
 // ---------------------------------------------------------------------------
 // INITIALISATION IS ASYNCHRONOUS, WHICH NOTHING ELSE IN THIS SERVICE IS
@@ -171,7 +183,7 @@ function keyTypeById(id) {
 // look like an outage.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// SHARED, PERSISTED, AND ENCODED ON THE WAY IN (2026-09-08).
+// PERSISTED, ENCODED ON THE WAY IN (2026-09-08), AND PER REALM (2026-09-11).
 //
 // These were two module arrays, which is one PROCESS's certificate authority.
 // With request workers that is a service whose bundle depends on who answers:
@@ -181,9 +193,24 @@ function keyTypeById(id) {
 // but its own unix socket), and `/admin/spiffe`'s Rotate button rotated a CA
 // that signs nothing while the one doing the signing stood still.
 //
-// `sharedMap` and not `map`: SPIFFE is ONE trust domain for the whole service
-// — its sockets have no path to put a realm segment in — so this is not per
-// realm, exactly as `federated` below is not.
+// **IT WAS `sharedMap` UNTIL 2026-09-11 AND THE ARGUMENT FOR THAT IS WORTH
+// KEEPING, BECAUSE IT IS STILL HALF TRUE.** It read: *SPIFFE is ONE trust
+// domain for the whole service — its sockets have no path to put a realm
+// segment in — so this is not per realm.* The trust DOMAIN is still one:
+// `spiffe.trustDomain` is read once, service-wide, and every SVID this
+// service mints anywhere names it. What became per realm is the AUTHORITY
+// that signs, because `common/pki.js`'s SPIFFE Issuing CA is a realm's now
+// and this store has to follow its declaration (rule 2 of the realm design:
+// a store becomes per realm AT ITS DECLARATION and nowhere else).
+//
+// **THAT IS COHERENT ONLY BECAUSE THE ANCHOR IS SHARED, AND IT IS THE WHOLE
+// DESIGN IN ONE SENTENCE.** The bundle publishes the service ROOT, which no
+// realm owns; an SVID carries its own realm's Issuing CA and Intermediate in
+// its chain. So every realm's bundle is byte-identical, an SVID minted on the
+// shared gRPC sockets (which answer in the DEFAULT realm, because a socket
+// still has no path to put a segment in) verifies against the bundle a caller
+// fetched from `/realm/acme/spiffe/bundle`, and what the chain adds is which
+// realm issued it. One trust domain, one anchor, an authority per realm.
 //
 // **THE ENCODING IS THE PART THAT NEEDED CARE.** The journal writes JSON, and
 // JSON turns a `Buffer` into `{"type":"Buffer","data":[…]}` and a `Map` into
@@ -194,8 +221,24 @@ function keyTypeById(id) {
 // unchanged. A field added to an authority record that is NOT one of those
 // must be packed here too.
 // ---------------------------------------------------------------------------
-const authorities = realms.sharedMap({ persist: 'spiffe.authorities',
-                                       scope: 'shared' });
+const authorities = realms.map({ persist: 'spiffe.authorities' });
+
+// The realm whose authority a call is about. Every reader here takes an
+// explicit id or falls back to the AMBIENT realm — the shape every per-realm
+// store in this service has, and the reason the four gRPC sockets land in the
+// default realm without a line of code saying so: nothing enters a realm for
+// them, so `realms.current()` is the default.
+function realmIdOf(realmId) {
+  if (realmId !== undefined && realmId !== null) {
+    return String(realmId);
+  }
+  const current = realms.current();
+  return String((current && current.id) || '');
+}
+
+function authoritiesIn(realmId) {
+  return authorities.realmMap(realmIdOf(realmId));
+}
 
 function packX509(one) {
   return Object.assign({}, one, {
@@ -219,26 +262,36 @@ function unpackX509(one) {
 // nothing to show for it. The store hands back the same array object until it
 // is replaced — by a rotation here or by a replicated write from another
 // process — so identity is exactly the right invalidation.
-let x509Unpacked = { from: null, list: [] };
+//
+// **MEMOISED PER REALM SINCE 2026-09-11.** It was one slot, and one slot for a
+// store that is now partitioned is a cache that answers the last realm asked
+// rather than the realm asking — the memo would hit on the array identity of a
+// DIFFERENT realm's list only if the two were the same object, which they
+// never are, so the practical effect was a permanent miss rather than a wrong
+// answer. Keyed anyway: a permanent miss in the memo on the path of every SVID
+// is the thing this memo exists to prevent.
+const x509Unpacked = new Map();
 
-function x509List() {
-  const raw = authorities.get('x509') || [];
-  if (x509Unpacked.from !== raw) {
-    x509Unpacked = { from: raw, list: raw.map(unpackX509) };
+function x509List(realmId) {
+  const id = realmIdOf(realmId);
+  const raw = authoritiesIn(id).get('x509') || [];
+  const held = x509Unpacked.get(id);
+  if (!held || held.from !== raw) {
+    x509Unpacked.set(id, { from: raw, list: raw.map(unpackX509) });
   }
-  return x509Unpacked.list;
+  return x509Unpacked.get(id).list;
 }
 
-function setX509List(list) {
-  authorities.set('x509', list.map(packX509));
+function setX509List(realmId, list) {
+  authoritiesIn(realmId).set('x509', list.map(packX509));
 }
 
-function jwtList() {
-  return authorities.get('jwt') || [];
+function jwtList(realmId) {
+  return authoritiesIn(realmId).get('jwt') || [];
 }
 
-function setJwtList(list) {
-  authorities.set('jwt', list.slice(0));
+function setJwtList(realmId, list) {
+  authoritiesIn(realmId).set('jwt', list.slice(0));
 }
 
 // The foreign trust domains this one federates with, keyed by trust domain
@@ -262,11 +315,22 @@ const federated = realms.sharedMap({ persist: 'spiffe.federatedBundles',
 // RFC-required monotonic counter on the bundle. It changes whenever the bundle
 // changes and never otherwise, which is what lets a consumer tell "I have the
 // current bundle" from "I have a bundle".
-// IN THE SAME SHARED STORE, for the same reason: a counter a relying party
+// IN THE SAME PERSISTED STORE, for the same reason: a counter a relying party
 // watches for staleness that moved on one worker of three would tell two
 // thirds of its readers that a rotated bundle was the one they already had.
-function sequenceNow() {
-  const held = Number(authorities.get('sequence'));
+//
+// **AND IT IS PER REALM NOW, WHICH IS A SMALL LIE THIS SERVICE CANNOT AVOID
+// TELLING.** Every realm's bundle publishes the same service Root, so the
+// DOCUMENT is identical everywhere — but the sequence is a per-realm counter,
+// so rotating the SPIFFE authority in one realm moves the number a caller in
+// another realm reads without the bytes beside it having changed. It is
+// monotonic, which is all the specification asks of it; what it costs is a
+// consumer re-fetching a bundle it already had. The alternative — one shared
+// counter — would have been worse in the direction that matters: a rotation in
+// realm acme that DID change what acme publishes, with a number that never
+// moved for a caller reading acme.
+function sequenceNow(realmId) {
+  const held = Number(authoritiesIn(realmId).get('sequence'));
   return held > 0 ? held : 1;
 }
 
@@ -275,26 +339,43 @@ function sequenceNow() {
 let started = null;
 let startError = null;
 
-function bumpSequence(why) {
-  authorities.set('sequence', sequenceNow() + 1);
-  log.debug('spiffe: the bundle sequence is now ' + sequenceNow() +
-            ' (' + why + ').');
+function bumpSequence(realmId, why) {
+  const id = realmIdOf(realmId);
+  authoritiesIn(id).set('sequence', sequenceNow(id) + 1);
+  log.debug('spiffe: the bundle sequence in "' + (id || 'default') +
+            '" is now ' + sequenceNow(id) + ' (' + why + ').');
 }
 
 // ---------------------------------------------------------------------------
 // BUILDING AN AUTHORITY.
 //
-// The X.509 authority is a self-signed CA. It is NOT the certificate
+// **THIS IS THE FALLBACK SINCE 2026-09-11, NOT THE ORDINARY PATH.** A realm
+// with a certificate authority takes its X.509 authority from
+// `common/pki.js` — see WHERE THE X.509 AUTHORITY COMES FROM below. This
+// function is what a realm with no hierarchy gets, which is `pki.autoBuild:
+// false`, a Root that could not be built, and every in-process caller that
+// never runs `common/service_state.js`.
+//
+// The X.509 authority it builds is a self-signed CA. It is NOT the certificate
 // `tls_server.js` generates and it must not be: that one is a leaf with
 // `basicConstraints CA:FALSE` and an `extKeyUsage` of `serverAuth`, so it
-// cannot sign anything, and a trust domain whose root was also the host's TLS
-// certificate would be conflating two unrelated trust decisions. One process,
-// two PKIs, on purpose.
+// cannot sign anything. (The sentence that used to follow — *and a trust
+// domain whose root was also the host's TLS certificate would be conflating
+// two unrelated trust decisions. One process, two PKIs, on purpose* — is the
+// one the move reversed, and it is answered where the move is argued rather
+// than here.)
 //
-// `pathLen: 0` says this CA signs leaves and no further CAs — which is true of
-// every SVID this service mints. `NewDownstreamX509CA` on the SPIRE Server API
-// asks for an intermediate, and that path builds a SECOND authority with
-// `pathLen: 0` beneath a root issued with `pathLen: 1`; see `downstreamCa()`.
+// **THE `pathLen` ARGUMENT WAS DOCUMENTED CORRECTLY AND PASSED WRONGLY, AND
+// THAT IS A DEFECT THIS CHANGE FIXED ON THE WAY PAST.** The comment here said
+// `NewDownstreamX509CA` "builds a SECOND authority with `pathLen: 0` beneath a
+// root issued with `pathLen: 1`" — and both call sites passed `0`. So every
+// downstream CA this service ever minted was a CA signed by a CA that had
+// declared it would sign no CAs. It parses, it verifies as a signature, and a
+// path builder refuses the chain with a message about basic constraints that
+// names neither certificate — which is exactly the failure mode this file's
+// own header warns about, three paragraphs above the line that caused it.
+// Both call sites pass `1` now, and the PKI path gets the same depth from
+// `pki.js`'s `spiffe` use case.
 // ---------------------------------------------------------------------------
 async function makeX509Authority(keyTypeId, ttlSeconds, pathLen) {
   log.debug('Entering makeX509Authority(). keyType=' + keyTypeId);
@@ -428,14 +509,258 @@ function publicJwkOf(publicPem) {
   return jwk;
 }
 
+// ===========================================================================
+// WHERE THE X.509 AUTHORITY COMES FROM (2026-09-11): `common/pki.js`.
+//
+// **THIS REVERSES THE PARAGRAPH ABOVE `makeX509Authority()` AND THE ARGUMENT
+// IT REVERSES IS WORTH READING FIRST.** That comment says the authority is
+// self-signed on purpose — *a trust domain whose root was also the host's TLS
+// certificate would be conflating two unrelated trust decisions. One process,
+// two PKIs, on purpose.* `/admin/pki` said the same thing on the page, and
+// added the mechanical half: an Issuing CA there carries `pathLen: 0`, so it
+// signs leaves and no further authority, and a SPIFFE authority signs SVIDs.
+//
+// Both halves are answered rather than ignored:
+//
+//   * **The trust decision is not conflated, because the SPIFFE authority is
+//     not the TLS certificate.** It is a SIBLING of it — its own Issuing CA,
+//     its own key, under its own realm's Intermediate — and the only thing the
+//     two now share is the anchor an operator installs. That was the whole ask:
+//     one Root covering 8443, 9443, LDAPS 636, the main port, every token this
+//     service signs AND every SVID it mints. Narrowing trust to SPIFFE alone is
+//     still sayable, and is now sayable in the ordinary X.509 way — pin the
+//     SPIFFE Issuing CA instead of the Root.
+//   * **The `pathLen` was a real obstacle and it was moved rather than argued
+//     around.** The `spiffe` use case carries `pathLen: 1` and the realm
+//     Intermediate above it is widened to 2, both derived in `pki.js` from one
+//     table so they cannot drift. That is what keeps `NewDownstreamX509CA`
+//     working: a downstream CA is the one CA this authority is allowed to sign.
+//
+// **THE BUNDLE PUBLISHES THE ROOT, WHICH IS EXACTLY WHAT SPIRE DOES WITH AN
+// UpstreamAuthority PLUGIN CONFIGURED**, and reading this service's PKI as
+// SPIRE's upstream authority is the shortest true description of the whole
+// change. The anchor is the Root; the SVID carries its issuing chain; a
+// rotation of the authority does not change the anchor, so an SVID minted
+// before one goes on verifying with nothing having to be re-fetched. Under the
+// old self-signed arrangement every rotation changed the bundle, which is why
+// `MAX_RETAINED_AUTHORITIES` exists and why it had to.
+//
+// **AND THE FALLBACK IS NOT A COURTESY — THREE SUPPORTED CONFIGURATIONS REACH
+// IT.** `pki.autoBuild: false` is a documented setting meaning "what this
+// service did before 2026-09-11"; a Root that could not be built is logged and
+// never fatal (`pki.start()`'s own rule); and every in-process test and every
+// caller that loads this module without running `common/service_state.js` —
+// `npm test`, the parent project's in-process Kerberos jobs — has no hierarchy
+// at all. In all three this module does what it has always done: it
+// self-signs, it says so on every surface that reports an authority, and
+// nothing about SPIFFE stops working.
+//
+// `pki.js` is a LEAF (rule 3w): it registers no route, so requiring it here
+// moves nothing in the router, and it requires nothing that requires this
+// module back.
+// ===========================================================================
+const pki = require('../common/pki');
+
+const SPIFFE_USE_CASE = 'spiffe';
+
+// ---------------------------------------------------------------------------
+// THE AUTHORITY THIS REALM SIGNS WITH, as one record whatever produced it.
+//
+// **`source` IS THE FIELD EVERY REPORT HAS TO CARRY.** A reader looking at an
+// SVID cannot tell a PKI-backed authority from a self-signed one without being
+// told, and the difference decides what they have to install: a self-signed
+// authority IS the anchor and has to be fetched again after every restart,
+// where the Root is the anchor and survives one in product mode. Reporting the
+// two identically would be the most expensive quiet untruth this module could
+// tell.
+//
+// `anchorPem` is what goes in the BUNDLE and `chainPem` is what travels with a
+// LEAF, and they are deliberately two fields rather than one list. For the
+// self-signed case they coincide — the authority is both — which is precisely
+// why a single field would have looked correct right up until the hierarchy
+// existed.
+// ---------------------------------------------------------------------------
+function pkiAuthorityFrom(issuer) {
+  return {
+    source: 'pki',
+    id: authorityIdOf(issuer.certificatePem),
+    // The PKI's key algorithm id (`rsa-2048`, `ec-p256`, …) and NOT one of this
+    // module's KEY_TYPES ids. They overlap for the EC and RSA entries and it
+    // would be a coincidence to rely on: the certificate says what it is, and
+    // `spiffe.x509KeyType` no longer decides the authority's key at all — it
+    // decides the key of an SVID, which is a different key.
+    keyType: issuer.keyAlg,
+    signatureAlg: issuer.signatureAlg,
+    subject: issuer.subject,
+    serialHex: issuer.serialHex,
+    notBefore: issuer.notBefore,
+    notAfter: issuer.notAfter,
+    certificatePem: issuer.certificatePem,
+    certificateDer: pemToDer(issuer.certificatePem),
+    // Leaf-first from the authority upward, Root EXCLUDED — see issueLeaf().
+    chainPem: issuer.chainPem.slice(),
+    chainDer: issuer.chainPem.map(pemToDer),
+    // The trust anchor, which is the service Root and no realm's.
+    anchorPem: issuer.root.certificatePem,
+    anchorDer: pemToDer(issuer.root.certificatePem),
+    anchorSubject: issuer.root.subject,
+    anchorNotAfter: issuer.root.notAfter,
+    intermediateSubject: issuer.intermediate.subject
+  };
+}
+
+function selfSignedAuthorityFrom(one) {
+  return Object.assign({}, one, {
+    source: 'self-signed',
+    chainPem: [],
+    chainDer: [],
+    // The authority IS the anchor here, which is the whole difference.
+    anchorPem: one.certificatePem,
+    anchorDer: one.certificateDer,
+    anchorSubject: one.subject,
+    anchorNotAfter: one.notAfter,
+    intermediateSubject: ''
+  });
+}
+
+// The realm's active X.509 authority, PKI-backed if there is a hierarchy and
+// self-signed if there is not. Synchronous: both answers are already in a
+// store, and the only asynchronous thing here is BUILDING the fallback, which
+// `ensureTrustMaterial()` does.
+function activeX509Authority(realmId) {
+  const id = realmIdOf(realmId);
+  const issuer = pki.describeIssuer(id, SPIFFE_USE_CASE);
+  if (issuer) {
+    return pkiAuthorityFrom(issuer);
+  }
+  const held = x509List(id)[0];
+  return held ? selfSignedAuthorityFrom(held) : null;
+}
+
+// Every anchor a consumer of this realm's bundle should trust. One entry when
+// the hierarchy is there — the Root — and the retained self-signed list when it
+// is not, because in that arrangement each retired authority is an anchor of
+// its own and dropping it is what makes a rotation look like an outage.
+function trustAnchorsIn(realmId) {
+  const id = realmIdOf(realmId);
+  const issuer = pki.describeIssuer(id, SPIFFE_USE_CASE);
+  if (issuer) {
+    return [{ source: 'pki',
+              id: authorityIdOf(issuer.root.certificatePem),
+              subject: issuer.root.subject,
+              notBefore: issuer.root.notBefore,
+              notAfter: issuer.root.notAfter,
+              certificatePem: issuer.root.certificatePem,
+              certificateDer: pemToDer(issuer.root.certificatePem),
+              publicKeyPem: crypto.createPublicKey(issuer.root.certificatePem)
+                .export({ type: 'spki', format: 'pem' }) }];
+  }
+  return x509List(id).map(function (one) {
+    return Object.assign({ source: 'self-signed' }, one);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ISSUE ONE CERTIFICATE FROM THIS REALM'S AUTHORITY, whichever kind it is.
+//
+// **THE TWO PATHS DIFFER IN WHO HOLDS THE KEY AND IN NOTHING ELSE THE CALLER
+// CAN SEE.** A PKI-backed authority's private key never leaves `common/pki.js`
+// — the request goes through `issueUnder()` and the certificate comes back —
+// and a self-signed one's lives in this module's own store. Both answer the
+// same record, so `issueLeaf()` and `downstreamCa()` above have ONE shape
+// rather than a branch each. Two branches would be two places for the SVID
+// extension set to drift, and that extension set IS the X509-SVID
+// specification.
+// ---------------------------------------------------------------------------
+async function issueFromAuthority(realmId, authority, spec) {
+  log.debug('Entering issueFromAuthority(). source=' + authority.source);
+  if (authority.source === 'pki') {
+    const made = await pki.issueUnder(realmIdOf(realmId), SPIFFE_USE_CASE, {
+      subject: spec.subject,
+      publicKeyPem: spec.publicKeyPem,
+      profile: spec.profile,
+      notBefore: spec.notBefore,
+      notAfter: spec.notAfter,
+      extensions: spec.extensions
+    });
+    if (!made.ok) {
+      // Carried out rather than logged and swallowed: every caller of this is
+      // a protocol handler that owes its client a reason.
+      log.debug('Leaving issueFromAuthority(). The PKI refused.');
+      throw new Error((made.errors || ['That certificate could not be issued.'])
+        .join(' '));
+    }
+    log.debug('Leaving issueFromAuthority(). serial=' + made.serialHex);
+    return { pem: made.certificatePem, der: made.certificateDer,
+             serialHex: made.serialHex,
+             notBefore: made.notBefore, notAfter: made.notAfter,
+             chainPem: authority.chainPem.slice(),
+             chainDer: authority.chainDer.slice() };
+  }
+  const type = keyTypeById(authority.keyType) || KEY_TYPES[0];
+  const issued = await x509.issueCertificate({
+    subject: spec.subject,
+    subjectPublicKey: spec.publicKeyPem,
+    signatureAlg: type.sigAlg,
+    issuer: { certificatePem: authority.certificatePem,
+              privateKeyPem: authority.privateKeyPem,
+              keyAlg: authority.keyType },
+    notBefore: spec.notBefore,
+    notAfter: spec.notAfter,
+    extensions: spec.extensions
+  });
+  log.debug('Leaving issueFromAuthority(). serial=' + issued.serialHex);
+  return { pem: issued.pem, der: Buffer.from(issued.der),
+           serialHex: issued.serialHex,
+           notBefore: spec.notBefore, notAfter: spec.notAfter,
+           chainPem: [], chainDer: [] };
+}
+
+
 // ---------------------------------------------------------------------------
 // STARTUP.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// STARTUP IS TWO THINGS NOW, AND SPLITTING THEM IS WHAT MADE THE HIERARCHY
+// REACHABLE AT ALL (2026-09-11).
+//
+// **THE ORDERING PROBLEM FIRST, BECAUSE IT DECIDED THE SHAPE.** This module
+// used to build its authority at REQUIRE time, and the header above says why:
+// generating a key lazily would put a two-second RSA-4096 keygen inside
+// whichever request happened to arrive first, and on the Workload API that
+// request looks like a hang. But `common/pki.js`'s hierarchy is built by
+// `pki.start()`, which `common/service_state.js` runs AFTER the whole protocol
+// stack has been required and before anything binds. So an authority resolved
+// at require time is resolved when there is provably no hierarchy — this
+// module would have self-signed, written that into the store, and the Root
+// built a moment later would have certified nothing. That is exactly the trap
+// `tls/tls_server.js` avoids with `pki.registerCertifiable()`, and a
+// registration does not work here: what that mechanism certifies is a LEAF
+// over a key its owner already holds, and what this module needs is a CA.
+//
+// So:
+//
+//   * **`initialise()` validates the trust domain and nothing else.** It is
+//     the one thing that must fail loudly and must fail once, service-wide.
+//   * **`ensureTrustMaterial(realm)` resolves that realm's authorities on
+//     first use**, by which time `pki.start()` has run — the listeners bind
+//     after it, so no request can precede it.
+//
+// **AND THE COST THE OLD COMMENT WAS AVOIDING HAS LARGELY GONE WITH IT.** In
+// the ordinary case there is no X.509 key to generate at all: the authority is
+// the realm's SPIFFE Issuing CA, already built. What is still generated here is
+// the JWT authority, which has no certificate and no hierarchy to hang from —
+// and it is EC P-256 by default, which is milliseconds. `spiffe.jwtKeyType` set
+// to `rsa-4096` puts that generation on the first FetchJWTSVID in each realm,
+// which is said here rather than left to be discovered.
+//
+// **A REALM IS THE UNIT because the authority is.** A realm created at runtime
+// gets its trust material the first time somebody asks it for an SVID, which is
+// the same rule `common/pki.js` follows for a realm's branch and removes any
+// need for this module to watch `realms.onChange()`.
+// ---------------------------------------------------------------------------
 async function initialise() {
   log.debug('Entering initialise().');
-  const x509Type = config.value('spiffe.x509KeyType');
-  const jwtType = config.value('spiffe.jwtKeyType');
-  const caTtl = config.value('spiffe.caTtl');
   const parsed = spiffeId.parse(spiffeId.trustDomainId(TRUST_DOMAIN));
   if (!parsed.ok) {
     // Thrown rather than warned, and it is the one thing in this module that
@@ -446,42 +771,14 @@ async function initialise() {
     throw new Error('spiffe.trustDomain is not a valid trust domain name: ' +
                     parsed.reason);
   }
-  // ------------------------------------------------------------------------
-  // WHAT IS ALREADY IN THE STORE WINS, and this is what makes several
-  // processes ONE trust domain rather than several.
-  //
-  // Every process runs this at startup and each would otherwise mint an
-  // authority of its own. The first to write establishes the trust domain and
-  // the rest adopt it; two that raced both write, the later wins, and both
-  // then READ the winner — because every reader below goes through
-  // `x509List()`/`jwtList()` rather than a local array. So the disagreement is
-  // a window rather than a state, and it closes without anybody deciding.
-  //
-  // The pair is generated FIRST either way: an authority is cheap, this runs
-  // once, and checking the store before generating would mean holding a
-  // half-built trust domain across an await for no gain.
-  // ------------------------------------------------------------------------
-  const x509Authority = await makeX509Authority(x509Type, caTtl, 0);
-  const jwtAuthority = await makeJwtAuthority(jwtType);
-  const heldX509 = x509List();
-  const heldJwt = jwtList();
-  const adopted = heldX509.length > 0 && heldJwt.length > 0;
-  if (!adopted) {
-    setX509List([x509Authority]);
-    setJwtList([jwtAuthority]);
-  } else {
-    log.info('spiffe: another process in this service had already established ' +
-             'the trust domain; adopting its authorities (X.509 ' +
-             heldX509[0].id + ', JWT kid ' + heldJwt[0].id + ') rather than ' +
-             'the pair just generated. One service is one trust domain.');
-  }
   started = Date.now();
-  log.info('spiffe: the trust domain is ' + spiffeId.trustDomainId(TRUST_DOMAIN) +
-           '. Its X.509 authority is ' + x509Authority.keyType + ' (' +
-           x509Authority.id + ', valid until ' + x509Authority.notAfter +
-           ') and its JWT authority is ' + jwtAuthority.keyType + ' (kid ' +
-           jwtAuthority.id + '). Both are generated per start and held in ' +
-           'memory; the bundle is at GET ' + config.value('spiffe.bundlePath') + '.');
+  log.info('spiffe: the trust domain is ' +
+           spiffeId.trustDomainId(TRUST_DOMAIN) + '. Its X.509 authority in ' +
+           'each realm is that realm\'s SPIFFE Issuing CA under this ' +
+           'service\'s own Root — see /admin/pki — and the bundle at GET ' +
+           config.value('spiffe.bundlePath') + ' publishes the Root. A realm ' +
+           'with no hierarchy falls back to a self-signed authority, which is ' +
+           'what this service did before 2026-09-11 and is reported as such.');
   log.debug('Leaving initialise().');
 }
 
@@ -497,9 +794,103 @@ const readyPromise = initialise().catch(function (err) {
             'here will issue an SVID: ' + err.message);
 });
 
-async function ready() {
+// ---------------------------------------------------------------------------
+// ONE BUILD PER REALM, AND THE MAP IS WHAT MAKES THAT TRUE.
+//
+// The Workload API's very first call in a realm can be several concurrent
+// requests — an agent and two workloads starting together — and each would
+// otherwise generate a JWT authority, three of which would race to write and
+// two of which would be thrown away. Keeping the PROMISE rather than a flag is
+// what makes the second caller WAIT for the first rather than start its own.
+// ---------------------------------------------------------------------------
+const building = new Map();
+
+async function buildTrustMaterial(realmId) {
+  log.debug('Entering buildTrustMaterial(). realm=' + (realmId || 'default'));
+  // ------------------------------------------------------------------------
+  // WHAT IS ALREADY IN THE STORE WINS, and this is what makes several
+  // processes ONE trust domain rather than several.
+  //
+  // Every process runs this on first use and each would otherwise mint an
+  // authority of its own. The first to write establishes the realm's JWT
+  // authority and the rest adopt it; two that raced both write, the later
+  // wins, and both then READ the winner — because every reader below goes
+  // through `jwtList()` rather than a local array. So the disagreement is a
+  // window rather than a state, and it closes without anybody deciding.
+  //
+  // **THE X.509 HALF NEEDS NONE OF THIS WHEN THERE IS A HIERARCHY**, which is
+  // a quiet second benefit of the move: `common/pki.js`'s row is in the
+  // keystore and is replicated by the same mechanism, so every process reads
+  // ONE Issuing CA rather than racing to establish one.
+  // ------------------------------------------------------------------------
+  const id = realmIdOf(realmId);
+  if (!jwtList(id).length) {
+    const jwtAuthority = await makeJwtAuthority(config.value('spiffe.jwtKeyType'));
+    if (!jwtList(id).length) {
+      setJwtList(id, [jwtAuthority]);
+      log.info('spiffe: the "' + (id || 'default') + '" realm\'s JWT ' +
+               'authority is ' + jwtAuthority.keyType + ' (kid ' +
+               jwtAuthority.id + ').');
+    } else {
+      log.info('spiffe: another process had already established the "' +
+               (id || 'default') + '" realm\'s JWT authority (kid ' +
+               jwtList(id)[0].id + '); adopting it rather than the key just ' +
+               'generated. One service is one trust domain.');
+    }
+  }
+  // THE X.509 HALF. Nothing to do when the realm has a SPIFFE Issuing CA —
+  // that IS the authority. The fallback is built only when it has none.
+  if (pki.describeIssuer(id, SPIFFE_USE_CASE)) {
+    log.debug('Leaving buildTrustMaterial(). The PKI holds the authority.');
+    return;
+  }
+  if (x509List(id).length) {
+    log.debug('Leaving buildTrustMaterial(). A self-signed authority is held.');
+    return;
+  }
+  const x509Authority = await makeX509Authority(
+    config.value('spiffe.x509KeyType'), config.value('spiffe.caTtl'), 1);
+  if (!x509List(id).length) {
+    setX509List(id, [x509Authority]);
+    log.warn('spiffe: the "' + (id || 'default') + '" realm has no SPIFFE ' +
+             'Issuing CA, so its X.509 authority is SELF-SIGNED (' +
+             x509Authority.id + ', ' + x509Authority.keyType + ', valid ' +
+             'until ' + x509Authority.notAfter + ') and IS the trust anchor — ' +
+             'a consumer has to fetch the bundle again after every restart. ' +
+             'Build the realm\'s certificate authority on /admin/pki to put ' +
+             'it under this service\'s Root instead.');
+  } else {
+    log.info('spiffe: another process had already established the "' +
+             (id || 'default') + '" realm\'s self-signed X.509 authority (' +
+             x509List(id)[0].id + '); adopting it.');
+  }
+  log.debug('Leaving buildTrustMaterial().');
+}
+
+function ensureTrustMaterial(realmId) {
+  const id = realmIdOf(realmId);
+  if (!building.has(id)) {
+    // The promise is kept whatever happens to it, and a FAILED one is dropped
+    // so that the next caller retries: the ordinary cause of a failure here is
+    // a key generation that threw, and caching that for the life of the
+    // process would turn one bad moment into a realm that can never issue.
+    const run = buildTrustMaterial(id).catch(function (err) {
+      building.delete(id);
+      throw err;
+    });
+    building.set(id, run);
+  }
+  return building.get(id);
+}
+
+// **EVERY ENTRY POINT IN THIS MODULE AWAITS THIS**, which is the one rule the
+// header states: a caller cannot forget to, and a caller that reaches this
+// module before the realm has trust material gets the right answer rather than
+// an empty bundle. `state()` is the single exception and says so.
+async function ready(realmId) {
   await readyPromise;
   if (startError) throw new Error(startError);
+  await ensureTrustMaterial(realmId);
   return true;
 }
 
@@ -547,12 +938,15 @@ async function mintX509Svid(id, options) {
     spiffeId: parsed.id,
     certificatePem: issued.pem,
     certificateDer: issued.der,
-    // The chain the Workload API returns: the leaf FIRST, then any
-    // intermediates. There are none here — the CA signs leaves directly — but
-    // the field is a chain rather than a certificate, and a caller that assumed
-    // one certificate would break the day a downstream CA is in front of it.
-    chainDer: Buffer.concat([issued.der]),
-    chainPem: [issued.pem],
+    // The chain, in the TWO shapes the two surfaces take. The Workload API's
+    // `x509_svid` is ONE concatenated DER blob; the SPIRE Server API's
+    // `cert_chain` is a `repeated bytes`, so it is the same certificates as
+    // separate entries. Both are leaf-first and both exclude the anchor.
+    // Handing one shape out and letting each caller reach for `Buffer.concat`
+    // is how the two ends of a chain get reversed in one of them.
+    chainDer: Buffer.concat(chainDerOf(issued)),
+    chainCertificatesDer: chainDerOf(issued),
+    chainPem: chainPemOf(issued),
     privateKeyPem: pair.privatePem,
     privateKeyDer: privateKeyDer,
     keyType: (type || {}).id || 'ec-p256',
@@ -608,8 +1002,9 @@ async function signCsr(csrDer, id, options) {
     spiffeId: parsed.id,
     certificatePem: issued.pem,
     certificateDer: issued.der,
-    chainDer: Buffer.concat([issued.der]),
-    chainPem: [issued.pem],
+    chainDer: Buffer.concat(chainDerOf(issued)),
+    chainCertificatesDer: chainDerOf(issued),
+    chainPem: chainPemOf(issued),
     serialHex: issued.serialHex,
     notBefore: issued.notBefore,
     notAfter: issued.notAfter,
@@ -629,10 +1024,12 @@ async function signCsr(csrDer, id, options) {
 async function issueLeaf(id, publicPem, options) {
   log.debug('Entering issueLeaf(). id=' + id);
   const opts = options || {};
-  const authority = x509List()[0];
+  const realmId = realmIdOf(opts.realm);
+  const authority = activeX509Authority(realmId);
   if (!authority) {
     log.debug('Leaving issueLeaf(). No authority.');
-    throw new Error('This trust domain has no X.509 authority.');
+    throw new Error('This trust domain has no X.509 authority in the "' +
+                    (realmId || 'default') + '" realm.');
   }
   const ttl = Number(opts.ttl) > 0 ? Number(opts.ttl) : svidTtlSeconds();
   const notBefore = new Date();
@@ -641,6 +1038,11 @@ async function issueLeaf(id, publicPem, options) {
   // notAfter is past its issuer's is not refused by every verifier — many check
   // only the leaf — so it produces an identity that works until it suddenly
   // does not, with nothing in the failure naming the CA.
+  //
+  // **`issueUnder()` CLAMPS THIS TOO AND THE DUPLICATION IS DELIBERATE.** That
+  // one is the funnel every leaf in the service goes through and it cannot be
+  // removed; this one is what lets the record below report the lifetime the
+  // SVID actually got rather than the one that was asked for, on BOTH paths.
   const caNotAfter = new Date(authority.notAfter);
   if (notAfter > caNotAfter) {
     log.debug('issueLeaf(): the requested lifetime outlives the CA; ' +
@@ -656,14 +1058,17 @@ async function issueLeaf(id, publicPem, options) {
     const text = String(name || '').trim();
     if (text) names.push({ kind: 'dns', value: text });
   });
-  const type = keyTypeById(authority.keyType) || KEY_TYPES[0];
-  const issued = await x509.issueCertificate({
+  const issued = await issueFromAuthority(realmId, authority, {
     subject: opts.subject || svidSubject(),
-    subjectPublicKey: publicPem,
-    signatureAlg: type.sigAlg,
-    issuer: { certificatePem: authority.certificatePem,
-              privateKeyPem: authority.privateKeyPem,
-              keyAlg: authority.keyType },
+    publicKeyPem: publicPem,
+    // **NO PROFILE, AND THAT IS SAFE FOR A REASON WORTH WRITING DOWN.** In
+    // `common/vendored/x509.js` a profile decides exactly one thing at
+    // issuance — a DEFAULT LIFETIME, used only when the caller supplies
+    // neither `notBefore` nor `notAfter`. It contributes no extensions. This
+    // caller supplies both, so naming one would change nothing and would
+    // suggest to a reader that the extension set below came from somewhere
+    // else. It does not: the extensions ARE the X509-SVID specification and
+    // are passed whole.
     notBefore: notBefore.toISOString(),
     notAfter: notAfter.toISOString(),
     extensions: {
@@ -675,13 +1080,42 @@ async function issueLeaf(id, publicPem, options) {
       authorityKeyIdentifier: { present: true }
     }
   });
-  const der = Buffer.from(issued.der);
   log.debug('Leaving issueLeaf(). serial=' + issued.serialHex);
-  return { pem: issued.pem, der: der,
+  return { pem: issued.pem, der: issued.der,
            serialHex: issued.serialHex,
-           notBefore: notBefore.toISOString(),
-           notAfter: notAfter.toISOString(),
-           certificate: certificateFacts(der) };
+           notBefore: issued.notBefore,
+           notAfter: issued.notAfter,
+           // WHAT TRAVELS WITH THE LEAF, and it is empty on the self-signed
+           // path and two certificates long on the PKI one. A caller
+           // concatenates rather than branching — see `chainOf()`.
+           issuerChainPem: issued.chainPem,
+           issuerChainDer: issued.chainDer,
+           certificate: certificateFacts(issued.der) };
+}
+
+// ---------------------------------------------------------------------------
+// THE CHAIN A CALLER SENDS, in the two shapes the two surfaces want.
+//
+// **LEAF FIRST, ANCHOR EXCLUDED.** The Workload API's `x509_svid` is "the
+// X.509-SVID... and any intermediates" as one concatenated DER blob, and the
+// SPIRE Server API's `cert_chain` is the same list as separate entries. Both
+// exclude the anchor, which travels in the bundle: sending it is harmless and
+// relying on it having been sent is the mistake.
+//
+// **THIS IS WHERE THE COMMENT THAT SAID "THERE ARE NONE HERE" USED TO BE.** It
+// read: *the chain the Workload API returns: the leaf FIRST, then any
+// intermediates. There are none here — the CA signs leaves directly — but the
+// field is a chain rather than a certificate, and a caller that assumed one
+// certificate would break the day a downstream CA is in front of it.* The
+// field being a chain rather than a certificate is what made 2026-09-11 an
+// edit to one function instead of four protocol handlers.
+// ---------------------------------------------------------------------------
+function chainPemOf(issued) {
+  return [issued.pem].concat(issued.issuerChainPem || []);
+}
+
+function chainDerOf(issued) {
+  return [issued.der].concat(issued.issuerChainDer || []);
 }
 
 // ---------------------------------------------------------------------------
@@ -744,34 +1178,54 @@ function certificateFacts(der) {
   }
 }
 
-// An intermediate CA, for `NewDownstreamX509CA`. It is signed by the root and
-// is itself allowed to sign leaves — `pathLen: 0` — and it is NOT added to this
-// service's own authority list: a downstream CA belongs to whoever asked for
-// it, and adding it here would mean this service started signing with somebody
-// else's key. It goes into the bundle for the same reason the root does.
+// ---------------------------------------------------------------------------
+// AN INTERMEDIATE CA, FOR `NewDownstreamX509CA` — AND THE ONE PLACE THE WHOLE
+// HIERARCHY HAD TO GIVE GROUND (2026-09-11).
+//
+// It is signed by this realm's authority and is itself allowed to sign leaves
+// — `pathLen: 0` — and it is NOT added to this service's own authority list: a
+// downstream CA belongs to whoever asked for it, and adding it here would mean
+// this service started signing with somebody else's key.
+//
+// **THIS IS THE ONLY CA UNDER A SPIFFE AUTHORITY, AND IT IS WHY THAT AUTHORITY
+// IS `pathLen: 1` WHILE EVERY OTHER ISSUING CA IN THIS SERVICE IS 0.** With the
+// authority self-signed that cost nothing — it was its own anchor and could
+// say what it liked about depth. Under the Root it costs a widening of two
+// certificates: the SPIFFE Issuing CA to 1 and the realm Intermediate above it
+// to 2. `common/pki.js`'s `intermediatePathLen()` derives the second from the
+// first so that nobody can widen one and forget the other, which is the
+// failure that encodes perfectly and validates nowhere.
+//
+// **IT USED TO GO INTO THE BUNDLE "for the same reason the root does" AND THAT
+// SENTENCE IS NOW WRONG.** The bundle publishes the trust ANCHOR, and a
+// downstream CA is not one — it is an intermediate, and it travels in the
+// chain, which is what `chainDer` below is for. Under the old arrangement the
+// authority was the anchor, so anything it signed that was itself a CA looked
+// like bundle material; under the Root nothing changes about who is trusted
+// when a downstream CA is minted, which is the correct answer and was not
+// available before.
+// ---------------------------------------------------------------------------
 async function downstreamCa(options) {
   log.debug('Entering downstreamCa().');
-  await ready();
   const opts = options || {};
-  const authority = x509List()[0];
+  const realmId = realmIdOf(opts.realm);
+  await ready(realmId);
+  const authority = activeX509Authority(realmId);
   if (!authority) {
     log.debug('Leaving downstreamCa(). No authority.');
-    throw new Error('This trust domain has no X.509 authority.');
+    throw new Error('This trust domain has no X.509 authority in the "' +
+                    (realmId || 'default') + '" realm.');
   }
-  const type = keyTypeById(authority.keyType) || KEY_TYPES[0];
-  const pair = await keys.generateKeyPair(opts.keyType || type.id);
+  const fallbackType = keyTypeById(authority.keyType) || KEY_TYPES[0];
+  const pair = await keys.generateKeyPair(opts.keyType || fallbackType.id);
   const ttl = Number(opts.ttl) > 0 ? Number(opts.ttl) : config.value('spiffe.caTtl');
   const notBefore = new Date();
   let notAfter = new Date(notBefore.getTime() + ttl * 1000);
   const caNotAfter = new Date(authority.notAfter);
   if (notAfter > caNotAfter) notAfter = caNotAfter;
-  const issued = await x509.issueCertificate({
+  const issued = await issueFromAuthority(realmId, authority, {
     subject: 'CN=mock-sts SPIFFE downstream CA (' + TRUST_DOMAIN + '),O=mock-sts',
-    subjectPublicKey: pair.publicPem,
-    signatureAlg: type.sigAlg,
-    issuer: { certificatePem: authority.certificatePem,
-              privateKeyPem: authority.privateKeyPem,
-              keyAlg: authority.keyType },
+    publicKeyPem: pair.publicPem,
     notBefore: notBefore.toISOString(),
     notAfter: notAfter.toISOString(),
     extensions: {
@@ -788,9 +1242,15 @@ async function downstreamCa(options) {
   log.debug('Leaving downstreamCa(). serial=' + issued.serialHex);
   return {
     certificatePem: issued.pem,
-    certificateDer: Buffer.from(issued.der),
+    certificateDer: issued.der,
     privateKeyPem: pair.privatePem,
-    chainDer: [Buffer.from(issued.der), authority.certificateDer],
+    // The downstream CA FIRST, then everything above it up to but not
+    // including the anchor — which on the PKI path is the SPIFFE Issuing CA
+    // and the realm's Intermediate, and on the self-signed path is the
+    // authority itself, because there it IS the anchor's certificate and a
+    // consumer holding the bundle has it either way.
+    chainDer: [issued.der].concat(issued.chainDer.length
+      ? issued.chainDer : [authority.certificateDer]),
     notAfter: notAfter.toISOString(),
     expiresAt: Math.floor(notAfter.getTime() / 1000)
   };
@@ -1050,17 +1510,30 @@ function algorithmsFor(jwk) {
 // NOT base64url. The key parameters (`n`/`e`, or `crv`/`x`/`y`) are published
 // beside it because a JWK needs `kty` at minimum and a consumer may use either.
 // ---------------------------------------------------------------------------
-async function bundle() {
+// **WHAT THE X.509 HALF PUBLISHES CHANGED ON 2026-09-11 AND IT IS THE ONE
+// OUTWARD-FACING CONSEQUENCE OF THE WHOLE MOVE.** It used to be the trust
+// domain's own authorities, because they were self-signed and each was its own
+// anchor. It is now the service ROOT — one entry, shared by every realm,
+// unchanged by a rotation of any realm's SPIFFE Issuing CA. That is exactly
+// what SPIRE publishes when an UpstreamAuthority plugin is configured, and it
+// is the difference between "the bundle is the list of CAs that signed things"
+// and "the bundle is the list of anchors you should trust". Only the second
+// was ever what a bundle meant; the first was true here by coincidence.
+//
+// A realm with no hierarchy publishes its self-signed authorities exactly as
+// before — see `trustAnchorsIn()`.
+async function bundle(realmId) {
   log.debug('Entering bundle().');
-  await ready();
+  const id = realmIdOf(realmId);
+  await ready(id);
   const keyList = [];
-  x509List().forEach(function (authority) {
-    const jwk = publicJwkOf(authority.publicKeyPem);
+  trustAnchorsIn(id).forEach(function (anchor) {
+    const jwk = publicJwkOf(anchor.publicKeyPem);
     jwk.use = 'x509-svid';
-    jwk.x5c = [authority.certificateDer.toString('base64')];
+    jwk.x5c = [anchor.certificateDer.toString('base64')];
     keyList.push(jwk);
   });
-  jwtList().forEach(function (authority) {
+  jwtList(id).forEach(function (authority) {
     const jwk = Object.assign({}, authority.jwk);
     jwk.use = 'jwt-svid';
     jwk.kid = authority.id;
@@ -1068,11 +1541,11 @@ async function bundle() {
   });
   const document = {
     keys: keyList,
-    spiffe_sequence: sequenceNow(),
+    spiffe_sequence: sequenceNow(id),
     spiffe_refresh_hint: refreshHintSeconds()
   };
   log.debug('Leaving bundle(). ' + keyList.length + ' key(s), sequence ' +
-            sequenceNow() + '.');
+            sequenceNow(id) + '.');
   return document;
 }
 
@@ -1081,9 +1554,12 @@ async function bundle() {
 // byte string holding every CA certificate end to end. Getting this wrong
 // produces a field a workload parses as one certificate and then cannot verify
 // anything against after a rotation.
-async function x509BundleDer() {
-  await ready();
-  return Buffer.concat(x509List().map(function (a) { return a.certificateDer; }));
+async function x509BundleDer(realmId) {
+  const id = realmIdOf(realmId);
+  await ready(id);
+  return Buffer.concat(trustAnchorsIn(id).map(function (a) {
+    return a.certificateDer;
+  }));
 }
 
 // The same, for a federated trust domain, built from the `x5c` members of the
@@ -1176,7 +1652,8 @@ function setFederatedBundle(trustDomain, document, options) {
   // The federated bundles are part of what this service publishes to workloads
   // — X509SVIDResponse.federated_bundles and JWTBundlesResponse.bundles both
   // carry them — so changing one changes the bundle a workload sees.
-  bumpSequence('a federated bundle was ' + (existing ? 'updated' : 'added'));
+  bumpSequence(undefined,
+               'a federated bundle was ' + (existing ? 'updated' : 'added'));
   log.debug('Leaving setFederatedBundle(). ' + federated.size + ' federated bundle(s).');
   return { ok: true, trustDomain: name, created: !existing };
 }
@@ -1185,7 +1662,7 @@ function deleteFederatedBundle(trustDomain) {
   log.debug('Entering deleteFederatedBundle(). trustDomain=' + trustDomain);
   const name = String(trustDomain == null ? '' : trustDomain).trim().toLowerCase();
   const had = federated.delete(name);
-  if (had) bumpSequence('a federated bundle was removed');
+  if (had) bumpSequence(undefined, 'a federated bundle was removed');
   log.debug('Leaving deleteFederatedBundle(). ' + (had ? 'Removed.' : 'It was not here.'));
   return had;
 }
@@ -1264,50 +1741,89 @@ function checkBundleDocument(value) {
   return { ok: true, document: document };
 }
 
-// ---------------------------------------------------------------------------
-// ROTATION.
+// ===========================================================================
+// ROTATION, WHICH IS TWO DIFFERENT ACTS NOW AND WAS ONE BEFORE 2026-09-11.
 //
-// A new authority is PREPENDED — it becomes the one everything is signed with —
+// **THE SELF-SIGNED CASE IS UNCHANGED AND ITS ARGUMENT IS KEPT VERBATIM**: a
+// new authority is PREPENDED — it becomes the one everything is signed with —
 // and the old one stays in the bundle so that SVIDs already in the field keep
 // verifying. That is what a bundle is for, and dropping the old one is the
-// difference between a rotation and an outage.
+// difference between a rotation and an outage. The retired authorities are
+// capped, because this is a mock and somebody will press the button fifty
+// times: past the cap the oldest is dropped, which invalidates whatever it
+// signed. Said out loud on the page rather than left to be discovered.
 //
-// The retired authorities are capped, because this is a mock and somebody will
-// press the button fifty times: past the cap the oldest is dropped, which
-// invalidates whatever it signed. Said out loud on the page rather than left to
-// be discovered.
-// ---------------------------------------------------------------------------
+// **THE PKI CASE NEEDS NONE OF THAT, AND THE REASON IS THE POINT OF THE WHOLE
+// MOVE.** Rotating there means re-issuing the realm's SPIFFE Issuing CA under
+// an Intermediate that has not moved, under a Root that has not moved. The
+// ANCHOR is unchanged, so a bundle nobody re-fetches is still correct; an SVID
+// minted a minute ago carries the OLD Issuing CA in its own chain and goes on
+// building a path to the same Root. There is nothing to retain, nothing to cap,
+// and no window in which a rotation looks like an outage.
+//
+// So: one button on `/admin/spiffe`, two mechanisms, and the answer says which
+// ran. Reporting them identically would have been the tempting thing and would
+// have hidden the single most useful property this change bought.
+// ===========================================================================
 const MAX_RETAINED_AUTHORITIES = 4;
 
-async function rotateX509Authority() {
+async function rotateX509Authority(realmId) {
   log.debug('Entering rotateX509Authority().');
-  await ready();
+  const id = realmIdOf(realmId);
+  await ready(id);
+  if (pki.describeIssuer(id, SPIFFE_USE_CASE)) {
+    // `reissueUseCase()` supersedes the old authority on its Intermediate's
+    // revocation list and re-mints everything that was certified under it —
+    // which for SPIFFE is nothing, because `issueUnder()` records nothing. It
+    // is called rather than reimplemented so that a SPIFFE rotation and the
+    // Reissue button on /admin/pki are ONE act with one set of consequences.
+    const done = await pki.reissueUseCase(id, SPIFFE_USE_CASE);
+    if (!done.ok) {
+      log.debug('Leaving rotateX509Authority(). The PKI refused.');
+      throw new Error((done.errors || ['The SPIFFE Issuing CA could not be ' +
+                                       're-issued.']).join(' '));
+    }
+    // **THE SEQUENCE DOES NOT MOVE, AND THAT IS NOT AN OVERSIGHT.** It is
+    // defined to change when the BUNDLE changes, and the bundle is the Root.
+    // Bumping it here would tell every consumer in the trust domain to
+    // re-fetch a document that is byte-identical to the one they hold.
+    const fresh = activeX509Authority(id);
+    log.info('spiffe: the "' + (id || 'default') + '" realm\'s SPIFFE ' +
+             'Issuing CA was re-issued (' + fresh.id + '). The bundle is ' +
+             'UNCHANGED — it publishes this service\'s Root, which did not ' +
+             'move — so SVIDs minted under the old authority go on verifying ' +
+             'and no consumer has to re-fetch anything.');
+    log.debug('Leaving rotateX509Authority(). Re-issued under the Root.');
+    return fresh;
+  }
   const authority = await makeX509Authority(config.value('spiffe.x509KeyType'),
-                                            config.value('spiffe.caTtl'), 0);
+                                            config.value('spiffe.caTtl'), 1);
   // READ, PREPEND, WRITE BACK — and the write is what makes the rotation the
   // SERVICE's rather than this process's. `x509List()` hands back the
   // memoised array, so it is copied before being changed.
-  const kept = [authority].concat(x509List());
+  const kept = [authority].concat(x509List(id));
   const dropped = kept.splice(MAX_RETAINED_AUTHORITIES);
-  setX509List(kept);
-  bumpSequence('the X.509 authority was rotated');
-  log.info('spiffe: a new X.509 authority (' + authority.id + ') is now ' +
-           'active; ' + (kept.length - 1) + ' retired one(s) are ' +
+  setX509List(id, kept);
+  bumpSequence(id, 'the X.509 authority was rotated');
+  log.info('spiffe: a new SELF-SIGNED X.509 authority (' + authority.id +
+           ') is now active in "' + (id || 'default') + '"; ' +
+           (kept.length - 1) + ' retired one(s) are ' +
            'still published in the bundle' +
            (dropped.length ? ', and ' + dropped.length + ' was dropped — ' +
             'anything it signed no longer verifies' : '') + '.');
   log.debug('Leaving rotateX509Authority().');
-  return authority;
+  return selfSignedAuthorityFrom(authority);
 }
 
-async function rotateJwtAuthority() {
+async function rotateJwtAuthority(realmId) {
   log.debug('Entering rotateJwtAuthority().');
-  await ready();
+  const id = realmIdOf(realmId);
+  await ready(id);
   const authority = await makeJwtAuthority(config.value('spiffe.jwtKeyType'));
-  const kept = [authority].concat(jwtList());
+  const kept = [authority].concat(jwtList(id));
   const dropped = kept.splice(MAX_RETAINED_AUTHORITIES);
-  setJwtList(kept);
-  bumpSequence('the JWT authority was rotated');
+  setJwtList(id, kept);
+  bumpSequence(id, 'the JWT authority was rotated');
   log.info('spiffe: a new JWT authority (kid ' + authority.id + ') is now ' +
            'active; ' + (kept.length - 1) + ' retired one(s) are ' +
            'still published' +
@@ -1351,24 +1867,91 @@ function toArrayBuffer(buf) {
 // published; the keys stay in this module, exactly as `tls_server.js` publishes
 // its certificate and not its key.
 // ---------------------------------------------------------------------------
-function state() {
+function state(realmId) {
+  const id = realmIdOf(realmId);
+  const active = activeX509Authority(id);
+  const anchors = trustAnchorsIn(id);
   return {
     enabled: !!config.value('spiffe.enabled'),
     ready: !!started && !startError,
     error: startError || '',
     startedAt: started || 0,
+    realm: id,
     trustDomain: TRUST_DOMAIN,
     trustDomainId: spiffeId.trustDomainId(TRUST_DOMAIN),
     serverId: started && !startError ? spiffeId.serverId(TRUST_DOMAIN) : '',
-    sequence: sequenceNow(),
+    sequence: sequenceNow(id),
     refreshHint: refreshHintSeconds(),
-    x509Authorities: x509List().map(function (a, index) {
-      return { id: a.id, active: index === 0, keyType: a.keyType,
-               subject: a.subject, serialHex: a.serialHex,
+    // ---------------------------------------------------------------------
+    // WHERE THE AUTHORITY CAME FROM, WHICH EVERY PAGE THAT DRAWS THIS MUST
+    // SHOW (2026-09-11).
+    //
+    // `pki` means this realm's SPIFFE Issuing CA under this service's own
+    // Root, and the anchor a consumer installs is that Root — one anchor for
+    // every realm, every socket and every token this service signs, and it
+    // survives a restart wherever the keystore does. `self-signed` means the
+    // authority IS the anchor and has to be fetched again after every
+    // restart. A reader cannot tell those apart from a certificate, and what
+    // they have to DO about them is completely different, so it is a field
+    // rather than something to infer from the chain being empty.
+    // ---------------------------------------------------------------------
+    authoritySource: active ? active.source : '',
+    // The chain that travels WITH an SVID — the SPIFFE Issuing CA and this
+    // realm's Intermediate — and never the anchor, which is in the bundle.
+    chain: active ? active.chainPem.slice() : [],
+    // The same list as names, for the pages. Read off the certificates with
+    // node's own parser rather than assembled from the fields beside them, for
+    // `certificateFacts()`'s reason: a subject rendered two ways is a subject
+    // a reader cannot compare with an `openssl x509 -subject`.
+    chainSubjects: active ? active.chainPem.map(function (pem) {
+      try {
+        return new crypto.X509Certificate(pem).subject.replace(/\n/g, ', ');
+      } catch (e) {
+        // A certificate this service built that node cannot read is a defect
+        // here rather than bad input, so it is logged — and it is bookkeeping,
+        // so it never fails the report it is part of.
+        log.error('spiffe: a chain certificate would not parse for state(): ' +
+                  e.message);
+        return '(unreadable)';
+      }
+    }) : [],
+    root: active && active.source === 'pki'
+      ? { subject: active.anchorSubject, notAfter: active.anchorNotAfter,
+          certificatePem: active.anchorPem }
+      : null,
+    intermediate: active ? active.intermediateSubject : '',
+    // **THE ANCHORS AND THE AUTHORITIES ARE TWO LISTS NOW.** They were one,
+    // because a self-signed authority is its own anchor; under the Root they
+    // differ and a page showing only one of them would answer the wrong
+    // question — "what signed this SVID" and "what do I have to trust" are
+    // not the same question and stopped having the same answer.
+    trustAnchors: anchors.map(function (a) {
+      return { id: a.id, source: a.source, subject: a.subject,
                notBefore: a.notBefore, notAfter: a.notAfter,
-               certificatePem: a.certificatePem, createdAt: a.createdAt };
+               certificatePem: a.certificatePem };
     }),
-    jwtAuthorities: jwtList().map(function (a, index) {
+    x509Authorities: active
+      ? [{ id: active.id, active: true, source: active.source,
+           keyType: active.keyType, subject: active.subject,
+           serialHex: active.serialHex,
+           notBefore: active.notBefore, notAfter: active.notAfter,
+           certificatePem: active.certificatePem,
+           createdAt: active.createdAt || 0 }].concat(
+          // The retired self-signed authorities, which exist only on that
+          // path — a re-issued Issuing CA leaves nothing behind here, for
+          // `rotateX509Authority()`'s reason.
+          active.source === 'self-signed'
+            ? x509List(id).slice(1).map(function (a) {
+                return { id: a.id, active: false, source: 'self-signed',
+                         keyType: a.keyType, subject: a.subject,
+                         serialHex: a.serialHex, notBefore: a.notBefore,
+                         notAfter: a.notAfter,
+                         certificatePem: a.certificatePem,
+                         createdAt: a.createdAt };
+              })
+            : [])
+      : [],
+    jwtAuthorities: jwtList(id).map(function (a, index) {
       return { id: a.id, active: index === 0, keyType: a.keyType, alg: a.alg,
                jwk: a.jwk, createdAt: a.createdAt };
     }),
@@ -1419,5 +2002,9 @@ module.exports = {
   checkBundleDocument: checkBundleDocument,
   rotateX509Authority: rotateX509Authority,
   rotateJwtAuthority: rotateJwtAuthority,
-  sequence: function () { return sequenceNow(); }
+  // The realm's active X.509 authority, for a caller that needs to say what
+  // signed an SVID without drawing the whole of `state()`.
+  activeX509Authority: activeX509Authority,
+  trustAnchors: trustAnchorsIn,
+  sequence: function (realmId) { return sequenceNow(realmId); }
 };

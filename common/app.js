@@ -476,8 +476,28 @@ app.options('*', cors(corsOptions));
 // caller that sends the bytes without knowing the specific type should not be
 // handed a corrupted body either. Anything else still reaches the text parser
 // exactly as before, so no other endpoint in this service changes.
+//
+// **`application/ocsp-request` JOINED THEM ON 2026-09-11 AND IT IS THE SAME
+// DEFECT A SECOND TIME.** The OCSP responder at `/pki/ocsp/{scope}/{ca}` takes
+// a DER body, and without a row here it met the TEXT parser below — which
+// takes EVERY content type. Two things went wrong at once and only the second
+// is the one anybody would have predicted:
+//
+//   * **the request HUNG.** The handler read the body off the stream, and by
+//     the time it ran the text parser had already drained it — so `end` never
+//     fired again and nothing ever answered. Every POST to that endpoint
+//     timed out with no error anywhere: `curl` reported `000`, the access log
+//     recorded nothing, and the service went on answering everything else in
+//     milliseconds.
+//   * **and the bytes would have been CORRUPTED even once it answered**,
+//     because the text parser decodes as UTF-8 and DER is not text. That is
+//     the failure the Kerberos row above was added for, and the comment there
+//     spells it out.
+//
+// The handler reads `req.body` now, like every other endpoint here.
 app.use(bodyParser.raw({
-  type: ['application/kerberos', 'application/octet-stream'],
+  type: ['application/kerberos', 'application/octet-stream',
+         'application/ocsp-request'],
   limit: '5mb'
 }));
 

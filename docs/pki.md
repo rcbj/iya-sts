@@ -1,0 +1,637 @@
+---
+title: PKI
+nav_order: 7
+---
+
+# A certificate authority, at `/admin/pki`
+
+Protocols → PKI builds a **Root CA, an Intermediate CA and an Issuing CA** for
+the trust realm it is reached in, and issues **signing key pairs** from the
+bottom of it to applications.
+
+It exists because of [JWT assertions](jwt-assertions.md): an application can
+authenticate, or present an authorization grant, with a signed JWT instead of a
+shared secret — and **a signing key nobody vouched for is a key an operator has
+to move by hand**.
+
+It is the only surface here that issues an X.509 certificate to something that
+is not this service. TLS issues its own listener certificate and SPIFFE issues
+SVIDs for workloads it also authenticates — **both from Issuing CAs on this
+page since 2026-09-11** — and this hands both halves of a key pair to an
+application.
+
+## One Root for the service, and what hangs from it
+
+**Every key pair this service generates is a leaf of one certificate
+authority**, built at startup, and the tree is on this page.
+
+```
+Root CA                             one, for the whole service
+├── Intermediate — process          for what belongs to no realm
+│    └── Issuing: TLS               → 8443, 9443, LDAPS 636, the main port
+├── Intermediate — realm (default)
+│    ├── Issuing: JOSE signing      → RS256, ES256/384/512/256K, EdDSA ×2
+│    ├── Issuing: XML signing       → SAML 2.0/1.1, WS-Fed, WS-Trust
+│    ├── Issuing: App assertions    → RFC 7523 client key pairs
+│    └── Issuing: SPIFFE            → every X509-SVID minted in this realm
+└── Intermediate — realm `acme`
+     └── …the same four
+```
+
+So an operator installs **one anchor** and it covers the TLS listeners, LDAPS,
+the main port, every token, assertion and signed document this service issues
+— and every X509-SVID it mints — in every realm.
+
+### The page shows the realm you are in
+
+That is the whole service. What `/admin/pki` puts in front of you is the
+**Root**, the **process** branch and **your realm's** Intermediate with its
+Issuing CAs. Another realm's branch is not on it and cannot be edited from it —
+**switch realms** to reach that one, which is how every other setting on the
+console already works. `GET /admin-api/pki` answers exactly the same in
+whichever realm it is reached in, because the page and that reply are one
+function.
+
+The Root is on every realm's page because every realm hangs from it, and the
+process branch is because the TLS certificate is served on sockets every realm
+answers on — it belongs to no realm, so it is edited from any of them.
+
+### The Root is shared and the Intermediate is not
+
+**This reversed a documented decision on 2026-09-11.** Until that date the
+whole three-tier hierarchy was per realm, on the argument that a CA shared
+across realms would be *one authority vouching for several identity services*.
+
+That argument was about the ANCHOR, and the anchor is no longer where the realm
+boundary is. **The Intermediate is**: each realm has one of its own, and a path
+must pass through it.
+
+That matters more than it looks. With one Root, "does this certificate chain to
+our Root" is true of *every certificate this service has ever issued, in any
+realm* — so on the day the Root was shared, that test silently stopped being a
+boundary. A certificate issued in one realm still does not verify in another,
+and the refusal says which Intermediate it failed to pass through rather than
+blaming an anchor check that can no longer fail.
+
+### An Issuing CA per use case
+
+Five of them, and the split is what makes an operator able to narrow one
+surface without touching the rest:
+
+| Use case | Scope | What it certifies |
+|---|---|---|
+| **JOSE signing** | realm | The RSA key behind RS256, the four ECDSA curves and both Edwards curves — what a client verifies against `/oauth2/jwks`. |
+| **XML signing** | realm | SAML 2.0 and 1.1 assertions and responses, WS-Federation, WS-Trust, per-service-provider metadata. |
+| **Application assertions** | realm | The signing key pairs issued for RFC 7521 / 7523 — to applications, and since 2026-09-11 to PEOPLE as well (`target=person`, written onto the person's own entry as `stsAssertion*`; see [JWT assertions](jwt-assertions.md)). This is the Issuing CA this page had before the others existed. |
+| **TLS listeners** | **process** | The certificate served on 8443, 9443, LDAPS 636 and the main port. |
+| **SPIFFE authority** | realm | **Every X509-SVID minted in this realm** (2026-09-11 — it was self-signed and outside this tree before that). The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
+
+**The RSA signing key is certified twice**, by the JOSE CA and by the XML CA. It
+signs JWTs and it signs XML documents, and those are two use cases: a relying
+party that trusts this service for SAML has not thereby said anything about its
+OAuth tokens, and two certificates over one key is how that stays sayable.
+
+**TLS hangs off a `process` Intermediate** rather than a realm's, because the
+sockets it certifies are shared by every realm. One realm's Intermediate
+signing the certificate every realm's front door presents would be that realm
+vouching for all the others.
+
+### Nothing about key generation changed
+
+The same RSA key, the same six curve keys, the same eleven post-quantum keys
+made lazily on first use, the same algorithms, in the same order, at the same
+moment. `pki.autoBuild` is on by default and builds the tree before the
+listener binds; what it adds happens afterwards and only ever adds a
+certificate.
+
+**The `kid` does not move.** It names the KEY and is derived from the
+self-signed certificate the key was born with, which never changes for that
+key's life — so a client sees byte for byte the `kid` it saw before any of this
+existed, and reissuing an authority underneath a key does not disturb it.
+
+Turn `pki.autoBuild` off and this service behaves exactly as it did before:
+nothing is built until Build is pressed, and every key carries the self-signed
+certificate it was born with.
+
+### One thing is deliberately NOT a leaf of this tree
+
+**The eleven post-quantum keys per realm.** They come from
+`common/pq_jose.js` — this service's own reading of ML-DSA, SLH-DSA and the
+composite algorithms, deliberately independent of the vendored implementation
+the certificate encoder uses. Handing a key made by one to the other is exactly
+the defect that independence exists to expose, so they carry no certificate and
+are published as bare AKP JWKs.
+
+### SPIFFE takes its authority from here now
+
+**This reversed the page's own second non-goal on 2026-09-11.** It read: *The
+SPIFFE X.509 authority is self-signed on purpose — a trust domain whose root
+was also this service's would conflate two unrelated trust decisions; one
+process, two PKIs. There is a mechanical reason too: an Issuing CA here carries
+`pathLen: 0`, so it may sign leaves and no further authority, and a SPIFFE
+authority signs SVIDs. Its Issuing CA is built and certifying nothing, so
+reversing that is a decision rather than a rebuild.*
+
+Both halves were answered rather than waived:
+
+* **The trust decision is not conflated.** The SPIFFE authority is a *sibling*
+  of the TLS one, not the same certificate — its own Issuing CA, its own key.
+  The only thing they share is the anchor you install. Narrowing trust to
+  SPIFFE alone is still sayable: pin that Issuing CA instead of the Root.
+* **The `pathLen` was moved rather than argued around.** The SPIFFE Issuing CA
+  carries `pathLen: 1` and the realm Intermediate above it `2`, both derived
+  from one table so they cannot come apart.
+
+**The shortest description is that this service's PKI is now SPIRE's
+[UpstreamAuthority](https://spiffe.io/docs/latest/deploying/spire_server/).**
+The SPIFFE bundle publishes the **Root** — which is what SPIRE publishes with
+an upstream plugin configured — and an X509-SVID carries its Issuing CA and the
+realm's Intermediate in its own chain:
+
+```
+bundle                  Root CA
+X509-SVID chain         [ leaf, SPIFFE Issuing CA, Intermediate — realm ]
+```
+
+Three things follow:
+
+* **A rotation no longer changes the bundle.** Re-issuing the SPIFFE Issuing CA
+  leaves the anchor alone, so an SVID minted a minute ago keeps verifying and
+  nobody re-fetches anything. That was not true of the self-signed arrangement,
+  where every rotation changed the bundle.
+* **Every realm's bundle is the same document.** The authority is per realm and
+  the anchor is not, which is what keeps a per-realm authority coherent with
+  SPIFFE's four shared sockets — those answer in the default realm, and what a
+  realm's own Issuing CA adds is a line in the chain saying who issued the SVID.
+* **A realm with no certificate authority still works.** It falls back to the
+  self-signed authority this service always had, and `/admin/spiffe` and `GET
+  /spiffe` both say which one is in use. `pki.autoBuild: false` reaches that
+  state deliberately.
+
+`spiffe.x509KeyType` still decides the key in each **SVID**; the **authority's**
+key is the branch's, chosen when you build the hierarchy — and out of the box it
+is EC P-256, which is what SPIRE issues.
+
+### Editing it
+
+Four acts, and they are deliberately named apart because their consequences are
+not alike:
+
+| | What it does |
+|---|---|
+| **Rebuild this branch** | A new Intermediate and a new Issuing CA for every use case under it, then everything re-certified. The Root is untouched. |
+| **Reissue this CA** | A NEW KEY for one Issuing CA, and everything under it re-certified. The other use cases are untouched. |
+| **Renew certificates** | The same authorities and the same keys, fresh certificates with fresh serials. **Nothing stops verifying.** |
+| **Replace the Root** | Every branch is re-issued under the new Root in the same act. **Anything trusting the old Root stops trusting this service.** |
+
+### Your own CAs and your own keys
+
+**Import a CA** — paste a certificate and its private key, as the Root or as one
+use case's Issuing CA, and the tree chains to your own corporate authority
+instead. Three checks happen before anything is stored: both halves present, the
+key actually belongs to the certificate, and the certificate is a CA at all. A
+rebuild leaves an imported authority alone.
+
+**Use your own key pair** — per slot, which is a use case and an algorithm
+(`jose` / `ES256:P-256`). With no certificate this service issues one from its
+own authority, so your key chains here exactly as a generated one would; with a
+certificate, the pair is used as you supplied it.
+
+## A branch is built whole, or not at all
+
+A trust chain is only worth anything **whole**. An Issuing CA with no
+Intermediate above it is a two-tier chain wearing a three-tier name, and a
+half-built hierarchy is exactly the state in which somebody issues a certificate
+that verifies here and nowhere else. A failure at any tier stores nothing.
+
+Since 2026-09-11 that rule is about a **branch** — an Intermediate and every
+Issuing CA under it — rather than about three tiers: a branch with two of its
+three Issuing CAs is the state in which one use case silently has no authority
+and its keys come out uncertified.
+
+| Tier | `pathLen` | Default life | What it is for |
+|---|---|---|---|
+| **Root CA** | unconstrained | 20 years | The trust anchor. Self-signed, and the only certificate a relying party has to be given out of band — everything below it travels in the chain. |
+| **Intermediate CA** | 1 | 10 years | So the Root's key can be used once and left alone: a compromise here is repaired by reissuing this tier, and a compromise of the Root is not repaired at all. |
+| **Issuing CA** | **0** | 5 years | The only tier that signs anything handed out. `pathLen: 0` means it signs LEAVES and no further CA — so "an application certificate cannot mint another" is a property of the encoding rather than of this service's manners. |
+
+**Building again REPLACES.** Everything issued from the old hierarchy chains to
+nothing the moment it does, and the page says so before the button is pressed —
+this service keeps no copy of what it issued, so none of it can be listed.
+
+**AND THAT INCLUDES THE CERTIFICATE THIS SERVICE IS SERVING ON ITS OWN HTTPS
+PORT.** The main listener's certificate is a leaf of this hierarchy like every
+other key here, so rebuilding the Root re-issues it under the new one: anything
+holding the anchor from before — a truststore you built with `curl -k
+https://host:8081/tls/server-certificate`, a browser you told to trust it, a
+client with `NODE_EXTRA_CA_CERTS` — **stops trusting this service on the next
+connection**, with `unable to get local issuer certificate` and nothing in the
+message about what changed. Fetch it again.
+
+The listener does not have to be restarted for this and never is: the new
+certificate is applied to the live socket, and connections already open keep the
+one they were made under.
+
+## A realm's own branch
+
+A realm is a logical identity service with its own signing key, its own sessions
+and its own applications — and its own **Intermediate CA**, which is what a
+realm has of its own now that the Root is the service's. Reaching
+`/realm/acme/admin/pki` shows that realm's branch.
+
+A certificate issued in `acme` does not verify at the default realm's token
+endpoint. **The check is the Intermediate and not the anchor** — see *The Root
+is shared and the Intermediate is not* above for why that distinction is the
+whole of the change.
+
+## What issuing writes, and what it forgets
+
+The key pair goes onto that application's **own directory entry**. Six
+attributes:
+
+| Attribute | What it holds |
+|---|---|
+| `oauthAssertionPrivateKey` | The private key, PEM — **sealed at rest** under the key-encryption key wherever it persists |
+| `oauthAssertionCertificate` | The leaf, PEM |
+| `oauthAssertionCertificateChain` | The Issuing CA and the Intermediate, in that order |
+| `oauthAssertionJwks` | The public half as a JWKS, each key carrying `x5c` and `x5t#S256` |
+| `oauthAssertionKid` | The `kid`, derived from the key material (RFC 7638) |
+| `oauthAssertionExpiresAt` | When the certificate expires |
+
+**This service keeps no second copy of the private key.** It is handed over
+once, at issuance, and forgotten — so the entry is where it lives.
+
+**AND IT IS SEALED THERE.** AES-256-GCM under the key-encryption key, through
+`common/keystore.js` — the same mechanism and the same key that seal this
+service's own signing keys and the three CA key pairs this leaf was issued from
+— wherever that key outlives the process, which is product mode. So an
+`ldapsearch` on TCP 389 where every bind succeeds, an LDIF file, a database row
+and a backup of either hold `$aesgcm$…` and not a usable signing key. The
+surfaces that come through `common/applications.js` — `/admin/applications` and
+`GET /admin-api/applications`, both behind a credential — are handed the PEM,
+because **the seal protects the store rather than the console an operator
+collects an issued credential from**. `/admin/ldap/applications` is the
+deliberate exception and shows the ciphertext: that page is headed *the registry
+as the directory sees it*.
+
+In **development mode** it is written in the clear. The key-encryption key there
+is ephemeral — it exists so the request-worker pool can share minted rows — and
+sealing an entry that survives a restart under a key that does not would leave
+the certificate readable and the private half permanent garbage. That is the
+same rule an authenticator's shared secret follows, and in that mode the
+decision `oauthClientSecret` and `GET /krb5/principals` make still applies:
+a debugger whose credentials are unusable without reading the source is worse
+than one that says what they are.
+
+**`oauthJwks` is never overwritten.** A client that registered its own keys and
+is later issued a pair by an operator has two ways to sign, both of which
+somebody deliberately arranged, and writing over the first would silently end it
+the moment somebody pressed a button about the second.
+
+**The leaf is a signing certificate and deliberately not a TLS one** —
+`digitalSignature` and `nonRepudiation`, and **no extended key usage**. What it
+signs is a JWT, not a TLS handshake. Giving it `clientAuth` would make it usable
+for RFC 8705 section 2 as well, which is a DIFFERENT credential with a different
+registration attribute, and one certificate quietly doing both is how a
+deployment ends up unable to revoke either. The application's identifier is a
+URI subjectAltName besides the CN, because a CN is a display name and a SAN is
+the machine-readable one.
+
+**The lifetime is clamped, not refused.** A certificate that would outlive the
+Issuing CA is shortened to the CA's own expiry: the ordinary cause is a five-year
+Issuing CA in its fifth year, and an operator who asked for a year should get
+eleven months rather than an error about arithmetic.
+
+## Revocation is published, and never consulted
+
+**This section said *nothing is ever revoked* until 2026-09-11.** It read *this
+service publishes no CRL and answers no OCSP; a certificate it issued is good
+until it expires.*
+
+Now:
+
+| | |
+|---|---|
+| **A CRL per authority** | RFC 5280 section 5, DER, at `GET /pki/crl/{scope}/{ca}` — and as `certificateRevocationList;binary` under `ou=crl` in the embedded directory, which is what the `ldap://` and `ldaps://` addresses inside every certificate resolve to. Built and signed ON DEMAND, so `thisUpdate` is always now. |
+| **An OCSP responder per authority** | RFC 6960, both transports of appendix A.1, at `GET|POST /pki/ocsp/{scope}/{ca}`. Signed with the CA ITSELF rather than a delegated responder certificate, so a client verifies with the anchor it already has. The nonce is echoed. |
+| **The issuing certificate** | `GET /pki/ca/{scope}/{ca}.cer`, which is the `caIssuers` address in every certificate that authority signed. |
+| **An index** | `GET /pki/revocation` — every authority with its addresses in all three schemes, so a person pointing a client at this does not have to read them out of a certificate first. |
+| **Per authority and NOT per realm** | A CRL is signed by an ISSUER and lists serials that issuer minted, so a list per realm would be a document with no valid issuer and nothing could sign it. |
+| **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. |
+| **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`. |
+
+**What it does NOT do is CONSULT a revocation list — its own included.** A
+client certificate presented to this service is checked against the anchors on
+`/tls/trust`, and no CRL is fetched and no responder is asked. So **a
+certificate revoked here still authenticates here**, which is the one sentence
+on this page most worth not skimming.
+
+That is not an oversight and it is tracked as outstanding in `common/mode.js`:
+checking needs a fetch with a timeout, a cache, and a soft-fail-or-hard-fail
+policy for an unreachable responder, and none of that is mock behaviour.
+
+**AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
+control labelled *Take the key pair off*, and it is **not** revocation:
+
+* it clears the six attributes, so **this service** will no longer accept an
+  assertion signed with that key, because the key is no longer registered
+  against that application;
+* the certificate is still valid, still chains to this realm's Root, and would
+  still verify anywhere that trusts that Root.
+
+The reply says exactly that, in those words. It is the same distinction the
+sign-out page draws about an assertion already issued: nothing consults this
+service when one is presented, and nothing can be made to.
+
+## Where the CA private keys live
+
+They inherit the mode, and both surfaces that report it say which is in force
+rather than describing the mode they wish they were in.
+
+| Mode | What happens |
+|---|---|
+| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a mock is disposable and its credentials are meant to die with it. |
+| **product** | Written to `sts_keys`, sealed AES-256-GCM under the same key-encryption key as the signing keys, in the same row family. |
+
+A store of the PKI module's own would have been a **second answer to "where does
+this service keep a private key"**, and the second answer is the one nobody
+remembers to rotate. It is shared across the request-worker pool over the same
+channel the signing keys use, so a hierarchy built on one worker is the one every
+other worker issues from.
+
+## The encoder is the debugger's own, vendored byte-identical
+
+`common/vendored/x509.js` — the same module behind the
+[OAuth2/OIDC Debugger](https://idptools.com)'s *PKI / X.509* workflow page, and
+what `spiffe/spiffe_ca.js` already issues X509-SVIDs with. So a certificate
+issued here and one issued there are built by **one** encoder, and a difference
+between them is a difference in the arguments rather than in two implementations
+that drifted. The three tiers are that module's own `root-ca`, `intermediate-ca`
+and `issuing-ca` **profiles** rather than a second table, so a change to what an
+Intermediate CA *is* reaches both.
+
+The key and signature algorithm lists offered on the page are read from the
+modules that generate and perform them, which is the rule
+`/admin/crypto-metadata` is built on: a dropdown that offered an algorithm the
+encoder cannot produce would be a third entry that is a 500.
+
+| | |
+|---|---|
+| Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519` |
+| Key algorithms, on the **pane below** | those seven plus thirty-four post-quantum ones — ML-DSA, SLH-DSA, composite ML-DSA and ML-KEM — narrowed by the cryptographic approach |
+| Signature algorithms | RSASSA-PKCS1-v1_5 and RSASSA-PSS with SHA-256/384/512, ECDSA with SHA-256/384/512, Ed25519 — **and the two SHA-1 ones, marked weak**, because *does my stack refuse a SHA-1 certificate?* is a question a debugger should be able to ask. Nothing defaults to them. Plus the post-quantum ones, where the key is one. |
+
+**The hierarchy is deliberately the shorter list.** What the Issuing CA signs is
+a client assertion somebody else's OAuth library has to verify, and an ML-DSA
+signature is one almost nothing can read yet. The pane below is where a
+certificate nothing can read is the point.
+
+**Leave the signature algorithm empty unless you mean it.** Empty means "the
+right one for the key algorithm", which is what almost every deployment wants:
+an EC key's digest is decided by its CURVE, so a fixed value can hand a P-521
+key SHA-256 — legal, verifying, and nobody's intention. A pair whose families
+disagree is refused with the list of what that key *can* sign with beside it.
+
+## The page has no script on it
+
+Every page of this console but the API explorer is `script-src 'none'`, and this
+one keeps that. The argument is made from scratch rather than inherited from the
+page next door, because the rule here is that it has to be: the test is whether
+the page **cannot** work without a script.
+
+It plainly can. Generating a key pair and issuing a certificate are things this
+process does far better than a browser — it holds the CA private keys, and a
+browser must never — so the button is a POST and the result is a re-rendered
+page. The debugger's PKI page needs a script because its whole point is that the
+key never leaves the browser; this page's whole point is the opposite.
+
+
+## The Certificate & Key Configuration pane
+
+**Everything above is the hierarchy this service maintains for itself. This is
+the other half of the page: the debugger's *PKI / X.509* workflow, on the
+server.** Build a certificate authority of any shape and issue the leaf
+certificates any of them can sign — TLS server, TLS client for mutual
+authentication, code signing, S/MIME, OCSP responder, time stamping, smartcard
+logon and Kerberos PKINIT — with every field and every extension exposed.
+
+It is modelled on [that page](https://idptools.com) field for field, over the
+same encoder, with the same field names. What differs is where the computation
+happens, and that difference decides the shape of everything in it.
+
+| On the debugger's page | Here |
+|---|---|
+| the profile rewrites the extension boxes as you pick it | **Apply the profile** is a submit, and the form comes back rewritten |
+| the cryptographic approach filters the algorithm menus live | the same submit |
+| the Copy buttons | gone — this console has no script, and a textarea selects |
+| **Download** builds a Blob in the browser | `POST /admin/pki/export` answers with the **file** |
+| the key is generated in your browser and never leaves it | the key is generated **here**, because this process holds the CA private keys and a browser must never |
+
+**The form is the state and there is no draft anywhere.** Every field is
+re-posted by every button, which is what lets *Apply the profile* rewrite
+twenty-two extension boxes with nothing kept between requests — and what lets
+*Use this key pair* in the store below load a key without discarding the subject
+you have been typing.
+
+### The three columns
+
+**Issue a Certificate** — the profile (fourteen of them), the authority that
+signs it, the cryptographic approach, the signature algorithm, a random 128-bit
+serial you can edit, and the validity as either a number of years or two
+instants. A serial is **refilled after every issue**: one that stayed put would
+be re-used by the next certificate the same authority signs, and two
+certificates from one issuer sharing a serial are indistinguishable to anything
+that revokes, caches or pins by (issuer, serial).
+
+**Key Pair** — the algorithm, a PEM/JWK toggle, *Generate a key pair* on its
+own, the pair itself, the PKCS#10 request, the alternative key a hybrid
+certificate carries, and the export.
+
+**Subject Distinguished Name** — CN, O, OU, L, ST, C, emailAddress, DC, UID and
+the DN attribute called serialNumber, then any further `NAME=value` or
+`OID=value` lines. It is written **in the order shown**: a Name is an ordered
+RDNSequence, and a reordered DN is a different name that chains to nothing.
+
+### The five cryptographic approaches
+
+Not variations on one idea — three different answers to *what do I do about a
+validator that has never heard of ML-DSA*, plus the two that do not ask.
+
+| Approach | What the certificate carries |
+|---|---|
+| **Classical** | RSA, ECDSA, Ed25519 — what a certificate has carried since RFC 5280. |
+| **Pure post-quantum** | One key and one signature, both post-quantum: ML-DSA (RFC 9881), SLH-DSA (RFC 9909) and, as a subject key only, ML-KEM (RFC 9935). Anything older than OpenSSL 3.5 refuses the certificate outright, which is the trade. |
+| **Composite** | One OID naming an ML-DSA key **and** a traditional key, two signatures inside one `signatureValue` (draft-ietf-lamps-pq-composite-sigs). A verifier checks both halves or understands neither. Still a draft. |
+| **Hybrid** | A second key and signature in three **non-critical** extensions — `subjectAltPublicKeyInfo` (2.5.29.72), `altSignatureAlgorithm` (2.5.29.73), `altSignatureValue` (2.5.29.74), ITU-T X.509 (2019) clause 9.8 — so a validator that has never heard of them sees an ordinary certificate and accepts it. That is the entire point. |
+| **Any** | Every algorithm this build has, listed together. |
+
+**SLH-DSA key generation takes seconds and it runs on this thread.** This
+process owns six listener families on one thread, so while one is being made
+this service answers nobody. It is deliberately not moved to the worker pool:
+that pool runs this service's own reading of the post-quantum constructions,
+which is independent of the vendored one **on purpose**, and crossing the two to
+save a button a few seconds is exactly the defect that independence exists to
+expose. Generate one pair and issue several certificates from it with *reuse the
+key pair below*.
+
+### The twenty-two extensions
+
+Every extension RFC 5280 defines, plus the ones in common use that it does not,
+plus **anything at all by OID**:
+
+`basicConstraints` · `keyUsage` (all nine bits) · `extendedKeyUsage` (sixteen
+purposes and any further OIDs) · `subjectKeyIdentifier` ·
+`authorityKeyIdentifier` · `subjectAltName` · `issuerAltName` ·
+`cRLDistributionPoints` · `freshestCRL` · `authorityInfoAccess` ·
+`subjectInfoAccess` · `certificatePolicies` · `policyMappings` ·
+`policyConstraints` · `nameConstraints` · `inhibitAnyPolicy` ·
+`privateKeyUsagePeriod` · TLS Feature (RFC 7633) · `id-pkix-ocsp-nocheck` ·
+Netscape certificate type · Netscape comment · any other extension
+
+**The `critical` flag is separately settable on most of them**, which is the
+point: a validator must reject a certificate carrying a critical extension it
+does not understand, so making the wrong one critical is a good way to find out
+what your stack actually implements. Four are fixed critical because RFC 5280
+says MUST or SHOULD and a box that could clear it would produce a certificate
+nothing profiles.
+
+Six of the boxes take one item per line, and each has a grammar:
+
+| Box | A line is |
+|---|---|
+| subjectAltName, issuerAltName | `dns:` `ip:` `email:` `uri:` `upn:` `krb5:` `rid:` `dirname:` or `othername:<oid>:<base64 DER>` |
+| authorityInfoAccess, subjectInfoAccess | `ocsp:<url>`, `caissuers:<url>`, `timestamping:<url>`, `carepository:<url>`, or `<oid>:<url>` |
+| certificatePolicies | `<oid>` optionally followed by `\|cps=<uri>` and `\|notice=<text>` |
+| policyMappings | `<issuer oid>=<subject oid>` |
+| nameConstraints | `permit <name>` or `exclude <name>`. **An IP constraint takes a PREFIX** (`10.0.0.0/8`): a name constraint's `iPAddress` is the address followed by its mask, which is the one place a general name is not simply an address |
+| any other extension | `<oid>\|<critical or ->\|<base64 DER of the extension value>` |
+
+**A line one of them cannot read is refused and the message names it.** Nothing
+is dropped: a certificate quietly missing a name somebody typed is the worst
+outcome available here, because it verifies.
+
+### The certification request nothing here consumes
+
+Tick *generate a CSR* and the PKCS#10 this key pair and subject would have sent
+to an external authority is built beside the certificate — from the **same**
+inputs, because a request assembled from a second reading of the form would
+differ in ways nobody could see.
+
+**Three extensions travel and the rest do not.** A CSR carries what the
+requester *asks for*, and `subjectKeyIdentifier` and `authorityKeyIdentifier`
+are the issuer's to compute — a requester asserting them is asking a CA to
+certify its own arithmetic. So key usage, extended key usage, basic constraints
+and `subjectAltName` go in, and nothing else.
+
+### Keys & Certificates
+
+Everything the pane issues is kept **in the same place as the hierarchy** — this
+realm's keystore row, sealed under the same key-encryption key — so there is one
+answer to *where does this service keep a private key*. It inherits the mode:
+product keeps it, development loses it with the process.
+
+Select a row to export it or to load its key pair back into the form.
+*Use this key pair* ticks **reuse the key pair below** itself, because a pair
+loaded into the boxes and then silently replaced by a fresh one at the next
+issue is the most confusing thing this pane could do.
+
+**Building the hierarchy does not empty this store, and clearing this store does
+not remove the hierarchy.** They are two things in one row, and one button
+meaning both would be the worst kind of surprise on a page that holds key
+material.
+
+**Clearing *keep the private key in this service*** is the one control that
+means something different from the debugger's. There it keeps the key out of the
+browser's `localStorage`; here it keeps it out of the keystore row. The
+certificate and the public key are stored either way, so the object can be
+inspected and used as a trust anchor — and it can never sign again or be
+exported.
+
+### Export
+
+PEM, DER, a JWK set or a password-protected PKCS#12, of the selected object or
+of whatever is in the key boxes. It is the same export `/admin/keys` uses, so a
+`.p12` from here imports identically into keytool, OpenSSL, Windows and macOS.
+
+It needs **Admin Write**, like every other door here that hands over a private
+key: reading this console needs Admin Read, and taking a key out of it needs the
+other role. A DER export is two files and the private one is sent — this service
+will not take a zip dependency to send two, and the public half comes out of the
+private one with one `openssl` command.
+
+## Driving it without a browser
+
+Every control has an operation, through the same functions the console calls.
+
+```bash
+H="Authorization: Bearer $ADMIN_TOKEN"
+
+# What this realm holds. No private key is ever in the reply.
+curl -sk https://localhost:8081/admin-api/pki -H "$H"
+
+curl -sk -X POST https://localhost:8081/admin-api/pki/build -H "$H" \
+  -H 'Content-Type: application/json' \
+  -d '{"keyAlg":"ec-p384","organisation":"Acme","country":"US",
+       "cn_root":"Acme Root","years_root":30}'
+
+curl -sk -X POST https://localhost:8081/admin-api/pki/issue -H "$H" \
+  -H 'Content-Type: application/json' \
+  -d '{"identifier":"webapp1","days":90}'
+
+curl -sk -X POST https://localhost:8081/admin-api/pki/revoke -H "$H" \
+  -H 'Content-Type: application/json' -d '{"identifier":"webapp1"}'
+
+curl -sk -X POST https://localhost:8081/admin-api/pki/clear -H "$H" \
+  -H 'Content-Type: application/json' -d '{}'
+```
+
+**The pane has eight of its own, and every one of them takes and returns the
+whole form.** That is not an API shaped by a page: `apply-profile` rewrites
+twenty-two of its hundred and fifteen fields, and a caller reconstructing that
+itself would be a second implementation of what a profile *means*. So the reply
+carries `draft` — the form as it should now be — and you post back what came
+back. `GET /admin-api/pki` publishes the whole field list as
+`workbench.fields`, so the vocabulary is read from the service rather than from
+a copy of it here.
+
+```bash
+# Fill the form in from a profile. Nothing is issued.
+curl -sk -X POST https://localhost:8081/admin-api/pki/apply-profile -H "$H" \
+  -H 'Content-Type: application/json' \
+  -d '{"pki_profile":"tls-server","pki_pq_mode":"classical"}' > draft.json
+
+# Issue from it: any profile, any issuer in this realm, every extension.
+curl -sk -X POST https://localhost:8081/admin-api/pki/issue-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"pki_profile":"tls-server","pki_issuer":"tier:issuing",
+       "pki_key_alg":"ec-p256","pki_dn_cn":"www.example.test",
+       "pki_ext_san":"1","pki_san":"dns:www.example.test\nip:10.0.0.1",
+       "pki_ext_ku":"1","pki_ku_digitalSignature":"1",
+       "pki_ext_eku":"1","pki_eku_serverAuth":"1","pki_save_keys":"1"}'
+
+# Write one out. `files[].base64` is the bytes; the console's own Download
+# button answers with the file itself, because a browser asked for a file.
+curl -sk -X POST https://localhost:8081/admin-api/pki/export -H "$H" \
+  -H 'Content-Type: application/json' \
+  -d '{"objectId":"leaf-…","pki_ks_format":"pkcs12",
+       "pki_ks_password":"changeit","pki_ks_include_chain":"1"}'
+```
+
+The other four are `generate-keys` and `generate-alt-keys` (a pair into the form
+without issuing), `use-key` (a stored pair back into it) and `remove-object` /
+`clear-store`. **`clear-store` does not touch the hierarchy and `clear` does not
+touch the store**, which is the same rule the two buttons follow.
+
+## The settings
+
+They are **defaults for a form** rather than policy: what a hierarchy was built
+with is stored on the hierarchy, so a change here reaches the next build and
+never a certificate that exists.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `pki.autoBuild` | `true` | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off is how this service behaved before 2026-09-11. |
+| `pki.keyAlgorithm` | `rsa-2048` | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
+| `pki.signatureAlgorithm` | *(empty)* | Empty means "the right one for the key algorithm". See above. |
+| `pki.organisation` | `mock-sts` | The `O=` every tier carries, and what the tiers are named after when no common name is given. |
+| `pki.leafLifetimeDays` | `365` | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |

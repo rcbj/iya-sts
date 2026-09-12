@@ -1,6 +1,6 @@
 ---
 title: What is not checked
-nav_order: 10
+nav_order: 16
 ---
 
 # What is not checked
@@ -19,7 +19,7 @@ service can be told to be strict, it can.
 
 | It does not | Notes |
 |---|---|
-| Check any end user's password | The username typed at `/authn/login` becomes the identity in every token and every assertion |
+| Check any end user's password | The username typed at `/authn/login` becomes the identity in every token and every assertion. **THREE credentials ARE checked and none of them is a password** — a Kerberos ticket, an RFC 6238 one-time code, and a single-use RECOVERY CODE, which is checked for the same reason the other two are: there is nothing left of a one-time credential once the comparison goes, and a client author would have no artifact to test against. The first two have sections of their own below |
 | ISSUE WITHOUT ASKING — **this row runs the other way, and it is the only one here that does.** Since 2026-09-01 the authorization endpoint asks: the first time a given username signs in to a given `client_id` for a given scope, `/oauth2/consent` is drawn and nothing is issued until they answer. `oauth2.consentRequired` is ON by default, which no other policy here is, because consent is not a refusal — it is the screen every real authorization server draws on a first sign-in, and a client that has never met one has never run the code that survives it. **It still checks nothing**: the person was let in under any name they typed, one row above. See below |
 | Refuse any LDAP bind | Any DN, any password, anonymous included — on 389 and on LDAPS 636 alike |
 | Verify an access token it did not issue | Except at `/oauth2/userinfo`, which answers "who did *you* authenticate" and so must |
@@ -131,6 +131,84 @@ reachable: a service-shaped name for a host this service is not willing to *be*
 (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in `KRB5_UNKNOWN_USERS`
 (`KDC_ERR_C_PRINCIPAL_UNKNOWN`), and a wrong password (`KDC_ERR_PREAUTH_FAILED`).
 
+
+## A one-time code is the other exception, for the same reason
+
+RFC 6238, since 2026-09-10. A person enrols an authenticator app from
+`/portal/mfa`, and from then on **the code they type is genuinely verified** —
+against the shared secret this service generated, the clock, and a skew window
+of one step either side. In development mode as well as in product mode.
+
+The argument is Kerberos's, one row up, arriving at a different mechanism. A
+one-time password verifier that accepted any six digits would not be a
+*permissive* RFC 6238 — it would be a broken one. There would be no artifact to
+inspect, no failure to demonstrate, and nothing at all for somebody testing an
+authenticator integration to test against. And unlike a password it costs a
+tester nothing to be strict: the person has already been let in under whatever
+name they typed at a sign-in screen that checks no password, and the code is
+checked against a secret this service showed them ninety seconds ago.
+
+**What stays permissive is everything around it.** Any name may enrol, the
+password in front of the code is not checked, and the name in the token is still
+whatever was typed.
+
+Three refusals it makes are worth knowing about, because each is a reachable
+negative:
+
+* **A code is accepted once** (RFC 6238 section 5.2). The step last accepted is
+  stored, so the code that confirmed an enrolment cannot also sign anybody in,
+  and signing in twice inside one thirty-second window asks for the next code.
+  It is refused *as a repeat* and not as a wrong code — those are different
+  things for a person to be told.
+* **A code from more than one step away is refused**, and `totp.window` is the
+  bound. Set it to `0` to demand a perfectly synchronised clock and watch what a
+  drifting one does.
+* **A person who has enrolled one cannot get in without it.** A password alone
+  stops working, and no checkbox on the sign-in screen opts out of it.
+
+**It can never be a first factor.** This service holds the same shared secret
+the app does, which is fine for proving somebody still has the app and is not a
+thing to hang an account on — so an authenticator is always a *second* factor
+here, and an account whose only credential is one is a state every door refuses
+to create.
+
+**And there is no self-service reset**, which is the one place this service is
+deliberately less convenient than it could be: a second factor anybody can
+remove is no second factor. An operator's Clear on that person's row under
+`/admin/users`, or `POST
+/admin-api/mfa/clear-totp`, is the way back for a lost phone.
+
+## A WebAuthn ceremony is verified and the AUTHENTICATOR behind it is not
+
+The registration and every assertion are checked for real — the challenge, the
+origin, the RP ID hash, the flags, the signature over `authenticatorData ||
+SHA-256(clientDataJSON)` against the COSE public key the credential registered,
+and the signature counter, which only ever goes up so one that went backwards is
+a cloned key.
+
+**What is NOT checked is the attestation STATEMENT.** Whatever
+`webauthn.attestation` asks the browser for — `none`, `indirect`, `direct` or
+`enterprise` — the object that comes back is parsed, reported and believed.
+There is no FIDO metadata service here, no trust anchor for an authenticator
+vendor and no model allow-list, so this service can tell you what an
+authenticator *claimed to be* and never what it *is*. A relying party that
+needed the second answer would have to bring the metadata with it.
+
+**One ceremony option IS enforced, and it is the only one that could be.**
+`webauthn.userVerification: required` is sent to the browser AND the UV flag in
+the signed authenticator data is checked when the ceremony returns, so an
+authenticator that did not verify the person is refused. Nothing signed says
+what the browser was asked about attestation, the resident key or the
+attachment, so a check on any of those would be a comparison against a value
+this service itself supplied — what it does instead is RECORD what came back.
+
+**Raising it does not change what a session claims.** A passwordless sign-in
+still records `amr ["hwk"]` and `acr "1"` — one factor — even under `required`.
+RFC 8176 has no registered value for *the authenticator verified the user* that
+this service could honestly assert, and claiming `mfa` because the ceremony was
+phishing-resistant would be exactly the kind of fake this page exists to rule
+out.
+
 ## The reachable negatives
 
 A permissive server that refuses nothing is not much use for testing error paths
@@ -210,13 +288,102 @@ not accept a URL at all — only the *name* of the relationship attribute holdin
 one. `federation.outbound` turns it off entirely, and four of the five protocols
 need no back channel.
 
+## An assertion grant inverts it the same way, and for the same reason
+
+Added 2026-09-10 with RFC 7521 and RFC 7523. **`grant_type=…:jwt-bearer` is the
+second thing here with no permissive answer available**, and the argument is
+federation's word for word.
+
+A trusted party signs a document saying *this is alice, issue a token for her*,
+and a token comes back for alice. There is **no browser, no password and no
+consent step anywhere in that grant** — the signature is the whole of it. So
+"accept any signed assertion" means anybody who can reach this port getting an
+access token as anybody, and the token that comes out is indistinguishable from
+one somebody signed in for.
+
+So the ISSUER has to be configured before anything is believed:
+
+* an assertion is refused unless some application in the realm declares its
+  `iss` on `oauthAssertionIssuer` — and `oauth2.jwtBearerRequireRegisteredIssuer`
+  is **ON by default**, which only federation's refusal is besides;
+* the signature must verify against a key registered for that issuer: a `jwks`
+  by value, a JWKS this service ISSUED it from its own certificate authority, or
+  an `x5c` chain the assertion carries **that builds a path to this realm's Root
+  CA** — a certificate that arrives WITH the signature is not evidence on its
+  own, which is the one check in the PKI family a security claim rests on;
+* `jwks_uri` is still **never followed**, for the reason above: it is a URL a
+  caller supplied.
+
+**The gate is on the SIGNER, not on the subject** — the same sentence
+federation's section ends with. Past it everything is as permissive as the rest
+of this service: the `sub` need not be anybody this service has heard of, an
+assertion for a name nobody has ever used mints that person exactly as typing
+the name at the sign-in screen does, and the scope is not checked against
+anything.
+
+**And turning the requirement off does not make the grant credulous.** Without
+it the signature must still verify against a key this service holds for the
+issuer; what goes away is the requirement that somebody wrote the issuer down
+first. `oauth2.jwtBearerGrant` is the switch that removes the grant altogether,
+and the metadata stops advertising it in the same breath — a
+`grant_types_supported` member is a promise.
+
+## The certificate authority publishes revocation and consults none
+
+**This heading reversed on 2026-09-11 and half of it stayed.** It read *the
+certificate authority revokes nothing, ever — this service publishes no CRL and
+answers no OCSP*.
+
+It publishes both now. Every certificate authority in `/admin/pki` signs an RFC
+5280 CRL and answers RFC 6960 OCSP, at `/pki/crl/{scope}/{ca}` and
+`/pki/ocsp/{scope}/{ca}` and in the embedded directory under `ou=crl`; every
+certificate this service issues names its own in three schemes; a pane on that
+page revokes one by hand; and anything replaced or rotated goes on its issuer's
+list as `superseded` with nobody asking.
+
+**What this service does NOT do is CONSULT one — its own included.** When a
+client presents a certificate to it, on 8443, 9443, the main port or LDAPS 636,
+nothing fetches a CRL and nothing asks a responder. So:
+
+> a certificate revoked on this service's own `/admin/pki` still authenticates
+> to this service, and would not verify anywhere that checks.
+
+Running those two sentences together is the dangerous reading and it is the
+reason they are always written next to each other. Checking is real work — a
+fetch with a timeout, a cache, and a decision about what to do when the
+responder is unreachable — and none of it is mock behaviour, which is why
+`common/mode.js` carries it as an outstanding item rather than a done one.
+
+**AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
+control labelled *Take the key pair off*, and it is not revocation either:
+
+* what it does is clear the six attributes from the application's entry, so
+  **this service** will no longer accept an assertion signed with that key,
+  because the key is no longer registered against that application;
+* the certificate is still valid, still chains to this realm's Root, and would
+  still verify anywhere that trusts that Root. Nothing consults this service
+  when it is presented and nothing can be made to.
+
+The reply says exactly that, in those words, rather than reporting a success
+that would be read as more than it is. It is the same distinction the sign-out
+page draws about an assertion already issued.
+
+**The other honest limit is where the CA private keys live.** In development —
+the default — they are held in memory only and die with the process, which is
+the rule the signing key already follows and for its reason: a mock is
+disposable and its credentials are meant to die with it. A hierarchy built now
+is gone after a restart, and everything issued from it chains to nothing. In
+**product** mode it survives, sealed under the same key-encryption key as the
+signing keys. Both surfaces that report it say which of the two is in force
+rather than describing the mode they wish they were in.
+
 ## The three surfaces that DO require a credential
 
 ### SCIM, at `/scim/v2`
 
 These endpoints create, replace, patch and **delete** accounts, which is why. A
-credential is required (`scim.authRequired`), all six schemes RFC 7644 section 2
-names are offered, and the OAuth ones must carry `scim:read` or `scim:write` —
+credential is required — unconditionally, in both modes — all six schemes RFC
+7644 section 2 names are offered, and the OAuth ones must carry `scim:read` or `scim:write` —
 the only scope requirement anywhere in this service.
 
 **It is a turnstile rather than a lock**, and that is a different sentence.
@@ -240,9 +407,10 @@ ServiceProviderConfig is where a client *reads* which schemes exist, so demandin
 a credential to fetch it means a client must already know the answer to the
 question it is asking.
 
-**A credential that was presented and failed is always a refusal**, even with
-`scim.authRequired` off, so a client testing its expired-token path does not get
-a 200 because the endpoint would also have accepted nobody.
+**A credential that was presented and failed is always a refusal**, and was one
+even while these endpoints could be left open, so a client testing its
+expired-token path does not get a 200 because the endpoint would also have
+accepted nobody.
 
 ### The SPIRE Server API
 
@@ -254,12 +422,13 @@ admin SVID over TCP is refused it) the surprise is SPIRE's answer and not this
 service's invention.
 
 What comes out of that surface is a credential another service will believe,
-which is why. `spiffe.authRequired` turns it off and restores the whole of the
-old posture.
+which is why. **There is no setting that turns it off**: `spiffe.authRequired`
+was removed on 2026-09-06 when `global.mode` took over the question, and the TCP
+port is bound as mutual TLS on every start.
 
 ### The admin console, at `/admin`
 
-`admin.authRequired` is **on by default**. Every page and every form under
+**There is no setting that opens this console.** Every page and every form under
 `/admin` needs a browser sign-on session from `/authn/login` and one of two
 roles: **Admin Read** (look at everything, change nothing) and **Admin Write**
 (post every form). Write implies read.
@@ -326,8 +495,8 @@ presents a ticket-granting ticket authenticated before the sign-out, which is
 It authenticates nobody **because its specification says it MUST NOT**. A
 workload has no secret and no root of trust until that call gives it one, so the
 SPIFFE Workload Endpoint specification requires that the endpoint not demand
-authentication and that TLS not be required. `spiffe.authRequired` deliberately
-does not reach it.
+authentication and that TLS not be required. The mutual TLS the SPIRE Server API
+requires deliberately does not reach it, and no mode changes that.
 
 What it lacks there is **attestation, not authentication**, and the two must not
 be merged. A real agent reads the peer credentials of its Unix socket —

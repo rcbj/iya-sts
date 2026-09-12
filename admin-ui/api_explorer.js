@@ -126,9 +126,12 @@ function tokenFor(req, gate) {
   const scope = scopesFor(gate);
   if (!scope) {
     // NOT AN ERROR AND NOT A REFUSAL. Somebody can be through the console's
-    // gate holding neither role only where `admin.authRequired` is off, and
-    // there is then no honest scope to put in a token. The page draws and says
-    // Try it will be refused, which is true.
+    // gate holding neither role only in states the gate itself allows — the
+    // empty roster with `admin.openWhenEmpty` off is drawn a refusal page, and
+    // a build with no directory can hold no role at all — and there is then no
+    // honest scope to put in a token. The page draws and says Try it will be
+    // refused, which is true. (This read `admin.authRequired` until that
+    // setting was removed on 2026-09-06; the gate is unconditional now.)
     log.debug("Leaving tokenFor(). No role, so no scope.");
     return '';
   }

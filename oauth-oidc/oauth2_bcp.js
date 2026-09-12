@@ -1763,7 +1763,14 @@ async function observeClientAuthentication(opts) {
   const method = String(registered.token_endpoint_auth_method).trim();
   const haveCredential =
     (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 && registered.client_secret) ||
-    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri)) ||
+    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri ||
+                                      registered.assertion_jwks)) ||
+    // RFC 7522 section 2.2. The two SAML attributes and NEITHER of the three
+    // above: a client holding a JWT key pair and no SAML certificate has
+    // nothing on file for this method, which is the whole point of the two
+    // sets being separate.
+    (method === 'saml2_bearer' && (registered.saml_signing_certificate ||
+                                   registered.saml_assertion_certificate)) ||
     (method === 'tls_client_auth' && registered.tls_client_auth_subject_dn) ||
     (method === 'self_signed_tls_client_auth' && registered.certificate_thumbprint);
   if (!haveCredential) {
@@ -1785,6 +1792,16 @@ async function observeClientAuthentication(opts) {
     clientSecret: registered.client_secret,
     jwks: registered.jwks,
     jwksUri: registered.jwks_uri,
+    // What this service ISSUED this client from its own certificate
+    // authority. See client_auth.js: two attributes, ORed, because both were
+    // arranged deliberately.
+    assertionJwks: registered.assertion_jwks,
+    // RFC 7522's two, for `saml2_bearer`. Separate members rather than a
+    // fallback into the three above: `saml_assertion_grant.js` verifies only
+    // against these, and merging them would be the crossing its header
+    // refuses.
+    samlSigningCertificate: registered.saml_signing_certificate,
+    samlAssertionCertificate: registered.saml_assertion_certificate,
     subjectDn: registered.tls_client_auth_subject_dn,
     certificateThumbprint: registered.certificate_thumbprint
   });
@@ -1819,7 +1836,14 @@ async function checkClientAuthentication(opts) {
   // one, and the log line says which.
   const haveCredential =
     (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 && registered.client_secret) ||
-    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri)) ||
+    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri ||
+                                      registered.assertion_jwks)) ||
+    // RFC 7522 section 2.2. The two SAML attributes and NEITHER of the three
+    // above: a client holding a JWT key pair and no SAML certificate has
+    // nothing on file for this method, which is the whole point of the two
+    // sets being separate.
+    (method === 'saml2_bearer' && (registered.saml_signing_certificate ||
+                                   registered.saml_assertion_certificate)) ||
     (method === 'tls_client_auth' && registered.tls_client_auth_subject_dn) ||
     (method === 'self_signed_tls_client_auth' && registered.certificate_thumbprint);
   if (!haveCredential) {
@@ -1847,6 +1871,16 @@ async function checkClientAuthentication(opts) {
     clientSecret: registered.client_secret,
     jwks: registered.jwks,
     jwksUri: registered.jwks_uri,
+    // What this service ISSUED this client from its own certificate
+    // authority. See client_auth.js: two attributes, ORed, because both were
+    // arranged deliberately.
+    assertionJwks: registered.assertion_jwks,
+    // RFC 7522's two, for `saml2_bearer`. Separate members rather than a
+    // fallback into the three above: `saml_assertion_grant.js` verifies only
+    // against these, and merging them would be the crossing its header
+    // refuses.
+    samlSigningCertificate: registered.saml_signing_certificate,
+    samlAssertionCertificate: registered.saml_assertion_certificate,
     subjectDn: registered.tls_client_auth_subject_dn,
     certificateThumbprint: registered.certificate_thumbprint
   });

@@ -253,6 +253,42 @@ const ACTIONS = [
   { action: 'activation.issued', category: 'authentication',
     label: 'An administrator issued an activation link' },
 
+  // ---------------------------------------------------------------------
+  // THE AUTHENTICATOR APP (RFC 6238), 2026-09-10. Five rows for what is one
+  // control on one page, and the split is the same one the password rows above
+  // make: what was STARTED, what SUCCEEDED, and every way it was refused.
+  //
+  // **`started` IS NOT NOISE AND IS THE ROW MOST WORTH HAVING.** It is the
+  // moment this service MINTED A SHARED SECRET and showed it to a browser. The
+  // enrolment that follows may never happen — the secret expires unconfirmed —
+  // so a log holding only `enrolled` would have no record at all of a secret
+  // having been handed out, which is the one event somebody investigating a
+  // compromised account would go looking for.
+  //
+  // `removed` is registered as its own row rather than folded into a generic
+  // credential change because of what it MEANS: an account that required two
+  // factors requires one now, and that is a downgrade somebody should be able
+  // to filter for.
+  { action: 'portal.mfa.started', category: 'authentication',
+    label: 'Somebody was shown a new authenticator-app secret' },
+  { action: 'portal.mfa.enrolled', category: 'authentication',
+    label: 'Somebody set up an authenticator app on their own account' },
+  { action: 'portal.mfa.refused', category: 'authentication',
+    label: 'An authenticator-app setup was not confirmed' },
+  { action: 'portal.mfa.removed', category: 'authentication',
+    label: 'Somebody removed the authenticator app from their own account' },
+  { action: 'portal.mfa.csrf', category: 'authentication',
+    label: 'An authenticator-app change was refused for a bad CSRF token' },
+  // The same two acts inside an ACTIVATION, which is a different situation and
+  // therefore a different row: nobody is signed in, and what authorises it is a
+  // single-use link rather than a session. A reader filtering for "who set up a
+  // second factor without ever having signed in" is asking about exactly these.
+  { action: 'portal.activate.mfa.started', category: 'authentication',
+    label: 'An authenticator-app secret was shown while an activation link ' +
+           'was being spent' },
+  { action: 'portal.activate.mfa.refused', category: 'authentication',
+    label: 'An authenticator app was not confirmed during activation' },
+
   { action: 'session.start', category: 'session',
     label: 'A sign-on session was created' },
   { action: 'session.end', category: 'session',
@@ -376,6 +412,21 @@ const ACTIONS = [
   // was made an administrator would be worth nothing.
   { action: 'admin.role.change', category: 'admin',
     label: 'An admin console role was granted or taken away' },
+
+  // CLEARING SOMEBODY ELSE'S SECOND FACTOR (2026-09-10). `admin` rather than
+  // `authentication`, which is the distinction the portal rows above establish:
+  // there the actor and the target are the same person, and here an operator is
+  // acting on somebody else's account.
+  //
+  // **THIS IS A SECURITY DOWNGRADE PERFORMED BY A THIRD PARTY**, which is the
+  // one shape of act an audit log exists for. It is also the ONLY way back for
+  // somebody who has lost their authenticator, so it is expected traffic rather
+  // than an anomaly — the row says who cleared whose, and it is the pairing of
+  // those two names over time that is worth reading.
+  { action: 'admin.mfa.totp.cleared', category: 'admin',
+    label: 'An operator cleared somebody\'s authenticator app' },
+  { action: 'admin.mfa.key.cleared', category: 'admin',
+    label: 'An operator removed somebody\'s security key' },
 
   { action: 'api.read', category: 'api', label: 'A management API read' },
   { action: 'api.change', category: 'api', label: 'A management API write' },

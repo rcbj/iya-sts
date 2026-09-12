@@ -51,10 +51,11 @@
 //
 // This service has no password anywhere. It checks none, it stores none, and
 // the roster lives in memory and dies with the process — so there is no
-// bootstrap administrator and no way to make one out of band. A service that
-// started with `admin.authRequired` on and an empty roster would therefore have
-// a console that NO browser could ever reach, and no amount of signing in would
-// help.
+// bootstrap administrator and no way to make one out of band. The console gate
+// is unconditional — `mode.gatesConsole()`, where this used to read
+// `admin.authRequired` — so a service with an empty roster and no opening rule
+// would have a console that NO browser could ever reach, and no amount of
+// signing in would help.
 //
 // So: while NEITHER role group has a single member, anybody who signs in holds
 // BOTH roles, and every page says so in a banner that cannot be missed. The
@@ -742,8 +743,8 @@ function revoke(username, roleId, context) {
 const NO_DIRECTORY =
   'No LDAP directory is loaded in this process, so there is nowhere to hold ' +
   'the roles. That is a build of this service without ldap_server.js and not a ' +
-  'failure — but it means nobody can be granted anything, so admin.authRequired ' +
-  'would leave this console reachable only while admin.openWhenEmpty is on.';
+  'failure — but it means nobody can be granted anything, so the console gate ' +
+  'leaves this console reachable only while admin.openWhenEmpty is on.';
 
 function refusalText(written, dn) {
   log.debug("Entering refusalText().");

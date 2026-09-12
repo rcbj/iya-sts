@@ -373,6 +373,93 @@ async function run(t) {
   t.equal(require('../common/keystore').persists(), false,
           'with keys.source at its default, a development service persists ' +
           'nothing and generates a key on every start exactly as it always did');
+
+  // -----------------------------------------------------------------------
+  // 5. THE BLOB A PROCESS SHARES IS IDENTIFIED BY THE KEY AND NOT BY WHAT IT
+  //    CURRENTLY PUBLISHES (2026-09-11).
+  //
+  // `helpers.js`'s certifiedView() makes `certPem` and `certB64` GETTERS that
+  // switch from the certificate a key set was BORN with to the one `pki.js`
+  // issued over it. `serialise()` read them, so the blob moved under a key that
+  // had not — and two things that compare blobs by certificate stopped working
+  // at the moment a realm's keys were certified:
+  //
+  //   * publishShared()'s enrichment test, which is how a realm's POST-QUANTUM
+  //     keys reach the other processes. It answered "different key set" for
+  //     ever after, the offer was refused, and every request worker in a
+  //     dispatched service signed ML-DSA and SLH-DSA with eleven keys of its
+  //     own while `/oauth2/jwks` published a sibling's. Nothing failed here; it
+  //     failed at a client, as "No key in the set has kid …".
+  //   * the `kid` a restored set derives, which would have MOVED across a
+  //     restart — the one thing certifiedView()'s own header says must never
+  //     happen.
+  //
+  // This is in process for tests/CLAUDE.md's reason twice over: it needs a key
+  // set whose certificate it can make move on demand, and the thing asserted is
+  // what ONE process offers ANOTHER, which no HTTP surface publishes.
+  // -----------------------------------------------------------------------
+  t.log.info('=== the shared blob names the key, not the certificate ===');
+  (function () {
+    const keystore = require('../common/keystore');
+    keystore.reset();
+    const pair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const born = 'THE-CERTIFICATE-THIS-KEY-WAS-BORN-WITH';
+    const issued = 'THE-ONE-ITS-ISSUING-CA-MINTED-LATER';
+    let certified = false;
+    const keys = {
+      realm: '',
+      createdAt: Date.now(),
+      privateKeyPem: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      extraKeys: [],
+      pqKeys: null,
+      selfSignedCertPem: '-----BEGIN CERTIFICATE-----\nBORN\n-----END CERTIFICATE-----\n',
+      selfSignedCertB64: born
+    };
+    // The moving pair, exactly as certifiedView() installs it.
+    Object.defineProperty(keys, 'certB64', {
+      enumerable: true, configurable: true,
+      get: function () { return certified ? issued : born; } });
+    Object.defineProperty(keys, 'certPem', {
+      enumerable: true, configurable: true,
+      get: function () { return certified ? 'ISSUED-PEM' : keys.selfSignedCertPem; } });
+
+    const offered = [];
+    keystore.setKeyPublisher(function (realmId, blob) { offered.push(blob); });
+
+    // Generated, and offered to the rest of the service before anything has
+    // certified it. This is the publish that already worked.
+    keystore.publishShared('', keys);
+    t.equal(offered.length, 1,
+            'a realm generating its keys offers them to every other process');
+    t.equal(offered[0].certB64, born,
+            'and the blob carries the certificate the key was born with');
+
+    // `pki.js` certifies it a moment later — certifyLater() is a setImmediate,
+    // so this is the ordinary case rather than an unusual one.
+    certified = true;
+    t.equal(keys.certB64, issued,
+            'after certification the key set PUBLISHES the issued certificate');
+    t.equal(keystore.sharedBlobFor('').certB64, born,
+            'and the blob it shared still names the key, so the kid a ' +
+            'sibling derives from it cannot move');
+
+    // And now the post-quantum half arrives. THIS is the publish that was
+    // refused, and the eleven keys that never left the process that made them.
+    keys.pqKeys = [{ alg: 'ML-DSA-44',
+                     privateKey: Buffer.from('not a key'),
+                     publicJwk: { kty: 'AKP', kid: 'sts-mock-ml-dsa-44-0000' } }];
+    keystore.publishShared('', keys);
+    t.equal(offered.length, 2,
+            'THE POST-QUANTUM KEYS ARE OFFERED ON — the same key set gaining ' +
+            'its second half is an ENRICHMENT and not a second key set, and a ' +
+            'certificate issued in between must not make it look like one');
+    t.equal((offered[1].pqKeys || []).length, 1,
+            'and the offer carries them');
+    t.equal(offered[1].certB64, born,
+            'still under the name the key was born with');
+
+    keystore.reset();
+  }());
 }
 
 module.exports = {

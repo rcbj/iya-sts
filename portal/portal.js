@@ -30,7 +30,11 @@
 //                                       the SAME `common/issuance_gate.js` call
 //                                       the nine issuance sites make, so this
 //                                       page and those endpoints cannot
-//                                       disagree. See applicationsFor().
+//                                       disagree. Each row LINKS to the
+//                                       application's own home page where its
+//                                       entry declares one, and is drawn greyed
+//                                       out where it does not. See
+//                                       applicationsFor() and linkedName().
 //   `/portal/password`                  AUTHENTICATED. The form, and the POST
 //                                       that answers it, on one path.
 //   `/portal/keys`                      AUTHENTICATED. Their security keys.
@@ -89,6 +93,46 @@ const { log, parseBody, baseUrlOf } = helpers;
 const config = require('../common/config');
 const mode = require('../common/mode');
 const credentials = require('../common/credentials');
+// The WebAuthn ceremony's options and this service's policy about what a key
+// may BE, for the enrolment on /portal/keys. A LEAF (rule 3): it registers no
+// route and requires only `config`, `helpers` and the verifier, so it can
+// neither move a route nor close a cycle — and `credentials.js` above already
+// requires it, so this is a second reader of one module rather than a new edge.
+const webauthnPolicy = require('../authn/webauthn_policy');
+// The mechanism itself, for the settings this page prints and the otpauth URI
+// and QR code it draws. A LIBRARY (rule 3) that registers no route, and
+// `credentials.js` above already requires it — so this is a second reader of
+// one module rather than a new dependency in the require order.
+const totp = require('../common/totp');
+// THE RECOVERY CODES (2026-09-10). Required for its `settings()` and for
+// `formatted()` — the printed rendering with the dashes in it, which is the
+// one this service's own verifier is written to accept back. Drawing the
+// grouping here would be a second copy of that agreement.
+const backupCodes = require('../common/backup_codes');
+// WHAT A PERSON IS, in the schema every person in this directory carries
+// (2026-09-11). A LIBRARY (rule 3) reaching no further than
+// `common/helpers.js`. It is the FIXED LIST the Overview's *You* section is
+// drawn from, and the reason that section draws a list rather than the entry is
+// in that file's header: an entry here carries whatever anybody put on it, and
+// a page that printed it would print `stsTotpCredential` the day somebody
+// enrolled an authenticator.
+const inetOrgPerson = require('../common/inetorgperson');
+// THE PERSON'S OWN RFC 7523 SIGNING KEY PAIR (2026-09-12), and the two modules
+// behind `/portal/signing-key`. Both are LIBRARIES (rule 3) — neither registers
+// a route, so requiring them here moves nothing — and the split between them is
+// the one `/admin/pki` already has: `pki.js` ISSUES a key pair from this
+// realm's Issuing CA and keeps no copy of it, and `person_assertions.js` owns
+// what a person's key pair IS, where it is written and the one rule that comes
+// with it — their key may assert about them and about nobody else.
+//
+// **THIS PAGE PERFORMS THE SAME ACT THE CONSOLE DOES, THROUGH THE SAME TWO
+// FUNCTIONS**, which is the whole reason it is three requires rather than a
+// call to `/admin-api`: one write path onto a person's entry, whoever pressed
+// the button. A second implementation here would be a second answer to *what
+// is on that entry after an issue*, and the two would agree until one of them
+// grew an attribute.
+const pki = require('../common/pki');
+const personAssertions = require('../common/person_assertions');
 const websecurity = require('../common/websecurity');
 const authn = require('../authn/authn');
 // THE RELYING PARTY (2026-09-06). This portal authenticates through the
@@ -132,11 +176,112 @@ const gate = require('../common/issuance_gate');
 // require time — it cannot change while the process runs. See
 // common/version.js.
 const version = require('../common/version');
+// ---------------------------------------------------------------------------
+// THIS PORTAL AS A SHARED SIGNALS RECEIVER (2026-09-10).
+//
+// A LIBRARY (rule 3): it registers no route, and the receive endpoint and the
+// page below are registered HERE because a receiver hosts its own endpoint and
+// a page belongs to the application it is a page of. It requires only other
+// libraries, none of which requires this file, so it can sit at 8c without
+// moving a route or closing a cycle — which matters more here than in the
+// console, because this module is required BEFORE `oauth-oidc/oauth2.js`.
+//
+// It is emphatically NOT `ssf/ssf.js` (23b), which registers every /ssf route
+// and the well-known document: a require of that from here would put the whole
+// Shared Signals surface ahead of the authorization server.
+// ---------------------------------------------------------------------------
+const signals = require('../ssf/ssf_receivers');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
 const BASE = '/portal';
 const ACTIVATE = BASE + '/activate';
+
+// ===========================================================================
+// THE DIRECTORY, THROUGH AN INVERTED HOOK — THE FIRST SLOT THIS APPLICATION
+// HAS EVER OFFERED (2026-09-11).
+//
+// The Overview's *You* section answers *what does this identity provider hold
+// about me*, and until this it answered out of the SESSION: a username, a
+// subject, and whichever of `email` and `name` the sign-in happened to carry.
+// That is what the sign-in knew rather than what the directory holds, so a
+// person with a department, a manager and a room number on their entry saw
+// none of them.
+//
+// **IT IS A SLOT AND NOT A REQUIRE, AND RULE 3e'S TEST ANSWERS YES BOTH WAYS
+// ROUND**, which is the whole justification — that rule says a slot is what
+// you pay for a require that would close a cycle or move a route, and warns
+// against adding one by analogy:
+//
+//   * This module is required at 8b, before `oauth-oidc/oauth2.js` at 9.
+//     `ldap/ldap_server.js` is at 21. A `require('../ldap/ldap_server')` here
+//     would register every `/ldap` route AND the eight `/admin/ldap/*` console
+//     pages at 8b — ahead of the authorization server, ahead of the console,
+//     ahead of the management API. That is rule 1 doing exactly what it says.
+//   * And a require the other way, from `ldap_server.js` to this module, would
+//     move every `/portal` route to 21 — behind the console and the management
+//     API — which is the same defect pointing the other way.
+//
+// It carries ONE function and is validated whole for `setLogoutReader()`'s
+// reason: half of it is not a smaller feature, it is a page that reports an
+// empty account for a person whose entry plainly is not.
+//
+// **A PROCESS WITHOUT IT IS A SMALLER PORTAL RATHER THAN A BROKEN ONE.** The
+// section falls back to what it always drew — the session's four facts — and
+// says so on the page, which is the contract every other inverted hook in this
+// service keeps.
+// ===========================================================================
+let directory = null;
+
+function setDirectory(hooks) {
+  log.debug('Entering setDirectory().');
+  if (!hooks || typeof hooks.personEntry !== 'function') {
+    log.error('portal: setDirectory() was given something without ' +
+              'personEntry(), so it was refused whole. The Overview will go ' +
+              'on drawing the four facts the session carries and will say ' +
+              'that it is doing so.');
+    log.debug('Leaving setDirectory(). Refused.');
+    return false;
+  }
+  directory = hooks;
+  log.debug('Leaving setDirectory(). The Overview reads the directory.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNED-IN PERSON'S OWN ENTRY. **THE NAME COMES FROM THE SESSION AND
+// THERE IS NO PARAMETER FOR IT**, which is this application's whole rule and
+// matters as much here as on any form: this is the one function in the portal
+// that reads a directory entry, so a `username` reaching it from a request
+// would be every attribute of anybody's account, to anybody signed in.
+//
+// It takes the SESSION rather than a name for exactly that reason — there is
+// no call shape in which a caller supplies a string.
+// ---------------------------------------------------------------------------
+function entryFor(session) {
+  const username = session && session.user && session.user.username;
+  log.debug('Entering entryFor(). username=' + username);
+  if (!directory || !username) {
+    log.debug('Leaving entryFor(). No directory, or no session.');
+    return null;
+  }
+  let found = null;
+  try {
+    found = directory.personEntry(username);
+  } catch (e) {
+    // NOT rethrown. An account page that 500s because the store was mid-write
+    // is worse than one that reports what the session knows — and the fallback
+    // is a real one, said on the page.
+    log.error('portal: reading the directory entry for ' + username +
+              ' threw, so the Overview is drawing what the session carries: ' +
+              e.message);
+    log.debug('Leaving entryFor(). It threw.');
+    return null;
+  }
+  log.debug('Leaving entryFor(). ' +
+            (found ? 'Found ' + found.dn : 'No entry.'));
+  return found || null;
+}
 
 // Everything drawn here goes through it. The console has its own; this is a
 // separate application and shares no markup with it.
@@ -178,6 +323,55 @@ const CSS =
   'padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:.9em}' +
   '.note{color:#555;font-size:.85em;margin:10px 0 0}' +
   'code{background:#f0f0f5;padding:1px 5px;border-radius:4px;font-size:.9em}' +
+  // THE RECOVERY CODE LIST (2026-09-10). Two columns where there is room and
+  // one where there is not, because the list is read off a phone as often as
+  // off a laptop — and a ten-character code that wraps mid-string is one
+  // somebody transcribes wrongly. `.spent` is struck through AND dimmed: the
+  // strike alone is invisible to a reader who cannot see it, and the word
+  // `used` beside it in the markup is what actually carries the meaning.
+  // ---------------------------------------------------------------------
+  // THE DIRECTORY ENTRY TABLE (2026-09-11). `.attr` is the LDAP name and the
+  // RFC under each value — small, grey and always drawn rather than hidden in
+  // a tooltip, because the whole reason somebody reads this page on a MOCK is
+  // to find out what the attribute is called before they go and write it over
+  // LDAP. A `title` carries the same thing for a pointer; neither is the only
+  // copy, because a title is invisible on a phone.
+  // SCOPED, and that is not fussiness. A bare `h3` rule here would restyle
+  // `/portal/mfa`'s two headings as well — *Or type it in* and *Then prove it
+  // works* — which is a change to a page this feature has nothing to do with,
+  // made by a stylesheet shared between them.
+  '.dirhead{margin-top:24px;padding-top:18px;border-top:1px solid #e6e6ec;' +
+  'font-size:.95em;margin-bottom:8px}' +
+  'h3.dirclass{font-size:.95em;margin:18px 0 8px}' +
+  '.attr{color:#8a8a97;font-size:.78em;margin-top:2px}' +
+  '.attr code{background:none;padding:0;color:#6a6a77}' +
+  '.unset{color:#9a9aa6;font-style:italic}' +
+  '.set{color:#1d5b2a;font-weight:600}' +
+  '.must{background:#eef1fb;color:#2c5cc5;font-size:.7em;font-weight:600;' +
+  'padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px}' +
+  'ul.vals{list-style:none;margin:0;padding:0}ul.vals li{margin:0 0 2px}' +
+  // The fold. `<details>` is MARKUP — see directoryBlock()'s header — so this
+  // page keeps `script-src 'none'` and still collapses fifty rows.
+  'details{margin:6px 0 0}' +
+  'details summary{cursor:pointer;color:#2c5cc5;font-size:.85em;' +
+  'padding:4px 0}' +
+  'details table{margin-top:4px}' +
+  // THE PEM BLOCK (2026-09-12). A private key is eighteen lines of base64 that
+  // must be copied WHOLE and must not be re-wrapped by the browser: a PEM with
+  // a line break inserted where the sender did not put one is a PEM openssl
+  // refuses, and somebody debugging that spends the afternoon on the wrong
+  // problem. So it scrolls sideways rather than wrapping, and `user-select:all`
+  // makes one click select the lot — the block is there to be taken away.
+  'pre.pem{background:#f7f7fb;border:1px solid #d5d5dd;border-radius:6px;' +
+  'padding:12px 14px;margin:12px 0 0;font-size:.78em;line-height:1.45;' +
+  'overflow-x:auto;white-space:pre;user-select:all}' +
+  'ul.codes{list-style:none;margin:14px 0 0;padding:0;display:grid;' +
+  'grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:8px}' +
+  'ul.codes li{margin:0}' +
+  'ul.codes code{display:inline-block;font-size:1.05em;letter-spacing:.06em;' +
+  'padding:6px 9px}' +
+  'ul.codes code.spent{text-decoration:line-through;color:#8a8a97;' +
+  'background:#f6f6f9}' +
   // -------------------------------------------------------------------------
   // THE TWO-COLUMN SHELL AND ITS NAVIGATION (2026-09-06). Its own rules and
   // its own palette: the console's sidebar is #12107c and forty pages long,
@@ -217,6 +411,12 @@ const CSS =
   // third of the width for the first cell is simply wrong.
   '.grid th{width:auto;color:#555}' +
   '.grid td strong{display:block}' +
+  // THE APPLICATION'S NAME WHEN THERE IS SOMEWHERE TO GO, and when there is
+  // not. The grey is the whole of what tells a reader the difference at a
+  // glance, so it is a real colour change rather than the link colour with the
+  // underline removed — which reads as a link that has been visited.
+  '.grid td strong .home{color:#2c5cc5}' +
+  '.grid td strong .unlinked{color:#8a8a96;cursor:help}' +
   // A BLOCK, because two of them follow the application's name in one cell —
   // the identifier and the description — and inline they run together into
   // one line that reads as a single fact.
@@ -305,7 +505,16 @@ const NAV = [
     items: [
       { path: BASE, label: 'Overview', heading: 'Your account' },
       { path: BASE + '/applications', label: 'Applications',
-        heading: 'Applications you can sign in to' }
+        heading: 'Applications you can sign in to' },
+      // SECURITY ACTIVITY (2026-09-10). Under *Your account* rather than under
+      // *How you sign in*, and the two headings are the argument: that section
+      // holds the CREDENTIALS on this person's entry, one page each, and every
+      // page in it is a control. This is not a control and not about a
+      // credential — it is what this identity provider has SAID about them,
+      // to this portal, over the Shared Signals Framework. A reader arrives at
+      // it asking what happened rather than asking to change something.
+      { path: BASE + '/signals', label: 'Security activity',
+        heading: 'Your security activity' }
     ] },
   { title: 'How you sign in',
     what: 'The credentials on your own entry, one page each.',
@@ -313,7 +522,32 @@ const NAV = [
       { path: BASE + '/password', label: 'Password',
         heading: 'Change your password' },
       { path: BASE + '/keys', label: 'Security keys',
-        heading: 'Your security keys' }
+        heading: 'Your security keys' },
+      // THE AUTHENTICATOR APP (2026-09-10). Its own page beside the keys
+      // rather than a card on that one, for the reason this column exists at
+      // all: the enrolment is a QR code, a transcribable secret, a code field
+      // and three paragraphs about which app to use, and putting it under a
+      // list of security keys would bury the control somebody came for below a
+      // page about something else.
+      { path: BASE + '/mfa', label: 'Authenticator app',
+        heading: 'Your authenticator app' },
+      // THE SIGNING KEY (2026-09-12), and this section rather than *Your
+      // account* — which is the console's filing rule read for this column:
+      // where a page goes is decided by the question it answers. This
+      // section's own description is *the credentials on your own entry, one
+      // page each*, and an RFC 7523 key pair is exactly that: seven
+      // attributes on this person's entry that obtain a token as them.
+      //
+      // **THE ARGUMENT FOR PUTTING IT UNDER *Your account* WAS CONSIDERED AND
+      // REFUSED**: it runs that this key never signs anybody IN — there is no
+      // browser session at the end of it, so it is not "how you sign in". True,
+      // and it is an argument about the section's TITLE rather than about what
+      // the section holds. A person looking for the thing they can change
+      // about how this service lets something act as them will look in the
+      // list of credentials, and moving the heading's meaning to fit one page
+      // would misfile the other three.
+      { path: BASE + '/signing-key', label: 'Signing key',
+        heading: 'Your signing key' }
     ] }
 ];
 
@@ -459,8 +693,85 @@ function activationForm(base, username, token, message, error) {
     'Use a security key as a second factor, with the password above</label>' +
     '<p class="note">Choosing a security key takes you to the enrolment screen ' +
     'after this step.</p>' +
+    // ---------------------------------------------------------------
+    // THE AUTHENTICATOR APP (2026-09-10). A CHECKBOX AND NOT A FOURTH
+    // RADIO BUTTON, and that is the whole of what it says about itself:
+    // the radio group above is *what signs you in*, and exactly one of
+    // its values can be true. An authenticator app is not one of those
+    // answers — it is a SECOND factor beside whichever of them was
+    // chosen, so it is an independent box.
+    //
+    // It appears whether or not `totp.enabled` is on and the DOOR
+    // decides, exactly as the sign-in screen's anonymous button does...
+    // no: it is DRAWN only when the mechanism is offered, because this
+    // is a form somebody is filling in once and a tickbox that silently
+    // does nothing is worse than an absent one. The door checks the
+    // setting again regardless, because a form is markup.
+    (totp.offered()
+      ? '<h2>3. An authenticator app</h2>' +
+        '<label class="chk"><input type="checkbox" name="totp" value="1"> ' +
+        'Also set up an authenticator app as a second factor</label>' +
+        '<p class="note">A six-digit code from Google Authenticator, ' +
+        'Microsoft Authenticator, Authy, 1Password, Bitwarden, Aegis, ' +
+        'FreeOTP or any other app that implements RFC 6238. <strong>It is a ' +
+        'SECOND factor</strong> — it works beside the password or security ' +
+        'key above and never instead of one. Ticking this shows you a QR code ' +
+        'on the next step; your account is not set up until you type a code ' +
+        'back from it.</p>'
+      : '') +
     '<button type="submit">Continue</button>' +
     '</form>' +
+    '</div>');
+}
+
+// ---------------------------------------------------------------------------
+// THE SECOND STEP OF AN ACTIVATION THAT ASKED FOR AN AUTHENTICATOR APP.
+//
+// **THE LINK IS NOT SPENT YET WHEN THIS IS DRAWN**, and that is the rule this
+// directory already had rather than a new one: a link is spent when the setup
+// FINISHES. Somebody who ticked the box, set a password, and then cannot find
+// their phone still holds a usable link — the password is set, so opening the
+// link again and leaving the box unticked completes the account.
+//
+// The token rides in the form for the same reason it does on the page before
+// this one: nobody is signed in, so there is no session to carry state on.
+// ---------------------------------------------------------------------------
+function activationTotpForm(username, token, enrolment, error) {
+  return page('Set up your authenticator app',
+    '<div class="card">' +
+    '<h1>Scan this with your authenticator app</h1>' +
+    '<p class="sub">Almost done. <strong>' + esc(username) + '</strong> has a ' +
+    'password now; this adds the second factor.</p>' +
+    (error ? '<div class="err">' + esc(error) + '</div>' : '') +
+    (enrolment.qr
+      ? '<p><img src="' + esc(enrolment.qr) + '" width="240" height="240" ' +
+        'alt="QR code carrying this account\'s otpauth setup URI"></p>'
+      : '') +
+    '<h2>Or type it in</h2>' +
+    '<table class="grid">' +
+    '<tr><th>Secret</th><td><code>' + esc(enrolment.grouped) + '</code></td></tr>' +
+    '<tr><th>Account</th><td><code>' + esc(username) + '</code></td></tr>' +
+    '<tr><th>Issuer</th><td>' + esc(enrolment.issuer) + '</td></tr>' +
+    '<tr><th>Algorithm</th><td>' +
+    esc('HMAC-' + String(enrolment.algorithm).replace(/^SHA/, 'SHA-') + ', ' +
+        String(enrolment.digits) + ' digits, every ' +
+        String(enrolment.period) + ' seconds') + '</td></tr>' +
+    '</table>' +
+    '<form method="post" action="' + ACTIVATE + '">' +
+    '<input type="hidden" name="user" value="' + esc(username) + '">' +
+    '<input type="hidden" name="token" value="' + esc(token) + '">' +
+    '<input type="hidden" name="step" value="totp">' +
+    '<label for="code">The ' + esc(String(enrolment.digits)) +
+    '-digit code your app is showing now</label>' +
+    '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
+    'inputmode="numeric" maxlength="' + esc(String(enrolment.digits)) + '" ' +
+    'placeholder="' + '0'.repeat(enrolment.digits) + '">' +
+    '<button type="submit">Finish</button>' +
+    '</form>' +
+    '<p class="note">Nothing about the authenticator is stored until this code ' +
+    'checks out, and your activation link is not used up until then either — ' +
+    'so if you cannot finish now, open the link again and leave the ' +
+    'authenticator box unticked.</p>' +
     '</div>');
 }
 
@@ -517,6 +828,17 @@ const ACTIVATE_FORM = vz.object({
   // The three radio values the form itself draws. A closed set rather than a
   // string, because this one decides what the enrolled key is FOR.
   key_role: vt.opt(vt.oneOf(['none', 'primary', 'mfa'])),
+  // THE AUTHENTICATOR APP (2026-09-10). A checkbox rather than a fourth value
+  // of `key_role`, because it is a SECOND factor beside whichever of those was
+  // chosen and not one of the answers to *what signs you in*.
+  totp: vt.opt(vt.flag),
+  // WHICH OF THE TWO POSTS THIS IS. Setting up an authenticator takes a second
+  // round trip — a secret has to be shown and a code typed back — and this
+  // names it explicitly rather than being inferred from whether `code` is
+  // present: a person who leaves the code box empty and presses Finish would
+  // otherwise be treated as though they had started over.
+  step: vt.opt(vt.oneOf(['setup', 'totp'])),
+  code: vz.string().max(32).optional(),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -552,6 +874,20 @@ const PASSWORD_FORM = vz.object({
 // worth understanding, because it looks like the rule's exception and is not.
 const REMOVE_KEY_FORM = vz.object({
   credentialId: vt.opt(vt.base64url),
+  csrf_token: vt.opt(vt.token)
+});
+
+// ENROLLING ONE (2026-09-10). `credential` is the browser's ceremony result as
+// JSON — a `vz.string()` here and parsed in the handler, exactly as
+// `authn.js`'s WEBAUTHN_FORM carries it, because what is inside it is decided
+// by the WebAuthn verifier and a schema here would be a second opinion about
+// an object this file does not own.
+const ENROL_KEY_FORM = vz.object({
+  action: vt.opt(vt.oneOf(['begin', 'finish', 'cancel'])),
+  role: vt.opt(vt.oneOf(['primary', 'mfa'])),
+  label: vz.string().max(60).optional(),
+  enrolment_id: vt.opt(vt.base64url),
+  credential: vz.string().max(validation.CAP.TEXT).optional(),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -592,7 +928,7 @@ app.get(ACTIVATE, function (req, res) {
   return send(res, 200, activationForm(baseUrlOf(req), username, token, null, null));
 });
 
-app.post(ACTIVATE, function (req, res) {
+app.post(ACTIVATE, async function (req, res) {
   log.debug('Entering POST ' + ACTIVATE + '.');
   // `parseBody()` and not `req.body`: this service parses every body as raw
   // text, so `checkParsed()` is the entry point. Its header argues why.
@@ -628,6 +964,64 @@ app.post(ACTIVATE, function (req, res) {
   const password = String(body.password || '');
   const confirm = String(body.confirm || '');
   const keyRole = String(body.key_role || 'none');
+  const wantsTotp = String(body.totp || '') === '1';
+  const step = String(body.step || 'setup');
+
+  // ---------------------------------------------------------------------
+  // THE SECOND POST: A CODE, FOR AN ENROLMENT THAT IS ALREADY WAITING.
+  //
+  // It is handled FIRST and returns through the same finish below, which is
+  // the arrangement that keeps one exit: the link is consumed, the audit row
+  // is written and the account-ready page is drawn in exactly one place, so
+  // the two paths cannot come to disagree about what finishing means.
+  //
+  // The password guards underneath do not run on this path and must not: this
+  // POST carries no password fields — the password was set on the first one —
+  // so *set a password or choose a security key* would refuse somebody who has
+  // already done both.
+  // ---------------------------------------------------------------------
+  if (step === 'totp') {
+    const waiting = await pendingEnrolmentFor(username, base);
+    if (!waiting) {
+      log.debug('Leaving POST ' + ACTIVATE + '. The enrolment had expired.');
+      return send(res, 400, activationForm(base, username, token, null,
+        'That authenticator setup expired before it was confirmed. Nothing ' +
+        'was lost — set it up again below, or leave the box unticked and use ' +
+        'your password alone.'));
+    }
+    const confirmed = credentials.confirmTotpEnrolment(username,
+                                                       String(body.code || ''));
+    if (!confirmed.ok) {
+      audit.record({
+        category: 'authentication', action: 'portal.activate.mfa.refused',
+        actor: username, outcome: 'failure',
+        summary: 'an authenticator app was not confirmed during activation',
+        detail: { reason: confirmed.reason || '',
+                  address: websecurity.addressOf(req) }
+      });
+      log.debug('Leaving POST ' + ACTIVATE + '. The code did not confirm.');
+      // THE SAME SECRET IS REDRAWN. Mistyping six digits must not mean
+      // scanning again.
+      return send(res, 400, activationTotpForm(username, token, waiting,
+        (confirmed.errors || ['That code is not right.'])[0]));
+    }
+    log.info('portal: ' + username + ' set up an authenticator app while ' +
+             'spending an activation link.');
+    // THE RECOVERY CODES ARE CARRIED THROUGH RATHER THAN FETCHED AT THE FAR
+    // END (2026-09-11). There is no list to hand back any more: enrolling a
+    // second factor no longer issues one, because a set is HASHED and a hash
+    // can only be made while the code is in the clear. Somebody who activates
+    // an account with a second factor lands on the portal with the prompt to
+    // generate one, which is what `recoveryAdvised` is for.
+    //
+    // **THIS IS THE WEAKEST POINT OF THE NEW ARRANGEMENT AND IT IS WHERE THE
+    // OLD ONE WAS STRONGEST**: an activation is precisely the moment somebody
+    // is paying attention and will never be paying attention again. It is
+    // answered by the prompt being standing rather than a one-off — the card
+    // stays in its warning state for as long as it is true.
+    return finishActivation(res, base, username, true, keyRole, true, req,
+                            null, null);
+  }
 
   if (password && password !== confirm) {
     return send(res, 400, activationForm(base, username, token, null,
@@ -656,6 +1050,68 @@ app.post(ACTIVATE, function (req, res) {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // THE AUTHENTICATOR APP, IF IT WAS ASKED FOR (2026-09-10).
+  //
+  // **THIS RETURNS WITHOUT FINISHING**, which is the whole shape of the two-step
+  // enrolment: the password is set, the link is NOT spent, and the person is
+  // shown a secret they have to prove they hold. `finishActivation()` runs on
+  // the second POST.
+  //
+  // **THE SETTING IS CHECKED HERE AND NOT ONLY WHERE THE BOX IS DRAWN.** The
+  // form is markup and this is the door — `authn.js`'s rule about the anonymous
+  // button, and it applies to every optional control in this service.
+  //
+  // A REFUSAL DOES NOT LOSE THE ACTIVATION. If the enrolment cannot be started
+  // — the mechanism is off, or product mode will not enrol for somebody with no
+  // entry — the setup FINISHES with what was configured and says what did not
+  // happen. Refusing the whole activation over an optional second factor would
+  // strand somebody who has just set a perfectly good password.
+  if (wantsTotp && totp.offered()) {
+    const begun = credentials.beginTotpEnrolment(username, { base: base });
+    if (begun.ok) {
+      const enrolment = await pendingEnrolmentFor(username, base);
+      if (enrolment) {
+        audit.record({
+          category: 'authentication', action: 'portal.activate.mfa.started',
+          actor: username, outcome: 'success',
+          summary: username + ' started setting up an authenticator app ' +
+                   'while activating',
+          detail: { address: websecurity.addressOf(req) }
+        });
+        log.debug('Leaving POST ' + ACTIVATE + '. Showing the authenticator ' +
+                  'secret; the link is not spent yet.');
+        return send(res, 200,
+                    activationTotpForm(username, token, enrolment, null));
+      }
+    }
+    log.warn('portal: an authenticator app was asked for while activating "' +
+             username + '" and could not be started (' +
+             (begun.errors || []).join(' ') + '). The activation finishes ' +
+             'without it rather than being refused.');
+    return finishActivation(res, base, username, !!password, keyRole, false,
+                            req,
+                            'The authenticator app could NOT be set up: ' +
+                            (begun.errors || ['it was refused.'])[0] +
+                            ' Everything else is set up, and you can add one ' +
+                            'from your account pages after you sign in.');
+  }
+
+  return finishActivation(res, base, username, !!password, keyRole, false, req);
+});
+
+// ---------------------------------------------------------------------------
+// THE ONE PLACE AN ACTIVATION FINISHES (2026-09-10).
+//
+// **IT IS A FUNCTION BECAUSE THERE ARE THREE WAYS IN NOW** — a plain setup, an
+// authenticator confirmed on a second POST, and an authenticator that could not
+// be started — and every one of them has to spend the link, write the audit row
+// and draw the same page. Three copies of that is two chances for one of them
+// to leave a spent-looking link that still works.
+// ---------------------------------------------------------------------------
+function finishActivation(res, base, username, password, keyRole, withTotp,
+                          req, warning, recovery) {
+  log.debug('Entering finishActivation(). username=' + username);
   // **THE LINK IS SPENT HERE**, once the account really can be used. Spending
   // it earlier would strand somebody whose password was refused.
   credentials.consumeActivation(username);
@@ -663,12 +1119,14 @@ app.post(ACTIVATE, function (req, res) {
     category: 'authentication', action: 'portal.activate',
     actor: username, outcome: 'success',
     summary: username + ' completed account setup',
-    detail: { password: !!password, keyRole: keyRole,
+    detail: { password: !!password, keyRole: keyRole, totp: !!withTotp,
+              backupCodes: (recovery || []).length,
               address: websecurity.addressOf(req) }
   });
   log.info('portal: ' + username + ' completed account setup (' +
            (password ? 'password' : 'no password') + ', security key: ' +
-           keyRole + '). The activation link is now spent.');
+           keyRole + ', authenticator app: ' + (withTotp ? 'yes' : 'no') +
+           '). The activation link is now spent.');
 
   // **THEY ARE SENT TO THE SIGN-IN SCREEN AND NOT SIGNED IN.** Spending an
   // activation link proves possession of a link, which is not the credential
@@ -706,12 +1164,52 @@ app.post(ACTIVATE, function (req, res) {
   // are told why signing in comes first (enrolling one requires knowing who is
   // asking, and until they sign in nobody does).
   const next = BASE;
-  log.debug('Leaving POST ' + ACTIVATE + '. Set up; sending to sign in.');
+  log.debug('Leaving finishActivation(). Set up; sending to sign in.');
   return send(res, 200, page('Account ready',
     '<div class="card"><h1>Your account is ready</h1>' +
     '<div class="ok">' +
     esc(password ? 'Your password is set.' : 'Your account is set up.') +
     ' This activation link has now been used and will not work again.</div>' +
+    (warning ? '<div class="err">' + esc(warning) + '</div>' : '') +
+    (withTotp
+      ? '<p><strong>Your authenticator app is set up.</strong> You will be ' +
+        'asked for a code every time you sign in, after your password — a ' +
+        'password alone will not get you in any more. The code you just typed ' +
+        'is spent, so wait for the next one.</p>'
+      : '') +
+    // ---------------------------------------------------------------------
+    // THE RECOVERY CODES, ON THE ONE PAGE THIS PERSON WILL EVER SEE THEM
+    // WITHOUT SIGNING IN (2026-09-10).
+    //
+    // **AND THAT IS EXACTLY WHY THEY ARE SHOWN HERE.** Everything else about
+    // this screen is deliberately post-setup and pre-sign-in — the link is
+    // spent, no session was granted, and the next thing that happens is a
+    // sign-in. Somebody who has just enrolled an authenticator app and has
+    // not yet signed in ONCE is the person most likely to be locked out by a
+    // phone that goes wrong tonight, and telling them to sign in first and
+    // find the list afterwards is advice that reaches the ones who do not
+    // need it.
+    //
+    // They are recoverable from `/portal/mfa` afterwards, which is the whole
+    // argument for encrypting them rather than hashing them, so nothing is
+    // lost by somebody closing this page. What is gained is that they saw it.
+    (recovery && recovery.length
+      ? '<h2>Your recovery codes</h2>' +
+        '<p><strong>Keep these somewhere you can reach without the device ' +
+        'you just set up.</strong> Each one signs you in once, instead of a ' +
+        'code from your authenticator app, when you cannot reach it. They ' +
+        'are issued ONCE — this service will not make a new set.</p>' +
+        '<ul class="codes">' +
+        recovery.map(function (code) {
+          return '<li><code>' + esc(backupCodes.formatted(code)) + '</code></li>';
+        }).join('') +
+        '</ul>' +
+        '<p class="note">You can look at them again on your ' +
+        '<strong>Authenticator app</strong> page once you have signed in. ' +
+        'This service stores them encrypted rather than hashed, which is why ' +
+        'it can show them to you and why it can never show you your ' +
+        'password.</p>'
+      : '') +
     (keyRole !== 'none'
       ? '<p>You asked to use a security key' +
         (keyRole === 'mfa' ? ' as a second factor' : ' instead of a password') +
@@ -722,7 +1220,7 @@ app.post(ACTIVATE, function (req, res) {
         'same reason nothing here links to /authn/webauthn.</p>'
       : '') +
     '<p><a href="' + esc(next) + '">Sign in</a></p></div>'));
-});
+}
 
 // ---------------------------------------------------------------------------
 // THE AUTHENTICATED PORTAL.
@@ -857,12 +1355,193 @@ function requireSignIn(req, res, returnTo, want) {
 // on" is the first thing somebody wants from an account page and the last
 // thing they want to hunt for.
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// EVERY STANDARD inetOrgPerson ATTRIBUTE, ON THE PERSON'S OWN ACCOUNT PAGE
+// (2026-09-11).
+//
+// The *You* section used to be four facts read off the SESSION — a username, a
+// subject, and whichever of `email` and `name` the sign-in happened to carry.
+// That is what the sign-in knew rather than what this identity provider holds,
+// so somebody with a department, a manager and a room number on their entry
+// saw none of them on the page whose heading is *What this identity provider
+// knows about you*.
+//
+// ---------------------------------------------------------------------------
+// IT DRAWS A FIXED LIST AND LOOKS EACH NAME UP. IT DOES NOT PRINT THE ENTRY.
+//
+// The obvious implementation is to iterate the stored attributes, and it is
+// the one thing this block must not do. **An entry in this directory carries
+// whatever anybody put on it**: a TLS client certificate's subject becomes
+// attributes RDN by RDN, SCIM writes its own mapping, an `ldapadd` on 389
+// writes anything at all — and this service puts four `sts`-prefixed
+// CREDENTIALS on that same object. A page that printed the entry would print
+// `stsTotpCredential`, a shared secret, the day somebody enrolled an
+// authenticator, with nothing anywhere having decided that it should.
+//
+// So `common/inetorgperson.js` is the list and this is a reader of it. A new
+// attribute this service invents cannot appear here by accident, and that is a
+// property of the list rather than of anybody remembering.
+//
+// ---------------------------------------------------------------------------
+// THE TWO REFUSALS ARE NOT MADE HERE, WHICH IS DELIBERATE.
+//
+// `userPassword` is on the `person` MAY list, so a faithful reading of the
+// schema puts it on this page, and the five binary attributes would arrive as
+// octets interpolated into HTML — one of which, `userPKCS12`, conventionally
+// carries a PRIVATE KEY. **`inetorgperson.rowFor()` refuses both** and this
+// block only renders what it is handed, so a second surface that ever draws
+// this list gets the same refusals without having to know about them.
+//
+// ---------------------------------------------------------------------------
+// THE EMPTY ONES ARE DRAWN TOO, BEHIND A `<details>`, AND THAT IS THE WHOLE
+// LAYOUT DECISION.
+//
+// Fifty attributes on an account page where a typical person holds six would
+// be a wall of nothing, and showing only what is set would answer *what does
+// this provider know about me* without ever saying what it COULD know — which
+// on a service that exists to be explored is the more useful half. So the ones
+// with values are drawn plainly and the rest are one fold per object class,
+// counted in the summary.
+//
+// **`<details>` IS MARKUP AND NOT SCRIPT**, which is why it is available here
+// at all: every page of this portal is `script-src 'none'`, and the console
+// made exactly this argument for its own collapsible prose. There is no
+// collapse-all and there will not be one; that is the cost, and it is said on
+// the console's page rather than worked around here.
+//
+// ---------------------------------------------------------------------------
+// THE THREE OBJECT CLASSES ARE THE HEADINGS, rather than one alphabetical
+// list. "The inetOrgPerson attributes" IS the union of three classes —
+// `person`, `organizationalPerson`, `inetOrgPerson` — and a reader who does not
+// know that learns it from the page, which is worth more here than tidiness.
+// ===========================================================================
+function directoryBlock(session, entry) {
+  log.debug('Entering directoryBlock().');
+  if (!entry) {
+    // NO DIRECTORY, OR NO ENTRY — and the two are worth telling apart, because
+    // one is a process without `ldap/ldap_server.js` loaded and the other is a
+    // person this service has authenticated and never written down. Both leave
+    // the page honest rather than empty, which is the contract every inverted
+    // hook in this service keeps.
+    log.debug('Leaving directoryBlock(). Nothing to draw.');
+    // **THE SESSION'S OWN TWO FACTS ARE DRAWN HERE AND NOWHERE ELSE**, which
+    // is the half of this fallback that is easy to get wrong. The table above
+    // used to carry `email` and `name` off the session; they moved into this
+    // block as `mail` and `cn`, so a process with no directory would have lost
+    // them altogether — a page showing LESS than it did before the feature
+    // that was meant to show more.
+    const fallback = [
+      session.user.email ? ['Email', session.user.email] : null,
+      session.user.name ? ['Name', session.user.name] : null
+    ].filter(Boolean);
+    return (fallback.length
+      ? '<table>' + fallback.map(function (pair) {
+          return '<tr><th>' + esc(pair[0]) + '</th><td>' + esc(pair[1]) +
+                 '<div class="attr">' +
+                 esc('from your session rather than from a directory entry') +
+                 '</div></td></tr>';
+        }).join('') + '</table>'
+      : '') +
+      '<p class="note">' +
+      esc('This service is not showing your directory entry. Either it is ' +
+          'running without its embedded directory, or nothing has been ' +
+          'written down about you yet — an account here gets an entry the ' +
+          'first time it authenticates or is provisioned. What is above is ' +
+          'what the sign-in itself carried.') + '</p>';
+  }
+
+  const described = inetOrgPerson.describe(entry.attributes);
+
+  // ONE ROW. `values` is already a plain array of strings for everything but
+  // the two refused kinds, which arrive with none — see the header.
+  const row = function (one) {
+    let value;
+    if (one.secret) {
+      value = '<span class="set">set</span> <span class="sub">' +
+              esc('— a scrypt hash rather than the value, and never shown ' +
+                  'here') + '</span>';
+    } else if (one.binary) {
+      value = '<span class="set">set</span> <span class="sub">' +
+              esc('— ' + one.bytes + ' bytes of binary' +
+                  (one.count > 1 ? ' in ' + one.count + ' values' : '') +
+                  ', not shown') + '</span>';
+    } else if (one.count > 1) {
+      // MULTI-VALUED IS THE ORDINARY CASE IN LDAP and a page that joined the
+      // values with a comma would render a person with two email addresses as
+      // one address containing a comma. They are a list.
+      value = '<ul class="vals">' + one.values.map(function (v) {
+        return '<li>' + esc(v) + '</li>';
+      }).join('') + '</ul>';
+    } else {
+      value = esc(one.values[0] || '');
+    }
+    return '<tr><th title="' + esc(one.ldap + ' — ' + one.rfc +
+             (one.note ? '. ' + one.note.replace(/\*\*/g, '') : '')) + '">' +
+           esc(one.label) +
+           (one.must ? ' <span class="must" title="' +
+             esc('The schema REQUIRES this attribute on every person.') +
+             '">required</span>' : '') +
+           '</th><td>' + value +
+           '<div class="attr"><code>' + esc(one.ldap) + '</code> &middot; ' +
+           esc(one.rfc) + '</div></td></tr>';
+  };
+
+  const sections = described.classes.map(function (klass) {
+    const set = klass.rows.filter(function (one) { return one.present; });
+    const unset = klass.rows.filter(function (one) { return !one.present; });
+    return '<h3 class="dirclass" title="' +
+           esc(klass.name + ' — ' + klass.rfc + ', OID ' + klass.oid + '. ' +
+               klass.what) + '">' +
+           '<code>' + esc(klass.name) + '</code> ' +
+           '<span class="sub">' + esc(klass.held + ' of ' + klass.total +
+             ' set') + '</span></h3>' +
+           (set.length
+             ? '<table>' + set.map(row).join('') + '</table>'
+             : '<p class="note">' +
+               esc('Nothing on your entry from this class.') + '</p>') +
+           (unset.length
+             ? '<details><summary>' +
+               esc('The other ' + unset.length + ' this class allows') +
+               '</summary><table>' + unset.map(function (one) {
+                 return '<tr><th title="' + esc(one.ldap + ' — ' + one.rfc) +
+                        '">' + esc(one.label) +
+                        (one.must ? ' <span class="must">required</span>' : '') +
+                        '</th><td><span class="unset">not set</span>' +
+                        '<div class="attr"><code>' + esc(one.ldap) +
+                        '</code> &middot; ' + esc(one.rfc) + '</div></td></tr>';
+               }).join('') + '</table></details>'
+             : '');
+  }).join('');
+
+  log.debug('Leaving directoryBlock(). ' + described.held + ' of ' +
+            described.total + ' set.');
+  return '<h3 class="dirhead">Your directory entry</h3>' +
+    '<p class="note">' +
+    esc('Every attribute the schema this service files people under allows — ' +
+        described.held + ' of ' + described.total + ' are set on your entry. ' +
+        'It is a fixed list read from the schema rather than a dump of what ' +
+        'your entry happens to carry, so a credential this service stores ' +
+        'beside these cannot appear here.') +
+    ' <code>' + esc('objectClass: top, person, organizationalPerson, ' +
+                    'inetOrgPerson') + '</code></p>' +
+    sections +
+    '<p class="note">' +
+    esc('Nothing on this page can be edited here. These are written by an ' +
+        'operator, by SCIM, or over LDAP — this portal changes how you ' +
+        'AUTHENTICATE and not what this directory records about you.') +
+    '</p>';
+}
+
 function overviewPage(session, message, error) {
   log.debug('Entering overviewPage().');
   const username = session.user.username;
   const mechanisms = credentials.mechanismsFor(username);
   const csrf = websecurity.field(session.id);
   const detail = stats.userDetail ? stats.userDetail(username) : null;
+  // THE PERSON'S OWN ENTRY, from the session's name and no parameter. Null
+  // where no directory is installed, which the block below says out loud
+  // rather than drawing an empty table.
+  const entry = entryFor(session);
 
   const html = shell(BASE, session, message, error,
     '<div class="card">' +
@@ -873,10 +1552,10 @@ function overviewPage(session, message, error) {
     '<tr><th>Username</th><td>' + esc(username) + '</td></tr>' +
     '<tr><th>Subject</th><td><code>' + esc(session.user.sub || '') +
       '</code></td></tr>' +
-    (session.user.email
-      ? '<tr><th>Email</th><td>' + esc(session.user.email) + '</td></tr>' : '') +
-    (session.user.name
-      ? '<tr><th>Name</th><td>' + esc(session.user.name) + '</td></tr>' : '') +
+    (entry
+      ? '<tr><th>Directory entry</th><td><code>' + esc(entry.dn) +
+        '</code></td></tr>'
+      : '') +
     '<tr><th>Signed in</th><td>' +
       esc(new Date((session.authTime || 0) * 1000).toISOString()) + '</td></tr>' +
     '<tr><th>How</th><td>' + esc((session.amr || []).join(', ') || 'unstated') +
@@ -888,6 +1567,7 @@ function overviewPage(session, message, error) {
         esc(String(detail.authentications || 0)) + '</td></tr>'
       : '') +
     '</table>' +
+    directoryBlock(session, entry) +
     '</div>' +
 
     '<div class="card">' +
@@ -901,9 +1581,34 @@ function overviewPage(session, message, error) {
         ? esc(String(mechanisms.keys.length)) + ' enrolled'
         : '<em>none enrolled</em>') +
       ' — <a href="' + esc(BASE + '/keys') + '">see them</a></td></tr>' +
+    '<tr><th>Authenticator app</th><td>' +
+      (mechanisms.totp
+        ? (mechanisms.totpUsable ? 'enrolled' : 'enrolled, but not readable')
+        : '<em>not set up</em>') +
+      ' — <a href="' + esc(BASE + '/mfa') + '">set it up</a></td></tr>' +
+    // THE WAY BACK (2026-09-10). It is reported as a COUNT rather than as a
+    // yes, because the number is the whole of what a person needs from this
+    // row: a set is issued once and is never topped up, so *3 of 10 left* is
+    // an instruction and *issued* is not.
+    '<tr><th>Recovery codes</th><td>' +
+      (mechanisms.backupCodes && mechanisms.backupCodes.present
+        ? (mechanisms.backupCodes.usable
+            ? esc(String(mechanisms.backupCodes.remaining) + ' of ' +
+                  String(mechanisms.backupCodes.total) + ' unused')
+            : 'issued, but not readable')
+        : '<em>none issued</em>') +
+      ' — <a href="' + esc(BASE + '/mfa') + '">see them</a></td></tr>' +
+    // WHICH FACTOR, AND NOT MERELY WHETHER. There are two of them since
+    // 2026-09-10, they are asked for at different screens, and "required" on
+    // its own leaves somebody unable to guess what they will be asked for.
     '<tr><th>Second factor</th><td>' +
       (mechanisms.mfaRequired
-        ? 'required — you hold a key marked as a second factor'
+        ? esc('required — a password alone will not sign you in. You will be ' +
+              'asked for ' +
+              (mechanisms.secondFactor === 'webauthn'
+                ? 'your security key' + (mechanisms.totp
+                    ? ', with a one-time code offered as the alternative' : '')
+                : 'a code from your authenticator app') + '.')
         : 'not required') + '</td></tr>' +
     '</table>' +
     '</div>' +
@@ -968,7 +1673,7 @@ function passwordPage(session, message, error) {
 // own keys — see the file header, where that is argued as the case that looks
 // like the rule's exception and is not.
 // ---------------------------------------------------------------------------
-function keysPage(session, message, error) {
+function keysPage(session, message, error, base) {
   log.debug('Entering keysPage().');
   const mechanisms = credentials.mechanismsFor(session.user.username);
   const csrf = websecurity.field(session.id);
@@ -999,24 +1704,849 @@ function keysPage(session, message, error) {
       : '') +
     '<p class="note">A security key is either your ONLY credential (you sign ' +
     'in with the key and no password) or a SECOND factor beside a password. ' +
-    'This service supports no other second factor. You cannot remove your last ' +
-    'way in — set another one first.</p>' +
-    // NO LINK TO `/authn/webauthn`, AND THAT IS THE RULE THIS DIRECTORY
-    // LEARNED THE HARD WAY. That page is a STEP IN A SIGN-IN — it draws the
-    // ceremony for a PENDING AUTHENTICATION RECORD — so a link to it from here
-    // is the same defect as the account-ready page's link to `/authn/login`
-    // was: a control that looks like a way to enrol a key and answers that the
-    // sign-in form has expired. `/authn/login is never a destination` reads off
-    // every page that starts a sign-in, and this is one of them.
-    '<p class="note">A key is enrolled DURING A SIGN-IN — tick the ' +
-    'security-key box at the sign-in screen, and the first use enrols — or ' +
-    'when an activation link is spent. There is no enrol button here, ' +
-    'because a WebAuthn ceremony belongs to a sign-in and this page is not ' +
-    'one.</p>' +
+    'You cannot remove your last way in — set another one first.</p>' +
+    (keys.length > 1
+      ? '<p class="note"><strong>You hold ' + esc(String(keys.length)) +
+        ' keys, which is the point.</strong> If one is lost, the others still ' +
+        'sign you in — and you can remove the lost one from this page without ' +
+        'asking anybody.</p>'
+      : (keys.length === 1
+          ? '<p class="note"><strong>You hold one key and no backup.</strong> ' +
+            'If it is lost, an operator has to clear it for you before you can ' +
+            'enrol another — there is deliberately no self-service reset of a ' +
+            'credential you cannot produce. Add a second key now, on a ' +
+            'different device, and you never need that conversation.</p>'
+          : '')) +
+    enrolBlock(session, mechanisms, base) +
     '</div>');
-  log.debug('Leaving keysPage().');
+  log.debug('Leaving keysPage(). ' + keys.length + ' key(s).');
   return html;
 }
+
+// ===========================================================================
+// ADDING A KEY, AND THE PARAGRAPH THIS REPLACED WAS WRONG (2026-09-10).
+//
+// It read: *A key is enrolled DURING A SIGN-IN — tick the security-key box at
+// the sign-in screen, and the first use enrols — or when an activation link is
+// spent. There is no enrol button here, because a WebAuthn ceremony belongs to
+// a sign-in and this page is not one.*
+//
+// **THE PREMISE IS FALSE.** A WebAuthn ceremony belongs to whoever is asking,
+// and a signed-in person asking to register a credential is the ORDINARY
+// WebAuthn flow — it is how every real relying party does it. What belongs to
+// a sign-in is an ASSERTION.
+//
+// What the sentence cost was the whole reason WebAuthn has a credential id, a
+// multi-valued attribute in `credentials.js` and a `maxKeysPerPerson` setting:
+// **nobody could hold a BACKUP.** The sign-in screen's checkbox is
+// enrol-on-first-use and is reserved for people who hold no second factor yet
+// — correctly, because enrolling there for somebody who already holds one is
+// the bypass `authn/CLAUDE.md` argues — so there was exactly one key per person
+// and no door to add another. A lost key meant an operator clearing it, which
+// is a support queue rather than a security control.
+//
+// ---------------------------------------------------------------------------
+// THIS IS THE SEVENTH SCRIPTED PAGE IN THIS SERVICE, AND THE FIRST IN THIS
+// PORTAL. The argument has to be made from scratch and this is it.
+//
+// `app.js` sets `script-src 'none'` on everything, and the rule is that a page
+// gets an exception only when it CANNOT WORK WITHOUT ONE. Four candidates have
+// been refused on it — federation's outbound form, the two pictures, the
+// console's collapsible prose, and `/authn/totp`, which sits next door to a
+// scripted page and still had to argue its own case.
+//
+// **A WEBAUTHN CEREMONY IS A BROWSER API CALL.** There is no markup that
+// invokes `navigator.credentials.create()`, no form that produces an
+// attestation object, and no server-side substitute — the private key is
+// generated inside the authenticator and never leaves it. That is the same
+// argument `/authn/webauthn` was granted its exception on, and it is the whole
+// of the case here.
+//
+// **IT IS THE SAME SCRIPT, NOT A SECOND ONE.** `/authn/webauthn.js` is a
+// static resource that reads its parameters off a `wa-data` element, so this
+// page emits the same element and the same three ids and points at it. One
+// implementation of the ceremony in the browser, for both pages — a second
+// copy would be a second place for the base64url handling to go wrong, and
+// that has already happened once in this file's history (see
+// WEBAUTHN_SCRIPT's own header about `split/join`).
+//
+// **THE BUTTON IS REAL AND IS LABELLED FOR A PERSON**, which every scripted
+// page here does: with the script blocked, pressing it posts a form that
+// answers *your browser did not run the ceremony* rather than doing nothing.
+// ===========================================================================
+function enrolBlock(session, mechanisms, base) {
+  log.debug('Entering enrolBlock().');
+  const username = session.user.username;
+  const csrf = websecurity.field(session.id);
+  const policy = webauthnPolicy.settings();
+  const pending = credentials.pendingKeyEnrolmentFor(username);
+
+  if (!policy.enabled) {
+    log.debug('Leaving enrolBlock(). Security keys are switched off.');
+    return '<h2>Add a security key</h2>' +
+      '<p class="note">Security keys are switched off in this service, so no ' +
+      'new one can be enrolled. Any key already on your account goes on ' +
+      'working.</p>';
+  }
+  if (mechanisms.keys.length >= policy.maxKeysPerPerson) {
+    log.debug('Leaving enrolBlock(). At the cap.');
+    return '<h2>Add a security key</h2>' +
+      '<p class="note">You hold ' + esc(String(mechanisms.keys.length)) +
+      ' security keys, which is the most this service allows. Remove one ' +
+      'first.</p>';
+  }
+
+  // ---------------------------------------------------------------------
+  // STEP TWO, drawn only while a challenge is held. The ceremony is armed
+  // here and nowhere else, so a reload of this page with nothing pending is
+  // the form again rather than a ceremony against a challenge that has gone.
+  // ---------------------------------------------------------------------
+  if (pending) {
+    // THE BASE IS PASSED IN AND NEVER RECOMPUTED HERE. A realm's base URL
+    // carries a path and the RP ID is its HOST, which is the mistake
+    // `authn.originOf()`'s header says is waiting to be made twice — so this
+    // page asks the module that already gets it right, with the base the
+    // REQUEST arrived on.
+    const rpId = authn.rpIdOf(base);
+    log.debug('Leaving enrolBlock(). A ceremony is armed.');
+    return '<h2>Touch your security key</h2>' +
+      '<p class="note">Your browser is about to ask for a security key. ' +
+      '<strong>Use a DIFFERENT one from any already on your account</strong> ' +
+      '&mdash; the point of a backup is that it is not in the same place as ' +
+      'the original. An authenticator that is already enrolled will ' +
+      'refuse.</p>' +
+      '<div id="wa-data"' +
+      ' data-challenge="' + esc(pending.challenge) + '"' +
+      ' data-rpid="' + esc(rpId) + '"' +
+      ' data-user="' + esc(username) + '"' +
+      ' data-allow=""' +
+      ' data-exclude="' + esc(pending.exclude.join(',')) + '"' +
+      ' data-options="' +
+      esc(JSON.stringify(webauthnPolicy.creationOptions(rpId))) +
+      '"' +
+      ' data-mode="create"></div>' +
+      '<button id="wa-go" type="button">Register this security key</button>' +
+      '<form method="post" action="' + BASE + '/keys" id="wa-form">' + csrf +
+      '<input type="hidden" name="action" value="finish">' +
+      '<input type="hidden" name="enrolment_id" value="' +
+      esc(pending.id) + '">' +
+      '<input type="hidden" name="credential" id="wa-credential">' +
+      // THE REAL BUTTON. With the script blocked this is the whole mechanism,
+      // and what it posts is a `finish` with no credential — which the handler
+      // answers by saying the browser ran no ceremony, rather than by
+      // appearing to do nothing.
+      '<button class="secondary">My browser did not ask &mdash; tell me why</button>' +
+      '</form>' +
+      '<form method="post" action="' + BASE + '/keys">' + csrf +
+      '<input type="hidden" name="action" value="cancel">' +
+      '<button class="secondary">Cancel</button></form>' +
+      '<p class="sub">Registering as: <strong>' +
+      esc(pending.role === 'primary'
+        ? 'your only credential (no password)' : 'a second factor') +
+      '</strong>' + (pending.label ? ', labelled ' + esc(pending.label) : '') +
+      '.</p>' +
+      '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>';
+  }
+
+  // ---------------------------------------------------------------------
+  // STEP ONE. The role is chosen HERE and carried on the pending record,
+  // because the ceremony's answer says nothing about what was asked for.
+  // ---------------------------------------------------------------------
+  const roles = [];
+  if (policy.mfaAllowed) {
+    roles.push(['mfa', 'A second factor, beside my password',
+                mechanisms.password
+                  ? 'You will be asked for it every time you sign in.'
+                  : 'You have no password, so this key alone will not sign ' +
+                    'you in — set a password as well.']);
+  }
+  if (policy.primaryAllowed) {
+    roles.push(['primary', 'My only credential — no password',
+                'You sign in with the key and nothing else.']);
+  }
+  if (!roles.length) {
+    log.debug('Leaving enrolBlock(). No role is allowed.');
+    return '<h2>Add a security key</h2>' +
+      '<p class="note">This service allows a security key in neither role at ' +
+      'the moment, so none can be enrolled.</p>';
+  }
+
+  log.debug('Leaving enrolBlock(). The form is drawn.');
+  return '<h2>Add a security key</h2>' +
+    (mechanisms.keys.length
+      ? '<p class="note">This registers a NEW authenticator. The ones you ' +
+        'already hold are excluded from the ceremony, so touching a key that ' +
+        'is already enrolled will refuse rather than adding a second row for ' +
+        'the same device.</p>'
+      : '') +
+    '<form method="post" action="' + BASE + '/keys">' + csrf +
+    '<input type="hidden" name="action" value="begin">' +
+    '<label for="key-label">Name it (optional)</label>' +
+    '<input type="text" id="key-label" name="label" maxlength="60" ' +
+    'placeholder="the one on my keyring">' +
+    roles.map(function (row) {
+      return '<label class="chk"><input type="radio" name="role" value="' +
+        esc(row[0]) + '"' + (row[0] === roles[0][0] ? ' checked' : '') + '> ' +
+        esc(row[1]) + ' <span class="sub">' + esc(row[2]) + '</span></label>';
+    }).join('') +
+    '<button>Add a security key</button></form>';
+}
+
+
+// ===========================================================================
+// THE AUTHENTICATOR APP PAGE (RFC 6238), 2026-09-10.
+//
+// The first page in this portal that HANDS SOMEBODY A CREDENTIAL rather than
+// taking one, and the design follows from that one fact.
+//
+// ---------------------------------------------------------------------------
+// TWO STEPS, AND THE FIRST WRITES NOTHING.
+//
+// Pressing *Set up* mints a secret and holds it IN MEMORY;
+// `common/credentials.js` writes the attribute only when a code proves the app
+// really has it. **An unconfirmed secret on somebody's entry would be a second
+// factor they cannot produce** — open this page, walk away, come back tomorrow,
+// and be locked out of your own account by a form you abandoned. That is not a
+// hypothetical: it is what a one-step enrolment does to anybody whose phone is
+// in another room.
+//
+// ---------------------------------------------------------------------------
+// THE QR CODE IS AN IMAGE THIS SERVER DREW, AND THE SECRET IS SHOWN BESIDE IT.
+//
+// `script-src 'none'` covers every page of this portal, so a QR library
+// running in the browser was never an option — `common/totp.js`'s
+// `qrSvgDataUri()` renders it here and it arrives as a `data:` URI, which
+// `img-src 'self' data:` already allows for the two OID4VC offer pages.
+//
+// **THE TYPED SECRET IS NOT A FALLBACK NOBODY SEES.** It is drawn beside the
+// code, in groups of four, with the algorithm, digits and period written out —
+// because scanning is impossible in three ordinary situations: the phone IS
+// the browser showing this page, the desktop authenticator has no camera, and
+// a `localhost` QR code photographed from a screen still points at a host the
+// phone cannot reach. The last one is the common case for a mock.
+//
+// ---------------------------------------------------------------------------
+// THE SECRET IS SHOWN ON A PAGE, WHICH IS EXACTLY AS DANGEROUS AS IT SOUNDS,
+// AND THREE THINGS BOUND IT.
+//
+// It is `no-store` like every page here; it is only ever drawn for the SIGNED-IN
+// person and never for a name in a parameter (the rule at the top of this
+// file); and **it stops being shown the moment it is confirmed** — the enrolled
+// page reports that an app is set up and never the secret behind it, so a
+// browser left open on this page does not become a standing copy of somebody's
+// second factor. `totp.enrolmentTtlMinutes` is the fourth bound: an
+// unconfirmed secret expires.
+//
+// ---------------------------------------------------------------------------
+// ENROLLING AGAIN REPLACES, AND THE PAGE SAYS SO BEFORE IT DRAWS THE NEW CODE.
+//
+// One secret per person — `common/credentials.js` argues why, and it is a fact
+// about the protocol rather than a policy: a six-digit code names no
+// credential, so two secrets would mean trying both. Somebody who scans a
+// second code and leaves the first app configured has an authenticator that
+// silently stopped working, so the warning is on the button rather than in a
+// note underneath it.
+// ===========================================================================
+// `fresh` and `revealed` are the two moments the recovery codes are drawn —
+// straight out of an enrolment that issued them, and in answer to a deliberate
+// *Show them* POST. Both are passed IN rather than read here, for the reason
+// `enrolment` is: the list is a live credential and a page builder that fetched
+// it would draw it on every GET.
+function mfaPage(session, message, error, enrolment, fresh, revealed) {
+  log.debug('Entering mfaPage().');
+  const username = session.user.username;
+  const mechanisms = credentials.mechanismsFor(username);
+  const csrf = websecurity.field(session.id);
+  const live = totp.settings();
+  const offered = totp.offered();
+
+  // THE ENROLMENT IN PROGRESS, passed in rather than read here: the caller has
+  // already awaited the QR code, and a page builder that returned a promise
+  // would make every other page in this file async by contagion.
+  const setup = enrolment && enrolment.ok ? enrolment : null;
+
+  const enrolledCard =
+    '<div class="card">' +
+    '<h2>Status</h2>' +
+    '<p class="sub">' +
+    (mechanisms.totp
+      ? (mechanisms.totpUsable
+          ? esc('An authenticator app is set up. A password alone will not ' +
+                'sign you in — you will be asked for a code.')
+          : esc('An authenticator app is enrolled, but this service cannot ' +
+                'read the enrolment, so it cannot check your codes. An ' +
+                'administrator has to clear it before you can set one up ' +
+                'again.'))
+      : esc('No authenticator app is set up.')) + '</p>' +
+    (mechanisms.totp && mechanisms.totpDetail
+      ? '<table class="grid">' +
+        '<tr><th>Set up</th><td>' +
+        esc(new Date(mechanisms.totpDetail.enrolledAt || 0).toISOString().slice(0, 10)) +
+        '</td></tr>' +
+        '<tr><th>Last used</th><td>' +
+        esc(mechanisms.totpDetail.lastUsedAt
+          ? new Date(mechanisms.totpDetail.lastUsedAt).toISOString().slice(0, 19) + 'Z'
+          : 'never') + '</td></tr>' +
+        '<tr><th>Algorithm</th><td>' +
+        esc('HMAC-' + String(mechanisms.totpDetail.algorithm || 'SHA1')
+              .replace(/^SHA/, 'SHA-') + ', ' +
+            String(mechanisms.totpDetail.digits || 6) + ' digits, every ' +
+            String(mechanisms.totpDetail.period || 30) + ' seconds') +
+        '</td></tr></table>' +
+        '<form method="post" action="' + BASE + '/mfa">' + csrf +
+        '<input type="hidden" name="action" value="remove">' +
+        '<button class="danger">Remove it</button></form>' +
+        '<p class="note">Removing it drops your account to one factor. It ' +
+        'cannot lock you out — an authenticator app is never a way in by ' +
+        'itself — but your password alone will sign you in again ' +
+        'afterwards.</p>'
+      : '') +
+    '</div>';
+
+  const setupCard = setup
+    ? '<div class="card">' +
+      '<h2>Scan this with your authenticator app</h2>' +
+      '<p class="sub">Nothing is saved until you type a code back, so this ' +
+      'is not set up yet.</p>' +
+      // THE IMAGE, drawn on the server. `alt` says what it is rather than
+      // repeating the secret: a screen reader announcing a shared secret
+      // character by character in an open-plan office is not an improvement.
+      '<p><img src="' + esc(setup.qr) + '" width="240" height="240" ' +
+      'alt="QR code carrying this account\'s otpauth setup URI"></p>' +
+      '<h3>Or type it in</h3>' +
+      '<p class="note">If you cannot scan — the phone is showing this page, ' +
+      'the app has no camera, or this service is on <code>localhost</code> ' +
+      'and your phone cannot reach it — add the account by hand with these:</p>' +
+      '<table class="grid">' +
+      '<tr><th>Secret</th><td><code>' + esc(setup.grouped) + '</code></td></tr>' +
+      '<tr><th>Account</th><td><code>' + esc(username) + '</code></td></tr>' +
+      '<tr><th>Issuer</th><td>' + esc(setup.issuer) + '</td></tr>' +
+      '<tr><th>Type</th><td>Time based</td></tr>' +
+      '<tr><th>Algorithm</th><td>' +
+      esc('HMAC-' + String(setup.algorithm).replace(/^SHA/, 'SHA-')) +
+      '</td></tr>' +
+      '<tr><th>Digits</th><td>' + esc(String(setup.digits)) + '</td></tr>' +
+      '<tr><th>Period</th><td>' + esc(String(setup.period)) + ' seconds</td></tr>' +
+      '</table>' +
+      '<h3>Then prove it works</h3>' +
+      '<form method="post" action="' + BASE + '/mfa">' + csrf +
+      '<input type="hidden" name="action" value="confirm">' +
+      '<label for="code">The ' + esc(String(setup.digits)) +
+      '-digit code your app is showing now</label>' +
+      '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
+      'inputmode="numeric" maxlength="' + esc(String(setup.digits)) + '" ' +
+      'placeholder="' + '0'.repeat(setup.digits) + '">' +
+      '<button type="submit">Finish setting it up</button></form>' +
+      '<p class="note">The code this service accepts here is SPENT — you will ' +
+      'need the next one to sign in, which is RFC 6238 section 5.2 and is why ' +
+      'a code never works twice.</p>' +
+      '</div>'
+    : '';
+
+  const startCard = offered
+    ? '<div class="card">' +
+      '<h2>' + (mechanisms.totp ? 'Replace it' : 'Set one up') + '</h2>' +
+      '<p class="sub">Use your favourite authenticator app — <strong>Google ' +
+      'Authenticator, Microsoft Authenticator, Authy, 1Password, Bitwarden, ' +
+      'Aegis, FreeOTP, KeePassXC</strong> or any other. They all implement ' +
+      'the same specification (RFC 6238), so any of them works and nothing ' +
+      'here is tied to one.</p>' +
+      (mechanisms.totp
+        ? '<p class="note"><strong>Setting up a new one replaces the one you ' +
+          'have.</strong> You hold one authenticator here and not a list, ' +
+          'because a six-digit code says nothing about which app produced it. ' +
+          'Delete the old account from your app afterwards — it will keep ' +
+          'showing codes that no longer work.</p>'
+        : '') +
+      '<form method="post" action="' + BASE + '/mfa">' + csrf +
+      '<input type="hidden" name="action" value="start">' +
+      '<button' + (mechanisms.totp ? ' class="secondary"' : '') + '>' +
+      (setup ? 'Start again with a new secret'
+             : (mechanisms.totp ? 'Replace my authenticator app'
+                                : 'Set up an authenticator app')) +
+      '</button></form>' +
+      '</div>'
+    : '<div class="card"><h2>Not available</h2>' +
+      '<p class="sub">' +
+      esc('Authenticator apps are turned off on this service. An operator ' +
+          'turns them on with the totp.enabled setting.') + '</p></div>';
+
+  const aboutCard =
+    '<div class="card">' +
+    '<h2>What this is</h2>' +
+    '<p class="note">A <strong>time-based one-time password</strong> — RFC ' +
+    '6238. Your app and this service hold the same secret and both compute ' +
+    'the same ' + esc(String(live.digits)) + '-digit number from it and the ' +
+    'clock, so the code proves you have the app without either of you ' +
+    'sending the secret anywhere. It changes every ' +
+    esc(String(live.period)) + ' seconds.</p>' +
+    '<p class="note"><strong>It is a SECOND factor and never a first one.</strong> ' +
+    'It cannot replace your password here, because this service holds the ' +
+    'same secret your app does — which is fine for proving you still have ' +
+    'the app, and is not something to hang a whole account on. That is the ' +
+    'difference between this and a security key, which keeps a private key ' +
+    'this service never sees.</p>' +
+    '<p class="note">Codes are checked <strong>properly, in every mode</strong>. ' +
+    'Most credentials on this mock are not — any password is accepted — but a ' +
+    'one-time password verifier that accepted any six digits would not be a ' +
+    'permissive one, it would be a broken one, and there would be nothing ' +
+    'left to test a client against.</p>' +
+    '</div>';
+
+  // THE RECOVERY CODES (2026-09-10), between the authenticator's own cards and
+  // the explanation. It is on THIS page rather than a page of its own because
+  // it answers a question about the second factor — see `backupCodesCard()`.
+  const recoveryCard = backupCodesCard(session, fresh, revealed, mechanisms);
+
+  const html = shell(BASE + '/mfa', session, message, error,
+    enrolledCard + setupCard + startCard + recoveryCard + aboutCard);
+  log.debug('Leaving mfaPage().');
+  return html;
+}
+
+// ===========================================================================
+// THE RECOVERY CODES CARD (rewritten 2026-09-11).
+//
+// **FOUR STATES AND THE MIDDLE ONE IS NEW.** It used to have two — you have a
+// set, or you do not — because a set was created for you and could be read
+// back whenever you asked. Now:
+//
+//   1. **no set, and no second factor.** Nothing is offered: recovery codes
+//      stand in for a factor, and a way back from a door you have not walked
+//      through is a control with nothing behind it.
+//   2. **no set, and a second factor.** The prompt, and it is deliberately
+//      loud — this is the population the old automatic issue protected, and
+//      asking is all that is left.
+//   3. **SHOWN AND NOT YET CONFIRMED.** The codes, and one button. Nothing is
+//      stored, and the page says so in those words: what is on the screen is
+//      not yet a credential and works nowhere until the button is pressed.
+//   4. **confirmed.** Counts, and a Replace control that says what replacing
+//      costs before it is pressed.
+//
+// **THE THING THIS CARD MUST GET RIGHT IS STATE 3.** Somebody who writes the
+// codes down, closes the tab and never presses the button is holding a page of
+// strings that work nowhere — and would have no way of knowing. So the confirm
+// step is the ONLY thing on the screen at that moment, the codes are labelled
+// as not-yet-active, and the Cancel beside it says what it throws away.
+// ===========================================================================
+function backupCodesCard(session, fresh, revealed, mechanisms) {
+  const username = session.user.username;
+  log.debug('Entering backupCodesCard(). username=' + username);
+  const live = backupCodes.settings();
+  // THE CALLER'S ANSWER, PASSED IN — `mechanismsFor()` walks the directory and
+  // asking twice on one render is a second walk for a number the caller has.
+  const status = (mechanisms || credentials.mechanismsFor(username))
+                   .backupCodes || { present: false, remaining: 0, total: 0 };
+  const advised = (mechanisms || credentials.mechanismsFor(username))
+                    .recoveryAdvised;
+  const csrf = websecurity.field(session.id);
+
+  // ---------------------------------------------------------------------
+  // STATE 3: a set has been generated and is being shown.
+  //
+  // `revealed` is gone as a parameter's meaning — nothing can be revealed —
+  // and it is kept in the signature only so that a caller left over from an
+  // older build passes `null` harmlessly rather than shifting the arguments.
+  // ---------------------------------------------------------------------
+  if (fresh && fresh.ok && fresh.codes && fresh.codes.length) {
+    const list = fresh.codes.map(function (code) {
+      return '<li><code>' + esc(backupCodes.formatted(code)) + '</code></li>';
+    }).join('');
+    log.debug('Leaving backupCodesCard(). Showing a pending set.');
+    return '<div class="card">' +
+      '<h2>Save these recovery codes</h2>' +
+      '<p class="sub"><strong>' +
+      esc('They are not saved yet. Nothing has been stored, and none of ' +
+          'these codes will work until you press the button below.') +
+      '</strong></p>' +
+      '<ul class="codes">' + list + '</ul>' +
+      '<p class="note"><strong>This is the only time they will ever be ' +
+      'shown.</strong> When you confirm, this service stores a <em>hash</em> ' +
+      'of each one &mdash; the same kind of scrypt hash it stores for your ' +
+      'password &mdash; so it can check a code you type and can never print ' +
+      'one back. Write them down, print them, or put them in a password ' +
+      'manager first.</p>' +
+      '<p class="note"><strong>Each code works once.</strong> Type one at the ' +
+      'sign-in screen instead of your second factor when you cannot produce ' +
+      'it. The dashes and the case do not matter; they are there so you can ' +
+      'transcribe it.</p>' +
+      (fresh.replacing
+        ? '<p class="note"><strong>Confirming replaces the set you already ' +
+          'have.</strong> Every code on your old list stops working the ' +
+          'moment you press the button.</p>'
+        : '') +
+      '<form method="post" action="' + BASE + '/mfa">' + csrf +
+      '<input type="hidden" name="action" value="confirm-codes">' +
+      '<input type="hidden" name="handle" value="' +
+        esc(String(fresh.handle || '')) + '">' +
+      '<button>I have saved these codes</button>' +
+      '</form>' +
+      '<form method="post" action="' + BASE + '/mfa">' + csrf +
+      '<input type="hidden" name="action" value="discard-codes">' +
+      '<input type="hidden" name="handle" value="' +
+        esc(String(fresh.handle || '')) + '">' +
+      '<button class="secondary">Throw these away without saving</button>' +
+      '</form>' +
+      '<p class="note">If you close this page without confirming, nothing is ' +
+      'stored and nothing changes &mdash; these codes simply never existed. ' +
+      'Whatever set you had before is untouched.</p>' +
+      '</div>';
+  }
+
+  // ---------------------------------------------------------------------
+  // STATES 1, 2 AND 4.
+  // ---------------------------------------------------------------------
+  const generateForm =
+    '<form method="post" action="' + BASE + '/mfa">' + csrf +
+    '<input type="hidden" name="action" value="generate-codes">' +
+    '<button' + (status.present ? ' class="secondary"' : '') + '>' +
+    (status.present ? 'Generate a new set' : 'Generate my recovery codes') +
+    '</button></form>';
+
+  let body;
+  if (!status.present) {
+    body =
+      '<p class="sub">' +
+      esc(advised
+        ? 'You have a second factor and no recovery codes. If you cannot ' +
+          'reach it — a flat phone, a security key in a drawer at home — ' +
+          'there is currently no way back into this account except an ' +
+          'administrator.'
+        : 'None have been generated. Recovery codes stand in for a second ' +
+          'factor when you cannot produce it, so they are worth generating ' +
+          'once you have one.') + '</p>' +
+      (advised
+        ? '<p class="note"><strong>This service will not create a set for ' +
+          'you.</strong> It used to, as a side effect of enrolling a second ' +
+          'factor &mdash; it cannot any more, because it now stores only a ' +
+          'hash of each code and a hash can only be made while the code is on ' +
+          'the screen in front of you.</p>'
+        : '') +
+      (live.enabled ? generateForm : '') +
+      '<p class="note">' + esc(live.count + ' codes of ' + live.length +
+        ' characters are generated. They are shown once, and stored only ' +
+        'after you confirm you have saved them.') + '</p>';
+  } else if (!status.usable) {
+    body =
+      '<p class="sub">' +
+      esc('A set exists and this service cannot read it (' +
+          (status.why || 'the stored set is unusable') + '), so a code you ' +
+          'type cannot be checked against it.') + '</p>' +
+      '<p class="note">Generating a new set replaces it and fixes this. An ' +
+      'administrator can also clear it from your row under ' +
+      '<code>/admin/users</code>.</p>' +
+      (live.enabled ? generateForm : '');
+  } else {
+    body =
+      '<p class="sub">' + esc(status.remaining + ' of your ' + status.total +
+        ' recovery codes are unused.') + '</p>' +
+      '<table class="grid">' +
+      '<tr><th>Saved</th><td>' +
+      esc(status.generatedAt
+        ? new Date(status.generatedAt).toISOString().slice(0, 10)
+        : 'not recorded') + '</td></tr>' +
+      '<tr><th>Unused</th><td>' + esc(String(status.remaining) + ' of ' +
+        String(status.total)) + '</td></tr>' +
+      '<tr><th>Last used</th><td>' +
+      esc(status.lastUsedAt
+        ? new Date(status.lastUsedAt).toISOString().slice(0, 19) + 'Z'
+        : 'never') + '</td></tr>' +
+      '<tr><th>Stored</th><td>' + esc('as a scrypt hash of each code — the ' +
+        'same way your password is stored, which is why they cannot be shown ' +
+        'to you again') + '</td></tr>' +
+      '</table>' +
+      // THE REPLACE CONTROL, WITH WHAT IT COSTS SAID BEFORE IT IS PRESSED.
+      // This is the sharp edge of generating on request: there is no way to
+      // see a set you already have, so the only reason to press this is that
+      // you have lost it — and pressing it destroys the one you lost.
+      '<p class="note"><strong>There is no way to see these again.</strong> ' +
+      'Generating a new set shows you ten new codes and <em>replaces</em> the ' +
+      'ones you have &mdash; every code on your current list stops working. ' +
+      'Only do it if you have lost them or have used most of them.</p>' +
+      (live.enabled ? generateForm : '') +
+      (status.remaining === 0
+        ? '<p class="note"><strong>Every code has been used.</strong> There ' +
+          'is nothing left to fall back on until you generate a new set.</p>'
+        : (status.remaining <= 3
+            ? '<p class="note"><strong>You are nearly out.</strong> ' +
+              esc(String(status.remaining) + ' left of ' +
+                  String(status.total)) + '. They are not topped up.</p>'
+            : ''));
+  }
+
+  log.debug('Leaving backupCodesCard(). present=' + status.present +
+            ', advised=' + !!advised);
+  return '<div class="card' + (advised && !status.present ? ' warn' : '') +
+         '"><h2>Recovery codes</h2>' + body +
+    (!live.enabled
+      ? '<p class="note">' + esc('Recovery codes are turned off on this ' +
+          'service (backupCodes.enabled), so no new set can be generated. A ' +
+          'set already saved goes on working — a setting that took away the ' +
+          'only way back into an account whose phone is lost would be the ' +
+          'worst switch here.') + '</p>'
+      : '') +
+    '</div>';
+}
+
+// ===========================================================================
+// YOUR SIGNING KEY (2026-09-12): RFC 7523 SECTION 2.1, ISSUED BY THE PERSON IT
+// IS FOR.
+//
+// **THIS IS THE SECOND PAGE IN THIS PORTAL THAT HANDS SOMEBODY A CREDENTIAL
+// RATHER THAN TAKING ONE**, after `/portal/mfa`, and the third thing in this
+// service that does it at all — `/admin/pki` is the other. What it issues is a
+// key pair from this realm's Issuing CA whose whole authority is *this is me*:
+// `common/person_assertions.js` refuses an assertion signed with it that names
+// anybody else as `sub`, on the registered key and on the certificate alike.
+//
+// So the bar it clears is the one the password form and the security-key
+// enrolment clear: it hands a signed-in person a credential for the account
+// they are signed in to. It is not a way to speak for somebody else, and there
+// is no field on this page that could ask for one — the identity is the
+// session's, like every other route here.
+//
+// ---------------------------------------------------------------------------
+// THE PRIVATE KEY IS SHOWN ONCE, AND THAT IS WHY `generate` RENDERS.
+//
+// Every other write on this page and on `/portal/mfa` answers 303 with a
+// message on the query string. This one cannot, for the reason
+// `generate-codes` next door cannot: a redirect has nowhere to put a
+// credential, and putting one on a query string writes it into a browser
+// history entry, this service's own access log and every proxy log between
+// here and the person.
+//
+// **AND THERE IS NO SECOND CHANCE AT IT.** The key is written to the entry
+// sealed under the key-encryption key and nothing in this service opens it
+// again — not this page, not `/admin/pki`, not `/admin-api`. That is the same
+// position the recovery codes reached from the other direction: what cannot be
+// shown again is said, on the page, at the moment it is shown. Generating
+// again is the only answer to having lost it, and it REPLACES.
+//
+// ---------------------------------------------------------------------------
+// WHAT THE PAGE DRAWS WHEN THERE IS NOTHING TO ISSUE FROM.
+//
+// A realm with no certificate authority cannot issue, and `pki.autoBuild` can
+// be off. The page says so and draws no button, rather than offering one that
+// answers an error — an operator builds the hierarchy on `/admin/pki`, which
+// is not a thing the person reading this page can do, so the sentence names it
+// as somebody else's job rather than as advice.
+// ===========================================================================
+// RFC 4517 GeneralizedTime as a person reads a date. The attribute is
+// `20270912074512Z` — which is what a directory holds and what `/admin/pki`
+// shows, because that page is read by somebody who is about to go and query
+// LDAP. This page is read by the person the certificate is for, and a date
+// with no separators in it is one they have to count digits in. An unparseable
+// value says so rather than printing eight characters of whatever is there.
+function readableDate(value) {
+  const found = /^(\d{4})(\d{2})(\d{2})/.exec(String(value || ''));
+  return found ? found[1] + '-' + found[2] + '-' + found[3] : 'unknown';
+}
+
+function signingKeyPage(session, message, error, fresh, base) {
+  const username = session.user.username;
+  log.debug('Entering signingKeyPage(). username=' + username);
+  const csrf = websecurity.field(session.id);
+  const held = personAssertions.recordFor(username);
+  const offered = config.value('pki.personSelfService') !== false;
+  const issuable = pki.hasChain();
+  const tokenEndpoint = String(base || '') + '/oauth2/token';
+
+  // -----------------------------------------------------------------------
+  // THE CARD THAT ONLY EXISTS FOR ONE RESPONSE: the key itself.
+  // -----------------------------------------------------------------------
+  const freshCard = (fresh && fresh.privateKeyPem)
+    ? '<div class="card">' +
+      '<h2>Save this private key</h2>' +
+      '<p class="sub"><strong>This is the only time it will be shown.</strong> ' +
+      'It is stored on your entry encrypted, and nothing in this service — ' +
+      'not this page, not an administrator — can print it again. Copy it now; ' +
+      'if you lose it, generate a new key pair, which replaces this one.</p>' +
+      '<pre class="pem">' + esc(String(fresh.privateKeyPem)) + '</pre>' +
+      '<p class="note"><strong>What to do with it.</strong> Sign a JSON Web ' +
+      'Token with it and present that to the token endpoint as an RFC 7523 ' +
+      'section 2.1 authorization grant. The claims are <code>iss</code> and ' +
+      '<code>sub</code> both <code>' + esc(String(fresh.issuer || username)) +
+      '</code>, an <code>aud</code> of <code>' + esc(tokenEndpoint) +
+      '</code>, an <code>exp</code> a minute or two ahead, and a ' +
+      '<code>jti</code> you do not reuse. The header carries ' +
+      '<code>alg</code> <code>' + esc(String(fresh.jwsAlg || '')) +
+      '</code> and <code>kid</code> <code>' + esc(String(fresh.kid || '')) +
+      '</code>.</p>' +
+      '<pre class="pem">' + esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
+      '  -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer \\\n' +
+      '  -d assertion=&lt;the signed JWT&gt;') + '</pre>' +
+      '<p class="note"><strong>`sub` can only ever be you.</strong> An ' +
+      'assertion signed with this key that names somebody else is refused — ' +
+      'the key says who you are, and it is not permission to speak for ' +
+      'anybody.</p>' +
+      '</div>'
+    : '';
+
+  // -----------------------------------------------------------------------
+  // WHAT IT IS FOR. Drawn whether or not one is held, because this is the
+  // page somebody arrives at not knowing what a signing key would be for.
+  // -----------------------------------------------------------------------
+  const what =
+    '<p class="sub">A signing key lets something act as you <strong>without a ' +
+    'browser</strong>: a script or a service signs a short-lived token with ' +
+    'it and this identity provider hands back an access token for you. No ' +
+    'password is typed and no sign-in screen is drawn — the signature is the ' +
+    'whole of it.</p>' +
+    '<p class="note">It is RFC 7523&rsquo;s <em>JWT bearer authorization ' +
+    'grant</em>. This service issues the key pair from its own certificate ' +
+    'authority, keeps the public half on your entry to check signatures ' +
+    'with, and gives you the private half once.</p>';
+
+  const statusBlock = !held
+    ? '<p class="sub">This service holds no entry for you, so there is ' +
+      'nowhere to put a key pair.</p>'
+    : (held.hasKeyPair
+      ? '<table><tr><th>Key</th><td><code>' + esc(held.stsAssertionKid || '') +
+        '</code></td></tr>' +
+        '<tr><th>You assert as</th><td>' +
+        held.effectiveIssuers.map(function (one) {
+          return '<code>' + esc(one) + '</code>';
+        }).join(' ') + '</td></tr>' +
+        '<tr><th>Good until</th><td>' +
+        esc(readableDate(held.stsAssertionExpiresAt)) + '</td></tr></table>' +
+        (held.stsAssertionCertificate
+          ? '<details><summary>Your certificate (public — this is the half ' +
+            'anybody may hold)</summary><pre class="pem">' +
+            esc(held.stsAssertionCertificate) + '</pre></details>'
+          : '')
+      : '<p class="sub">You have no signing key.</p>');
+
+  // -----------------------------------------------------------------------
+  // THE CONTROLS. Two forms and three states: nothing to issue from, the
+  // feature turned off, and the ordinary case.
+  // -----------------------------------------------------------------------
+  let controls = '';
+  if (!issuable) {
+    controls = '<p class="note"><strong>Nothing can be issued here at the ' +
+      'moment.</strong> This service has no certificate authority in this ' +
+      'realm, and building one is an administrator&rsquo;s job rather than ' +
+      'something this page can do.</p>';
+  } else if (!offered) {
+    controls = '<p class="note"><strong>This service does not let people ' +
+      'issue their own signing keys</strong> (<code>pki.personSelfService</code> ' +
+      'is off). An administrator can still issue one to you.' +
+      (held && held.hasKeyPair
+        ? ' The key you already hold is unaffected and goes on working.'
+        : '') + '</p>';
+  } else if (held) {
+    controls =
+      '<form method="post" action="' + BASE + '/signing-key">' + csrf +
+      '<input type="hidden" name="action" value="generate">' +
+      '<button' + (held.hasKeyPair ? ' class="secondary"' : '') + '>' +
+      (held.hasKeyPair ? 'Generate a new key pair' : 'Generate my signing key') +
+      '</button></form>' +
+      (held.hasKeyPair
+        ? '<p class="note"><strong>Generating replaces what you have.</strong> ' +
+          'The key you hold now stops being accepted the moment the new one is ' +
+          'written, and anything signing with it starts being refused.</p>'
+        : '<p class="note">The private half is shown once, on the page that ' +
+          'comes back. Nothing here can show it to you again.</p>');
+  }
+
+  const removeForm = (held && held.hasKeyPair)
+    ? '<form method="post" action="' + BASE + '/signing-key">' + csrf +
+      '<input type="hidden" name="action" value="remove">' +
+      '<button class="danger">Take my signing key off</button></form>' +
+      '<p class="note"><strong>This is not revocation.</strong> The ' +
+      'certificate stays valid and still chains to this service&rsquo;s root; ' +
+      'what changes is that this service stops accepting what the key signs, ' +
+      'because the key is no longer registered against you. Your password, ' +
+      'your security keys and your authenticator app are untouched — this is ' +
+      'not a way you sign in.</p>'
+    : '';
+
+  const html = shell(BASE + '/signing-key', session, message, error,
+    freshCard +
+    '<div class="card">' + what + statusBlock + controls + removeForm +
+    '</div>');
+  log.debug('Leaving signingKeyPage(). ' +
+            (held && held.hasKeyPair ? 'A key pair.' : 'No key pair.'));
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// THE PENDING ENROLMENT, RE-RENDERED FROM WHAT IS HELD.
+//
+// The QR code and the URI are DERIVED from the secret every time this page is
+// drawn rather than being kept beside it, so there is one copy of the secret in
+// memory and no second representation of it to go stale — a page redrawn after
+// a mistyped code shows the same account, which is what stops somebody having
+// to scan again for a typo.
+// ---------------------------------------------------------------------------
+async function pendingEnrolmentFor(username, base) {
+  log.debug('Entering pendingEnrolmentFor(). username=' + username);
+  const held = credentials.pendingTotpFor(username);
+  if (!held) {
+    log.debug('Leaving pendingEnrolmentFor(). Nothing pending.');
+    return null;
+  }
+  const issuer = totp.issuerFor(base);
+  const uri = totp.otpauthUri({ issuer: issuer, account: username,
+                                secret: held.secret, algorithm: held.algorithm,
+                                digits: held.digits, period: held.period });
+  let qr = '';
+  try {
+    qr = await totp.qrSvgDataUri(uri);
+  } catch (e) {
+    // NOT fatal, and the page says so by showing the typed secret alone. A QR
+    // renderer that fails must not cost somebody the ability to set up a
+    // second factor, because the transcribable form is the whole credential.
+    log.error('portal: the QR code could not be drawn (' + e.message +
+              '), so the enrolment is offered by hand only.');
+  }
+  log.debug('Leaving pendingEnrolmentFor(). Rendered.');
+  return { ok: true, secret: held.secret, grouped: totp.grouped(held.secret),
+           issuer: issuer, uri: uri, qr: qr,
+           algorithm: held.algorithm, digits: held.digits,
+           period: held.period };
+}
+
+// THE SIGNING KEY'S FORM (2026-09-12). Two actions and nothing else: there is
+// no lifetime field, no algorithm field and — above all — no name field. The
+// first two are deliberate simplicity (`pki.leafLifetimeDays` and the Issuing
+// CA's own algorithm are the deployment's answers, and a person choosing an
+// RSA modulus on their account page is a question nobody wants asked); the
+// third is this file's rule, and it is the one that matters: a `username` here
+// would let anybody signed in issue THEMSELVES a key pair on somebody else's
+// entry, which is a takeover rather than a leak.
+const SIGNING_KEY_FORM = vz.object({
+  action: vt.opt(vt.oneOf(['generate', 'remove'])),
+  csrf_token: vt.opt(vt.token)
+});
+
+const MFA_FORM = vz.object({
+  action: vt.opt(vt.oneOf(['start', 'confirm', 'remove',
+                          // The recovery codes, since 2026-09-11. `show-codes`
+                          // is gone with the read-back it named: a set is
+                          // hashed now and there is nothing to show.
+                          'generate-codes', 'confirm-codes',
+                          'discard-codes'])),
+  // A STRING AND NOT AN INTEGER. `007123` is a code and 7123 is not: parsing a
+  // one-time password as a number loses the leading zeros that one code in ten
+  // has. The digit count is checked in `common/totp.js`, where the person's own
+  // enrolment says what it should be.
+  code: vz.string().max(32).optional(),
+  // THE PENDING SET'S HANDLE (2026-09-11). A set of recovery codes is
+  // generated, shown, and stored only when the person confirms — and this is
+  // what the Confirm and Throw-away forms carry back. A handle rather than the
+  // username, so that two tabs cannot confirm each other's set; opaque, so
+  // nothing here validates more than its length.
+  //
+  // **IT BELONGS TO THIS SCHEMA AND SPENT TEN MINUTES ON `ACTIVATE_FORM`.**
+  // The two schemas end in identical lines, a first-occurrence edit put it on
+  // the wrong one, and the symptom was not an error anywhere: the validator
+  // simply dropped an unlisted field, so the Confirm button posted a handle
+  // and the handler received an empty string and answered *there is no set
+  // waiting to be confirmed*. Nothing logged, nothing threw, and the page
+  // looked like it had lost the codes.
+  handle: vz.string().max(128).optional(),
+  csrf_token: vt.opt(vt.token)
+});
 
 // ===========================================================================
 // THE APPLICATIONS PAGE (2026-09-06): WHAT THIS PERSON CAN SIGN IN TO.
@@ -1190,6 +2720,13 @@ function applicationsFor(username) {
     rows.push({
       identifier: one.identifier,
       name: one.name || one.identifier,
+      // WHERE TO GO, or '' — and the second is a state this page draws rather
+      // than hides. `applications.homePageOf()` is the one reader of
+      // `appHomePageUrl` and the one place the http/https rule is applied; a
+      // test of its own here would be a second opinion about what may become a
+      // link. An entry with no home page is drawn with its name greyed out and
+      // the foot of the page says who can fix that.
+      homePage: applications.homePageOf(one),
       // The first description on the entry, if it carries one. An application
       // registered by a client has none; one an operator created usually does.
       description: (one.descriptions || [])[0] || '',
@@ -1228,6 +2765,54 @@ function applicationsFor(username) {
            truncated: all.length > scanned.length };
 }
 
+// ---------------------------------------------------------------------------
+// THE APPLICATION'S NAME, AS A LINK OR AS A GREYED-OUT LABEL.
+//
+// Added 2026-09-10. This page listed the applications a person may be signed
+// in to and gave them no way to reach any of them: a name and a client_id are
+// not somewhere you can go, and "where is Acme Expenses" is the first question
+// somebody reading this list has.
+//
+// **THE LINK IS THE ENTRY'S DECLARED HOME PAGE AND IS NEVER A GUESS.** The
+// registry grew `appHomePageUrl` for this, and `common/applications.js`'s row
+// for it argues at length why it is stated rather than computed from the
+// redirect URIs already on the entry — a redirect URI is a CALLBACK, and its
+// origin is a guess that is wrong for every application served under a path.
+// A page whose links are right often enough that nobody checks them is worse
+// than a page with no links.
+//
+// **AN ENTRY WITH NO HOME PAGE IS DRAWN GREYED OUT RATHER THAN LEFT LOOKING
+// LIVE**, which is the state this function exists to make visible. It is not
+// an error and it is not this person's to fix — most entries in this registry
+// were created by a protocol endpoint recognising an identifier, and nothing
+// in any of those requests says where the application lives. So the name is
+// still the name, it is simply not a way in, and the foot of the page says who
+// can make it one. `title` carries that sentence for a reader who hovers,
+// because a grey name with no explanation reads as something broken.
+//
+// **IT IS STILL NOT A LAUNCH BUTTON**, and the card below the table keeps that
+// argument: this service implements identity-provider-initiated sign-on in
+// none of the four browser profiles, so a link that STARTED a sign-in would
+// have to invent a request the application never asked for. This link goes to
+// the application's own front door and hands it nothing — which is where a
+// sign-in starts, and is exactly what a person would type themselves.
+// ---------------------------------------------------------------------------
+function linkedName(row) {
+  if (!row.homePage) {
+    return '<span class="unlinked" title="This application has not told this ' +
+      'identity provider where it lives, so there is nothing to link to. ' +
+      'Whoever administers this service can set its home page on the ' +
+      'application\'s entry.">' + esc(row.name) + '</span>';
+  }
+  // `rel="noopener"` on a link out of a page somebody is signed in to. There is
+  // no `target` — this service opens nothing in a new window anywhere — so the
+  // `noopener` is belt over braces; `Referrer-Policy: no-referrer` is already
+  // set on every response by `common/app.js`, so nothing about this page is
+  // told to the application either.
+  return '<a class="home" rel="noopener" href="' + esc(row.homePage) + '">' +
+    esc(row.name) + '</a>';
+}
+
 function applicationsPage(session, message, error, wanted) {
   log.debug('Entering applicationsPage().');
   const found = applicationsFor(session.user.username);
@@ -1239,7 +2824,7 @@ function applicationsPage(session, message, error, wanted) {
     ? '<table class="grid"><tr><th>Application</th><th>Sign-in</th>' +
       '<th>You would be issued</th></tr>' +
       shown.map(function (row) {
-        return '<tr><td><strong>' + esc(row.name) + '</strong>' +
+        return '<tr><td><strong>' + linkedName(row) + '</strong>' +
           '<span class="ident"><code>' + esc(row.identifier) + '</code></span>' +
           (row.description
             ? '<span class="ident">' + esc(row.description) + '</span>' : '') +
@@ -1309,12 +2894,16 @@ function applicationsPage(session, message, error, wanted) {
         'thread answering every socket this service holds.</td></tr>'
       : '') +
     '</table>' +
-    '<p class="note">There is no button to launch any of these, and that is ' +
-    'deliberate rather than missing: this service implements no ' +
-    'identity-provider-initiated sign-on in any of the four browser profiles ' +
-    '— <code>/saml2</code> says so on its own page — so a link from here ' +
-    'would have to invent a request the application never asked for and is ' +
-    'not expecting. A sign-in starts at the application.</p>' +
+    '<p class="note">A name in blue links to the application\'s own home page ' +
+    'and hands it nothing — it is where you would go yourself, and a sign-in ' +
+    'starts there. A name in grey means this identity provider has not been ' +
+    'told where that application lives; whoever administers this service can ' +
+    'set a home page on its entry, and until then there is nothing to link ' +
+    'to. Neither is a button that starts a sign-in for you: this service ' +
+    'implements no identity-provider-initiated sign-on in any of the four ' +
+    'browser profiles — <code>/saml2</code> says so on its own page — so a ' +
+    'link that began one would have to invent a request the application never ' +
+    'asked for and is not expecting.</p>' +
     '</div>');
   log.debug('Leaving applicationsPage(). Page ' + at + ' of ' + pages + '.');
   return html;
@@ -1418,6 +3007,213 @@ app.get(BASE + '/applications', function (req, res) {
     asked.value.page || 1));
 });
 
+// ===========================================================================
+// YOUR SECURITY ACTIVITY — THIS PORTAL AS A SHARED SIGNALS RECEIVER
+// (2026-09-10).
+//
+// `ssf/ssf_receivers.js` holds the design and is not summarised here. Two
+// things about it belong in THIS file, because they are this application's
+// rules rather than that module's.
+//
+// **THE A01 RULE HOLDS AND THIS PAGE IS THE HARDEST CASE OF IT SO FAR.** No
+// route here takes an identity from the request, which is easy to keep when
+// every page reads the signed-in person's own entry. This page reads a queue
+// that is about EVERYBODY: one stream delivers every CAEP and RISC event in
+// the realm to this portal, because a receiver is told about the people it
+// serves and there is exactly one of it. So the narrowing happens on the way
+// OUT — `listFor(..., { person })` — and the person is composed from the
+// session and from nothing else.
+//
+// **THE FILTER FAILS CLOSED, AND THAT IS `isAbout()`'s RULE RATHER THAN A
+// SETTING.** An identifier it cannot resolve to a name — a phone number, an
+// opaque id this service did not compose — is NOT a match. Showing one person
+// another person's account lockout is a disclosure; failing to show somebody
+// one of their own is an incomplete page, and those are not the same size of
+// mistake. The foot of the page says so out loud, because a page that quietly
+// hides things is worse than one that says it might be.
+//
+// **THERE IS NO CONTROL ON IT.** The console's inbox has a Clear; this one has
+// none, and the reason is the one this whole directory is written under: a
+// person cannot be allowed to erase the record of what was said about their
+// own account. Clearing is an administrative act and lives where the
+// administrative surface is.
+// ===========================================================================
+
+const SIGNALS_QUERY = vz.object({
+  page: vt.opt(vt.integer(1, 100000))
+});
+
+// ---------------------------------------------------------------------------
+// THE RECEIVE ENDPOINT.
+//
+// **IT IS THE SECOND UNAUTHENTICATED ROUTE IN THIS FILE AND THE FIRST THAT IS
+// NOT A PERSON.** `/portal/activate` is the other, and its header says why it
+// is the only route here that takes an identity from the request — nobody is
+// signed in yet and the TOKEN is what authorises it. This one takes no
+// identity at all: what arrives is a Security Event Token addressed to this
+// portal, and what authorises it is the bearer token on this portal's OWN
+// stream, minted per start and given to nothing but this service's own
+// transmitter. `accept()` checks it in constant time, checks the audience,
+// verifies the signature, and records what arrived either way.
+//
+// **IT IS DELIBERATELY NOT RATE LIMITED**, which every credential endpoint in
+// this file is. A push is a machine delivering an event that has already
+// happened; a limiter would silently drop somebody's account-disabled notice
+// under load, which is the one kind of message that must not be dropped
+// quietly. The credential is the bound here, and `ssf.maxReceivedEvents` is
+// the ceiling on what is kept.
+// ---------------------------------------------------------------------------
+app.post(BASE + '/signals/receive', function (req, res) {
+  log.debug('Entering POST ' + BASE + '/signals/receive.');
+  const taken = signals.accept(signals.PORTAL, req);
+  res.status(taken.status).set('Cache-Control', 'no-store');
+  if (taken.body) {
+    res.type('application/json').send(JSON.stringify(taken.body, null, 2));
+  } else {
+    // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says.
+    res.end();
+  }
+  log.debug('Leaving POST ' + BASE + '/signals/receive. ' + taken.status + '.');
+});
+
+// What a person is, for the purposes of "is this event about me". Three names
+// and no more: the username they signed in as, the `sub` the ID Token carried,
+// and the address on their entry if there is one. Everything else this service
+// could put in a subject is derived from one of those by
+// `ssf_subjects.js`'s `subjectForUser()`, which is where the derivations live
+// and where `isAbout()` reads them back.
+function personOf(session) {
+  log.debug('Entering personOf().');
+  const out = {
+    username: session.user.username,
+    sub: session.user.sub || '',
+    mail: session.user.email || ''
+  };
+  log.debug('Leaving personOf(). ' + out.username);
+  return out;
+}
+
+function signalsPage(session, message, error, wanted) {
+  log.debug('Entering signalsPage().');
+  const view = signals.view(signals.PORTAL, { person: personOf(session) });
+  const st = view.status || {};
+  const rows = view.received;
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const at = Math.min(Math.max(1, wanted || 1), pages);
+  const shown = rows.slice((at - 1) * PER_PAGE, at * PER_PAGE);
+
+  // WHY THERE MIGHT BE NOTHING, ABOVE THE LIST. `status()` works out which of
+  // the five causes apply. The wording here is a PERSON's rather than an
+  // operator's — the console's copy of this names the settings, and somebody
+  // reading their own account page cannot change any of them — so this says
+  // what it means for them and points at who can.
+  const why = st.why && st.why.length
+    ? '<div class="err"><p>This portal is not currently being told about ' +
+      'everything that happens to your account, so this list may be ' +
+      'incomplete. An administrator can see why on ' +
+      '<a href="/admin/signals">the console\'s copy of this page</a>.</p></div>'
+    : '';
+
+  const list = shown.length
+    ? '<table class="grid"><tr><th>When</th><th>What happened</th>' +
+      '<th>Detail</th></tr>' +
+      shown.map(function (row) {
+        return '<tr><td>' + esc(row.at) + '</td>' +
+          '<td><strong>' + esc(row.name) + '</strong>' +
+          '<span class="ident"><span class="tag">' + esc(row.vocabulary) +
+          '</span> ' + esc(row.types[0] || '') + '</span></td>' +
+          '<td>' +
+          (Object.keys(row.payload).length
+            ? '<details><summary>' +
+              esc(String(Object.keys(row.payload).length) + ' detail(s)') +
+              '</summary><pre>' + esc(JSON.stringify(row.payload, null, 2)) +
+              '</pre></details>'
+            : '<span class="ident">nothing beyond the event itself</span>') +
+          '<span class="ident">' +
+          (row.verified
+            ? 'signed by this identity provider and verified'
+            : 'NOT VERIFIED — ' + esc(row.verificationNote)) +
+          '</span></td></tr>';
+      }).join('') + '</table>'
+    : '<p class="note">Nothing has been reported about your account' +
+      (st.held ? ' yet' : ' yet') + '. This list fills when this identity ' +
+      'provider tells this portal that something happened to one of your ' +
+      'sessions or to your account &mdash; a sign-in, a sign-out, a session ' +
+      'revoked, an account disabled or enabled, an identifier changed.</p>';
+
+  const paging = pages > 1
+    ? '<p class="pagenav">' +
+      (at > 1
+        ? '<a href="' + esc(BASE + '/signals?page=' + (at - 1)) +
+          '">Previous</a>'
+        : '<span class="off">Previous</span>') +
+      '<span class="here">Page ' + esc(String(at)) + ' of ' +
+      esc(String(pages)) + '</span>' +
+      (at < pages
+        ? '<a href="' + esc(BASE + '/signals?page=' + (at + 1)) + '">Next</a>'
+        : '<span class="off">Next</span>') +
+      '</p>'
+    : '';
+
+  const html = shell(BASE + '/signals', session, message, error,
+    '<div class="card">' +
+    '<h2>What has been reported about your account</h2>' +
+    '<p class="sub">This portal is a registered receiver of this identity ' +
+    'provider\'s security event feed. When something happens to one of your ' +
+    'sessions or to your account, a signed notice is delivered here &mdash; ' +
+    'and this is every one of them that was about you.</p>' +
+    why +
+    list +
+    paging +
+    '</div>' +
+
+    '<div class="card">' +
+    '<h2>What this list is, and what it is not</h2>' +
+    '<p class="note"><strong>Only the notices about you are here.</strong> ' +
+    'This portal is told about everybody it serves, and what you are shown is ' +
+    'narrowed to the notices whose subject is you. Where a notice names ' +
+    'somebody in a way this service cannot match to an account &mdash; a ' +
+    'phone number, for instance &mdash; it is left out rather than guessed ' +
+    'at, so it is possible for something about you to be missing from this ' +
+    'list. It is never possible for something about somebody else to be on ' +
+    'it.</p>' +
+    '<p class="note"><strong>This is a record and not a control.</strong> ' +
+    'Nothing here can be edited or removed, including by you: a list of what ' +
+    'was said about your account would be worth nothing if the account\'s ' +
+    'owner could empty it. To end a session, use ' +
+    '<a href="/logout">sign out of everything</a>; to change a credential, ' +
+    'use the pages in <em>How you sign in</em>.</p>' +
+    '<p class="note">The notices are OpenID CAEP (what happened to a ' +
+    '<em>session</em>) and OpenID RISC (what happened to an <em>account</em>) ' +
+    'events, carried over the Shared Signals Framework and signed by this ' +
+    'identity provider. Each one was verified against its signature before it ' +
+    'was recorded here; a notice that did not verify is shown saying so ' +
+    'rather than hidden.</p>' +
+    '</div>');
+  log.debug('Leaving signalsPage(). ' + shown.length + ' of ' + rows.length +
+            ' shown.');
+  return html;
+}
+
+app.get(BASE + '/signals', function (req, res) {
+  log.debug('Entering GET ' + BASE + '/signals.');
+  const session = requireSignIn(req, res, BASE + '/signals',
+                                accessGate.ACTION.READ);
+  if (!session) {
+    log.debug('Leaving GET ' + BASE + '/signals. Not signed in, or not ' +
+              'permitted.');
+    return undefined;
+  }
+  const asked = validation.check(req, 'query', SIGNALS_QUERY);
+  if (!asked.ok) {
+    return refuseShape(res, asked);
+  }
+  log.debug('Leaving GET ' + BASE + '/signals. Drawn for ' +
+            session.user.username + '.');
+  return send(res, 200, signalsPage(session, null, null,
+                                    asked.value.page || 1));
+});
+
 // THE PAGE BEHIND THE POST BELOW. Same path, different method: the form has to
 // live somewhere now that it is not on the overview, and giving it a path of
 // its own would leave the form and the handler that answers it on two
@@ -1455,8 +3251,11 @@ app.get(BASE + '/keys', function (req, res) {
   }
   log.debug('Leaving GET ' + BASE + '/keys. Drawn for ' +
             session.user.username + '.');
-  return send(res, 200, keysPage(session,
-    asked.value.done ? String(asked.value.done) : null, null));
+  // THROUGH `sendKeysPage()`, which relaxes `script-src` to `'self'` — this is
+  // the one page of this portal that carries a script, and it carries it in
+  // both of its states. See that function's header.
+  return sendKeysPage(res, 200, keysPage(session,
+    asked.value.done ? String(asked.value.done) : null, null, baseUrlOf(req)));
 });
 
 // ---------------------------------------------------------------------------
@@ -1468,6 +3267,484 @@ app.get(BASE + '/keys', function (req, res) {
 //   RE-AUTH       the current password, even though signed in     (A07)
 //   SESSION       the identity from the session, never the body   (A01)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// GET /portal/mfa — the authenticator app.
+//
+// **IT IS `async` AND IT IS THE ONLY PAGE HERE THAT IS**, because drawing a QR
+// code is asynchronous. That is worth a sentence rather than being left to be
+// noticed: `common/CLAUDE.md`'s worker-pool section lists exactly four
+// asynchronous call paths in this service and this is not one of them — the
+// work is a few hundred microseconds of squares, not a post-quantum signature,
+// and it is `await`ed here rather than handed to the pool.
+//
+// `read` and not `manage-own` — drawing a page is reading, which is the
+// distinction the whole portal keeps and the reason it has an access-gate
+// action of its own.
+// ---------------------------------------------------------------------------
+app.get(BASE + '/mfa', async function (req, res) {
+  log.debug('Entering GET ' + BASE + '/mfa.');
+  const session = requireSignIn(req, res, BASE + '/mfa', accessGate.ACTION.READ);
+  if (!session) return undefined;
+  const asked = validation.check(req, 'query', PORTAL_QUERY);
+  if (!asked.ok) {
+    return refuseShape(res, asked);
+  }
+  const enrolment = await pendingEnrolmentFor(session.user.username,
+                                              baseUrlOf(req));
+  log.debug('Leaving GET ' + BASE + '/mfa.');
+  return send(res, 200, mfaPage(session, asked.value.done || null, null,
+                                enrolment));
+});
+
+// ---------------------------------------------------------------------------
+// POST /portal/mfa — start, confirm, remove.
+//
+// **ONE ENDPOINT AND THREE ACTIONS**, rather than three paths. They are three
+// steps of one thing, they all answer with this same page, and `action` is a
+// closed set the form itself draws — which is the shape `/admin`'s action
+// endpoints have had since the console was written, and the reason
+// `sts_metadata.js` can describe this as one entry.
+//
+// **`manage-own` FOR ALL THREE**, including `start`: minting a secret and
+// holding it is a change to how this person will sign in, even though nothing
+// is written to the directory until `confirm`. A deployment that later lets a
+// helpdesk role READ an account without changing it must not have the
+// enrolment door on the read side of that line.
+// ---------------------------------------------------------------------------
+app.post(BASE + '/mfa', async function (req, res) {
+  log.debug('Entering POST ' + BASE + '/mfa.');
+  const session = requireSignIn(req, res, BASE + '/mfa',
+                                accessGate.ACTION.MANAGE_OWN);
+  if (!session) return undefined;
+  // THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT. The rule at
+  // the top of this file, and it matters more on this endpoint than on any
+  // other here: a `username` read from this body would let anybody signed in
+  // enrol THEIR OWN authenticator app as somebody else's second factor, which
+  // is not an information leak but a takeover — they would then hold the second
+  // factor for an account they do not own.
+  const username = session.user.username;
+  const posted = validation.checkParsed(parseBody(req), 'body', MFA_FORM);
+  if (!posted.ok) {
+    return refuseShape(res, posted);
+  }
+  const body = posted.value;
+  const action = String(body.action || '');
+  const base = baseUrlOf(req);
+
+  const csrf = websecurity.checkCsrf(session.id, body);
+  if (!csrf.ok) {
+    log.warn('portal: an authenticator change for ' + username +
+             ' was refused on CSRF (' + csrf.reason + ').');
+    audit.record({
+      category: 'authentication', action: 'portal.mfa.csrf',
+      actor: username, outcome: 'failure',
+      summary: 'an authenticator app change was refused: ' + csrf.reason,
+      detail: { address: websecurity.addressOf(req), what: action }
+    });
+    log.debug('Leaving POST ' + BASE + '/mfa. CSRF.');
+    return send(res, 403, mfaPage(session, null, csrf.detail,
+                                  await pendingEnrolmentFor(username, base)));
+  }
+
+  if (action === 'remove') {
+    const removed = credentials.removeTotp(username);
+    if (!removed.ok) {
+      log.debug('Leaving POST ' + BASE + '/mfa. Nothing to remove.');
+      return send(res, 400, mfaPage(session, null,
+        (removed.errors || ['It could not be removed.'])[0],
+        await pendingEnrolmentFor(username, base)));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.mfa.removed',
+      actor: username, outcome: 'success',
+      summary: username + ' removed their own authenticator app',
+      detail: { address: websecurity.addressOf(req) }
+    });
+    log.info('portal: ' + username + ' removed their authenticator app. That ' +
+             'account is down to one factor.');
+    log.debug('Leaving POST ' + BASE + '/mfa. Removed.');
+    res.status(303).set('Location', BASE + '/mfa?done=' +
+      encodeURIComponent('Your authenticator app is removed.')).end();
+    return undefined;
+  }
+
+  if (action === 'start') {
+    // **THE SETTING IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE**, which
+    // is `authn.js`'s rule about the anonymous button read again: the page is
+    // markup and this is the door, so a form posted by hand while
+    // `totp.enabled` is off must not mint a secret.
+    const begun = credentials.beginTotpEnrolment(username, { base: base });
+    if (!begun.ok) {
+      log.debug('Leaving POST ' + BASE + '/mfa. Refused to start.');
+      return send(res, 400, mfaPage(session, null,
+        (begun.errors || ['The setup could not be started.'])[0], null));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.mfa.started',
+      actor: username, outcome: 'success',
+      summary: username + ' started setting up an authenticator app',
+      detail: { address: websecurity.addressOf(req) }
+    });
+    log.debug('Leaving POST ' + BASE + '/mfa. Secret minted and held.');
+    // REDIRECT AND NOT A RENDER, so that the QR code survives a reload: a
+    // rendered response to a POST is one the browser offers to re-submit, and
+    // re-submitting `start` would mint a SECOND secret and invalidate the code
+    // the person has just scanned.
+    res.status(303).set('Location', BASE + '/mfa').end();
+    return undefined;
+  }
+
+  if (action === 'confirm') {
+    // RATE LIMITED. Six digits is a million values and this endpoint checks
+    // them for real; the sign-in door's own code step is limited for the same
+    // reason and with the same buckets.
+    const allowed = websecurity.attempt('mfa-code', req, username);
+    if (!allowed.ok) {
+      log.debug('Leaving POST ' + BASE + '/mfa. Rate limited.');
+      return send(res, 429, mfaPage(session, null, allowed.detail,
+                                    await pendingEnrolmentFor(username, base)));
+    }
+    const confirmed = credentials.confirmTotpEnrolment(username,
+                                                       String(body.code || ''));
+    if (!confirmed.ok) {
+      audit.record({
+        category: 'authentication', action: 'portal.mfa.refused',
+        actor: username, outcome: 'failure',
+        summary: 'an authenticator app setup was not confirmed',
+        detail: { reason: confirmed.reason || '',
+                  address: websecurity.addressOf(req) }
+      });
+      log.debug('Leaving POST ' + BASE + '/mfa. The code did not confirm.');
+      // THE SAME PENDING SECRET IS REDRAWN, not a new one. A mistyped code is
+      // the ordinary case and re-scanning for a typo would be the reason
+      // nobody finishes this.
+      return send(res, 400, mfaPage(session, null,
+        (confirmed.errors || ['That code is not right.'])[0],
+        await pendingEnrolmentFor(username, base)));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.mfa.enrolled',
+      actor: username, outcome: 'success',
+      summary: username + ' set up an authenticator app as a second factor',
+      detail: { address: websecurity.addressOf(req) }
+    });
+    websecurity.succeeded('mfa-code', req, username);
+    log.info('portal: ' + username + ' set up an authenticator app. A ' +
+             'password alone will no longer sign them in.');
+    // ---------------------------------------------------------------------
+    // NO RECOVERY CODES ARE ISSUED BY THIS ENROLMENT ANY MORE (2026-09-11).
+    //
+    // This branch used to render rather than redirect, because a 303 cannot
+    // carry a list of credentials and the response to this POST was the one
+    // moment this service knew somebody was watching. It has nothing to carry
+    // now: a set is generated when the person ASKS to see one, and is stored —
+    // hashed — only when they confirm they have kept it.
+    //
+    // **WHAT IS LEFT IS THE NUDGE, AND IT IS CARRIED ON THE REDIRECT.** The
+    // old arrangement protected the people who never think to ask; dropping it
+    // without replacing it would be a worse service, so the message says what
+    // they now have and what they do not, and the card below draws a standing
+    // prompt for as long as it stays true.
+    log.debug('Leaving POST ' + BASE + '/mfa. Enrolled.');
+    res.status(303).set('Location', BASE + '/mfa?done=' +
+      encodeURIComponent('Your authenticator app is set up. You will be asked ' +
+                         'for a code the next time you sign in.' +
+                         (confirmed.recoveryAdvised
+                           ? ' You hold no recovery codes — generate a set ' +
+                             'below, before you need it.'
+                           : ''))).end();
+    return undefined;
+  }
+
+  // =====================================================================
+  // THE RECOVERY CODES: GENERATE, CONFIRM, DISCARD (2026-09-11).
+  //
+  // **THIS REPLACES A SINGLE `show-codes` ACTION AND THE DIFFERENCE IS THE
+  // WHOLE CHANGE.** That one read a stored set back and showed it, which is
+  // what a set being ENCRYPTED bought; a set is HASHED now, so there is
+  // nothing to read back and the only moment the codes exist is the one that
+  // made them.
+  //
+  // Three actions because there are three things a person does, and the middle
+  // one is the one that was asked for:
+  //
+  //   * `generate-codes` mints a set and SHOWS it. Nothing is stored.
+  //   * `confirm-codes` is the *I have saved these* button. NOW they are
+  //     hashed and written.
+  //   * `discard-codes` throws the pending set away — the Cancel beside the
+  //     Confirm, so somebody who decides they are not ready does not leave a
+  //     live list in this process's memory for the rest of the TTL.
+  //
+  // **ALL THREE ARE POSTS**, for the reason the old one was: a list of
+  // credentials drawn by a page merely loading is a list in a browser history
+  // entry and on the back button, which `no-store` does not touch.
+  // =====================================================================
+  if (action === 'generate-codes') {
+    const begun = credentials.beginBackupCodes(username);
+    audit.record({
+      category: 'authentication', action: 'portal.mfa.backup-codes.generated',
+      actor: username, outcome: begun.ok ? 'success' : 'failure',
+      summary: begun.ok
+        ? username + ' generated a set of recovery codes and is being shown ' +
+          'it; nothing is stored until they confirm'
+        : username + ' asked for a set of recovery codes and none could be ' +
+          'generated',
+      detail: { count: begun.ok ? begun.codes.length : 0,
+                replacing: !!begun.replacing,
+                address: websecurity.addressOf(req),
+                errors: begun.ok ? undefined : (begun.errors || []) }
+    });
+    if (!begun.ok) {
+      log.debug('Leaving POST ' + BASE + '/mfa. Could not generate.');
+      return send(res, 400, mfaPage(session, null,
+        (begun.errors || ['They could not be generated.'])[0],
+        await pendingEnrolmentFor(username, base), null, null));
+    }
+    log.info('portal: ' + username + ' generated a set of recovery codes. ' +
+             'They are being SHOWN and nothing is stored yet.');
+    log.debug('Leaving POST ' + BASE + '/mfa. Generated and showing.');
+    // **RENDERED AND NOT REDIRECTED**, which is the one place this endpoint
+    // does that: a 303 cannot carry a list of credentials, and putting them
+    // on a query string would write them into a browser history entry and
+    // every proxy log between here and the person.
+    return send(res, 200, mfaPage(session, null, null, null, begun, null));
+  }
+
+  if (action === 'confirm-codes') {
+    const stored = credentials.confirmBackupCodes(username,
+                                                  String(body.handle || ''));
+    audit.record({
+      category: 'authentication', action: 'portal.mfa.backup-codes.confirmed',
+      actor: username, outcome: stored.ok ? 'success' : 'failure',
+      summary: stored.ok
+        ? username + ' confirmed they had saved their recovery codes, and ' +
+          'the hashes were stored'
+        : username + ' tried to confirm a set of recovery codes and it could ' +
+          'not be stored',
+      detail: { total: stored.ok ? stored.total : 0,
+                address: websecurity.addressOf(req),
+                errors: stored.ok ? undefined : (stored.errors || []) }
+    });
+    if (!stored.ok) {
+      // **THE PENDING SET SURVIVES A FAILED WRITE AND THE PAGE REDRAWS WITH
+      // THE CODES STILL ON IT** where it can. The person is looking at a list
+      // they may already have written down; sending them back to an empty
+      // page would throw that away for a failure that pressing the button
+      // again may well fix.
+      const held = credentials.pendingBackupCodesFor(username,
+                                                     String(body.handle || ''));
+      log.debug('Leaving POST ' + BASE + '/mfa. The confirm failed.');
+      return send(res, 400, mfaPage(session, null,
+        (stored.errors || ['They could not be stored.'])[0],
+        null,
+        held ? { ok: true, handle: String(body.handle || ''),
+                 codes: held.codes, total: held.codes.length } : null,
+        null));
+    }
+    log.debug('Leaving POST ' + BASE + '/mfa. Confirmed and stored.');
+    res.status(303).set('Location', BASE + '/mfa?done=' +
+      encodeURIComponent('Your ' + stored.total + ' recovery codes are saved. ' +
+                         'Only their hashes are stored, so this service can ' +
+                         'never show them to you again — keep the copy you ' +
+                         'made.')).end();
+    return undefined;
+  }
+
+  if (action === 'discard-codes') {
+    credentials.discardBackupCodes(username, String(body.handle || ''));
+    audit.record({
+      category: 'authentication', action: 'portal.mfa.backup-codes.discarded',
+      actor: username, outcome: 'success',
+      summary: username + ' threw away a set of recovery codes without ' +
+               'storing it',
+      detail: { address: websecurity.addressOf(req) }
+    });
+    log.debug('Leaving POST ' + BASE + '/mfa. Discarded.');
+    res.status(303).set('Location', BASE + '/mfa?done=' +
+      encodeURIComponent('Those codes were thrown away and never stored. ' +
+                         'Whatever you had before is unchanged.')).end();
+    return undefined;
+  }
+
+  // An `action` the schema allowed and this handler does not know is not
+  // reachable from the form; it is redrawn rather than errored, for the reason
+  // the sign-in screen falls through on an unknown action.
+  log.debug('Leaving POST ' + BASE + '/mfa. No action.');
+  return send(res, 400, mfaPage(session, null,
+    'Nothing was asked for.', await pendingEnrolmentFor(username, base)));
+});
+
+// ---------------------------------------------------------------------------
+// GET /portal/signing-key — what you hold, and the button.
+// ---------------------------------------------------------------------------
+app.get(BASE + '/signing-key', function (req, res) {
+  log.debug('Entering GET ' + BASE + '/signing-key.');
+  const session = requireSignIn(req, res, BASE + '/signing-key',
+                                accessGate.ACTION.READ);
+  if (!session) return undefined;
+  const asked = validation.check(req, 'query', PORTAL_QUERY);
+  if (!asked.ok) {
+    return refuseShape(res, asked);
+  }
+  log.debug('Leaving GET ' + BASE + '/signing-key.');
+  return send(res, 200, signingKeyPage(session, asked.value.done || null, null,
+                                       null, baseUrlOf(req)));
+});
+
+// ---------------------------------------------------------------------------
+// POST /portal/signing-key — generate, or take it off.
+//
+// **`manage-own` FOR BOTH**, which is `/portal/mfa`'s rule and its reason: a
+// deployment that later lets a helpdesk role READ an account without changing
+// it must not have a door that mints a credential on the read side of that
+// line. Issuing is plainly a change, and so is taking one away.
+// ---------------------------------------------------------------------------
+app.post(BASE + '/signing-key', async function (req, res) {
+  log.debug('Entering POST ' + BASE + '/signing-key.');
+  const session = requireSignIn(req, res, BASE + '/signing-key',
+                                accessGate.ACTION.MANAGE_OWN);
+  if (!session) return undefined;
+  // THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT — the rule
+  // at the top of this file. `SIGNING_KEY_FORM` carries no name for the same
+  // reason, so this is two statements of one thing rather than a check.
+  const username = session.user.username;
+  const base = baseUrlOf(req);
+  const posted = validation.checkParsed(parseBody(req), 'body',
+                                        SIGNING_KEY_FORM);
+  if (!posted.ok) {
+    return refuseShape(res, posted);
+  }
+  const body = posted.value;
+  const action = String(body.action || '');
+
+  const csrf = websecurity.checkCsrf(session.id, body);
+  if (!csrf.ok) {
+    log.warn('portal: a signing-key change for ' + username +
+             ' was refused on CSRF (' + csrf.reason + ').');
+    audit.record({
+      category: 'authentication', action: 'portal.signing-key.csrf',
+      actor: username, outcome: 'failure',
+      summary: 'a signing key change was refused: ' + csrf.reason,
+      detail: { address: websecurity.addressOf(req), what: action }
+    });
+    log.debug('Leaving POST ' + BASE + '/signing-key. CSRF.');
+    return send(res, 403, signingKeyPage(session, null, csrf.detail, null,
+                                         base));
+  }
+
+  if (action === 'remove') {
+    const removed = personAssertions.clear(username);
+    if (!removed.ok) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. Nothing to remove.');
+      return send(res, 400, signingKeyPage(session, null,
+        'You hold no signing key, so there was nothing to take off.', null,
+        base));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.signing-key.removed',
+      actor: username, outcome: 'success',
+      summary: username + ' took their own RFC 7523 signing key off',
+      detail: { attributes: removed.removed,
+                address: websecurity.addressOf(req) }
+    });
+    log.info('portal: ' + username + ' removed their assertion signing key. ' +
+             'Assertions signed with it are refused from now on; the ' +
+             'certificate itself is on no revocation list.');
+    log.debug('Leaving POST ' + BASE + '/signing-key. Removed.');
+    res.status(303).set('Location', BASE + '/signing-key?done=' +
+      encodeURIComponent('Your signing key is off. Anything still signing ' +
+                         'with it will be refused from now on.')).end();
+    return undefined;
+  }
+
+  if (action === 'generate') {
+    // **THE SETTING IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE**, which
+    // is `/portal/mfa`'s rule word for word: the page is markup and this is
+    // the door, so a form posted by hand while `pki.personSelfService` is off
+    // must not issue anything.
+    if (config.value('pki.personSelfService') === false) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. Self-service is off.');
+      return send(res, 403, signingKeyPage(session, null,
+        'This service does not let people issue their own signing keys. An ' +
+        'administrator can issue one to you.', null, base));
+    }
+    // RATE LIMITED, and for a reason none of the other doors here has:
+    // generating an RSA key pair is hundreds of milliseconds of CPU in a
+    // process that answers every protocol in this service on one thread. The
+    // limit is explicit rather than the shared default because what is being
+    // protected is the SERVICE rather than an account — five is more than
+    // anybody needs and far less than it takes to notice.
+    const allowed = websecurity.attempt('portal-signing-key', req, username, 5);
+    if (!allowed.ok) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. Rate limited.');
+      return send(res, 429, signingKeyPage(session, null, allowed.detail, null,
+                                           base));
+    }
+    const issued = await pki.issueSigningKeyPair(undefined, {
+      identifier: username,
+      purpose: 'jwt',
+      // WHAT PUTS `urn:sts-mock:person:<name>` IN THE CERTIFICATE, and the
+      // whole reason this page may exist: it is what holds the key to
+      // asserting about its own holder even when it is presented on its `x5c`
+      // alone, with nothing on the entry left to consult.
+      subjectKind: 'person',
+      commonName: username,
+      days: config.value('pki.leafLifetimeDays')
+    });
+    if (!issued.ok) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. The issue failed.');
+      return send(res, 400, signingKeyPage(session, null,
+        (issued.errors || ['A key pair could not be issued.'])[0], null, base));
+    }
+    const record = issued.issued;
+    const written = personAssertions.write(username, record, {});
+    if (!written.ok) {
+      // THE KEY PAIR IS GONE AND THE PAGE SAYS SO. `common/pki.js` hands one
+      // over ONCE and keeps no copy, so a failed write is not a state to
+      // retry from — showing the private key of a pair this service cannot
+      // verify anything against would be worse than the refusal.
+      log.error('portal: a signing key pair was issued to ' + username +
+                ' and could not be written: ' +
+                (written.errors || []).join(' '));
+      return send(res, 500, signingKeyPage(session, null,
+        (written.errors || ['It could not be written to your entry.'])[0],
+        null, base));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.signing-key.issued',
+      actor: username, outcome: 'success',
+      summary: username + ' issued themselves an RFC 7523 signing key pair',
+      detail: { kid: record.kid, notAfter: record.notAfter,
+                keyAlg: record.keyAlg,
+                address: websecurity.addressOf(req) }
+    });
+    log.info('portal: ' + username + ' issued themselves an RFC 7523 signing ' +
+             'key pair, kid=' + record.kid + ', valid until ' +
+             record.notAfter + '. The private half was shown to them once and ' +
+             'is not readable again.');
+    log.debug('Leaving POST ' + BASE + '/signing-key. Issued and showing.');
+    // **RENDERED AND NOT REDIRECTED**, which is the one place this endpoint
+    // does that and is `generate-codes`' reason next door: a 303 has nowhere
+    // to put a private key, and a query string would write it into a browser
+    // history entry and every log between here and the person.
+    return send(res, 200, signingKeyPage(session, null, null, {
+      privateKeyPem: record.privateKeyPem,
+      certificatePem: record.certificatePem,
+      kid: record.kid,
+      jwsAlg: record.jwsAlg,
+      issuer: username
+    }, base));
+  }
+
+  // An `action` the schema allowed and this handler does not know is not
+  // reachable from the form; it is redrawn rather than errored, for the reason
+  // the sign-in screen falls through on an unknown action.
+  log.debug('Leaving POST ' + BASE + '/signing-key. No action.');
+  return send(res, 400, signingKeyPage(session, null, 'Nothing was asked for.',
+                                       null, base));
+});
+
 app.post(BASE + '/password', function (req, res) {
   log.debug('Entering POST ' + BASE + '/password.');
   const session = requireSignIn(req, res, BASE, accessGate.ACTION.MANAGE_OWN);
@@ -1553,6 +3830,170 @@ app.post(BASE + '/password', function (req, res) {
   return undefined;
 });
 
+// ===========================================================================
+// POST /portal/keys — BEGIN, FINISH OR CANCEL A REGISTRATION (2026-09-10).
+//
+// The door `enrolBlock()` argues. Three actions and one page, the shape
+// `/portal/mfa` already has for the authenticator app, because it is the same
+// two-step question asked about the other mechanism.
+//
+// **IT DOES NOT SIGN ANYBODY IN AND IT DOES NOT TOUCH THE SESSION.** This is a
+// person who is ALREADY signed in adding a credential to their own account,
+// which is the ordinary WebAuthn registration flow and is what makes it
+// different from `/authn/webauthn` — that page is a step IN a sign-in and
+// mints a session at the end of it.
+//
+// **THE USERNAME COMES FROM THE SESSION AND NEVER FROM THE BODY**, which is
+// this directory's A01 rule and the one thing about this handler that is not
+// negotiable: a key enrolled for a name in a request body would be a signed-in
+// person putting their own authenticator on somebody else's account.
+// ===========================================================================
+app.post(BASE + '/keys', function (req, res) {
+  log.debug('Entering POST ' + BASE + '/keys.');
+  const session = requireSignIn(req, res, BASE + '/keys',
+                                accessGate.ACTION.MANAGE_OWN);
+  if (!session) {
+    log.debug('Leaving POST ' + BASE + '/keys. Not signed in, or not permitted.');
+    return undefined;
+  }
+  const username = session.user.username;
+  const base = baseUrlOf(req);
+  const posted = validation.checkParsed(parseBody(req), 'body', ENROL_KEY_FORM);
+  if (!posted.ok) {
+    return refuseShape(res, posted);
+  }
+  const body = posted.value;
+
+  const csrf = websecurity.checkCsrf(session.id, body);
+  if (!csrf.ok) {
+    log.debug('Leaving POST ' + BASE + '/keys. CSRF.');
+    return sendKeysPage(res, 403, keysPage(session, null, csrf.detail, base));
+  }
+  const action = String(body.action || '');
+
+  if (action === 'cancel') {
+    credentials.abandonKeyEnrolment(username);
+    log.debug('Leaving POST ' + BASE + '/keys. Abandoned.');
+    res.status(303).set('Location', BASE + '/keys').end();
+    return undefined;
+  }
+
+  if (action === 'begin') {
+    // THE POLICY IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE, which is
+    // `authn.js`'s rule about the anonymous button and `/portal/mfa`'s about
+    // `totp.enabled`: the page is markup and this is the door, so a form
+    // posted by hand while `webauthn.primaryAllowed` is off must not arm a
+    // ceremony that `addKey()` would then refuse after somebody had touched
+    // their key. `beginKeyEnrolment()` makes every one of those checks.
+    const begun = credentials.beginKeyEnrolment(username, {
+      role: String(body.role || 'mfa'), label: String(body.label || '')
+    });
+    if (!begun.ok) {
+      log.debug('Leaving POST ' + BASE + '/keys. Refused to start.');
+      return sendKeysPage(res, 400, keysPage(session, null,
+        (begun.errors || ['The enrolment could not be started.'])[0], base));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.key.started',
+      actor: username, outcome: 'success',
+      summary: username + ' started enrolling a security key',
+      detail: { role: begun.role, excluded: begun.exclude.length,
+                address: websecurity.addressOf(req) }
+    });
+    log.debug('Leaving POST ' + BASE + '/keys. Challenge minted and held.');
+    // REDIRECT AND NOT A RENDER, for `/portal/mfa`'s reason: a rendered
+    // response to a POST is one the browser offers to re-submit, and
+    // re-submitting `begin` would mint a SECOND challenge under the ceremony
+    // the person is in the middle of.
+    res.status(303).set('Location', BASE + '/keys').end();
+    return undefined;
+  }
+
+  if (action === 'finish') {
+    let credential = null;
+    try {
+      credential = JSON.parse(String(body.credential || 'null'));
+    } catch (e) {
+      // Not JSON. That is the real button underneath the script being pressed,
+      // or a hand-made POST; either way the sentence below is the right answer
+      // and a parse error is not.
+      credential = null;
+    }
+    if (!credential) {
+      log.debug('Leaving POST ' + BASE + '/keys. No ceremony ran.');
+      return sendKeysPage(res, 400, keysPage(session, null,
+        'Your browser did not run the ceremony, so there is nothing to ' +
+        'register. This page needs JavaScript for that one step — a security ' +
+        'key is created by the browser and there is no form that can do it. ' +
+        'The rest of this portal runs no script at all.', base));
+    }
+    const done = credentials.confirmKeyEnrolment(username,
+      String(body.enrolment_id || ''), credential,
+      { origin: authn.originOf(base), rpId: authn.rpIdOf(base) });
+    if (!done.ok) {
+      audit.record({
+        category: 'authentication', action: 'portal.key.refused',
+        actor: username, outcome: 'failure',
+        summary: 'a security key enrolment was not completed for ' + username,
+        detail: { reason: done.reason || '',
+                  address: websecurity.addressOf(req) }
+      });
+      log.debug('Leaving POST ' + BASE + '/keys. Refused: ' + done.reason);
+      return sendKeysPage(res, 400, keysPage(session, null,
+        (done.errors || ['The security key could not be registered.'])[0],
+        base));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.key.enrolled',
+      actor: username, outcome: 'success',
+      summary: username + ' enrolled a security key as a ' + done.role +
+               ' credential',
+      detail: { role: done.role, held: done.held,
+                address: websecurity.addressOf(req) }
+    });
+    log.info('portal: ' + username + ' enrolled a "' + done.role +
+             '" security key and now holds ' + done.held + '.');
+    res.status(303).set('Location', BASE + '/keys?done=' +
+      encodeURIComponent(done.held > 1
+        ? 'That key is registered. You hold ' + done.held +
+          ' — if one is lost the others still sign you in.'
+        : 'That key is registered. Add a second one on a different device so ' +
+          'that losing this one is not a locked account.')).end();
+    return undefined;
+  }
+
+  log.debug('Leaving POST ' + BASE + '/keys. Unknown action.');
+  return sendKeysPage(res, 400, keysPage(session, null,
+    'Unknown action "' + esc(action) + '". There are three: begin, finish ' +
+    'and cancel.', base));
+});
+
+// ---------------------------------------------------------------------------
+// THE ONE RESPONSE IN THIS PORTAL THAT RELAXES THE CONTENT SECURITY POLICY.
+//
+// `app.js` sets `script-src 'none'` on everything and `portal/CLAUDE.md` says
+// every page of this portal is covered by it. That is now *every page but
+// this one*, and the exception is the smallest that works: `'self'`, naming a
+// resource, never `'unsafe-inline'`.
+//
+// **THROUGH `app.contentSecurityPolicy()` AND NOT A HAND-WRITTEN HEADER**,
+// which is the rule the root CLAUDE.md states and the reason it exists: that
+// builder re-adds `frame-ancestors` and `base-uri` whatever the caller asks
+// for, and a relaxation that set the whole header itself would silently drop
+// the framing clause — the page would work, the script would run, and RFC
+// 9700 section 4.14's protection would be gone.
+//
+// It is used for EVERY response of this handler and of the GET beside it,
+// rather than only for the armed-ceremony one. A page that carried the script
+// only sometimes would be a policy that changes under a reader, and the two
+// states of this page differ by a form.
+// ---------------------------------------------------------------------------
+function sendKeysPage(res, status, html) {
+  res.set('Content-Security-Policy',
+          app.contentSecurityPolicy({ 'script-src': "'self'" }));
+  res.status(status).set('Cache-Control', 'no-store').type('html').send(html);
+}
+
 app.post(BASE + '/remove-key', function (req, res) {
   log.debug('Entering POST ' + BASE + '/remove-key.');
   const session = requireSignIn(req, res, BASE, accessGate.ACTION.MANAGE_OWN);
@@ -1567,7 +4008,7 @@ app.post(BASE + '/remove-key', function (req, res) {
   const csrf = websecurity.checkCsrf(session.id, body);
   if (!csrf.ok) {
     log.debug('Leaving POST ' + BASE + '/remove-key. CSRF.');
-    return send(res, 403, keysPage(session, null, csrf.detail));
+    return send(res, 403, keysPage(session, null, csrf.detail, baseUrlOf(req)));
   }
   // THE CREDENTIAL ID COMES FROM THE BODY AND THE USERNAME DOES NOT, which is
   // the distinction that keeps this safe: `removeKey()` looks the id up among
@@ -1579,7 +4020,7 @@ app.post(BASE + '/remove-key', function (req, res) {
   if (!removed.ok) {
     log.debug('Leaving POST ' + BASE + '/remove-key. Refused.');
     return send(res, 400, keysPage(session, null,
-      (removed.errors || ['The key could not be removed.'])[0]));
+      (removed.errors || ['The key could not be removed.'])[0], baseUrlOf(req)));
   }
   audit.record({
     category: 'authentication', action: 'portal.key.removed',
@@ -1698,8 +4139,8 @@ log.info('The User Portal is at ' + BASE + ': a person\'s own account, in ' +
          NAV_PAGES.length + ' pages behind a navigation column of its own — ' +
          'what this identity provider knows about them, WHICH APPLICATIONS ' +
          'THEY MAY SIGN IN TO (decided by the same issuance policy the ' +
-         'protocol endpoints ask), their password and their ' +
-         'security keys. ' + ACTIVATE + ' is the unauthenticated half, where ' +
+         'protocol endpoints ask), their password, their ' +
+         'security keys and their AUTHENTICATOR APP. ' + ACTIVATE + ' is the unauthenticated half, where ' +
          'somebody provisioned through /admin-api or SCIM spends a single-use ' +
          'activation link to set up a credential. Every form carries a CSRF ' +
          'token, every credential endpoint is rate limited, and no route here ' +
@@ -1708,6 +4149,9 @@ log.info('The User Portal is at ' + BASE + ': a person\'s own account, in ' +
 module.exports = {
   BASE: BASE,
   ACTIVATE: ACTIVATE,
+  // Filled by `ldap/ldap_server.js` at its require time — see the block above
+  // it for why this is a slot rather than a require.
+  setDirectory: setDirectory,
   // For sts_metadata.js and the tests.
   // EVERY PATH THIS MODULE REGISTERS, and the signed-in half of it is read off
   // NAV rather than listed again — a page added to the column is a page in this
@@ -1715,7 +4159,13 @@ module.exports = {
   // as described-but-not-registered.
   paths: function () {
     return NAV_PAGES.map(function (one) { return one.path; })
+      // The paths that are NOT pages in the column: the activation flow, the
+      // OIDC redirect URI, the two form targets — and, since 2026-09-10, this
+      // portal's Shared Signals RECEIVE endpoint, which is a page in no sense
+      // at all. It is here because `sts_metadata.js` reads this list to check
+      // the router against its own descriptions, and a route registered and
+      // undescribed fails the suite.
       .concat([ACTIVATE, BASE + '/callback', BASE + '/remove-key',
-               BASE + '/signout']);
+               BASE + '/signout', BASE + '/signals/receive']);
   }
 };

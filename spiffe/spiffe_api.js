@@ -48,12 +48,13 @@
 //     call gives it one, and `GetBundle`, because a trust bundle is public —
 //     and both are open in a real SPIRE server too.
 //
-//   * **`spiffe.authRequired` off restores the old posture completely**: the
-//     TCP port binds plain, nothing is verified, and anybody who can reach it
-//     can create a registration entry granting any identity in this trust
-//     domain and then collect an SVID for it. That is still worth having, and
-//     it is still what `GET /spiffe`, `/admin/spiffe` and `spiffe.grpcHost`
-//     warn about — for that setting rather than for every deployment.
+//   * **THE OLD POSTURE IS NO LONGER REACHABLE.** `spiffe.authRequired` off
+//     used to restore it completely — the TCP port bound plain, nothing was
+//     verified, and anybody who could reach it could create a registration
+//     entry granting any identity in this trust domain and then collect an
+//     SVID for it. That setting was removed on 2026-09-06 when `global.mode`
+//     took the question over, so the `!authRequired()` arms below are dead
+//     code kept against a third mode wanting them.
 //
 // **WHAT IS STILL NOT ATTESTED IS THE WORKLOAD API AND NODE ATTESTATION.** See
 // `spiffe_workload.js`'s header for the first, which is the specification's
@@ -699,8 +700,9 @@ const agentHandlers = {
     // from being permissive about a payload somebody else's attestor would
     // have verified.
     //
-    // Gated on `spiffe.authRequired` like everything else this file gained, so
-    // the old behaviour — any token attests — stays reachable. The refusals
+    // Gated like everything else this file gained. The old behaviour — any
+    // token attests — used to stay reachable behind `spiffe.authRequired` and
+    // no longer does. The refusals
     // are three and they are deliberately distinguishable: a token nobody
     // minted, a token that ran out, and a token already spent are three
     // different bugs in a client and reading one message for all three would
@@ -803,7 +805,17 @@ const agentHandlers = {
     return {
       result: {
         svid: {
-          cert_chain: [svid.certificateDer],
+          // **THE WHOLE CHAIN, LEAF FIRST, ANCHOR EXCLUDED.** `cert_chain` is
+          // a `repeated bytes` in `svid.proto` and it was one entry long here
+          // for as long as this file existed, because the trust domain's
+          // authority was self-signed and there was nothing between the leaf
+          // and the anchor. Since 2026-09-11 that authority is this realm's
+          // SPIFFE Issuing CA under the service Root, so there are two
+          // certificates above every SVID and an agent handed only the leaf
+          // cannot build a path to the bundle it was given.
+          // `spiffe_ca.js`'s `chainDerOf()` is the one place the order is
+          // decided; all four sites in this file read it.
+          cert_chain: svid.chainCertificatesDer,
           id: spiffeId.toProto(agentId),
           expires_at: String(svid.expiresAt),
           hint: ''
@@ -830,8 +842,8 @@ const agentHandlers = {
   // classified as an attested, unbanned agent — and it is NEVER read from the
   // request. The policy table already refuses this method to anybody who is
   // not an agent, so by the time this runs the caller is one; the check below
-  // is for the OTHER mode, where `spiffe.authRequired` is off and the old
-  // objection stands word for word.
+  // is for the OTHER mode, where nothing identifies a caller and the old
+  // objection stands word for word. That mode is unreachable since 2026-09-06.
   // ---------------------------------------------------------------------
   RenewAgent: rpc.unary('server', 'Agent.RenewAgent', async function (call) {
     await ca.ready();
@@ -845,10 +857,10 @@ const agentHandlers = {
       throw rpc.statusError(status.UNIMPLEMENTED,
         'RenewAgent renews the agent on the CONNECTION, and this connection ' +
         'has no agent on it: ' + auth.describeCaller(caller) + '. With ' +
-        'spiffe.authRequired off there is nothing to identify a caller by, so ' +
+        'nothing to identify a caller by, ' +
         'answering would mean renewing whichever agent the caller named — a ' +
-        'way for anybody to obtain any agent\'s identity. Turn the setting ' +
-        'on and present the agent\'s X509-SVID, or call AttestAgent again, ' +
+        'way for anybody to obtain any agent\'s identity. Present the agent\'s ' +
+        'X509-SVID, or call AttestAgent again, ' +
         'which is not refused, re-issues, and records the attestation.');
     }
     const agent = registry.agentById(caller.spiffeId);
@@ -895,7 +907,7 @@ const agentHandlers = {
     });
     return {
       svid: {
-        cert_chain: [svid.certificateDer],
+        cert_chain: svid.chainCertificatesDer,
         id: spiffeId.toProto(caller.spiffeId),
         expires_at: String(svid.expiresAt),
         hint: ''
@@ -985,7 +997,13 @@ async function ownBundleProto(mask) {
   const document = await ca.bundle();
   const full = {
     trust_domain: ca.trustDomain(),
-    x509_authorities: state.x509Authorities.map(function (authority) {
+    // **THE TRUST ANCHORS, WHICH SINCE 2026-09-11 ARE NOT THE AUTHORITIES.**
+    // `x509_authorities` in `bundle.proto` is what a consumer should TRUST, and
+    // that is the service Root — the SPIFFE Issuing CA that actually signs
+    // travels in each SVID's own chain instead. The two were one list while
+    // the authority was self-signed, and publishing the Issuing CA here now
+    // would hand every consumer an anchor that is not one.
+    x509_authorities: state.trustAnchors.map(function (authority) {
       return {
         asn1: Buffer.from(authority.certificatePem
           .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64'),
@@ -1346,7 +1364,7 @@ const svidHandlers = {
                                 expiresAt: svid.expiresAt,
                                 certificate: svid.certificate });
     auditSvid('An X509-SVID was minted for ' + wanted, wanted);
-    return { svid: { cert_chain: [svid.certificateDer],
+    return { svid: { cert_chain: svid.chainCertificatesDer,
                      id: spiffeId.toProto(wanted),
                      expires_at: String(svid.expiresAt), hint: '' } };
   }),
@@ -1415,7 +1433,7 @@ const svidHandlers = {
                                     expiresAt: svid.expiresAt,
                                     certificate: svid.certificate });
         results.push({ status: okStatus(),
-                       svid: { cert_chain: [svid.certificateDer],
+                       svid: { cert_chain: svid.chainCertificatesDer,
                                id: spiffeId.toProto(entry.spiffeId),
                                expires_at: String(svid.expiresAt),
                                hint: entry.hint || '' } });
@@ -1473,7 +1491,9 @@ const svidHandlers = {
     auditSvid('A downstream X.509 CA was issued', '');
     return {
       ca_cert_chain: downstream.chainDer,
-      x509_authorities: state.x509Authorities.map(function (authority) {
+      // The anchors, for `ownBundleProto()`'s reason — this field is what the
+      // caller of NewDownstreamX509CA should trust, not what signed its CA.
+      x509_authorities: state.trustAnchors.map(function (authority) {
         return Buffer.from(authority.certificatePem
           .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64');
       })
@@ -1740,7 +1760,7 @@ const debugHandlers = {
 // that nothing authenticated the caller, so there was no way to know which
 // agent to renew; mutual TLS on the SPIRE Server API answered that, and the
 // method now renews the agent on the connection. It still refuses, with the
-// same argument, when `spiffe.authRequired` is off — see the handler.
+// same argument, where nothing identifies the caller — see the handler.
 const NOT_IMPLEMENTED = {
   'Bundle.AppendBundle':
     'It would publish an authority this server holds no key for, which every ' +

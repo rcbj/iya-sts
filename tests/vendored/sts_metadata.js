@@ -5,7 +5,7 @@
 // IT WAS `GET /sts-metadata` AND IT MOVED INTO THE CONSOLE on 2026-08-24, which
 // costs this test two things and is worth knowing before either surprises you:
 //
-//   * **It is behind the console gate** (`admin.authRequired`, on by default).
+//   * **It is behind the console gate**, which is unconditional.
 //     A browser with no session is redirected to the sign-in screen and a
 //     caller asking for `?format=json` is refused `401 login_required` — a
 //     redirect to an HTML login screen is not an answer a program can read. So
@@ -118,10 +118,10 @@ async function theDocumentIsServed(session) {
       "/admin/sts-metadata?format=json", withSession(session));
   assert.ok(json.ok,
             "GET /admin/sts-metadata?format=json should answer 200; got " +
-            json.status + ". A 401 or a 403 here is the console's own gate " +
-            "(admin.authRequired): the sign-in above got a session but the " +
+            json.status + ". A 401 or a 403 here is the console's own gate: " +
+            "the sign-in above got a session but the " +
             "roster is enforced and " + CONSOLE_USER + " holds no console " +
-            "role, so grant one or turn the gate off.");
+            "role, so grant one — the gate itself cannot be turned off.");
   const doc = json.body;
   assert.ok(doc && Array.isArray(doc.endpoints) && doc.endpoints.length > 20,
     "the document should list this service's endpoints; got " +
@@ -280,7 +280,29 @@ function theProtocolListIsHonest(doc, page) {
                     "XACML", "Federation", "Shared Signals",
                     "SAML 2.0", "SAML 1.1",
                     "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",
+                    // THE NINETEENTH (2026-09-10): the certificate authority
+                    // each trust realm holds, whose surface is /admin/pki.
+                    // **It is not the "PKI / X.509" card three names down** —
+                    // that one is the TLS group, the two listeners' view of
+                    // what a handshake proved. Two cards, two endpoint
+                    // groups, similar names: this list is deepStrictEqual so
+                    // reading one as the other fails here rather than passing
+                    // for the wrong reason.
+                    "PKI",
                     "SCIM", "LDAP", "PKI / X.509", "WebAuthn / CTAP",
+                    // THE SECOND SECOND FACTOR (2026-09-10). Beside WebAuthn
+                    // rather than under Protocols on its own, because both
+                    // answer the same endpoint group — Authentication — and
+                    // this list is in the page's order.
+                    "One-time passwords (TOTP)",
+                    // THE THIRD SECOND FACTOR (2026-09-10), beside the other
+                    // two for the same reason and answering the same endpoint
+                    // group. **It is the second card on this page that
+                    // implements no specification** — there is no RFC for a
+                    // recovery code — so it carries `notAProtocol` and the
+                    // assertion below about every card naming a spec is what
+                    // makes that marker load-bearing rather than decorative.
+                    "Recovery codes",
                     "Verifiable Credentials (OID4VCI / OID4VP)"];
   assert.ok(Array.isArray(doc.protocols),
     "the document should carry the protocol list; it has none.");

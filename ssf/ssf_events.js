@@ -78,9 +78,16 @@
 // harvest-now-decrypt-later argument is actually about.
 // ---------------------------------------------------------------------------
 
-const { log, signJwtAs, signJwtAsAsync, randomId, nowSec, STS } =
-  require('../common/helpers');
+const nodeCrypto = require('crypto');
+const { log, signJwtAs, signJwtAsAsync, randomId, nowSec, allSigningKeys,
+  STS } = require('../common/helpers');
 const config = require('../common/config');
+// THE ONE PLACE THIS SERVICE VERIFIES A SIGNATURE (2026-09-10). `verifySet()`
+// below is what reads a SET back, and it goes through `common/crypto.js` like
+// every other verification here. That module is a LEAF (rule 3r) — it requires
+// npm packages, the vendored `xmldsig.js` and `config`, none of which requires
+// this file — so this stays a library that cannot join a cycle.
+const stsCrypto = require('../common/crypto');
 const subjects = require('./ssf_subjects');
 
 // The URI prefix every SSF-defined event type shares. Written once because the
@@ -1511,6 +1518,154 @@ function describeSet(claims) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// READING A SET BACK, AND VERIFYING IT. THE RECEIVER'S HALF OF THIS FILE.
+//
+// **THESE THREE WERE PRIVATE TO `ssf.js` UNTIL 2026-09-10 AND MOVED BECAUSE A
+// SECOND RECEIVER ARRIVED.** `POST /ssf/receive` was the only endpoint in this
+// service that ever read a Security Event Token it was handed; the admin
+// console and the user portal are receivers of their own now, with a receive
+// endpoint each, and three receivers reading a SET three ways would be three
+// opinions about what arrived. One reading, in the file that owns the
+// envelope, is the same argument `common/crypto.js` makes one layer down.
+//
+// It is deliberately NOT in `ssf_receivers.js`: building a SET and reading one
+// back are the two directions of ONE format, and splitting them would put
+// `buildSet()` and `readSet()` in different files with nothing keeping them
+// honest about the same document.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// THE KEY A SET WAS SIGNED WITH, IF THIS SERVICE HOLDS IT.
+//
+// This service can only verify a signature made with a key IT HOLDS — it
+// follows no `jwks_uri`, here or anywhere else, for the reason
+// `applications.js` gives about `oauthJwksUri` and `federation_http.js`
+// repeats: fetching a URL a caller supplied in order to verify a credential is
+// a server-side request forgery with a specification citation attached. So the
+// key is looked up in this realm's own key set, BY `kid` FIRST and by
+// algorithm second.
+//
+// **BY kid FIRST IS THE PART THAT MATTERS.** Two of this service's keys share
+// an `alg` — the Ed25519 and Ed448 pair, because RFC 8037 registers one
+// algorithm value for both curves and puts the curve in the key — so an
+// algorithm-only lookup would pick one of them and report a perfectly good
+// Ed448 signature as not verifying.
+//
+// A SET signed by anybody else resolves to no key, and that is reported as NOT
+// VERIFIABLE HERE rather than as invalid. Those are different sentences and
+// conflating them would be a receiver blaming a transmitter for its own
+// missing key.
+// ---------------------------------------------------------------------------
+function publicKeyForHeader(header) {
+  log.debug('Entering publicKeyForHeader().');
+  const kid = String((header || {}).kid || '');
+  const alg = String((header || {}).alg || '');
+  if (alg === 'RS256' || kid === STS.kid) {
+    // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,
+    // where eight modules already read it — so it is resolved separately from
+    // the certificate this service publishes for it.
+    try {
+      log.debug('Leaving publicKeyForHeader(). The service RSA key.');
+      return { key: nodeCrypto.createPublicKey(STS.certPem), pq: false };
+    } catch (e) {
+      log.debug('Leaving publicKeyForHeader(). The certificate would not ' +
+                'load: ' + e.message);
+      return null;
+    }
+  }
+  const list = allSigningKeys();
+  const found = list.filter(function (one) {
+    return kid ? one.publicJwk.kid === kid : one.alg === alg;
+  })[0];
+  if (!found) {
+    log.debug('Leaving publicKeyForHeader(). No key of ours matches.');
+    return null;
+  }
+  if (found.publicJwk.kty === 'AKP') {
+    // A post-quantum key. `verifyCompactJws()` wants the raw public bytes,
+    // which the AKP JWK carries in `pub`.
+    log.debug('Leaving publicKeyForHeader(). A post-quantum key.');
+    return { key: { pub: found.publicJwk.pub }, pq: true };
+  }
+  try {
+    log.debug('Leaving publicKeyForHeader(). ' + found.alg + '.');
+    return { key: nodeCrypto.createPublicKey({ key: found.publicJwk,
+      format: 'jwk' }), pq: false };
+  } catch (e) {
+    log.debug('Leaving publicKeyForHeader(). The JWK would not load: ' +
+              e.message);
+    return null;
+  }
+}
+
+// Whether the signature holds, as `{ verified, note }`. It NEVER throws: the
+// whole point of a receiver endpoint is to say what arrived, and "it did not
+// verify" IS what arrived.
+function verifySet(token, header) {
+  log.debug('Entering verifySet().');
+  if (!header) {
+    log.debug('Leaving verifySet(). No readable header.');
+    return { verified: false,
+      note: 'there is no readable protected header, so there is nothing to ' +
+            'look a key up by' };
+  }
+  const resolved = publicKeyForHeader(header);
+  if (!resolved) {
+    log.debug('Leaving verifySet(). No key.');
+    return { verified: false,
+      note: 'not verifiable here: this service holds no key matching kid "' +
+            String(header.kid || '(none)') + '" / alg "' +
+            String(header.alg || '(none)') + '". It follows no jwks_uri — ' +
+            'fetching a URL a caller supplied in order to verify a ' +
+            'credential is the request forgery this repository refuses ' +
+            'everywhere — so a SET signed by anybody else is UNVERIFIABLE ' +
+            'here rather than invalid. Those are different sentences.' };
+  }
+  try {
+    stsCrypto.verifyCompactJws(token, resolved.key,
+      { algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS });
+    log.debug('Leaving verifySet(). Verified.');
+    return { verified: true,
+      note: 'verified against this service\'s own ' +
+            String(header.alg) + ' key' };
+  } catch (e) {
+    // A signature that does not verify, or one this build cannot check. Both
+    // are reported rather than thrown, for the reason above.
+    log.debug('Leaving verifySet(). It did not verify.');
+    return { verified: false,
+      note: 'the signature did not verify against this service\'s own key: ' +
+            e.message };
+  }
+}
+
+// The header and the claims of a compact JWS, for display. It reports what is
+// wrong rather than throwing, for `verifySet()`'s reason.
+function readSet(token) {
+  log.debug('Entering readSet().');
+  const parts = String(token || '').split('.');
+  const out = { header: null, claims: null, problem: '' };
+  if (parts.length !== 3) {
+    out.problem = 'This is not a compact JWS — a Security Event Token has ' +
+      'three dot-separated parts and this has ' + parts.length + '.';
+    log.debug('Leaving readSet(). Not a compact JWS.');
+    return out;
+  }
+  try {
+    out.header = JSON.parse(Buffer.from(parts[0], 'base64url')
+      .toString('utf8'));
+    out.claims = JSON.parse(Buffer.from(parts[1], 'base64url')
+      .toString('utf8'));
+  } catch (e) {
+    // Undecodable. Reported rather than thrown: the whole point of a receiver
+    // is to say what arrived, and "it would not decode" IS what arrived.
+    out.problem = 'The header or the payload would not decode as base64url ' +
+      'JSON: ' + e.message;
+  }
+  log.debug('Leaving readSet(). ' + (out.problem || 'read'));
+  return out;
+}
+
 module.exports = {
   SSF_PREFIX: SSF_PREFIX,
   CAEP_PREFIX: CAEP_PREFIX,
@@ -1535,6 +1690,9 @@ module.exports = {
   signSetSync: signSetSync,
   signingAlgorithm: signingAlgorithm,
   describeSet: describeSet,
+  readSet: readSet,
+  verifySet: verifySet,
+  publicKeyForHeader: publicKeyForHeader,
   SET_MEDIA_TYPE: SET_MEDIA_TYPE,
   STS: STS
 };

@@ -46,7 +46,7 @@
 // THIS CONSOLE IS PROTECTED NOW, AND THE OLD PARAGRAPH IS KEPT BELOW BECAUSE
 // MOST OF IT IS STILL TRUE.
 //
-// `admin.authRequired` is ON by default. Every page and every form under /admin
+// The console gate is UNCONDITIONAL. Every page and every form under /admin
 // needs a browser sign-on session from `../authn/authn.js` and one of two roles
 // — Admin Read and Admin Write — held as two ordinary groups in the embedded
 // directory. The gate is one `app.use('/admin', ...)` further down this file and
@@ -92,6 +92,26 @@ const config = require('../common/config');
 // The credential lifecycle, for the activation link the users page issues. A
 // LEAF (rule 3): it registers no route and requires nothing here.
 const credentials = require('../common/credentials');
+// RFC 6238 ITSELF, for /admin/totp: the settings it draws and the algorithm
+// table `?format=json` reports. A LIBRARY (rule 3) that registers no route, and
+// `credentials.js` above already requires it — so this is a second reader of one
+// module rather than a new edge in the require order.
+const totp = require('../common/totp');
+// THE THIRD SECOND FACTOR (2026-09-10), for `/admin/backup-codes` and for the
+// block on a person's own row under `/admin/users`. A LIBRARY (rule 3): it
+// registers nothing and requires only `config`, `crypto` and `helpers`, so it
+// can neither move a route nor join a cycle.
+const backupCodes = require('../common/backup_codes');
+// THE OTHER SECOND FACTOR, for /admin/webauthn — the ceremony's options and
+// this service's policy about what a key may be. A LIBRARY (rule 3) on the same
+// terms: it registers no route and requires only `config`, `helpers` and
+// `authn/webauthn.js`, so it can neither move a route nor close a cycle, and
+// `common/credentials.js` above already requires it. **It is NOT
+// `authn/authn.js`**, which is 8 and owns the session: a require from here to
+// that module would be the console reaching into the sign-in service, and the
+// rule `/admin/crypto-metadata` is built on says an algorithm table is read
+// from the module that PERFORMS the algorithm.
+const webauthnPolicy = require('../authn/webauthn_policy');
 // CSRF and rate limiting for this console. A LEAF (rule 3): it registers no
 // route and requires only config, crypto and helpers, so it can neither move a
 // route nor close a cycle.
@@ -330,6 +350,24 @@ const spiffeRegistry = require('../spiffe/spiffe_registry');
 // bound, which is a fact about a socket and only `spiffe_server.js` knows it.
 const spiffeAuth = require('../spiffe/spiffe_auth');
 const spiffeIdLib = require('../spiffe/spiffe_id');
+// ---------------------------------------------------------------------------
+// THIS CONSOLE AS A SHARED SIGNALS RECEIVER (2026-09-10), and it is a PLAIN
+// REQUIRE rather than a ninth slot for the reason rule 3e states: a slot is
+// what you pay for a require that would close a cycle or move a route, and
+// this one does neither. `ssf/ssf_receivers.js` registers nothing (rule 3) and
+// requires only libraries — `helpers`, `config`, `realms`, `audit`,
+// `ssf_subjects`, `ssf_events`, `ssf_streams`, `ssf_http` — none of which
+// requires this file.
+//
+// It is emphatically NOT `ssf/ssf.js`, which is at 23b and registers every
+// /ssf route and the well-known document: a require of THAT from here would
+// drag all of it ahead of the management API's own routes, which is exactly
+// what the eighth slot exists to prevent.
+//
+// What crosses it is this console's own inbox and the stream behind it. See
+// GET /admin/signals below.
+// ---------------------------------------------------------------------------
+const signals = require('../ssf/ssf_receivers');
 // For the DRIFT report: the document this service would publish, to compare a
 // profile's overrides against. oauth2.js is required before admin.js in
 // server.js (rule 5), so this is a plain require in the ordinary direction.
@@ -1029,6 +1067,72 @@ const SECTIONS = [
       // order the families arrived in this service, because there is no
       // ranking between them that a reader would predict — alphabetical would
       // put TLS before WS-Trust and teach nobody anything.
+      // ---------------------------------------------------------------
+      // THE TWO SECOND FACTORS, UNDER PROTOCOLS (2026-09-10).
+      //
+      // A group of two would be a heading that said the label twice, so they
+      // are two flat items — the arrangement /admin/federation and
+      // /admin/scim already have. They sit together and before Kerberos
+      // because they are the two mechanisms a PERSON authenticates with here
+      // beside a password, and somebody looking for one is usually about to
+      // look at the other.
+      //
+      // **WHO HOLDS ONE IS NOT HERE.** That is <a href="/admin/users">Users</a>,
+      // which is filed under Directory — where a page is FILED is decided by
+      // the question it answers, and these two answer *what does the
+      // mechanism do*.
+      // ---------------------------------------------------------------
+      { path: '/admin/totp', label: 'TOTP MFA',
+        blurb: 'An authenticator app as a second factor &mdash; RFC 6238 ' +
+               'over RFC 4226 &mdash; and the eight parameters the ' +
+               'specification leaves open: the digest, the digits, the length ' +
+               'of a step, how much clock skew is forgiven, the secret ' +
+               'length, the label a phone shows, and how long an unconfirmed ' +
+               'enrolment lives. <strong>Codes are checked FOR REAL in every ' +
+               'mode</strong>, which almost nothing else on this service is ' +
+               '&mdash; a permissive one-time password verifier is not ' +
+               'permissive, it is broken. Changing the digest, the digits or ' +
+               'the period affects NEW enrolments only; the skew window ' +
+               'applies to everybody. Who actually holds one, and the Clear ' +
+               'that is the only way back for a lost phone, are on that ' +
+               'person\'s row under <a href="/admin/users">Users</a>.' },
+      { path: '/admin/backup-codes', label: 'Recovery codes',
+        blurb: 'The way back in when the second factor is not to hand &mdash; ' +
+               'a set of single-use codes issued AUTOMATICALLY, and ONCE, the ' +
+               'first time somebody enrols an authenticator app or a security ' +
+               'key in the <code>mfa</code> role. <strong>The only mechanism ' +
+               'on this console that no specification defines</strong>: there ' +
+               'is no RFC for a recovery code, so every decision behind it is ' +
+               'this service\'s own and <code>common/backup_codes.js</code> ' +
+               'argues each one. Since 2026-09-11 it is <strong>hashed with ' +
+               'scrypt, the same way a password is</strong> &mdash; it was ' +
+               'encrypted until then, so that a person could read their ' +
+               'remaining codes back, and hashing is what made that ' +
+               'impossible. A person GENERATES their own set from the user ' +
+               'portal, is shown it once, and it is stored only when they ' +
+               'confirm they have saved it; generating again REPLACES. There ' +
+               'is no control on THIS console that issues a set &mdash; a ' +
+               'set belongs to the person and is generated from their own ' +
+               'account page. Who holds one, how many they have left, and the ' +
+               'Clear that removes a set an operator has reason to distrust, ' +
+               'are on that person\'s row under ' +
+               '<a href="/admin/users">Users</a>.' },
+      { path: '/admin/webauthn', label: 'WebAuthn',
+        blurb: 'Security keys &mdash; W3C WebAuthn Level 3 over FIDO CTAP2 ' +
+               '&mdash; as a second factor OR as the only credential on an ' +
+               'account, and the thirteen settings behind the ceremony. ' +
+               '<strong>There were none of these until 2026-09-10</strong>: ' +
+               'the RP name, the algorithms offered, the user verification ' +
+               'requirement, the attestation conveyance and the timeout were ' +
+               'literals in a string, and this service said there was nothing ' +
+               'an operator could usefully turn &mdash; which was true of the ' +
+               'cryptography and false of the ceremony. One of them is ' +
+               'ENFORCED and the rest are requests: user verification is ' +
+               'checked against a flag inside the bytes the authenticator ' +
+               'signed, and nothing signed says what the browser was asked ' +
+               'about attestation, the resident key or the attachment. Who ' +
+               'holds a key is on that person\'s row under ' +
+               '<a href="/admin/users">Users</a>.' },
       { path: '/admin/kerberos', label: 'Kerberos',
         blurb: 'The KDC\'s own settings: the realm, the two raw ports, the ' +
                'clock skew and the deliberate clock OFFSET, the one password ' +
@@ -1061,6 +1165,42 @@ const SECTIONS = [
                'SAML pages — this page says which setting is which and links ' +
                'to them rather than offering a third form onto the same ' +
                'value.' },
+      // PKI, UNGROUPED, BESIDE TLS AND SCIM. A group of its own would be a
+      // heading naming nothing the one page under it does not — this
+      // console's own test for one, applied the way Federation and SCIM are
+      // filed. It goes NEXT TO TLS deliberately: they are the two pages here
+      // about X.509, and a reader who has just read that a verified client
+      // certificate starts a session is one keystroke from the page that
+      // issues certificates.
+      { path: '/admin/pki', label: 'PKI',
+        blurb: 'A <strong>certificate authority this service maintains for ' +
+               'this trust realm</strong> — Root CA, Intermediate CA, ' +
+               'Issuing CA — and the signing key pairs it issues from the ' +
+               'bottom of it to applications. It exists for <strong>RFC 7521 ' +
+               'and RFC 7523</strong>: an application authenticates at the ' +
+               'token endpoint, or presents an authorization grant, with a ' +
+               'signed assertion instead of a shared secret, and a signing ' +
+               'key nobody vouched for is a key an operator has to move by ' +
+               'hand. All three tiers are built in one act or none is — a ' +
+               'half-built hierarchy is exactly the state in which somebody ' +
+               'issues a certificate that verifies here and nowhere else. ' +
+               'ONE ROOT CA FOR THE SERVICE, an Intermediate CA per realm ' +
+               'and per the process, and an Issuing CA under each for ' +
+               'every use case — so one anchor covers every key this ' +
+               'service holds. It was a Root PER REALM until 2026-09-11, ' +
+               'on the argument that a CA shared across realms would be ' +
+               'one authority vouching for several identity services. ' +
+               'Every authority on it signs a CRL and answers OCSP, and a ' +
+               'certificate replaced or rotated goes on its issuer\'s list ' +
+               'as superseded without anybody asking — but this service ' +
+               'CONSULTS no list of its own or anybody else\'s, so a ' +
+               'certificate revoked here still authenticates here. Taking a ' +
+               'key pair off an application is a third thing again: it stops ' +
+               'this service ACCEPTING what that key signs and puts nothing ' +
+               'on any list. The encoder is the parent ' +
+               'project\'s own PKI code, vendored byte-identical, so a ' +
+               'certificate issued here and one issued on its PKI / X.509 ' +
+               'page are built by one encoder.' },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The two HTTPS listeners of this service\'s own — 8443, and ' +
                '9443 which asks for a client certificate — and the ' +
@@ -1244,7 +1384,7 @@ const SECTIONS = [
       // there.
       //
       // WHAT MOVING THEM COST is that they are GATED now: they are `/admin`
-      // pages, so `admin.authRequired` applies and a reader needs a session
+      // pages, so the console gate applies and a reader needs a session
       // and a role. That is a real change and it is the right one — a dump of
       // every attribute of every entry includes `oauthClientSecret` and
       // `fedClientSecret` in the clear, and it was the one surface in this
@@ -1543,6 +1683,41 @@ const SECTIONS = [
       // be filing it under the wrong one. It is an ACTION page in a section
       // whose heading says "what this service has done" — which /admin/tokens
       // already is, since revoking is a control and that page has four of them.
+      // AFTER THE SCIM METRICS AND BEFORE SIGN-OUT, and the neighbours are the
+      // argument a third time: the two pages above it count DECISIONS and
+      // PROVISIONING CALLS, and this one lists what this console was TOLD.
+      // All three are traffic rather than configuration, which is what this
+      // section's heading says — and the Shared Signals settings, the streams
+      // and every other receiver's stream are at
+      // <a href="/admin/ssf">Protocols &rarr; Shared Signals</a>, which is
+      // where somebody goes to change what arrives here rather than to read
+      // it.
+      //
+      // **IT IS THE ONE PAGE IN THIS CONSOLE ABOUT SOMETHING THIS CONSOLE
+      // WAS SENT.** Every other page here reads a store this process holds;
+      // this one reads a queue that was delivered to it over HTTP, signed,
+      // addressed to it by name, which it verified. That is the whole
+      // difference between a console showing its own notes and an
+      // application that is a receiver.
+      { path: '/admin/signals', label: 'Signals received',
+        blurb: 'Every Security Event Token this console has been DELIVERED, ' +
+               'in the realm being read. This console is a registered ' +
+               'Shared Signals receiver with a stream of its own ' +
+               '(<code>sts-admin-console</code>), seeded at startup, asking ' +
+               'for every CAEP and every RISC event type — so what is on ' +
+               'this page arrived over RFC 8935 push at ' +
+               '<code>/admin/signals/receive</code>, carrying the stream\'s ' +
+               'own bearer token, and was verified against this service\'s ' +
+               'signing key before it was recorded. Each row opens out into ' +
+               'the SET as it arrived. <strong>An empty page has five causes ' +
+               'and only one of them is &ldquo;nothing has ' +
+               'happened&rdquo;</strong>, so the ones that apply are named ' +
+               'at the top rather than left to be guessed: the transmitter ' +
+               'off, the receivers off, the stream deleted, ' +
+               '<code>ssf.pushDelivery</code> off, or a vocabulary turned ' +
+               'off under it. What a PERSON sees about themselves is the ' +
+               'same delivery to a different receiver, at ' +
+               '<a href="/portal/signals">the user portal</a>.' },
       { path: '/admin/logout', label: 'Sign-out',
         blurb: 'Name an identity to see everything this service is still ' +
                'holding for them — every browser sign-on session, every ' +
@@ -1553,6 +1728,59 @@ const SECTIONS = [
                'else: the same nine stores through the same functions, ' +
                'except that the notifications cannot be delivered from ' +
                'here.' },
+      // AFTER the traffic pages and BEFORE the audit log, and the order is
+      // the same widening-detail argument the rest of this section follows:
+      // Metrics says how much, the pages between say what came out, this says
+      // what was SEALED on the way to the store, and the audit log says what
+      // happened in order. It is the last page here whose subject is state
+      // rather than history.
+      //
+      // **IT IS NOT A SECOND `/admin/crypto-metadata`**, which is the filing
+      // question somebody will ask: that page is what this service DOES when
+      // it signs or encrypts, is identical on a service that started a second
+      // ago, and is filed under Protocols with the rest of what this service
+      // IS. The numbers on this one go up while a reader watches.
+      // AFTER Encryption and before the audit log, on this section's
+      // widening-detail order: Encryption is what this service does to what
+      // it writes down, and this is what the thing it writes down is DOING.
+      //
+      // **IT IS NOT A SECOND HALF OF `/admin/persistence`**, which is the
+      // filing question somebody will ask: that page is under Settings and
+      // answers what this service is CONFIGURED to write down and where,
+      // reads the same on a service that started a second ago, and owns the
+      // eighteen `persistence.*` settings. The numbers on this one move while
+      // a reader watches.
+      { path: '/admin/database', label: 'Database',
+        blurb: 'Everything PostgreSQL will tell this service about itself ' +
+               '&mdash; commits and rollbacks, the buffer cache hit ratio, ' +
+               'every backend and every lock, the background writer, the ' +
+               'checkpointer and the write-ahead log &mdash; beside the state ' +
+               'of the schema this service owns in it: per-table and ' +
+               'per-index statistics, sizes, columns, constraints, and which ' +
+               'indexes nothing has ever scanned. <strong>The shape of the ' +
+               'page is decided by the server it is pointed at</strong>: ' +
+               'every statement behind it asks for all of a view\'s columns, ' +
+               'because PostgreSQL moves them between major versions and a ' +
+               'page naming its own would be wrong on every server but one. ' +
+               'A probe the service\'s least-privilege role may not read ' +
+               'costs a ROW here and not the page. Empty, with a sentence ' +
+               'saying which of three reasons it is, unless ' +
+               '<code>persistence.mode</code> is <code>postgres</code>.' },
+      { path: '/admin/encryption', label: 'Encryption',
+        blurb: 'What this service encrypts AT REST &mdash; its own signing ' +
+               'keys, the certificate authority, the assertion key pairs it ' +
+               'issues to applications, authenticator secrets, recovery ' +
+               'codes and, in product mode on postgres, everything it mints ' +
+               '&mdash; with the key that protects it, the algorithm, and ' +
+               'how many encryptions and decryptions have happened in this ' +
+               'process. It lists what is DELIBERATELY not sealed beside ' +
+               'what is, because the question a reader brings is almost ' +
+               'always &ldquo;is <em>this</em> encrypted&rdquo; and a table ' +
+               'of only the yeses answers it by silence. No sealed value and ' +
+               'no opened one appears on it, and it has no control: rotating ' +
+               'the key-encryption key is a deployment act, and a ' +
+               'decrypt-this button would be the one door onto material no ' +
+               'door is supposed to have.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -1816,6 +2044,11 @@ const SETTING_HOMES = [
   { group: 'Applications', pages: ['/admin/applications'] },
   { group: 'Federation', pages: ['/admin/federation'] },
   { group: 'XACML', pages: ['/admin/xacml'] },
+  // THE CERTIFICATE AUTHORITY'S FOUR SETTINGS, on the page that builds one.
+  // They are DEFAULTS FOR A FORM rather than a policy — what a hierarchy was
+  // built with is stored on the hierarchy — so the page that takes each of
+  // them as a field is the only place they read as anything but trivia.
+  { group: 'PKI', pages: ['/admin/pki'] },
   // Two pages, deliberately. See the header above.
   { group: 'SAML', pages: ['/admin/saml2', '/admin/saml11'] },
   { group: 'SAML 2.0', pages: ['/admin/saml2'] },
@@ -1895,6 +2128,27 @@ const SETTING_HOMES = [
   // of a role — who holds one, and what requires one — are edited on that page
   // and on an application's page respectively rather than in a setting.
   { group: 'Roles', pages: ['/admin/roles'] },
+  // THE TWO SECOND FACTORS, ONE GROUP AND ONE PAGE EACH, BOTH UNDER PROTOCOLS
+  // (2026-09-10).
+  //
+  // **THIS WAS ONE ROW READING `Multi-factor authentication` -> `/admin/mfa`,
+  // AND ITS COMMENT ARGUED FOR FILING IT UNDER IDENTITIES** — because the page
+  // answered *who holds a second factor*, which is a question about people.
+  // That was right about the ROSTER and wrong about the SETTINGS, and one page
+  // could not be filed by both halves at once. The roster is columns on
+  // /admin/users now; these two rows are the mechanisms.
+  //
+  // The old comment also said WebAuthn "has no settings at all and so has no
+  // row here". It has thirteen since 2026-09-10 — every parameter of the
+  // ceremony, which had been literals in a string in `authn/authn.js`.
+  { group: 'TOTP MFA', pages: ['/admin/totp'] },
+  { group: 'WebAuthn', pages: ['/admin/webauthn'] },
+  // THE THIRD (2026-09-10), and it is a mechanism like the two above it rather
+  // than a policy about them — which is why it gets a group and a page of its
+  // own instead of four more rows on the TOTP page. A recovery code stands in
+  // for EITHER of those two, so filing its settings under one of them would
+  // put them where half the readers would not look.
+  { group: 'Backup codes', pages: ['/admin/backup-codes'] },
   { group: 'Group claim', pages: ['/admin/groups'] },
   { group: 'Audit log', pages: ['/admin/audit'] },
   { group: 'Delegation', pages: ['/admin/delegation'] },
@@ -2010,7 +2264,12 @@ function codeList(names) {
 // also why a section that cannot be drilled into has no row — carrying a filter
 // through a page nothing hangs under would be state nobody can get back to.
 const LIST_PARAMS = {
-  '/admin/users': ['q', 'protocol', 'per', 'page'],
+  // `factor` arrived on 2026-09-10 with the second-factor roster /admin/mfa
+  // used to draw. It is a VIEW of this list like `q` and `protocol` — a
+  // narrowing somebody chose and expects to still be there after they clear
+  // an enrolment — so it is carried through the Clear buttons on the
+  // drill-down like the other two.
+  '/admin/users': ['q', 'protocol', 'factor', 'per', 'page'],
   '/admin/groups': ['q', 'per', 'page'],
   // `application`, `subject`, `subjectKind` and `kind` are the PREVIEW's own
   // parameters and are deliberately NOT here: they are a question somebody
@@ -2064,6 +2323,12 @@ const LIST_PARAMS = {
   // credentials issued on that session, and there was no way to ask for them.
   '/admin/tokens': ['family', 'kind', 'state', 'session', 'per', 'page'],
   '/admin/sessions': ['q', 'protocol', 'per', 'page'],
+  // The Shared Signals inbox's own search and paging (2026-09-10). It has no
+  // drill-down, so the only thing that spends these is the Clear button's
+  // `back` — which is enough on its own: a reader who searched for a username,
+  // read what came back and pressed Clear should not be returned to an
+  // unfiltered page 1 of a list that is now empty for two different reasons.
+  '/admin/signals': ['sigq', 'per', 'receivedPage'],
   '/admin/logout': ['family', 'per', 'page'],
   '/admin/realms': ['per', 'page'],
   '/admin/federation': ['q', 'role', 'per', 'page'],
@@ -2348,7 +2613,12 @@ function trailBar(active, up, title) {
   const crumbs = [{ label: 'Admin console', href: active === '/admin' ? null : '/admin' }];
   if (active !== '/admin') {
     const item = NAV.filter(function (row) { return row.path === active; })[0];
-    const label = item ? item.label : active;
+    // THE TITLE WHEN THE PAGE IS NOT IN THE NAV, which is every page this shell
+    // draws that is not a console page: the sign-out confirmation, the
+    // callback's refusal, the gate's own. Those pass `active` as '' or null, so
+    // the leaf was an EMPTY crumb — "Admin console ›" with nothing after it —
+    // on exactly the pages whose title is the only thing saying what happened.
+    const label = item ? item.label : (active || title);
     if (up) {
       crumbs.push({ label: label, href: up.href,
                     // Said in the tooltip rather than in the crumb, because "as you
@@ -2388,11 +2658,13 @@ function trailBar(active, up, title) {
 // three states are genuinely different warnings rather than one warning with a
 // detail changed:
 //
-//   * THE GATE IS OFF (`admin.authRequired`). The old banner, unchanged and
-//     still true: nothing here checks anything. It stays because that state is
-//     deliberately reachable — every refusal in this service is switchable — and
-//     because a console that used to say this and now says nothing would leave
-//     somebody who turned the setting off believing they were still protected.
+//   * THE GATE IS OFF. The old banner, unchanged. **THAT STATE IS NO LONGER
+//     REACHABLE**: `admin.authRequired` was removed on 2026-09-06 and
+//     `mode.gatesConsole()` answers `true` in both modes, so OPEN_BANNER and
+//     every `!enforced` arm below are dead. They are kept rather than deleted
+//     because what they say is "nothing here checks anything", and a banner of
+//     that kind is the one sort of dead code whose quiet deletion would matter
+//     if a third mode ever brought the state back.
 //   * THE GATE IS ON AND NOBODY HOLDS A ROLE. The most dangerous state and the
 //     one nothing else would report: a person has signed in, sees a working
 //     console, and it is working because the roster is EMPTY rather than because
@@ -2409,13 +2681,13 @@ function trailBar(active, up, title) {
 // ---------------------------------------------------------------------------
 const OPEN_BANNER =
   warn('<strong>This console is not protected.</strong> ' +
-  '<code>admin.authRequired</code> is OFF, so nothing here checks a credential — and nothing ' +
+  'The gate is OFF, so nothing here checks a credential — and nothing ' +
   'else in this service does either: the username typed at the sign-in screen is the identity ' +
   'in every token it issues. Anyone who can reach this port can revoke every token and change ' +
   'what the next one contains. That is fine on a laptop or a compose network and is not fine on ' +
-  'a public address. Turn it on and say who may get in on ' +
-  '<a href="/admin/rbac">Admin roles</a>, which draws all four of its ' +
-  'settings.');
+  'a public address. Say who may get in on ' +
+  '<a href="/admin/rbac">Admin roles</a>, which draws every setting behind ' +
+  'this page.');
 
 // SAID WHEN — AND ONLY WHEN — THE SESSION BELONGS TO ANOTHER REALM.
 //
@@ -2451,13 +2723,42 @@ function gateBanner(gate) {
     log.debug("Leaving gateBanner(). The gate is off.");
     return OPEN_BANNER;
   }
+  // ---------------------------------------------------------------------
+  // NOBODY IS SIGNED IN, WHICH IS A FOURTH STATE THIS BANNER DID NOT HAVE
+  // (2026-09-10) — AND IT WAS REACHED ON THE ONE PAGE THAT IS ABOUT IT.
+  //
+  // Three pages are drawn in this state: the sign-out confirmation, the
+  // callback's refusal, and the 401 a form POSTed without a session gets.
+  // With no fourth branch every one of them fell through to the last one
+  // below and read **"Signed in as `(nobody)`, holding no console role. This
+  // is a READ-ONLY view"** — three sentences of which the first is false, the
+  // second is meaningless and the third describes a console this reader
+  // cannot open at all. Directly above a page whose whole text is that they
+  // have just signed out.
+  //
+  // It is a branch rather than an empty string for the reason the banner is
+  // on every page in the first place: this is the line that says what the
+  // gate makes of the request, and a page that says nothing about it leaves a
+  // reader who has met the other three states to guess which one this is.
+  // `sideColumn()` below takes the NAVIGATION away in this state and this
+  // keeps the SENTENCE, which is the difference between a control that cannot
+  // work and a fact about why.
+  // ---------------------------------------------------------------------
+  if (!info.session) {
+    log.debug("Leaving gateBanner(). Nobody is signed in.");
+    return '<div class="warn"><strong>Nobody is signed in on this browser.</strong> ' +
+      'This console needs a session of its own — it is an ordinary OpenID ' +
+      'Connect client of this service, <code>sts-admin-console</code> in the ' +
+      'registry — so every page of it will run the sign-in flow again. ' +
+      '<a href="/admin">Open the console</a> to start one.</div>';
+  }
   const who = '<code>' + esc(info.username || '(nobody)') + '</code>';
   const elsewhere = foreignSessionNote(info);
   if (info.open) {
     log.debug("Leaving gateBanner(). The roster is empty.");
     return warn('<strong>Signed in as ' + who + ', and holding both roles ' +
-      'because NOBODY HOLDS EITHER.</strong> <code>admin.authRequired</code> is on, so this ' +
-      'console asked you to sign in — but neither <code>' + esc(info.readGroup) + '</code> nor ' +
+      'because NOBODY HOLDS EITHER.</strong> This console always asks you to sign ' +
+      'in — but neither <code>' + esc(info.readGroup) + '</code> nor ' +
       '<code>' + esc(info.writeGroup) + '</code> has a single member, and while that is true ' +
       'anyone who signs in has the whole console. This service has no password to bootstrap an ' +
       'administrator with, which is why the empty roster opens rather than closes ' +
@@ -2471,9 +2772,10 @@ function gateBanner(gate) {
     // on the refusal page itself, which IS drawn.
     log.debug("Leaving gateBanner(). The roster is empty and closed.");
     return '<div class="err"><strong>Nobody can use this console.</strong> ' +
-      '<code>admin.authRequired</code> is on, <code>admin.openWhenEmpty</code> is off, and no ' +
-      'role has a member. <code>POST /admin-api/rbac/grant</code> is the way back in — the ' +
-      'management API is not gated.</div>';
+      '<code>admin.openWhenEmpty</code> is off and no ' +
+      'role has a member. <code>POST /admin-api/rbac/grant</code> is the way back in — it ' +
+      'takes an access token carrying <code>admin:write</code> rather than this ' +
+      'console\'s session, which is why it still works when this page cannot.</div>';
   }
   const held = (info.roles || []).map(function (id) {
     const role = rbac.roleFor(id);
@@ -2539,6 +2841,35 @@ const REALM_SWITCH_PATH = '/admin/realm-switch';
 // and a gate exemption naming a path the route no longer serves would be a
 // sign-out that required the write role again, silently.
 const SIGNOUT_PATH = '/admin/signout';
+
+// WHERE THE PERSON READING THIS CONSOLE FINDS THEIR OWN ACCOUNT (2026-09-10).
+//
+// The user portal is the other surface this service hosts, and it is the one
+// place an administrator changes their OWN password, enrols their OWN
+// authenticator app or removes their OWN security key. Until now the console
+// named it in prose on a page or two and linked it nowhere in its shell, so
+// the way there was to know the path.
+//
+// **IT IS THE DEFAULT REALM'S PORTAL AND NOT THE ONE BEING READ, WHICH IS THE
+// WHOLE OF THE DECISION HERE.** The console's session is the DEFAULT realm's
+// whichever realm the page was reached in — see `consoleRpSession()`, and the
+// gate's rule that the role roster lives in one realm — while `/portal` runs
+// in the AMBIENT one. So a link to `/portal` from a page read at
+// `/realm/acme/admin` would be rewritten to `/realm/acme/portal` by app.js's
+// realm rewrite and would land this person in a portal where they are nobody:
+// the flow would run in `acme`, meet no sign-on session, and ask them to sign
+// in again — as an account in another realm that has nothing to do with the
+// one they hold.
+//
+// `realmRoot()` is what takes the prefix back off, and the result is an
+// ABSOLUTE URL rather than a root-relative one. That is not cosmetic either:
+// the rewrite matches `href="/` and leaves `https://…` alone, so an absolute
+// URL is the one form that cannot be prefixed again on the way out.
+const PORTAL_PATH = '/portal';
+
+function portalHref(req) {
+  return realmRoot(req) + PORTAL_PATH;
+}
 
 // The base URL with the CURRENT realm's prefix taken back off, so that what is
 // built from it starts at the root. baseUrlOf() adds the ambient prefix by
@@ -2612,7 +2943,20 @@ function refreshHref(req) {
 // It is drawn in the QUIET form of a.btn on purpose. It is on every page beside
 // the heading, and a solid dark button in that position would read as the most
 // important thing on the page on all of them.
-function refreshLink(req) {
+//
+// **AND IT IS DRAWN ONLY WHERE THERE IS A PAGE TO RELOAD (2026-09-10)**, which
+// is `signOutControl()`'s test below and `sideColumn()`'s, met by a third
+// control on the same page. The sign-out confirmation is the answer to a POST:
+// its URL is `/admin/signout`, so Refresh there is a GET of a route that has no
+// GET — the gate sees no session and sends the reader into a fresh sign-in
+// flow. A control labelled *load this page again* that instead starts a
+// sign-in is worse than one that is missing, and the sentence above is not true
+// of that page either: what it describes is a session that has ENDED, which is
+// the one thing on this console that will not have changed since it was drawn.
+function refreshLink(req, gate) {
+  if (gate && gate.enforced && !gate.session) {
+    return '';
+  }
   return '<a class="btn secondary" href="' + esc(refreshHref(req)) +
     '" title="Load this page again. Everything in this console is live state ' +
     'held in memory.">Refresh</a>';
@@ -2650,6 +2994,65 @@ function signOutControl(gate) {
         'would not sign you out: the next page would run the sign-in flow, ' +
         'meet the sign-on session that is still live and let you straight ' +
         'back in.') + '">Sign out</button></form>';
+}
+
+// ---------------------------------------------------------------------------
+// THE ACCOUNT MENU, at the top of every page in this console (2026-09-10).
+//
+// It holds two things — a link to this person's OWN account in the user portal,
+// and the Sign out button that used to sit bare in that corner. They belong
+// together because they are the two controls on this console that are about the
+// READER rather than about the service: everything else on every page here
+// changes what some protocol endpoint does for somebody else.
+//
+// **IT IS A `<details>`, WHICH IS TO SAY IT IS NOT A SCRIPT.** `script-src
+// 'none'` covers every page of this console but `/admin/api-explorer` (see
+// CLAUDE.md), and the test for an exception is that the page CANNOT work
+// without one — which a menu plainly can: `<details>`/`<summary>` opens and
+// closes with no JavaScript at all, and it is the same answer the console's
+// collapsible prose got. A new scripted page needs the argument made from
+// scratch and "it is a menu, menus have scripts" is not one.
+//
+// **WHAT THAT COSTS IS SAID OUT LOUD RATHER THAN LEFT TO BE DISCOVERED**: an
+// open `<details>` does not close when you click somewhere else on the page,
+// because closing it would take a listener on the document. It closes when the
+// summary is clicked again, and it is closed on every page load because nothing
+// remembers it. That is the same trade the two pictures made when they lost pan
+// and zoom, and the collapse-all switch the console does not have.
+//
+// **IT IS DRAWN ONLY WHEN SOMEBODY IS SIGNED IN**, which is `signOutControl()`'s
+// test read once more rather than a new one: with the gate off there may be no
+// session at all, and a menu whose first row is "your account" and whose second
+// signs nobody out would be two controls that cannot do anything. The summary is
+// the USERNAME, so the answer to "who am I signed in as here" is on every page
+// of this console without opening anything — which the bare button never gave.
+// ---------------------------------------------------------------------------
+function userMenu(req, gate) {
+  log.debug("Entering userMenu().");
+  if (!gate || !gate.session) {
+    log.debug("Leaving userMenu(). Nobody is signed in.");
+    return '';
+  }
+  const html = '<details class="usermenu">' +
+    '<summary title="' +
+    esc('Your own account. This console is read as ' + gate.username +
+        ', and the two controls in here are the ones about YOU rather than ' +
+        'about the service.') + '">' + esc(gate.username) + '</summary>' +
+    '<div class="usermenupanel">' +
+    '<p class="usermenuwho">Signed in as <strong>' + esc(gate.username) +
+    '</strong></p>' +
+    '<a href="' + esc(portalHref(req)) + '" title="' +
+    esc('Your own account in the user portal — your password, your ' +
+        'authenticator app, your security keys and the applications you can ' +
+        'be signed in to. It is a different application from this console ' +
+        'and it signs you in with the session you already hold, so nothing ' +
+        'is typed again. The link is to the DEFAULT realm\'s portal, because ' +
+        'that is the realm this console\'s session belongs to whichever ' +
+        'realm you are reading.') + '">My account</a>' +
+    signOutControl(gate) +
+    '</div></details>';
+  log.debug("Leaving userMenu(). Drawn for " + gate.username + ".");
+  return html;
 }
 
 function realmChooser(req) {
@@ -2779,6 +3182,90 @@ function withDerivedTips(inner) {
   return withFields;
 }
 
+// ---------------------------------------------------------------------------
+// THE SIDEBAR COLUMN, AND WHO GETS ONE (2026-09-10).
+//
+// **IT IS DRAWN ONLY FOR A READER WHO CAN REACH SOMETHING IN IT**, which is the
+// same test `signOutControl()` above applies to its own button, read one step
+// further. Every row of that nav is a console page behind the gate: with the
+// gate ON and no session, every one of them answers a redirect to the sign-in
+// screen, so the column is forty links that all go to one place.
+//
+// **THE PAGE THAT FOUND IT IS THE SIGN-OUT PAGE.** `POST /admin/signout` draws
+// its confirmation through `page()` with the gate state read again — which is
+// right, and is what takes the Sign out button out of the corner — and left
+// the whole navigation column standing beside a page whose subject is that the
+// session it navigates with has ended. The realm switcher went with it, and
+// that one is worse than the links: it is a FORM, so using it posted to a
+// console that no longer had a session for it.
+//
+// TWO STATES GET THE COLUMN AND WHAT DECIDES IT IS THE GATE, NOT THE SESSION.
+// A service with the gate off has no session either and every page in that nav
+// is reachable, so `enforced` is what the test reads first and `session` only
+// decides it when the gate is on. A caller that passes no gate state at all
+// (the query refusal further down this file) is treated as the ordinary case,
+// because that page is drawn AFTER the gate has let the request through.
+//
+// WHAT REPLACES IT IS NOTHING. `.main` is `flex:1 1 32rem`, so the card takes
+// the width the column was holding. A column emptied of its nav and keeping
+// its two brand lines would be an inch of white space with nothing in it — and
+// what those lines say is which REALM the pages are about, which is a sentence
+// about pages that are not there.
+// ---------------------------------------------------------------------------
+function sideColumn(active, up, req, gate) {
+  log.debug("Entering sideColumn().");
+  if (gate && gate.enforced && !gate.session) {
+    log.debug("Leaving sideColumn(). Nobody is signed in, so there is nothing " +
+              "in it that could be reached.");
+    return '';
+  }
+  const html =
+      '<aside class="side">' +
+      '<p class="brand">Mock STS admin</p>' +
+      // WHAT THIS SERVICE IS AND WHICH REALM YOU ARE IN, rather than the WS-Trust
+      // issuer identifier that used to be here.
+      //
+      // That identifier is `wstrust.issuer`, and it was never the name of this
+      // service — it is what ONE of the sixteen protocol families puts in an
+      // <Issuer> element. In the corner of a console whose other fifteen families
+      // never mention it, it read as the service's identity and is not; and it is
+      // the one line on the page that is drawn before the reader knows what the
+      // page is about, so it should say something true of the whole of it.
+      //
+      // THE REALM IS THE THING WORTH SAYING THERE. Every page in this console
+      // shows exactly one realm, `/admin/config` WRITES the one it is read in, and
+      // a realm is a whole logical copy of this service — so "which one am I
+      // looking at" is the question a reader most needs answered before they act.
+      // The switcher below says it too, but only when a realm has been DEFINED:
+      // it is absent in the ordinary case, which is precisely the case where the
+      // corner was saying nothing useful at all.
+      //
+      // THE ISSUER IDENTIFIER IS NOT IN THIS SHELL AT ALL ANY MORE, and that is
+      // the second half of one decision rather than a later reversal of it. It
+      // came out of this corner on 2026-08-24 into the line under the heading,
+      // and off the shell entirely on 2026-08-25, for the reason above read once
+      // more: a name that ONE of sixteen protocol families uses, repeated at the
+      // top of every page in the console, reads as the service's identity on all
+      // of them and means something on the handful about WS-Trust.
+      //
+      // NOTHING IS LOST, and here is where each half of it went. It is on
+      // `/admin/sts-metadata`, the one page whose subject is what this service
+      // IS; it is on `/admin/config` under WS-Trust, which is where it is SET;
+      // and it is in this line's tooltip, because somebody who had learnt to read
+      // it off the shell should find it where they look rather than have to hunt.
+      '<p class="brandsub" title="' +
+        esc('This console is showing the trust realm "' + realms.current().name +
+            '" (id: ' + realms.currentId() + '). Its WS-Trust issuer identifier ' +
+            'is ' + config.value('wstrust.issuer') + ', which is what that ' +
+            'protocol puts in an <Issuer> element and is not the name of this ' +
+            'service.') +
+        '">Mock STS &middot; ' + esc(realms.current().name) + '</p>' +
+      navBar(active, up, req) +
+      '</aside>';
+  log.debug("Leaving sideColumn(). " + html.length + " bytes.");
+  return html;
+}
+
 function page(title, active, inner, up, gate, req) {
   log.debug("Entering page(). title=" + title + ", up=" + (up ? up.href : "none"));
   const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
@@ -2854,6 +3341,44 @@ function page(title, active, inner, up, gate, req) {
     // centring them against each other leaves the text half a pixel apart.
     '.pagehead .pagetools{display:flex;gap:8px;align-items:baseline}' +
     '.pagehead form.signout{display:inline;margin:0}' +
+    // THE ACCOUNT MENU (2026-09-10). `position:relative` on the <details> and
+    // `position:absolute` on the panel, so that opening it OVERLAYS the page
+    // rather than pushing the card's first heading down — a menu that reflows
+    // the page under it moves whatever the reader was about to click.
+    //
+    // The summary is drawn as a quiet button so it reads as a control beside
+    // Refresh rather than as a word floating in the corner, and the caret is a
+    // `::after` because the default triangle sits on the wrong side and cannot
+    // be moved. `list-style:none` plus the -webkit- rule is what removes it:
+    // the two together, because neither does it in both engines. The same pair
+    // is on `details.fold` further down for the same reason.
+    '.usermenu{position:relative}' +
+    '.usermenu>summary{cursor:pointer;list-style:none;display:inline-flex;' +
+    'gap:.4em;align-items:center;border:1px solid #d5d5dd;border-radius:6px;' +
+    'padding:4px 10px;background:#fff;color:#333;font-size:.85em}' +
+    '.usermenu>summary::-webkit-details-marker{display:none}' +
+    '.usermenu>summary::after{content:"\\25be";color:#888;font-size:.9em}' +
+    '.usermenu>summary:hover{background:#f4f6fb}' +
+    '.usermenu[open]>summary{background:#eef2fb;border-color:#c3d0ea;' +
+    'color:#12107c}' +
+    // `z-index` because the panel overlaps the card's own content, and
+    // `text-align:left` because `.pagetools` sits at the right-hand end of a
+    // space-between row and the panel would otherwise inherit that.
+    '.usermenupanel{position:absolute;right:0;top:calc(100% + 6px);z-index:30;' +
+    'min-width:15rem;background:#fff;border:1px solid #d5d5dd;border-radius:8px;' +
+    'box-shadow:0 8px 28px rgba(0,0,0,.14);padding:8px;text-align:left}' +
+    '.usermenupanel .usermenuwho{margin:0 0 6px;padding:0 8px;color:#666;' +
+    'font-size:.75em}' +
+    '.usermenupanel a{display:block;padding:6px 8px;border-radius:5px;' +
+    'color:#12107c;text-decoration:none;font-size:.85em}' +
+    '.usermenupanel a:hover{background:#eef2fb;text-decoration:none}' +
+    // The sign-out form is `display:inline` in the rule above, which is right
+    // in the head row and wrong in a stacked panel — so it is a block here,
+    // separated from the link by the same hairline the nav uses, and its
+    // button fills the width so the whole row is the target.
+    '.usermenupanel form.signout{display:block;margin:6px 0 0;' +
+    'border-top:1px solid #eee;padding-top:6px}' +
+    '.usermenupanel form.signout button{width:100%}' +
     'h2{font-size:1.05em;margin:1.8em 0 .5em;color:#12107c;border-bottom:1px solid #eee;padding-bottom:.2em}' +
     'h3{font-size:.92em;margin:1.2em 0 .4em}' +
     'p.sub{color:#666;font-size:.85em;margin:0 0 14px}' +
@@ -2996,6 +3521,27 @@ function page(title, active, inner, up, gate, req) {
     // label.
     'td.counts{white-space:nowrap}' +
 
+    // A TABLE WITH A COLUMN PER EVENT TYPE, IN A BOX THAT SCROLLS SIDEWAYS.
+    // The RISC accounts table is five fixed columns, then one per RISC event
+    // type — fourteen of them — then three more; twenty-two columns do not fit
+    // the card on a laptop and no amount of shortening inside a cell makes
+    // them, because a count is already one character and a heading cannot be
+    // narrower than its shortest word. So the TABLE keeps its natural width
+    // and the BOX round it scrolls. That is the one arrangement here that
+    // takes nothing away: dropping columns loses the number somebody came
+    // for, and letting it spill past the card leaves those columns unreachable
+    // rather than merely off to one side.
+    //
+    // `width:auto` with `min-width:100%` is the pair that does the work, and
+    // the first half is easy to leave out: `table` above is `width:100%`, and
+    // a table told to be exactly its container's width inside a scroll box
+    // never overflows it — it squeezes, and the box never scrolls, so the
+    // wrapper looks like it did nothing. Auto lets it take what its content
+    // needs; the minimum keeps a table that DOES fit looking like every other
+    // table on the page instead of shrinking to its text.
+    '.wide{overflow-x:auto;max-width:100%}' +
+    '.wide>table{width:auto;min-width:100%}' +
+
     // -------------------------------------------------------------------
     // A VALUE TOO LONG FOR ITS CELL, AND THE POPUP THAT GIVES IT BACK.
     //
@@ -3087,6 +3633,54 @@ function page(title, active, inner, up, gate, req) {
     // the wrong thing to hide from somebody who has just arrived at the
     // control. It is the only effect this class has and the only reason any of
     // those forms has a class at all.
+    // ---------------------------------------------------------------------
+    // THE PKI PANE (`/admin/pki`). Ten rules, and they are here rather than in
+    // `admin-ui/pki_admin.js` because this is the console's ONE stylesheet:
+    // a page with a `<style>` of its own would be the second place a reader
+    // has to look for why something is laid out as it is, and
+    // `script-src 'none'` is already the reason there is no third.
+    //
+    // **`.pki-cols` IS THE WHOLE LAYOUT DECISION.** That pane is three blocks
+    // — the certificate fields, the key pair and the subject DN — which are
+    // one act and read as one act only side by side; stacked, the button at
+    // the top of the second is nine screens above the extensions it applies
+    // to. `auto-fit` with a 22rem floor drops to two columns and then to one
+    // on a narrow window without a media query, which is the same rule the
+    // page it is modelled on uses.
+    //
+    // **`.pki-extlist` IS A COLUMN FLOW AND NOT A GRID**, and that is not
+    // taste: a grid lays its items out in ROW order, so twenty-two cards of
+    // different heights leave a ragged gap under every short one. A column
+    // flow packs them and keeps document order down each column.
+    //
+    // **THE TEXTAREA RULE IS AN OVERRIDE AND HAS TO BE.** This console's
+    // default is `min-height:7rem`, which is right for a policy document and
+    // wrong for twenty-odd one-item-per-line boxes: at 7rem each the pane is
+    // about four screens of empty box. They are sized by their `rows`
+    // attribute here instead, which is what the markup already says.
+    // ---------------------------------------------------------------------
+    '.pki-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));' +
+    'gap:14px;margin:.6em 0 1em;align-items:start}' +
+    '.pki-col{border:1px solid #e2e2ea;border-radius:8px;padding:10px 12px;background:#fbfbfd;' +
+    'min-width:0}' +
+    '.pki-group{font-size:.82em;font-weight:700;color:#12107c;text-transform:uppercase;' +
+    'letter-spacing:.03em;margin:.9em 0 .4em}' +
+    '.pki-col>.pki-group:first-child{margin-top:0}' +
+    '.pki-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:.45em 0}' +
+    '.pki-row>label{font-size:.78em;font-weight:600;color:#555;display:flex;' +
+    'flex-direction:column;gap:3px}' +
+    '.pki-field{margin:.45em 0}' +
+    '.pki-field>label{font-size:.78em;font-weight:600;color:#555;display:block}' +
+    '.pki-flag{font-weight:400;font-size:.78em;color:#333;display:inline-flex;' +
+    'align-items:center;gap:4px;flex-direction:row}' +
+    '.pki-flags{display:flex;flex-wrap:wrap;gap:2px 10px;margin:.3em 0}' +
+    '.pki-extlist{columns:24rem 3;column-gap:14px;margin:.6em 0 1em}' +
+    '.pki-ext{break-inside:avoid;-webkit-column-break-inside:avoid;display:inline-block;' +
+    'width:100%;border:1px solid #e2e2ea;border-radius:8px;padding:8px 10px;' +
+    'margin:0 0 10px;background:#fbfbfd}' +
+    '.pki-exthead{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;' +
+    'border-bottom:1px solid #eeeef4;padding-bottom:4px;margin-bottom:5px}' +
+    '.pki-ext textarea,.pki-col textarea{min-height:0}' +
     'form.finder{scroll-margin-top:3rem}' +
     '.chooser{max-height:13.5em;overflow-y:auto;border:1px solid #e2e2ea;' +
     'border-radius:6px;background:#fbfbfd;margin:.1em 0 .3em}' +
@@ -3348,55 +3942,16 @@ function page(title, active, inner, up, gate, req) {
     '.pf-hint{color:#555;font-size:.85em;background:#fbfbfd;border:1px dashed #d5d5dd;' +
     'border-radius:8px;padding:10px 12px;margin:.6em 0}' +
     '</style></head><body><div class="shell">' +
-    '<aside class="side">' +
-    '<p class="brand">Mock STS admin</p>' +
-    // WHAT THIS SERVICE IS AND WHICH REALM YOU ARE IN, rather than the WS-Trust
-    // issuer identifier that used to be here.
-    //
-    // That identifier is `wstrust.issuer`, and it was never the name of this
-    // service — it is what ONE of the sixteen protocol families puts in an
-    // <Issuer> element. In the corner of a console whose other fifteen families
-    // never mention it, it read as the service's identity and is not; and it is
-    // the one line on the page that is drawn before the reader knows what the
-    // page is about, so it should say something true of the whole of it.
-    //
-    // THE REALM IS THE THING WORTH SAYING THERE. Every page in this console
-    // shows exactly one realm, `/admin/config` WRITES the one it is read in, and
-    // a realm is a whole logical copy of this service — so "which one am I
-    // looking at" is the question a reader most needs answered before they act.
-    // The switcher below says it too, but only when a realm has been DEFINED:
-    // it is absent in the ordinary case, which is precisely the case where the
-    // corner was saying nothing useful at all.
-    //
-    // THE ISSUER IDENTIFIER IS NOT IN THIS SHELL AT ALL ANY MORE, and that is
-    // the second half of one decision rather than a later reversal of it. It
-    // came out of this corner on 2026-08-24 into the line under the heading,
-    // and off the shell entirely on 2026-08-25, for the reason above read once
-    // more: a name that ONE of sixteen protocol families uses, repeated at the
-    // top of every page in the console, reads as the service's identity on all
-    // of them and means something on the handful about WS-Trust.
-    //
-    // NOTHING IS LOST, and here is where each half of it went. It is on
-    // `/admin/sts-metadata`, the one page whose subject is what this service
-    // IS; it is on `/admin/config` under WS-Trust, which is where it is SET;
-    // and it is in this line's tooltip, because somebody who had learnt to read
-    // it off the shell should find it where they look rather than have to hunt.
-    '<p class="brandsub" title="' +
-      esc('This console is showing the trust realm "' + realms.current().name +
-          '" (id: ' + realms.currentId() + '). Its WS-Trust issuer identifier ' +
-          'is ' + config.value('wstrust.issuer') + ', which is what that ' +
-          'protocol puts in an <Issuer> element and is not the name of this ' +
-          'service.') +
-      '">Mock STS &middot; ' + esc(realms.current().name) + '</p>' +
-    navBar(active, up, req) +
-    '</aside><div class="main"><div class="card">' +
-    // THE HEAD ROW: the page's title, and the one control that is on every
-    // page of this console. See refreshLink() for why it is a link.
-    // Two controls now rather than one, so they are grouped: `.pagehead` is a
+    sideColumn(active, up, req, gate) +
+    '<div class="main"><div class="card">' +
+    // THE HEAD ROW: the page's title, and the controls that are on every page
+    // of this console. See refreshLink() for why it is a link, and userMenu()
+    // for why the second one is a <details> and not a script.
+    // Two controls rather than one, so they are grouped: `.pagehead` is a
     // space-between row and a bare second child would push the first away from
     // the heading rather than sitting beside it.
     '<div class="pagehead"><h1>' + esc(title) + '</h1>' +
-      '<div class="pagetools">' + refreshLink(req) + signOutControl(gate) +
+      '<div class="pagetools">' + refreshLink(req, gate) + userMenu(req, gate) +
       '</div></div>' +
     trailBar(active, up, title) + gateBanner(gate) + withDerivedTips(inner) +
     '<div class="meta">' +
@@ -3892,8 +4447,52 @@ app.use('/admin', function (req, res, next) {
     next();
     return;
   }
+  // -------------------------------------------------------------------------
+  // THE SECOND PATH UNDER /admin THAT THIS GATE MUST NOT GUARD (2026-09-10),
+  // AND IT IS THE SAME SHAPE OF EXEMPTION AS THE ONE ABOVE RATHER THAN A NEW
+  // KIND.
+  //
+  // This console is a Shared Signals RECEIVER now — `ssf/ssf_receivers.js`
+  // argues the whole of it — and `/admin/signals/receive` is where its own
+  // stream's Security Event Tokens are POSTed. A push carries NO CONSOLE
+  // SESSION by construction: it is a server-to-server request and must not
+  // present a browser's credentials, which is the same thing the OIDC back
+  // channel says about itself. Guarded, this endpoint could only ever refuse
+  // every delivery, and the symptom would be an inbox page that stays empty
+  // while the stream's log fills with 401s.
+  //
+  // **IT IS NOT A HOLE, AND THE REASON IS NOT "IT IS ONLY A READ".** It is a
+  // write — it puts a row in this realm's inbox. What guards it is the
+  // stream's own `delivery.authorization_header`: a bearer token minted per
+  // stream and per start, compared in constant time, that nothing but this
+  // service's own transmitter is ever given. `accept()` refuses without it,
+  // refuses a SET addressed to another audience, and records both. So the
+  // check moved rather than went away — which is the test to hold a third
+  // exemption to, if one is ever proposed.
+  //
+  // **AND IT IS EXEMPT FROM THE CSRF CHECK FOR THE SAME REASON**, which is the
+  // half the sign-out exemption below deliberately does NOT take. A CSRF token
+  // is a defence for a form submitted by a browser holding a cookie; there is
+  // no browser here and no cookie, and a token would be a secret this service
+  // would have to hand its own transmitter in addition to the one it already
+  // checks.
+  //
+  // It is an exemption IN the gate and not a route registered above it, for
+  // `/callback`'s reason: the gate is registered above every route in this
+  // file so that a console page added tomorrow is guarded by construction
+  // (rule 1), and a route above it would break that invariant for every reader
+  // who came after.
+  // -------------------------------------------------------------------------
+  if (req.path === '/signals/receive') {
+    log.debug("Leaving the admin console gate. The Shared Signals receive " +
+              "endpoint is exempt: a push carries the stream's own bearer " +
+              "token and no session. See ssf/ssf_receivers.js.");
+    next();
+    return;
+  }
   if (!mode.gatesConsole()) {
-    log.debug("Leaving the admin console gate. admin.authRequired is off; everything is allowed.");
+    log.debug("Leaving the admin console gate. The gate is off; everything is allowed. " +
+              "UNREACHABLE since 2026-09-06: mode.gatesConsole() is unconditional.");
     next();
     return;
   }
@@ -3910,8 +4509,8 @@ app.use('/admin', function (req, res, next) {
              'own groups, and the two roles this console decides from are ' +
              'groups in the default realm\'s ou=groups only. The session is a ' +
              'cookie, so a program driving this console has to sign in at that ' +
-             'screen and keep it — or turn admin.authRequired off, or use ' +
-             '/admin-api, which is not gated.',
+             'screen and keep it — or use /admin-api, which takes an access ' +
+             'token of its own rather than a session.',
              { needed: 'session', signIn: LOGIN_PATH, signInRealm: realms.DEFAULT_ID });
       log.debug("Leaving the admin console gate. Refused 401 to a JSON caller.");
       return;
@@ -4283,9 +4882,24 @@ function teaserOf(text, max) {
   if (space > 40) {
     cut = cut.slice(0, space);
   }
-  // A cut can land inside an entity — `&mda` — which a browser renders
+  // ---------------------------------------------------------------------
+  // A CUT CAN LAND INSIDE AN ENTITY — `&mda` — which a browser renders
   // literally, so the half is dropped rather than shown.
-  return cut.replace(/&[a-zA-Z0-9#]*$/, '').replace(/[\s,.;:—-]+$/, '') + '&hellip;';
+  //
+  // **AND IT CAN LAND IMMEDIATELY AFTER A WHOLE ONE, WHICH IS THE CASE THIS
+  // MISSED UNTIL 2026-09-11.** The two replacements ran in the order
+  // entity-then-punctuation, and `;` is in the punctuation class — so a cut
+  // ending `&mdash;` survived the first replacement intact (it is complete),
+  // lost its semicolon to the second, and reached the page as the literal
+  // text `&mdash`. Nothing on this console had ever been cut in that exact
+  // place before `/admin/spiffe`'s authority note, which is why a bug in a
+  // function every folded note goes through went years without being seen.
+  //
+  // The `;?` is the whole fix: a trailing entity is taken WHOLE where there
+  // is one, and the punctuation strip then only ever sees ordinary text.
+  // ---------------------------------------------------------------------
+  return cut.replace(/&[a-zA-Z0-9#]*;?$/, '').replace(/[\s,.;:—-]+$/, '') +
+         '&hellip;';
 }
 
 // The entities a title attribute cannot show, resolved. Only tip() needs it —
@@ -4422,6 +5036,25 @@ function warn(html, label) {
   const fold = foldOf(html, label);
   return '<details class="warn fold"><summary>' + fold.summary +
          '</summary><div class="foldbody">' + fold.body + '</div></details>';
+}
+
+// A TABLE TOO WIDE FOR THE CARD, IN A BOX THAT SCROLLS SIDEWAYS. The caller
+// hands over the whole `<table>…</table>` and gets it back inside the scroller
+// `.wide` describes.
+//
+// `tabindex="0"` is not decoration: a scroll container that only a pointer can
+// move leaves the columns past its right-hand edge unreachable from a
+// keyboard, and this console has no script to give them back. Making the box
+// focusable is what lets the arrow keys move it, and it is the whole reason
+// this is a helper rather than a `<div class="wide">` written at each call
+// site — the attribute is the part somebody copying the markup would drop.
+//
+// `aria-label` names WHICH table, because a page with two of these otherwise
+// announces two identical regions and the label is the only thing telling a
+// reader arriving in one of them which it is.
+function wideTable(label, html) {
+  return '<div class="wide" tabindex="0" role="region" aria-label="' +
+    esc(label) + '">' + html + '</div>';
 }
 
 // One item of a prose list — the *what it deliberately does not do* lists, and
@@ -5793,9 +6426,20 @@ app.post(SIGNOUT_PATH, function (req, res) {
     'choose.') +
     '<p><a class="btn" href="/admin">Sign in again</a></p>';
   // DRAWN THROUGH page() WITH THE GATE STATE READ AGAIN, which now reports
-  // nobody signed in — so the shell draws its "not signed in" banner and the
-  // Sign out button is gone from the corner. That is the page telling the
-  // truth about the state it is in rather than this handler asserting it.
+  // nobody signed in — so the shell draws its "not signed in" banner and takes
+  // away everything that would need a session: the account menu, the Refresh
+  // link (this page is the answer to a POST, so it has no GET to reload) and
+  // THE WHOLE NAVIGATION COLUMN. That is the page telling the truth about the
+  // state it is in rather than this handler asserting it.
+  //
+  // **THE COLUMN WENT ON 2026-09-10 AND THE OTHER TWO WERE ALREADY RIGHT**,
+  // which is what made it hard to see: the button was conditional from the
+  // day this route was written, so the corner of the page was honest while
+  // forty links down the left-hand side were not — every one of them a
+  // console page behind the gate, and the realm switcher among them a FORM
+  // posting to a console with no session for it. `sideColumn()` has the
+  // argument; `tests/vendored/sts_admin_console.js` asserts it beside the
+  // button it sits next to.
   res.status(200).type('text/html').set('Cache-Control', 'no-store')
      .send(page('Signed out', '', inner, null, gateStateFor(req), req));
   log.debug("Leaving the admin console sign-out.");
@@ -9128,8 +9772,16 @@ function delegationView(query) {
     applications: applicationsInvolved,
     json: {
       held: summary.held,
+      // AND HOW MANY PROCESSES THAT IS, beside how many of them are this
+      // one's. `held` is a fan-in across every request worker since
+      // 2026-09-11; a client that compared it with `recorded` below without
+      // these two would have no way to see why the second is smaller.
+      heldHere: summary.heldHere, processes: summary.processes,
       // Everything ever recorded and everything dropped, both, because `held`
       // alone reads as "this is all there was" the moment the cap has bitten.
+      // BY THIS PROCESS — see the store's own comment: there is no counter
+      // store to fan in and inventing one to make the numbers match would be a
+      // store nothing else reads.
       recorded: summary.recorded, dropped: summary.dropped,
       maxRecords: summary.maxRecords,
       matched: filtered.length, shown: shown.length,
@@ -10143,8 +10795,21 @@ app.get('/admin/delegation', function (req, res) {
     note(view.filtered.length + ' act(s) match' +
     (paging.pages > 1 ? ', of which rows ' + paging.firstRow + '&ndash;' + paging.lastRow +
                         ' are on this page (' + paging.page + ' of ' + paging.pages + ')' : '') +
-    '; ' + summary.held + ' held of ' + summary.recorded + ' recorded since this ' +
-    'process started' +
+    '; ' + summary.held + ' held' +
+    // ---------------------------------------------------------------------
+    // ONE PROCESS OR SEVERAL, AND THE TWO NUMBERS ARE NOT COMPARABLE WHEN IT
+    // IS SEVERAL (2026-09-11). `held` is every process's acts, fanned in by
+    // `delegation.merged()`; `recorded` is a plain counter in THIS process and
+    // there is no store to fan in. So "N held of M recorded" reads as nonsense
+    // the moment N exceeds M, which in `dispatch` mode it routinely does. The
+    // sentence says which is which instead of quietly putting them in one
+    // comparison.
+    // ---------------------------------------------------------------------
+    (summary.processes > 1
+      ? ' across ' + summary.processes + ' process(es), ' + summary.heldHere +
+        ' of them here; ' + summary.recorded + ' recorded by this one since ' +
+        'it started'
+      : ' of ' + summary.recorded + ' recorded since this process started') +
     (summary.dropped
       ? ', and <strong>' + summary.dropped + ' dropped</strong> — this page holds ' +
         'at most ' + summary.maxRecords + ' acts and discards the oldest first. ' +
@@ -15067,12 +15732,438 @@ function sessionBlock(session, tokenPage, back, params) {
 // The drill-down. Returns null when the identity is not one this service knows,
 // which the route below turns into an honest empty page rather than a 404: a user
 // can genuinely be forgotten to the cap between the click and the page.
+// ===========================================================================
+// ONE PERSON'S SECOND FACTORS, ON THEIR OWN ROW (2026-09-10).
+//
+// **THIS IS WHERE `/admin/mfa`'s PER-PERSON HALF WENT.** That page listed
+// everybody and gave each row a Clear button; the roster is columns on the list
+// above now and this is the detail. What it buys is the thing a page of forty
+// people could not have: this section can say what the enrolment IS — which
+// digest, how many digits, how long a step, when it was set up, when it was
+// last used, whether the secret is sealed — and it can list a person's security
+// keys one at a time with the role each is in.
+//
+// ---------------------------------------------------------------------------
+// TWO MECHANISMS, AND THE WEBAUTHN HALF IS THE ONE THAT NEEDS EXPLAINING.
+//
+// A WebAuthn key is here only where it is a SECOND FACTOR — the `mfa` role. A
+// `primary` key is a way IN rather than a second factor, so it is reported
+// under what this person can sign in with and not as an MFA credential.
+// `credentials.js`'s ROLES table is what tells them apart, and this section
+// reads it rather than deciding.
+//
+// ---------------------------------------------------------------------------
+// THE TWO REMOVALS ARE NOT THE SAME ACT AND THE BUTTONS SAY SO.
+//
+// Clearing an authenticator app CANNOT lock anybody out: a one-time code is
+// never a primary credential here, so clearing one drops the account to one
+// factor and never to none. Removing a security KEY can — it may be the only
+// credential there is — so it goes through `credentials.removeKey()`, which
+// refuses to remove the last way in. An operator must not be able to do what
+// the person themselves is stopped from doing.
+// ===========================================================================
+function mfaSection(row, key, state, back) {
+  log.debug("Entering mfaSection(). key=" + key);
+  const heading = '<h2>Second factors, and what this person can sign in with</h2>';
+  if (!credentials.storable()) {
+    log.debug("Leaving mfaSection(). No credential store.");
+    return {
+      html: heading +
+        note('No credential store is installed in this process, so nothing ' +
+        'here can say what this person holds. That is a build of this service ' +
+        'without <code>ldap_server.js</code> and not a failure — every other ' +
+        'section of this page is unaffected.'),
+      json: null
+    };
+  }
+
+  const mech = credentials.mechanismsFor(key);
+  const totpLive = totp.settings();
+  const keyLive = webauthnPolicy.settings();
+  const recoveryLive = backupCodes.settings();
+  const mfaKeys = (mech.keys || []).filter(function (one) { return one.role === 'mfa'; });
+  const primaryKeys = (mech.keys || []).filter(function (one) { return one.role === 'primary'; });
+  const carryBack = '<input type="hidden" name="back" value="' + esc(back) + '">' +
+                    '<input type="hidden" name="from" value="users">';
+
+  // WHAT THEY CAN GET IN WITH, first and on its own, because it is the
+  // question underneath the other two: a person with no password and no
+  // primary key cannot sign in at all, however much is enrolled on them, and
+  // an operator reading a long list of second factors on such an account would
+  // otherwise draw exactly the wrong conclusion.
+  const wayIn = '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+    '<tr><th>Password</th><td>' + (mech.password
+      ? '<span class="state-valid">set</span> — a scrypt hash on their own ' +
+        'entry. It cannot be read back and this console cannot show it; the ' +
+        'form below replaces it.'
+      : '<span class="state-none">none</span>') + '</td></tr>' +
+    '<tr><th>Primary security key</th><td>' + (primaryKeys.length
+      ? '<span class="state-valid">' + esc(String(primaryKeys.length)) +
+        '</span> — signs them in on its own, passwordless. The session then ' +
+        'records <code>amr ["hwk"]</code> and <code>acr "1"</code>.'
+      : '<span class="state-none">none</span>') + '</td></tr>' +
+    '<tr><th>Can sign in</th><td>' + (mech.usable
+      ? '<span class="state-valid">yes</span>'
+      : '<strong class="state-expired">NO</strong> — no password and no ' +
+        'primary key. <strong>A second factor is never a way in by ' +
+        'itself</strong>, so nothing below changes this answer. An activation ' +
+        'link is how they come to hold a credential.') + '</td></tr>' +
+    '<tr><th>Second factor demanded</th><td>' + (mech.mfaRequired
+      ? '<span class="state-valid">yes</span> — the sign-in screen asks for ' +
+        (mech.secondFactor === 'webauthn'
+          ? 'the SECURITY KEY' + (mech.totp
+              ? ', with the authenticator app offered as the alternative for ' +
+                'somebody at a machine the key is not plugged into'
+              : '')
+          : 'a CODE from their authenticator app') +
+        '. A password alone will not sign them in.'
+      : '<span class="state-none">no</span> — nothing here is configured as a ' +
+        'second factor, so a password alone signs them in.') + '</td></tr>' +
+    '</table>';
+
+  // --- the authenticator app -----------------------------------------------
+  const d = mech.totpDetail || {};
+  const totpBlock = '<h3>Authenticator app (RFC 6238)</h3>' +
+    (!mech.totp
+      ? note('<strong>None enrolled.</strong> ' +
+        (totpLive.enabled
+          ? 'They set one up themselves at <code>/portal/mfa</code>, or while ' +
+            'spending an activation link. <strong>There is deliberately no way ' +
+            'to enrol one from here</strong>: enrolling means being shown a ' +
+            'shared secret, and an administrative door that handed one out ' +
+            'would mint a working second factor for any account — which is not ' +
+            'a second factor at all.'
+          : 'Authenticator apps are switched off in this realm ' +
+            '(<code>totp.enabled</code> on <a href="/admin/totp">TOTP MFA</a>), ' +
+            'so nobody new can enrol one.'))
+      : (!mech.totpUsable
+          ? warn('<strong>An enrolment exists and this process cannot read ' +
+            'it</strong> — ' + esc(d.why || 'the stored value is unusable') +
+            '. Almost always a shared secret sealed under a key-encryption key ' +
+            'that has since been rotated. <strong>They are REFUSED at the code ' +
+            'step rather than let through on one factor</strong>, so they ' +
+            'cannot sign in at all until this is cleared and set up again.')
+          : '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+            '<tr><th>Code</th><td>' + esc(String(d.digits || 6)) + ' digits, ' +
+              'HMAC-' + esc(String(d.algorithm || 'SHA1').replace(/^SHA/, 'SHA-')) +
+              ', a new one every ' + esc(String(d.period || 30)) + ' seconds. ' +
+              '<strong>These are the parameters the QR code told the app</strong> ' +
+              'and are what verification uses — changing ' +
+              '<a href="/admin/totp">the settings</a> affects NEW enrolments ' +
+              'only, because this service cannot reach into somebody\'s phone.' +
+              ((d.digits && d.digits !== totpLive.digits) ||
+               (d.period && d.period !== totpLive.period) ||
+               (d.algorithm && d.algorithm !== totpLive.algorithm)
+                ? ' <strong>This enrolment differs from the current ' +
+                  'settings</strong> (' + esc(String(totpLive.digits)) +
+                  ' digits, HMAC-' +
+                  esc(String(totpLive.algorithm).replace(/^SHA/, 'SHA-')) +
+                  ', every ' + esc(String(totpLive.period)) + 's), which is ' +
+                  'correct and is what that sentence means.'
+                : '') + '</td></tr>' +
+            '<tr><th>Skew forgiven</th><td>' + esc(String(totpLive.window)) +
+              ' step(s) either side. <strong>This one is live for ' +
+              'everybody</strong> — how much a deployment forgives a drifting ' +
+              'clock is a policy rather than something the app was ' +
+              'told.</td></tr>' +
+            '<tr><th>Shared secret</th><td>' + (d.sealed
+              ? '<span class="state-valid">sealed</span> under this service\'s ' +
+                'key-encryption key, so <a href="/admin/ldap/directory">the ' +
+                'directory page</a> shows ciphertext.'
+              : 'stored as <strong>base32, in the clear</strong> — development ' +
+                'mode, where the key-encryption key is generated per run and ' +
+                'sealing would mean an authenticator that silently stopped ' +
+                'working at the next restart. Verifying a code means COMPUTING ' +
+                'it, so unlike a password the secret cannot be hashed. That is ' +
+                'the whole reason this mechanism can never be a FIRST ' +
+                'factor.') + '</td></tr>' +
+            '<tr><th>Enrolled</th><td>' +
+              esc(d.enrolledAt ? whenText(d.enrolledAt) : 'not recorded') +
+              '</td></tr>' +
+            '<tr><th>Last code accepted</th><td>' +
+              esc(d.lastUsedAt ? whenText(d.lastUsedAt) : 'never') +
+              '. The step it was in is stored with the enrolment, so that code ' +
+              'cannot be used again (RFC 6238 section 5.2).</td></tr>' +
+            '</table>')) +
+    (mech.totp && state.write
+      ? '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="clear-totp">' +
+        '<input type="hidden" name="user" value="' + esc(key) + '">' + carryBack +
+        '<div class="formrow"><button class="danger" title="' +
+        esc('Clears the enrolment so this person can set up a new one. This is ' +
+            'the ONLY way back for somebody who has lost their phone: the ' +
+            'secret is on that device and this service cannot reach it.') +
+        '">Clear the authenticator app</button></div></form>' +
+        note('<strong>This is the only way back for somebody who has lost ' +
+        'their phone.</strong> The shared secret lives on that device and this ' +
+        'service cannot reach it, and there is deliberately no self-service ' +
+        'reset — a second factor anybody can remove is not a second factor. ' +
+        'Clearing drops the account to one factor and cannot lock anybody out, ' +
+        'because a one-time code is never a way in by itself. They set a new ' +
+        'one up at <code>/portal/mfa</code>.')
+      : (mech.totp
+          ? note('Clearing needs <strong>Admin Write</strong>.')
+          : ''));
+
+  // --- security keys --------------------------------------------------------
+  const keyRow = function (one) {
+    return '<tr><td>' + esc(one.label || 'security key') + '</td>' +
+      '<td>' + (one.role === 'primary'
+        ? '<span class="state-valid" title="' +
+          esc('Signs them in on its own — this is a way IN rather than a ' +
+              'second factor.') + '">primary</span>'
+        : 'second factor') + '</td>' +
+      // `shortened()` EMITS ITS OWN `<code title=…>` AND ESCAPES THE TEXT, so
+      // there is neither an esc() nor a wrapper here. The first version had
+      // both, and the cell rendered the literal characters `<code title=…>`.
+      '<td>' + shortened(one.credentialId || '', 24) + '</td>' +
+      '<td class="num">' + esc(String(one.signCount || 0)) + '</td>' +
+      '<td>' + esc(one.enrolledAt ? whenText(one.enrolledAt) : '—') + '</td>' +
+      '<td>' + (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="clear-key">' +
+          '<input type="hidden" name="user" value="' + esc(key) + '">' +
+          '<input type="hidden" name="credentialId" value="' +
+          esc(one.credentialId || '') + '">' + carryBack +
+          '<button class="danger" title="' +
+          esc(one.role === 'primary'
+            ? 'This may be the only credential on the account. The removal is ' +
+              'REFUSED if it would leave nobody able to sign in.'
+            : 'Removes this key. The account drops to one factor and stays ' +
+              'reachable.') + '">Remove</button></form>'
+        : '') + '</td></tr>';
+  };
+  const allKeys = mfaKeys.concat(primaryKeys);
+  const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
+    (allKeys.length
+      ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
+        '<th class="num">Sign count</th><th>Enrolled</th><th></th></tr>' +
+        allKeys.map(keyRow).join('') + '</table>' +
+        note('<strong>The sign count is WebAuthn\'s replay defence</strong>: ' +
+        'an authenticator\'s counter only ever goes up, so one that went ' +
+        'backwards is a cloned key and the assertion is refused. A counter ' +
+        'stuck at zero is an authenticator that does not implement one, which ' +
+        'is allowed and is what most platform authenticators do.')
+      : note('<strong>None enrolled.</strong> ' +
+        (keyLive.enabled
+          ? 'They enrol one themselves at <code>/portal/keys</code>, at the ' +
+            'sign-in screen, or while spending an activation link. There is ' +
+            'no way to enrol one from here and there cannot be: a WebAuthn ' +
+            'ceremony happens in the person\'s own browser against their own ' +
+            'authenticator, and this console is not that browser.'
+          : 'Security keys are switched off in this realm ' +
+            '(<code>webauthn.enabled</code> on ' +
+            '<a href="/admin/webauthn">WebAuthn</a>), so nobody new can enrol ' +
+            'one. A key already enrolled goes on working.'))) +
+    (allKeys.length && !state.write
+      ? note('Removing a key needs <strong>Admin Write</strong>.') : '') +
+    note('<strong>What this realm currently allows</strong>: a key may be a ' +
+    'primary credential — ' + (keyLive.primaryAllowed ? 'yes' : 'NO') + ' — ' +
+    'and a second factor — ' + (keyLive.mfaAllowed ? 'yes' : 'NO') + ' — with ' +
+    'at most ' + esc(String(keyLive.maxKeysPerPerson)) + ' per person. Those ' +
+    'refuse an ENROLMENT and never an authentication, so a key above in a role ' +
+    'this realm no longer allows goes on working. ' +
+    '<a href="/admin/webauthn">WebAuthn</a> is where they are set.');
+
+  // --- the recovery codes ---------------------------------------------------
+  // **THE COUNTS AND NEVER THE CODES**, which is why this block reads
+  // `mech.backupCodes` — a status object — and there is no call anywhere in
+  // this console to the codes themselves. There is no such door anywhere any
+  // more — a set is stored as scrypt hashes since 2026-09-11 — and an
+  // administrative door
+  // that showed somebody's recovery codes would hand a working second factor
+  // to whoever holds Admin Read, which is the same refusal this page already
+  // makes about enrolling an authenticator app from here. The person's own
+  // `/portal/mfa` is the only reader.
+  const b = mech.backupCodes || { present: false, total: 0, remaining: 0 };
+  const recoveryBlock = '<h3>Recovery codes</h3>' +
+    (!b.present
+      ? note('<strong>None issued.</strong> ' +
+        (recoveryLive.enabled
+          ? 'A set is created automatically the first time this person ' +
+            'enrols a second factor — a confirmed authenticator app, or a ' +
+            'security key in the <code>mfa</code> role. <strong>There is no ' +
+            'control anywhere that issues one on request</strong>, here or on ' +
+            '<code>/portal</code> or on <code>/admin-api</code>: a way back ' +
+            'that somebody has to remember to ask for produces exactly the ' +
+            'population it exists to protect, one person at a time. Nobody ' +
+            'with a second factor enrolled BEFORE 2026-09-10 has a set, which ' +
+            'is the ordinary reason this says none — clearing and re-enrolling ' +
+            'is what issues one.'
+          : 'Recovery codes are switched off in this realm ' +
+            '(<code>backupCodes.enabled</code> on ' +
+            '<a href="/admin/backup-codes">Recovery codes</a>), so no new set ' +
+            'will be issued. A set already issued goes on working.'))
+      : (!b.usable
+          ? warn('<strong>A set exists and this process cannot read it</strong> — ' +
+            esc(b.why || 'the stored set is unusable') + '. Almost always a ' +
+            'set sealed under a key-encryption key that has since been ' +
+            'rotated. <strong>They are REFUSED at the recovery screen rather ' +
+            'than let through</strong>, and the codes cannot be shown to them ' +
+            'either, so this set is worth nothing until it is cleared — after ' +
+            'which the next second factor they enrol issues a new one.')
+          : '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+            '<tr><th>Unused</th><td>' +
+              (b.remaining === 0
+                ? '<strong class="state-revoked">0</strong> of ' +
+                  esc(String(b.total)) + ' — <strong>every code has been ' +
+                  'used</strong>, so this account has a second factor and no ' +
+                  'way back. A set is issued once and is never topped up; ' +
+                  'clearing it below is what lets the next enrolment issue a ' +
+                  'new one.'
+                : (b.remaining <= 3
+                    // `state-expired` is this console's AMBER, despite the
+                    // name — see the stylesheet. Nearly out is a warning and
+                    // not a failure, which is exactly what that colour says
+                    // everywhere else on this page.
+                    ? '<span class="state-expired">' + esc(String(b.remaining)) +
+                      '</span> of ' + esc(String(b.total)) +
+                      ' — nearly out, and they are not topped up.'
+                    : '<span class="state-valid">' + esc(String(b.remaining)) +
+                      '</span> of ' + esc(String(b.total)) + '.')) +
+              '</td></tr>' +
+            '<tr><th>Issued</th><td>' +
+              esc(b.generatedAt ? whenText(b.generatedAt) : 'not recorded') +
+              '. <strong>Once.</strong> Enrolling a different second factor ' +
+              'does not reissue them, deliberately: somebody who printed a ' +
+              'list and later replaced their authenticator app would ' +
+              'otherwise be holding strings that had stopped working with ' +
+              'nothing having said so.</td></tr>' +
+            '<tr><th>Last used</th><td>' +
+              esc(b.lastUsedAt ? whenText(b.lastUsedAt) : 'never') +
+              '</td></tr>' +
+            '<tr><th>Stored</th><td>' + (b.sealed
+              ? '<span class="state-valid">encrypted</span> — AES-256-GCM ' +
+                'under this service\'s key-encryption key, so ' +
+                '<a href="/admin/ldap/directory">the directory page</a> shows ' +
+                'ciphertext.'
+              : 'as the <strong>strings they were shown</strong> — development ' +
+                'mode, where the key-encryption key is generated per run and ' +
+                'encrypting them would mean a printed recovery list that ' +
+                'stopped working at the next restart, which is the precise ' +
+                'failure this mechanism exists to prevent.') +
+              ' <strong>ENCRYPTED AND NOT HASHED</strong>, unlike ' +
+              '<code>userPassword</code>, and for a product reason rather than ' +
+              'an arithmetic one: the person may look at their remaining codes ' +
+              'again on <code>/portal/mfa</code>, and a hash cannot be ' +
+              'shown.</td></tr>' +
+            '</table>' +
+            note('<strong>This console never shows the codes themselves</strong>, ' +
+            'and there is no control here or on <code>/admin-api</code> that ' +
+            'does. They are a working second factor; showing them to whoever ' +
+            'holds Admin Read would be the same door this page already refuses ' +
+            'to open for an authenticator enrolment. The person reads them ' +
+            'back on their own <code>/portal/mfa</code>.'))) +
+    (b.present && state.write
+      ? '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="clear-backup-codes">' +
+        '<input type="hidden" name="user" value="' + esc(key) + '">' + carryBack +
+        '<div class="formrow"><button class="danger" title="' +
+        esc('Deletes the set. This is the ONLY way to a second set: the next ' +
+            'second factor this person enrols issues a new one. It cannot ' +
+            'lock anybody out — a recovery code is never a way in by itself — ' +
+            'but it does take away their way back.') +
+        '">Clear the recovery codes</button></div></form>' +
+        note('<strong>Clearing is the only route to a second set.</strong> It ' +
+        'cannot lock anybody out — a recovery code is never a way in on its ' +
+        'own — but it removes the way BACK, so a person whose set is cleared ' +
+        'and who then loses their phone needs you again. The sequence that ' +
+        'issues a new set is: clear this, have them clear and re-enrol their ' +
+        'second factor, and the enrolment issues one.')
+      : (b.present
+          ? note('Clearing needs <strong>Admin Write</strong>.')
+          : ''));
+
+  const html = heading +
+    note('Everything in this section is about <code>' + esc(row.name) + '</code> ' +
+    'and is read from their own directory entry, through the same ' +
+    '<code>credentials.mechanismsFor()</code> the sign-in screen and the user ' +
+    'portal ask. The mechanisms themselves are configured on ' +
+    '<a href="/admin/totp">TOTP MFA</a> and ' +
+    '<a href="/admin/webauthn">WebAuthn</a> under Protocols; this is who holds ' +
+    'what.') +
+    wayIn + totpBlock + keysBlock + recoveryBlock;
+
+  log.debug("Leaving mfaSection(). totp=" + mech.totp + ", " + allKeys.length +
+            " key(s).");
+  return {
+    html: html,
+    json: {
+      // The mechanisms as the credential store answers them, minus the public
+      // keys — a JWK per credential is several hundred bytes of no use to a
+      // caller asking who holds what, and this reply is already the largest on
+      // the console.
+      password: mech.password,
+      usable: mech.usable,
+      activated: mech.activated,
+      mfaRequired: mech.mfaRequired,
+      secondFactor: mech.secondFactor || null,
+      totp: mech.totp,
+      totpUsable: mech.totpUsable,
+      totpDetail: mech.totpDetail,
+      // THE RECOVERY CODES AS A STATUS AND NEVER AS CODES — see the block
+      // above. `credentials.backupCodeStatus()` is what fills it and it
+      // carries none, so there is no shape of this reply in which a caller
+      // holding `admin:read` is handed a working second factor.
+      backupCodes: mech.backupCodes,
+      keys: (mech.keys || []).map(function (one) {
+        return { credentialId: one.credentialId, role: one.role,
+                 label: one.label || null, signCount: one.signCount || 0,
+                 enrolledAt: one.enrolledAt || 0 };
+      }),
+      primaryKeys: mech.primaryKeys,
+      mfaKeys: mech.mfaKeys,
+      // WHAT THE REALM ALLOWS, beside what the person holds, because the two
+      // together are the answer to "why can they not enrol one" — and a caller
+      // that had to fetch /admin-api/webauthn as well would be reading a
+      // second request's answer against this one's.
+      policy: { totpEnabled: totpLive.enabled,
+                backupCodesEnabled: recoveryLive.enabled,
+                backupCodesCount: recoveryLive.count,
+                webauthnEnabled: keyLive.enabled,
+                primaryAllowed: keyLive.primaryAllowed,
+                mfaAllowed: keyLive.mfaAllowed,
+                maxKeysPerPerson: keyLive.maxKeysPerPerson }
+    }
+  };
+}
+
 function userDetailPage(req, key) {
   log.debug("Entering userDetailPage(). key=" + key);
-  const detail = stats.userDetail(key);
+  let detail = stats.userDetail(key);
   if (!detail) {
-    log.debug("Leaving userDetailPage(). No such user.");
-    return null;
+    // ---------------------------------------------------------------------
+    // A PERSON THE DIRECTORY HOLDS AND THE REGISTRY DOES NOT (2026-09-10).
+    //
+    // **THE LIST ABOVE STARTED LISTING THEM ON THIS DAY** — see peopleRows()
+    // — and until this branch existed, clicking one landed on *nothing here
+    // has authenticated as alice*. That is a true sentence and a useless
+    // page: it is exactly the person whose second factor an operator has come
+    // to look at, and both Clear buttons are on this page.
+    //
+    // So the registry's absence is filled with a blank record rather than
+    // treated as a missing person. Every section below reads `detail.tokens`,
+    // `detail.artifacts` and the row's counted arrays, and every one of them
+    // is legitimately empty here: this identity has never signed in, so it
+    // holds no session and nothing has been issued to it. The DIRECTORY and
+    // SECOND FACTOR sections are the two that have something to say, and they
+    // are the two that were unreachable.
+    // ---------------------------------------------------------------------
+    const inDirectory = !!(directoryReader && directoryReader(key).found);
+    if (!inDirectory) {
+      log.debug("Leaving userDetailPage(). No such user, and no entry either.");
+      return null;
+    }
+    detail = {
+      user: { key: key, name: key, forms: [], realms: [], protocols: [],
+              authentications: 0, firstAt: 0, lastAt: 0, isClient: false,
+              authenticated: false, knownBy: 'directory', events: [],
+              eventsForgotten: 0,
+              tokens: { issued: 0, valid: 0, expired: 0, revoked: 0, other: 0 },
+              artifactKinds: [], artifacts: 0, lastActivityAt: 0 },
+      tokens: [], artifacts: []
+    };
+    log.debug("userDetailPage(). Directory-only: a blank registry record.");
   }
   const row = detail.user;
   const sessionRows = sessionRowsFor(key);
@@ -15101,6 +16192,12 @@ function userDetailPage(req, key) {
   // one of the keys of the JSON view below and reading it twice could show a page
   // and a JSON body that disagree about a directory another request just changed.
   const directory = ldapObjectSection(row, key);
+  // The second factors, on the same terms and for the same reason (2026-09-10).
+  // `gateStateFor()` decides whether the two removals are drawn at all; it is
+  // read HERE rather than inside the section because the section is also called
+  // for `?format=json`, where there is no button to draw and the answer is
+  // still needed for the write half of `/admin-api/users`.
+  const mfa = mfaSection(row, key, gateStateFor(req), back);
 
   // Five lists on one page, each with its own page parameter and all of them sharing
   // `per` — see pagingOf() for why it is that way round.
@@ -15257,6 +16354,16 @@ function userDetailPage(req, key) {
     directory.html +
 
     // ---------------------------------------------------------------------
+    // AFTER THE DIRECTORY ENTRY AND BEFORE THE TWO SIGN-OUT BUTTONS
+    // (2026-09-10), which is where it belongs by what a reader is doing. The
+    // entry above says what this person IS; this says what they can sign in
+    // WITH; the buttons below end what they currently hold. A reader arriving
+    // from the Second factor column of the list lands on the section that
+    // column summarises, with the whole account above it for context.
+    // ---------------------------------------------------------------------
+    mfa.html +
+
+    // ---------------------------------------------------------------------
     // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
     //
     // There was ONE here and it was labelled "Revoke everything for <name>",
@@ -15334,6 +16441,10 @@ function userDetailPage(req, key) {
     inner: inner,
     json: {
       user: row,
+      // WHAT THEY CAN SIGN IN WITH, and what they are asked for as a second
+      // factor (2026-09-10). It is `factors` here and on every row of the
+      // list, so a caller reads one member name whichever view it fetched.
+      factors: mfa.json,
       // Every array here is THE PAGE, not the whole list, exactly as `users` is on
       // the list view — and every one of them is answered by a `*Paging` object
       // carrying the same member names one level down, so a caller walks a
@@ -15364,11 +16475,275 @@ function userDetailPage(req, key) {
 
 // The list. Filtered by a name fragment and by protocol, and paged with the same
 // controls the tokens page uses.
+// ===========================================================================
+// EVERYBODY THIS REALM KNOWS ABOUT, AND WHAT EACH OF THEM CAN SIGN IN WITH
+// (2026-09-10).
+//
+// **THIS PAGE'S POPULATION WIDENED ON THE DAY `/admin/mfa` WAS TAKEN AWAY.**
+// It was `stats.userRows()` — identities this service has SEEN — and its own
+// lead paragraph said so. `/admin/mfa` drew a different population: the union
+// of that with this realm's DIRECTORY people, because the question it answered
+// was *who holds no second factor* and the people most likely to hold none are
+// exactly the ones who have never signed in.
+//
+// Folding that roster into this page without widening the population would
+// have answered that question wrongly and quietly. So this function is the
+// union, and the page says which side of it each row came from.
+//
+// ---------------------------------------------------------------------------
+// THE GAP IS SMALLER THAN IT LOOKS AND IT IS NOT ZERO, WHICH IS WHY THIS IS
+// NOT A ONE-LINE CHANGE.
+//
+// Most directory people are ALREADY on `stats.userRows()`: every door that
+// creates one — the console, `POST /admin-api/users/create`, a SCIM create, an
+// LDAP add, a restore from the persistence store — calls
+// `stats.noteKnownIdentity()`, which is what put `knownBy` on a row. So on a
+// small service the union adds nothing at all.
+//
+// **THE REGISTRY IS CAPPED AT `stats.MAX_USERS` AND THE DIRECTORY IS NOT.**
+// Two thousand against `ldap.maxEntries`, so a realm with five thousand people
+// has at most two thousand of them here — and the three thousand missing are
+// invisible on every console page that asks a question about people. That is
+// the case this union exists for, and it is the case a bulk load produces.
+//
+// ---------------------------------------------------------------------------
+// KEYED BY THE IDENTITY KEY AND NOT BY THE NAME.
+//
+// `credentials.secondFactorHolders()` dedupes case-insensitively on the raw
+// name; this page's whole premise is that ONE ROW IS ONE LOCAL NAME ACROSS
+// EVERY PROTOCOL, which is `stats.identityKeyOf()`. Two spellings that reach
+// the same identity key have to fold into one row here or the warning at the
+// top of the table stops being true. Where they do fold, the factor facts are
+// UNIONED rather than one of them winning: holding a key under one spelling
+// and an app under another is holding both.
+// ===========================================================================
+function peopleRows() {
+  log.debug("Entering peopleRows().");
+  const seen = stats.userRows();
+  const byKey = new Map();
+  seen.forEach(function (row) {
+    // `factors` is filled below. Declared here so that every row has the member
+    // whether or not the credential store answered — a page that read
+    // `row.factors.totp` off a row that had none would throw on the one
+    // deployment with no directory, which is the deployment least able to
+    // report it.
+    row.factors = null;
+    row.inDirectory = false;
+    byKey.set(row.key, row);
+  });
+
+  const holders = credentials.secondFactorHolders(seen.map(function (row) {
+    return row.key;
+  }));
+
+  holders.rows.forEach(function (holder) {
+    const key = stats.identityKeyOf(holder.username);
+    if (!key) return;
+    let row = byKey.get(key);
+    if (!row) {
+      // A DIRECTORY PERSON THIS SERVICE HAS NEVER SEEN. Synthesised with the
+      // same shape `blankUserRow()` produces, because every cell of this table
+      // and every member of the JSON reply reads it — a row missing `tokens`
+      // would be a column that throws rather than a column that says nothing.
+      // **THE SHAPE `userRows()` RETURNS AND NOT THE ONE `blankUserRow()`
+      // BUILDS.** Those differ: the registry counts forms, realms, protocols
+      // and artifact kinds in OBJECTS and converts every one of them to an
+      // ARRAY on the way out. A row synthesised from the blank shape reaches
+      // this page with `row.realms.map is not a function` — which is what the
+      // first version of this did, on the one row type nothing else produces.
+      row = { key: key, name: holder.username, forms: [], realms: [],
+              protocols: [], authentications: 0, firstAt: 0, lastAt: 0,
+              isClient: false, authenticated: false, knownBy: 'directory',
+              events: [], eventsForgotten: 0,
+              tokens: { issued: 0, valid: 0, expired: 0, revoked: 0, other: 0 },
+              artifactKinds: [], artifacts: 0, lastActivityAt: 0,
+              factors: null, inDirectory: false };
+      byKey.set(key, row);
+    }
+    row.inDirectory = row.inDirectory || !!holder.inDirectory;
+    row.factors = mergeFactors(row.factors, holder);
+  });
+
+  const rows = Array.from(byKey.values());
+  rows.sort(function (a, b) {
+    return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 : 1;
+  });
+  log.debug("Leaving peopleRows(). " + rows.length + " person/people, " +
+            holders.scanned + " scanned in the directory.");
+  return { rows: rows, store: holders.store, scanned: holders.scanned,
+           capped: holders.capped, limit: holders.limit,
+           registryCap: stats.MAX_USERS };
+}
+
+// TWO SPELLINGS THAT FOLD INTO ONE ROW HOLD THE UNION OF WHAT EACH HELD. Taking
+// the first would answer "no second factor" for somebody who has one under
+// their other name, which is the wrong answer in the direction that matters:
+// this table is read to find people who are NOT protected.
+function mergeFactors(into, holder) {
+  if (!into) {
+    return {
+      password: !!holder.password,
+      primaryKeys: holder.primaryKeys || 0,
+      mfaKeys: holder.mfaKeys || 0,
+      totp: !!holder.totp,
+      totpUsable: !!holder.totpUsable,
+      totpDetail: holder.totpDetail || null,
+      mfaRequired: !!holder.mfaRequired,
+      secondFactor: holder.secondFactor || '',
+      usable: !!holder.usable,
+      // **THE RECOVERY CODES (2026-09-11), AND THIS FUNCTION IS WHERE THEY
+      // WERE BEING LOST.** `credentials.secondFactorHolders()` has always put
+      // a `backupCodes` member on every row, and this merge built an explicit
+      // shape without it — so the counts reached neither `/admin/users` nor
+      // `GET /admin-api/mfa`, and an operator could see that somebody held an
+      // authenticator and not that they had used nine of their ten ways back.
+      //
+      // Counts and never codes: `backupCodeStatus()` is what the member is
+      // built from and it carries none.
+      backupCodes: holder.backupCodes || null,
+      recoveryAdvised: !!holder.recoveryAdvised
+    };
+  }
+  into.password = into.password || !!holder.password;
+  into.primaryKeys += (holder.primaryKeys || 0);
+  into.mfaKeys += (holder.mfaKeys || 0);
+  // `totpUsable` is only meaningful where `totp` is, so the two move together —
+  // an enrolment this process cannot read must not be reported as absent, which
+  // would sign somebody in on one factor.
+  if (holder.totp && !into.totp) {
+    into.totp = true;
+    into.totpUsable = !!holder.totpUsable;
+    into.totpDetail = holder.totpDetail || null;
+  }
+  into.mfaRequired = into.mfaRequired || !!holder.mfaRequired;
+  into.usable = into.usable || !!holder.usable;
+  // **A SET FOUND UNDER EITHER SPELLING WINS, WHICH IS `totp`'s RULE ABOVE
+  // AND FOR ITS REASON.** This table is read to find people who are NOT
+  // protected, so taking the first row's answer would report "no recovery
+  // codes" for somebody who holds a set under their other name — the wrong
+  // answer in the direction that matters.
+  if (holder.backupCodes && holder.backupCodes.present && !(into.backupCodes &&
+      into.backupCodes.present)) {
+    into.backupCodes = holder.backupCodes;
+  } else if (!into.backupCodes) {
+    into.backupCodes = holder.backupCodes || null;
+  }
+  // **AND THE ADVICE IS THE OTHER WAY ROUND: ALL OF THEM MUST WANT IT.** It is
+  // true of somebody with a second factor and no set, so a spelling that holds
+  // the set makes it false for the person — the union of two rows must not
+  // tell an operator to chase somebody who is already covered.
+  into.recoveryAdvised = (into.recoveryAdvised || !!holder.recoveryAdvised) &&
+                         !(into.backupCodes && into.backupCodes.present);
+  into.secondFactor = into.mfaKeys > 0 ? 'webauthn'
+                    : (into.totp ? 'totp' : '');
+  return into;
+}
+
+// WHERE THIS ROW CAME FROM. Two sources and three answers, and the third —
+// both — is the ordinary one: nearly every door that creates a directory entry
+// also calls `stats.noteKnownIdentity()`. The interesting rows are the ones
+// that are only one, and they mean different things: DIRECTORY alone is
+// somebody the registry has forgotten or never held (it is capped at
+// `stats.MAX_USERS` and the directory is not), and SEEN alone is an identity
+// with no entry — a client, an LDAP bind DN, or a subject something was issued
+// for without anybody being present.
+function sourceCell(row) {
+  const seen = !!(row.authenticated || row.knownBy !== 'directory');
+  if (seen && row.inDirectory) {
+    return '<span class="state-valid" title="' +
+      esc('This service has seen this identity AND the directory holds an ' +
+          'entry for it. That is the ordinary state.') + '">both</span>';
+  }
+  if (row.inDirectory) {
+    return '<span title="' +
+      esc('An entry under ou=users that this service\'s own registry does not ' +
+          'hold. The registry keeps the most recent ' + stats.MAX_USERS +
+          ' identities and the directory is not capped, so a realm that has ' +
+          'been bulk loaded has many of these.') + '">directory</span>';
+  }
+  return '<span title="' +
+    esc('This service has seen this identity and there is no directory entry ' +
+        'for it — a client, an LDAP bind DN, or a subject something was ' +
+        'issued for with nobody present. Their row says which.') +
+    '">seen</span>';
+}
+
+// WHAT THIS PERSON CAN ACTUALLY GET IN WITH, which is a different question from
+// the Second factor column beside it and is the one an operator asks first. A
+// second factor is never a way in on its own — neither a one-time code nor an
+// `mfa` key — so a person with an entry, no password and no `primary` key
+// cannot sign in at all however much is enrolled on them. That state is the
+// ordinary one for somebody provisioned and not yet activated, and saying
+// "none" plainly is what sends the reader to the activation link on their row.
+function credentialCell(factors) {
+  if (!factors) {
+    return '<span class="state-none">unknown</span>';
+  }
+  const parts = [];
+  if (factors.password) {
+    parts.push('password');
+  }
+  if (factors.primaryKeys) {
+    parts.push(factors.primaryKeys + ' primary key' +
+               (factors.primaryKeys > 1 ? 's' : ''));
+  }
+  if (!parts.length) {
+    return '<span class="state-expired" title="' +
+      esc('No password and no primary security key, so nobody can sign in as ' +
+          'this person. A second factor is never a way in by itself. An ' +
+          'activation link on their own row is how they come to hold one.') +
+      '">nothing yet</span>';
+  }
+  return esc(parts.join(' + '));
+}
+
+// The Second factor cell, drawn the same way in the list and on the drill-down
+// so that the two cannot say different things about one person. It is a
+// function rather than two pieces of markup for the reason every other shared
+// cell here is one: this one carries the `unreadable` state, and a second copy
+// of that branch would be the copy that forgot it.
+function secondFactorCell(factors) {
+  if (!factors) {
+    return '<span class="state-none">unknown</span>';
+  }
+  if (!factors.mfaRequired) {
+    return '<span class="state-none">none</span>';
+  }
+  const parts = [];
+  if (factors.mfaKeys) {
+    parts.push(factors.mfaKeys + ' security key' + (factors.mfaKeys > 1 ? 's' : ''));
+  }
+  if (factors.totp) {
+    parts.push(factors.totpUsable
+      ? 'authenticator app'
+      : '<span class="state-expired" title="' +
+        esc('This process cannot read the enrolment: ' +
+            ((factors.totpDetail && factors.totpDetail.why) ||
+             'the stored value is unusable') +
+            '. Their codes cannot be checked, so they are REFUSED rather than ' +
+            'let through on one factor. Clear it and let them enrol again.') +
+        '">authenticator app (unreadable)</span>');
+  }
+  return parts.join(' + ');
+}
+
 function usersListPage(req) {
   log.debug("Entering usersListPage().");
   const wantedText = String(req.query.q || '').trim();
   const wantedProtocol = String(req.query.protocol || '');
-  const all = stats.userRows();
+  // THE UNION, not `stats.userRows()` — see peopleRows(). The registry is
+  // capped at two thousand and the directory is not, so on a realm that has
+  // been bulk loaded this is the difference between a page that answers *who
+  // holds no second factor* and one that answers it for the first two thousand
+  // people it happens to remember.
+  const population = peopleRows();
+  const all = population.rows;
+  // The second-factor filter, which arrived with the roster on 2026-09-10. It
+  // is `factor` rather than `mfa` because that is the name `/admin/mfa` used
+  // and a link somebody bookmarked should keep working against the page that
+  // absorbed it — the same courtesy `listViewFromBack()` extends to a filter
+  // carried across a form.
+  const wantedFactor = String(req.query.factor || '');
   // Every protocol any known user authenticated through, for the filter. Read off the
   // data rather than written down, so a protocol that starts recording authentications
   // appears in the dropdown by itself and one that never has cannot offer a filter
@@ -15382,11 +16757,23 @@ function usersListPage(req) {
     if (wantedProtocol && !row.protocols.some(function (f) { return f.protocol === wantedProtocol; })) {
       return false;
     }
+    // `factors` is null where no credential store answered at all. Such a row
+    // matches NO factor filter rather than matching `none`, because "this
+    // service cannot tell" and "this person holds none" are different answers
+    // and the second one is the dangerous one to guess.
+    const factors = row.factors;
+    if (wantedFactor === 'totp' && !(factors && factors.totp)) return false;
+    if (wantedFactor === 'key' && !(factors && factors.mfaKeys > 0)) return false;
+    if (wantedFactor === 'any' && !(factors && factors.mfaRequired)) return false;
+    if (wantedFactor === 'none' && !(factors && !factors.mfaRequired)) return false;
+    if (wantedFactor === 'unreadable' &&
+        !(factors && factors.totp && !factors.totpUsable)) return false;
     return true;
   });
   const paging = pagingOf(req.query, filtered.length);
   const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
   const filterParams = { q: wantedText, protocol: wantedProtocol,
+                         factor: wantedFactor,
                          per: req.query.per ? paging.perPage : '' };
   const nav = pageNavPair('/admin/users', filterParams, paging);
 
@@ -15414,10 +16801,19 @@ function usersListPage(req) {
     // the rows of people whose names are three letters long. 40 keeps
     // `urn:sts-mock:user:alice` and an ordinary DID whole; shortened() puts the
     // rest in the title attribute, so nothing is lost, only hidden.
+    // THREE CELLS ARRIVED ON 2026-09-10 WITH THE ROSTER `/admin/mfa` USED TO
+    // DRAW: where the row came from, what the person can sign in WITH, and
+    // what they are asked for as a SECOND factor. They are here rather than on
+    // a page of their own because the question *who holds no second factor* is
+    // a question about the people this table already lists, and a second table
+    // of the same people would be a second answer to who they are.
     return '<tr><td><a href="' + esc(href) + '">' + shortened(row.name, 40) + '</a></td>' +
       '<td>' + (row.isClient ? 'client' : 'user') + '</td>' +
+      '<td>' + sourceCell(row) + '</td>' +
       '<td class="' + (row.authenticated ? 'state-valid' : 'state-none') + '">' +
         (row.authenticated ? row.authentications + '&times;' : 'never') + '</td>' +
+      '<td>' + credentialCell(row.factors) + '</td>' +
+      '<td>' + secondFactorCell(row.factors) + '</td>' +
       '<td>' + esc(row.protocols.map(function (f) { return f.protocol; }).join(', ') || '—') + '</td>' +
       '<td>' + esc(row.realms.map(function (r) { return r.realm; }).join(', ') || '—') + '</td>' +
       '<td class="num">' + (liveByUser[row.key] || 0) + '</td>' +
@@ -15445,20 +16841,85 @@ function usersListPage(req) {
   const perOptions = perPageOptions(paging.perPage);
 
   const authenticatedHere = all.filter(function (row) { return row.authenticated; }).length;
+  // THE SECOND-FACTOR COUNTS (2026-09-10), over the WHOLE population rather
+  // than the page — which is why peopleRows() scans rather than reading the
+  // rows being shown. A tile that counted one page of twenty would answer a
+  // question nobody asked.
+  const factorCounts = {
+    withSecond: all.filter(function (r) { return r.factors && r.factors.mfaRequired; }).length,
+    withTotp: all.filter(function (r) { return r.factors && r.factors.totp; }).length,
+    withKeys: all.filter(function (r) { return r.factors && r.factors.mfaKeys > 0; }).length,
+    primaryKeys: all.filter(function (r) { return r.factors && r.factors.primaryKeys > 0; }).length,
+    passwordOnly: all.filter(function (r) {
+      return r.factors && r.factors.password && !r.factors.mfaRequired;
+    }).length,
+    unreadable: all.filter(function (r) {
+      return r.factors && r.factors.totp && !r.factors.totpUsable;
+    }).length,
+    // NOBODY CAN SIGN IN AS THEM. A person with an entry and no password and
+    // no primary key — the ordinary state of somebody provisioned and not yet
+    // activated, and the state an activation link exists to end. It is counted
+    // beside the second-factor tiles because it is the OTHER question an
+    // operator brings to a roster of people.
+    noCredential: all.filter(function (r) {
+      return r.factors && !r.factors.usable && !r.isClient;
+    }).length
+  };
   const inner = messagesOf(req) +
     '<div class="tiles">' +
-      tile(all.length, 'identities known') +
+      tile(all.length, 'people and identities') +
       tile(authenticatedHere, 'authenticated here') +
-      tile(all.length - authenticatedHere, 'seen only as a subject') +
+      tile(all.length - authenticatedHere, 'never signed in here') +
       tile(all.filter(function (row) { return row.isClient; }).length, 'clients, not people') +
       tile(Object.keys(liveByUser).length, 'with an active session') +
+      tile(factorCounts.withSecond, 'hold a second factor') +
+      tile(factorCounts.passwordOnly, 'password only') +
+      tile(factorCounts.noCredential, 'no way in yet') +
     '</div>' +
-    note('Every userid this service has been given as part of an interaction that ' +
-    'succeeded — the name typed at either sign-in screen, the one on a password grant, the subject ' +
-    'of a WS-Security <code>UsernameToken</code>, the client principal in a Kerberos AS-REQ or an ' +
-    'accepted AP-REQ, and the subject of an exchanged token. A request that was REFUSED records ' +
-    'nothing, so this is a list of identities that got somewhere rather than of names that were ' +
-    'tried. Click a name for its sessions and everything issued to it.') +
+    // ---------------------------------------------------------------------
+    // WHAT THIS TABLE IS A LIST OF, AND IT CHANGED ON 2026-09-10.
+    //
+    // It was "every userid this service has been given as part of an
+    // interaction that succeeded" — the SEEN registry, and the note said so.
+    // It is the UNION of that with this realm's directory people now, because
+    // the second-factor roster that used to live on `/admin/mfa` moved onto
+    // these columns and that roster's whole value is the people who have NEVER
+    // signed in. See peopleRows().
+    // ---------------------------------------------------------------------
+    note('<strong>Everybody this realm knows about</strong>, from two places ' +
+    'and the Known from column says which. <strong>SEEN</strong> is every ' +
+    'userid this service has been given as part of an interaction that ' +
+    'succeeded — the name typed at either sign-in screen, the one on a ' +
+    'password grant, the subject of a WS-Security <code>UsernameToken</code>, ' +
+    'the client principal in a Kerberos AS-REQ or an accepted AP-REQ, and the ' +
+    'subject of an exchanged token; a request that was REFUSED records ' +
+    'nothing. <strong>DIRECTORY</strong> is an entry under ' +
+    '<code>ou=users</code>, however it got there. Most people are both. Click ' +
+    'a name for its sessions, everything issued to it, and the second factors ' +
+    'it holds.') +
+    (population.store
+      ? ''
+      : warn('<strong>No directory is loaded in this process</strong>, so ' +
+        'this is the SEEN half alone and the second-factor columns say ' +
+        '<em>unknown</em> rather than <em>none</em>. Those are different ' +
+        'answers and the second one is the dangerous one to guess.')) +
+    (population.capped
+      ? warn('This realm holds ' + esc(String(population.scanned)) + ' people ' +
+        'and only the first ' + esc(String(population.limit)) + ' were read ' +
+        'for the credential columns. Reading a credential per person happens ' +
+        'on the one thread that answers every socket this service holds, so ' +
+        'the scan stops rather than stalling the service.')
+      : '') +
+    (factorCounts.unreadable
+      ? warn('<strong>' + esc(String(factorCounts.unreadable)) + ' ' +
+        'authenticator enrolment(s) cannot be read by this process</strong> — ' +
+        'almost always a shared secret sealed under a key-encryption key that ' +
+        'has since been rotated. Those people are REFUSED at the code step ' +
+        'rather than let through on one factor, so they cannot sign in at all ' +
+        'until the enrolment is cleared on their own row and set up again. ' +
+        '<a href="' + esc('/admin/users' + queryWith({ factor: 'unreadable' }, {})) +
+        '">Show them</a>.')
+      : '') +
     // WHERE AN ISSUED SPIFFE IDENTITY LANDS ON THIS TABLE, said here because
     // the row it produces is easy to misread. It has an artifact and NO
     // authentication, so it falls in the "seen only as a subject" tile above —
@@ -15490,9 +16951,23 @@ function usersListPage(req) {
       '<input type="text" id="q" name="q" size="20" value="' + esc(wantedText) + '">' +
       '<label for="protocol">Authenticated through</label>' +
       '<select id="protocol" name="protocol">' + protocolOptions + '</select>' +
+      // THE SECOND-FACTOR FILTER (2026-09-10), which is what `/admin/mfa` was
+      // for. `none` is the one an operator actually comes here to run, and it
+      // is the reason this page's population had to widen: the people most
+      // likely to hold no second factor are the ones who have never signed in.
+      '<label for="factor">Second factor</label>' +
+      '<select id="factor" name="factor">' +
+      [['', 'any state'], ['any', 'holds one'], ['totp', 'authenticator app'],
+       ['key', 'security key'], ['none', 'holds none'],
+       ['unreadable', 'enrolment this process cannot read']].map(function (pair) {
+        return '<option value="' + esc(pair[0]) + '"' +
+               (wantedFactor === pair[0] ? ' selected' : '') + '>' +
+               esc(pair[1]) + '</option>';
+      }).join('') + '</select>' +
       '<label for="per">Per page</label><select id="per" name="per">' + perOptions + '</select>' +
       '<button class="secondary">Filter</button>' +
-      (wantedText || wantedProtocol ? ' <a href="/admin/users">clear</a>' : '') +
+      (wantedText || wantedProtocol || wantedFactor
+        ? ' <a href="/admin/users">clear</a>' : '') +
     '</div></form>' +
 
     // ---------------------------------------------------------------------
@@ -15555,12 +17030,14 @@ function usersListPage(req) {
       'somewhere: that is who this service has SEEN, and this is what the directory HOLDS.') +
     '</form>' +
     nav.head +
-    '<table><tr><th>User</th><th>Kind</th><th>Authenticated</th><th>Protocols</th><th>Realms</th>' +
+    '<table><tr><th>User</th><th>Kind</th><th>Known from</th><th>Authenticated</th>' +
+    '<th>Can sign in with</th><th>Second factor</th>' +
+    '<th>Protocols</th><th>Realms</th>' +
     '<th class="num">Sessions</th><th class="num">Tokens</th><th class="num">Valid</th>' +
     '<th class="num">Expired</th>' +
     '<th class="num">Revoked</th><th class="num">Artifacts</th><th>First seen</th>' +
     '<th>Last activity</th><th></th></tr>' +
-    (rows || '<tr><td colspan="14">Nobody matches. Nothing has authenticated here yet unless a ' +
+    (rows || '<tr><td colspan="17">Nobody matches. Nothing has authenticated here yet unless a ' +
              'filter above is hiding it.</td></tr>') + '</table>' +
     nav.foot +
     note(filtered.length + ' identit' + (filtered.length === 1 ? 'y' : 'ies') +
@@ -15579,7 +17056,20 @@ function usersListPage(req) {
     json: {
       known: all.length, matched: filtered.length, shown: shown.length,
       authenticatedHere: authenticatedHere,
-      filter: { q: wantedText || null, protocol: wantedProtocol || null },
+      // THE SECOND-FACTOR ROSTER, HERE RATHER THAN ON A RESOURCE OF ITS OWN
+      // (2026-09-10). `GET /admin-api/mfa` answers out of this same view, so
+      // there is one tally and the console and the API cannot disagree about
+      // how many people hold a second factor. Each row carries its own
+      // `factors` object; these are the counts over the whole population.
+      factors: factorCounts,
+      // WHICH POPULATION THIS IS, so a caller reading `known` knows what it
+      // counted. `capped` is the one to check on a bulk-loaded realm: past it
+      // the credential columns are absent rather than false.
+      store: population.store, scanned: population.scanned,
+      capped: population.capped, scanLimit: population.limit,
+      registryCap: population.registryCap,
+      filter: { q: wantedText || null, protocol: wantedProtocol || null,
+                factor: wantedFactor || null },
       protocols: Object.keys(protocolsSeen).sort(),
       page: paging.page, pages: paging.pages, perPage: paging.perPage,
       firstRow: paging.firstRow, lastRow: paging.lastRow,
@@ -15671,9 +17161,23 @@ function truthy(value) {
 // so outright, because an operator who created a user and could not find them in
 // the table above would reasonably conclude the button was broken.
 // ---------------------------------------------------------------------------
-function usersAction(body) {
+// The actions this resource accepts, built from the switch below rather than
+// typed — the same arrangement MFA_ACTIONS had on the page this absorbed, and
+// for the same reason: `tests/vendored/sts_admin_api_operations.js` reads the
+// refusal sentence to discover what to check for, so a list that is short by
+// one turns the parity check off for that action.
+const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
+                       'clear-totp', 'clear-key', 'clear-backup-codes'];
+
+function usersAction(body, context) {
   log.debug("Entering usersAction(). action=" + (body.action || '(none)'));
   const action = String(body.action || '');
+  // WHO IS DOING IT, for the audit rows the two clears write. Read from the
+  // caller rather than from a cookie in here, because the management API calls
+  // this same function with an actor of its own — a function that reached for a
+  // session would only work from one of the two doors. `via` is the door.
+  const ctx = { via: (context || {}).via || 'console',
+                actor: (context || {}).actor || String(body.actor || '') };
 
   // ISSUE AN ACTIVATION LINK (2026-09-06). How somebody provisioned through
   // /admin-api, SCIM or an LDAP add comes to have a way in.
@@ -15721,6 +17225,133 @@ function usersAction(body) {
                       'this one.' };
   }
 
+
+  // ---------------------------------------------------------------------
+  // THE TWO SECOND-FACTOR REMOVALS (2026-09-10). THEY WERE `POST /admin/mfa`.
+  //
+  // They are here rather than on a resource of their own because the buttons
+  // are here: the roster moved onto this page's columns and the per-person
+  // detail onto this page's drill-down, and an action resource whose page no
+  // longer exists is exactly the console/API drift rule 7 is written against.
+  //
+  // **THEY ARE NOT THE SAME ACT AND THE DIFFERENCE IS WHICH ONE CAN LOCK
+  // SOMEBODY OUT.** Clearing an authenticator app cannot: a one-time code is
+  // never a primary credential here, so it drops the account to one factor and
+  // never to none. Removing a KEY can — it may be the only credential on the
+  // account — which is why it goes through `credentials.removeKey()` rather
+  // than a write of its own: that function is where the last-way-in refusal
+  // lives, and an operator must not be able to do what the person themselves
+  // is stopped from doing.
+  //
+  // **THERE IS NO ENROL BESIDE THEM AND THERE CANNOT BE.** Enrolling an
+  // authenticator means being shown a shared secret, and an administrative
+  // door that handed one out would mint a working second factor for any
+  // account. A WebAuthn ceremony happens in the person's own browser against
+  // their own authenticator, and this console is not that browser. Both are
+  // `/portal`, or an activation link, which is itself a credential.
+  // ---------------------------------------------------------------------
+  if (action === 'clear-totp') {
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving usersAction(). No person named.");
+      return { ok: false, errors: ['Name the person whose authenticator app ' +
+                                   'is being cleared.'] };
+    }
+    const result = credentials.removeTotp(who);
+    auditLog.record({
+      category: 'authentication', action: 'admin.mfa.totp.cleared',
+      actor: ctx.actor, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? 'cleared' : 'could not clear') +
+               ' the authenticator app enrolment for ' + who,
+      detail: { username: who, via: ctx.via,
+                errors: result.ok ? undefined : (result.errors || []) }
+    });
+    if (result.ok) {
+      log.info('admin: the authenticator app for "' + who + '" was cleared by ' +
+               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). That ' +
+               'account is down to one factor and they can enrol again from ' +
+               '/portal/mfa.');
+    }
+    log.debug("Leaving usersAction(). clear-totp " + (result.ok ? "ok." : "refused."));
+    return result;
+  }
+
+  // ---------------------------------------------------------------------
+  // THE THIRD REMOVAL (2026-09-10), AND IT STOPPED BEING AN ISSUING CONTROL ON
+  // 2026-09-11.
+  //
+  // Clearing an authenticator app or a key takes a factor AWAY and that is all
+  // it does. Clearing the recovery codes used to do something else as well:
+  // it **re-armed the automatic issue**, because `ensureBackupCodes()` did
+  // nothing while a set existed, so the next second factor the person enrolled
+  // issued a new one. That was the whole path to a second set and it was
+  // deliberately an operator's act.
+  //
+  // **THAT PATH IS GONE AND SO IS THE ARGUMENT FOR IT BEING AN OPERATOR'S.**
+  // A person generates their own set from `/portal/mfa` now, as often as they
+  // like, because there is no way to SEE a set they already have — so a
+  // Replace control is the only answer to having lost one. This button is
+  // therefore a plain removal again: it takes the way back away and nothing
+  // re-arms.
+  //
+  // **IT IS KEPT BECAUSE THE OTHER REASON FOR IT NEVER WENT AWAY**: a set this
+  // process cannot read, or one an operator has reason to believe has been
+  // copied, is an operator's to remove — and unlike the person, an operator
+  // can do it without being shown ten new strings.
+  //
+  // **IT CANNOT LOCK ANYBODY OUT** — a recovery code is never a way in on its
+  // own, so the account keeps whatever it had. What it removes is the thing
+  // that stops a lost phone being final, which is why it is audited like the
+  // other two and why the button says so.
+  // ---------------------------------------------------------------------
+  if (action === 'clear-backup-codes') {
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving usersAction(). No person named.");
+      return { ok: false, errors: ['Name the person whose recovery codes are ' +
+                                   'being cleared.'] };
+    }
+    const result = credentials.removeBackupCodes(who);
+    auditLog.record({
+      category: 'authentication', action: 'admin.mfa.backup-codes.cleared',
+      actor: ctx.actor, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? 'cleared' : 'could not clear') +
+               ' the recovery codes for ' + who,
+      detail: { username: who, via: ctx.via,
+                errors: result.ok ? undefined : (result.errors || []) }
+    });
+    if (result.ok) {
+      log.info('admin: the recovery codes for "' + who + '" were cleared by ' +
+               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). The ' +
+               'next second factor they enrol issues a new set.');
+    }
+    log.debug("Leaving usersAction(). clear-backup-codes " +
+              (result.ok ? "ok." : "refused."));
+    return result;
+  }
+
+  if (action === 'clear-key') {
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving usersAction(). No person named.");
+      return { ok: false, errors: ['Name the person whose security key is ' +
+                                   'being removed.'] };
+    }
+    // THROUGH `removeKey()` AND NOT A WRITE OF ITS OWN — see the header: that
+    // function carries the refusal that matters.
+    const result = credentials.removeKey(who, String(body.credentialId || ''));
+    auditLog.record({
+      category: 'authentication', action: 'admin.mfa.key.cleared',
+      actor: ctx.actor, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? 'removed' : 'could not remove') +
+               ' a security key for ' + who,
+      detail: { username: who, via: ctx.via,
+                credentialId: String(body.credentialId || ''),
+                errors: result.ok ? undefined : (result.errors || []) }
+    });
+    log.debug("Leaving usersAction(). clear-key " + (result.ok ? "ok." : "refused."));
+    return result;
+  }
 
   // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).
   //
@@ -15922,8 +17553,9 @@ function usersAction(body) {
   }
 
   log.debug("Leaving usersAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The three ' +
-                               'are: create, set-password, issue-activation.'] };
+  return { ok: false, errors: ['Unknown action "' + action + '". The ' +
+                               numberWord(USERS_ACTIONS.length) + ' are: ' +
+                               USERS_ACTIONS.join(', ') + '.'] };
 }
 
 // One route, three answers, and the choice between them is here rather than in
@@ -15989,7 +17621,14 @@ app.get('/admin/users', function (req, res) {
 app.post('/admin/users', function (req, res) {
   log.debug("Entering the admin users action endpoint.");
   const body = parseBody(req);
-  const result = usersAction(body);
+  // The actor is the person whose session got them through the gate, read here
+  // rather than inside the action because the management API calls the same
+  // function with an actor of its own — a function that reached for a cookie
+  // would only work from one of them. It arrived with the two second-factor
+  // clears on 2026-09-10, which are the actions on this resource that owe an
+  // audit row naming who made them.
+  const state = gateStateFor(req);
+  const result = usersAction(body, { via: 'console', actor: state.username });
   // Back to the list carrying whatever filter and page the form came from, so
   // that creating somebody does not cost the reader their place — the rule every
   // form on this console follows.
@@ -18462,7 +20101,29 @@ function applicationDetailPage(req, identifier) {
   // is to be complete.
   const attributeRows = Object.keys(row.attributes).sort().map(function (name) {
     const value = row.attributes[name];
-    return { name: name, values: Array.isArray(value) ? value : [String(value)],
+    // ---------------------------------------------------------------------
+    // THE ONE ATTRIBUTE THIS TABLE DOES NOT SHOW AS THE ENTRY HOLDS IT.
+    //
+    // `oauthAssertionPrivateKey` is sealed at rest in product mode — see
+    // `common/applications.js`'s SEALED_FIELDS — so what the ENTRY carries is
+    // `$aesgcm$…` and what `row.fields` carries is the PEM, because that
+    // module opened it on the way out. This page shows the opened value and
+    // says the store holds it encrypted.
+    //
+    // **THAT IS A DECISION AND `/admin/ldap/applications` MAKES THE OPPOSITE
+    // ONE**, which is why it is argued here rather than done quietly: the seal
+    // protects the STORE — an ldapsearch on 389 where every bind succeeds, an
+    // ldif file, a postgres row, a backup of either — and not this console,
+    // which is behind a session and a role and is where an operator goes to
+    // collect a credential this service issued them. The directory page is
+    // headed "the registry as the directory sees it" and shows the ciphertext,
+    // because an opened value there would be a page lying about its subject.
+    // ---------------------------------------------------------------------
+    const opened = applications.isSealed(value) && row.fields
+      ? row.fields[name] : null;
+    const shown = opened && !applications.isSealed(opened) ? opened : value;
+    return { name: name, values: Array.isArray(shown) ? shown : [String(shown)],
+             sealedAtRest: shown !== value,
              operational: (row.operational || []).indexOf(name) >= 0 };
   });
   const paged = pagedRows(req.query, attributeRows,
@@ -18478,6 +20139,13 @@ function applicationDetailPage(req, identifier) {
     const note = applicationAttributeNote(attr.name, attr.operational);
     return '<tr><td><code>' + esc(attr.name) + '</code>' +
       (note.sensitive ? ' <span class="state-revoked">credential</span>' : '') +
+      (attr.sealedAtRest
+        ? ' <span class="state-valid" title="The entry holds this encrypted under ' +
+          'the key-encryption key — the same one this service\'s signing keys ' +
+          'and the certificate authority are sealed with. An ldapsearch, an ' +
+          'ldif file, a database row or a backup shows the ciphertext; this ' +
+          'page opened it.">sealed at rest</span>'
+        : '') +
       (attr.operational
         ? ' <span class="state-none" title="An operational attribute. A search returns it ' +
           'only when it is asked for by name (RFC 4511 section 4.5.1.8) — this dump shows ' +
@@ -20965,16 +22633,16 @@ function rbacListPage(req) {
             ? '<div class="ok">The roster is enforced. ' + info.grantCount + ' grant(s) across ' +
               'two roles; everybody else is refused at every page of this console.</div>'
             : warn('<strong>None of this is in force.</strong> ' +
-              '<code>admin.authRequired</code> is OFF, so the console is open to anybody who ' +
+              'The gate is OFF, so the console is open to anybody who ' +
               'can reach this port and these roles decide nothing. They are still real ' +
-              'directory groups and can be granted now — turn the setting on from ' +
-              'the settings below when the roster looks right.')));
+              'directory groups and can be granted now. (UNREACHABLE since ' +
+              '2026-09-06: the gate is unconditional.)')));
 
   const noDirectory = info.available ? '' :
     '<div class="err">No LDAP directory is loaded in this process, so there is nowhere to hold ' +
     'these roles and nothing on this page can be granted. That is a build of this service ' +
-    'without <code>ldap_server.js</code> rather than a failure — but with ' +
-    '<code>admin.authRequired</code> on it leaves this console reachable only while ' +
+    'without <code>ldap_server.js</code> rather than a failure — but the console ' +
+    'gate is unconditional, so it leaves this console reachable only while ' +
     '<code>admin.openWhenEmpty</code> is on.</div>';
 
   const forms = state.write && info.available
@@ -21111,6 +22779,154 @@ function rbacListPage(req) {
     }
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// WHAT `GET /admin-api/mfa` AND `POST /admin-api/mfa/:action` CALL NOW.
+//
+// **THE RESOURCE IS KEPT AND ITS PAGE IS GONE**, which is rule 7 read the way
+// round it is usually not. The rule says a console control owes an API
+// operation; it says nothing about an operation whose page moved, and deleting
+// a working one to tidy a table would be a regression dressed as consistency —
+// the same argument `mgmt-api/admin_api.js` makes about `GET
+// /admin-api/users/new`.
+//
+// **BOTH ANSWER OUT OF THE USERS VIEW**, so there is ONE tally. A second scan
+// of the credential store would be a second answer to how many people hold a
+// second factor, and the two would agree until the day they did not.
+//
+// The reply keeps its own SHAPE — a flat `people` array, one object per person,
+// exactly the members it always carried — because a caller that reads
+// `people[].mfaRequired` is not a caller that should have to learn this page
+// moved. `GET /admin-api/users` is where the rows carry `factors` instead.
+// ---------------------------------------------------------------------------
+function mfaView(req) {
+  log.debug("Entering mfaView().");
+  const list = usersListPage(req);
+  const people = (list.json.users || []).map(function (row) {
+    const f = row.factors || {};
+    return {
+      username: row.name,
+      inDirectory: !!row.inDirectory,
+      known: !!row.authenticated || row.knownBy !== 'directory',
+      // FALSE AND NOT NULL where no credential store answered, because every
+      // one of these was a boolean before this moved and a caller comparing
+      // with `=== false` must not start seeing `null`. `store` on the reply is
+      // where "this service could not tell" is said, and it always was.
+      password: !!f.password,
+      primaryKeys: f.primaryKeys || 0,
+      mfaKeys: f.mfaKeys || 0,
+      totp: !!f.totp,
+      totpUsable: !!f.totpUsable,
+      totpDetail: f.totpDetail || null,
+      mfaRequired: !!f.mfaRequired,
+      secondFactor: f.secondFactor || '',
+      usable: !!f.usable,
+      // **THE RECOVERY CODES, AS COUNTS AND NEVER AS CODES (2026-09-11).**
+      // `secondFactorHolders()` has always built this member and this mapping
+      // dropped it, so `/admin/users` drew "7 of 10 unused" for an operator
+      // and `GET /admin-api/mfa` answered about the same person without it —
+      // which is rule 7's drift in the direction that check cannot see, since
+      // the console side was never missing.
+      //
+      // `backupCodeStatus()` is what the whole member is built from and it
+      // carries no codes, which is what makes it safe to publish here: an
+      // operator reading this roster must never be handed a working second
+      // factor. `hashed` and `legacy` are on it so that a set written by an
+      // older build is visible as one rather than looking identical to a
+      // hashed set that simply has not been used.
+      backupCodes: f.backupCodes || null,
+      // And whether this person should be TOLD to generate a set, which is
+      // what replaced the automatic issue on 2026-09-11 and is therefore the
+      // number an operator now has to be able to see across a population.
+      recoveryAdvised: !!f.recoveryAdvised
+    };
+  });
+  const json = {
+    offered: totp.offered(),
+    totp: totp.report(),
+    webauthn: webauthnPolicy.report(),
+    counts: Object.assign({ people: list.json.known }, list.json.factors),
+    store: list.json.store, scanned: list.json.scanned,
+    capped: list.json.capped, scanLimit: list.json.scanLimit,
+    filter: list.json.filter,
+    page: list.json.page, pages: list.json.pages, perPage: list.json.perPage,
+    firstRow: list.json.firstRow, lastRow: list.json.lastRow,
+    matched: list.json.matched, shown: list.json.shown,
+    people: people
+  };
+  log.debug("Leaving mfaView(). " + people.length + " person/people.");
+  return { json: json, inner: list.inner,
+           title: 'Second factors' };
+}
+
+// The two acts, through the one switch that has them — **BEHIND A GUARD OF ITS
+// OWN, and that guard is not ceremony.**
+//
+// `tests/vendored/sts_admin_api_operations.js` compares an action resource's
+// REFUSAL SENTENCE against the operations the OpenAPI document declares for it,
+// in both directions, because `tests/vendored/admin_api.js`'s parity check
+// reads that sentence to discover what to look for. A bare delegation to
+// `usersAction()` therefore answered `/admin-api/mfa/no-such-action` by naming
+// all five actions the USERS resource has — so this resource claimed to offer
+// `create`, `set-password` and `issue-activation`, which it does not and must
+// not. It went red on the first full run, which is exactly what that assertion
+// is for.
+//
+// So the repertoire is stated here and the WORK is not duplicated: an action
+// outside these two is refused in this resource's own words, and the two that
+// belong to it are handed to the one switch that performs them.
+const MFA_ACTIONS = ['clear-totp', 'clear-key'];
+
+function mfaAction(body, context) {
+  log.debug("Entering mfaAction(). action=" + (body.action || '(none)'));
+  const action = String(body.action || '');
+  if (MFA_ACTIONS.indexOf(action) < 0) {
+    log.debug("Leaving mfaAction(). Not an action of this resource.");
+    return { ok: false, errors: ['Unknown action "' + action + '". There are ' +
+                                 MFA_ACTIONS.length + ': ' +
+                                 MFA_ACTIONS.join(' and ') + '. The rest of ' +
+                                 'what can be done to a person is on ' +
+                                 '/admin-api/users, which is also where these ' +
+                                 'two answer.'] };
+  }
+  log.debug("Leaving mfaAction(). Handing " + action + " to usersAction().");
+  return usersAction(body, context);
+}
+
+// ===========================================================================
+// `/admin/mfa` WAS HERE AND IT IS GONE (2026-09-10).
+//
+// It arrived that same day and lasted hours, which is the shortest life any
+// page in this console has had — so this marker is worth more than the usual
+// silence: a reader following a link, a bookmark or a sentence in an older
+// file needs to be told where the two halves went rather than meeting a 404.
+//
+// The page did TWO things and could only be filed by one of them. It edited
+// the eight `totp.*` settings, and it drew a roster of who held a second
+// factor with a Clear button on every row. Its own header argued at length
+// that it belonged under Identities because it answered a question about
+// PEOPLE — right about the roster, wrong about the settings, and a reader
+// looking for the skew window and a reader looking for *who has no second
+// factor* landed on one screen and read past each other.
+//
+//   * **THE SETTINGS ARE `/admin/totp` UNDER PROTOCOLS**, beside a new
+//     `/admin/webauthn` — the other second factor, which had no settings at
+//     all until that day. Both are rows in PROTOCOL_SETTINGS_PAGES.
+//   * **THE ROSTER IS COLUMNS ON `/admin/users`** — Known from, Can sign in
+//     with, Second factor — with a `factor` filter and the counts as tiles.
+//     That page's POPULATION had to widen to carry it: see peopleRows().
+//   * **THE PER-PERSON DETAIL AND BOTH CLEAR BUTTONS ARE ON THAT PERSON'S
+//     OWN ROW** — see mfaSection(), which can say what an enrolment IS
+//     rather than only that there is one, because it is drawn for one person
+//     rather than for forty.
+//   * **`mfaAction()` IS `usersAction()`'s `clear-totp` AND `clear-key`.**
+//     Same two acts, same audit rows, same refusals.
+//
+// `GET /admin-api/mfa` and `POST /admin-api/mfa/:action` still exist and
+// answer out of the views above, because an API operation that worked is not
+// worth breaking to tidy a table.
+// ===========================================================================
 
 function rbacView(req) {
   log.debug("Entering rbacView().");
@@ -26924,7 +28740,7 @@ app.get('/admin/scim', function (req, res) {
     warn('<strong>These endpoints create and delete accounts, and ' +
     'they are the one surface in this service that requires a credential' +
     (json.authentication && !json.authentication.required
-      ? ' — except that <code>scim.authRequired</code> is currently OFF, so ' +
+      ? ' — except that it is currently turned off here, so ' +
         'right now they do not'
       : '') + '.</strong> Almost nothing is checked about it: every scheme ' +
     'below is permissive, so this is a turnstile rather than a lock. What it ' +
@@ -27449,6 +29265,346 @@ app.get('/admin/scim/monitor', function (req, res) {
 
   respond(req, res, json, 'SCIM metrics', '/admin/scim/monitor', inner);
   log.debug("Leaving the admin SCIM monitor page.");
+});
+
+// ===========================================================================
+// GET /admin/signals, POST /admin/signals, POST /admin/signals/receive —
+// THIS CONSOLE AS A SHARED SIGNALS RECEIVER (2026-09-10).
+//
+// `ssf/ssf_receivers.js` holds the design and is not summarised here. What
+// this block is: the receive endpoint this console hosts, the page that draws
+// what arrived, and the one control on it.
+//
+// **THE MODULE IS A PLAIN REQUIRE AND NOT AN ELEVENTH SLOT**, and rule 3e's
+// test is why — it answers NO in both directions, which is the answer that
+// means "do not add a slot". `ssf/ssf_receivers.js` registers no route (rule
+// 3) and requires only libraries, none of which requires this file, so a
+// require here can neither move a route nor close a cycle. The eight slots on
+// this file exist because `ssf/ssf.js`, `ldap/ldap_server.js` and the rest
+// register routes and sit BELOW this line in the require order; a library
+// costs a reader nothing and an indirection is not free.
+//
+// It is required at the top of this file with the others.
+// ===========================================================================
+
+// The reply BOTH doors answer with — `/admin/signals?format=json` and
+// GET /admin-api/signals are the same document, rule 7 — built by the
+// receiver module so that the console, the management API and the portal
+// cannot come to three different opinions about what a delivered event is.
+function signalsJson(req) {
+  log.debug("Entering signalsJson().");
+  // THE CONSOLE SEES EVERYTHING IN THE REALM IT IS READING, which is the
+  // `sees: 'all'` on its row over there. It is an administrative surface: the
+  // question it answers is "what has this service been telling its receivers",
+  // and a per-person filter here would be the portal's page drawn in the wrong
+  // application.
+  const view = signals.view(signals.ADMIN, {});
+  const state = signalsState(req, view);
+  log.debug("Leaving signalsJson(). " + view.received.length + " row(s).");
+  return Object.assign({}, view, {
+    filter: { received: state.wanted || null },
+    received: state.page.shown,
+    total: view.received.length,
+    paging: { received: pagingJson(state.page.paging) }
+  });
+}
+
+// Filter first, then page — `pagingOf()`'s rule, for its reason: paging a list
+// and then filtering it gives a page 2 whose length depends on what page 1
+// happened to hold.
+//
+// THE SEARCH IS OVER WHAT A READER ARRIVES HOLDING: a username or an address
+// out of a complaint, an event name, a `jti` out of a transmitter's log, or a
+// stream id. They do not know which column it will be in, so it is one box
+// over all of them rather than four.
+function signalsState(req, view) {
+  log.debug("Entering signalsState().");
+  const wanted = queryOne(req.query, 'sigq').trim().toLowerCase();
+  const rows = wanted
+    ? view.received.filter(function (row) {
+        return [row.name, row.subject, row.jti, row.stream, row.vocabulary,
+                row.issuer, row.audience].concat(row.types)
+          .some(function (value) {
+            return String(value || '').toLowerCase().indexOf(wanted) >= 0;
+          });
+      })
+    : view.received;
+  const page = pagedRows(req.query, rows,
+    { name: 'received', noun: 'events' });
+  log.debug("Leaving signalsState(). " + rows.length + " match(es).");
+  return { wanted: wanted, page: page };
+}
+
+// The one control. It empties this console's inbox and DOES NOT touch the
+// stream — see `clearFor()`: clearing what a receiver has been shown and
+// tearing down the agreement to send it more are two different acts, and the
+// second one is `/admin/ssf`'s.
+const SIGNALS_CONSOLE_ACTIONS = ['clear'];
+
+function signalsAction(body) {
+  log.debug("Entering signalsAction(). action=" + String((body || {}).action));
+  const asked = body || {};
+  const action = String(asked.action || '');
+  if (SIGNALS_CONSOLE_ACTIONS.indexOf(action) < 0) {
+    // THE SENTENCE IS THE HOUSE SHAPE — `Unknown action "x". <prose>: a, b.` —
+    // AND IT IS READ RATHER THAN BEING STYLE.
+    // `tests/vendored/sts_admin_api_operations.js` matches exactly that out of
+    // `errors` on every action resource this API declares, and
+    // `tests/vendored/admin_api.js` reads the same sentence to check that
+    // every console action has an operation over there. This handler phrased
+    // it its own way — `"x" is not one of clear.` — which parses as neither,
+    // so it turned the parity check off for this resource with nothing
+    // failing until that walk went red on it.
+    //
+    // The count comes from the list rather than being written out, for
+    // `pki_admin.js`'s reason: a second action added tomorrow cannot leave the
+    // sentence short by one.
+    log.debug("Leaving signalsAction(). Unknown action.");
+    return { ok: false, errors: ['Unknown action "' + action + '". ' +
+      (SIGNALS_CONSOLE_ACTIONS.length === 1
+        ? 'There is one: '
+        : 'There are ' + SIGNALS_CONSOLE_ACTIONS.length + ': ') +
+      SIGNALS_CONSOLE_ACTIONS.join(', ') + '.'] };
+  }
+  const gone = signals.clearFor(signals.ADMIN);
+  log.debug("Leaving signalsAction(). " + gone + " dropped.");
+  return { ok: true, dropped: gone,
+    message: gone + ' delivered event(s) were dropped from this console\'s ' +
+      'inbox. The stream is untouched and goes on delivering; what was ' +
+      'RECORDED about each delivery is still in the ' +
+      'audit log, which cannot be cleared.' };
+}
+
+// ---------------------------------------------------------------------------
+// THE RECEIVE ENDPOINT. Three lines, because everything a receiver checks is
+// in `accept()` — see the note in the gate above about why this path is
+// exempt from it, and `ssf/ssf_receivers.js` for what is checked instead.
+// ---------------------------------------------------------------------------
+app.post('/admin/signals/receive', function (req, res) {
+  log.debug("Entering the admin console's Shared Signals receive endpoint.");
+  const taken = signals.accept(signals.ADMIN, req);
+  res.status(taken.status).set('Cache-Control', 'no-store');
+  if (taken.body) {
+    res.type('application/json').send(JSON.stringify(taken.body, null, 2));
+  } else {
+    // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says.
+    res.end();
+  }
+  log.debug("Leaving the admin console's Shared Signals receive endpoint. " +
+            taken.status + ".");
+});
+
+app.post('/admin/signals', function (req, res) {
+  log.debug("Entering the admin signals action endpoint.");
+  const body = parseBody(req);
+  const result = signalsAction(body);
+  respondToAction(req, res, '/admin/signals' +
+    queryWith(listViewFromBack('/admin/signals', body.back), {}), result);
+  log.debug("Leaving the admin signals action endpoint.");
+});
+
+app.get('/admin/signals', function (req, res) {
+  log.debug("Entering the admin signals page.");
+  const json = signalsJson(req);
+  const st = json.status || {};
+  const stream = st.stream;
+
+  const tiles = '<div class="tiles">' +
+    tile(json.total, 'delivered here') +
+    tile(stream ? stream.caepDelivered : 0, 'CAEP types') +
+    tile(stream ? stream.riscDelivered : 0, 'RISC types') +
+    tile(stream ? stream.counters.delivered : 0, 'pushes accepted') +
+    tile(stream ? stream.counters.failed : 0, 'pushes failed') +
+    tile(stream ? stream.queued : 0, 'still queued') +
+    '</div>';
+
+  // WHY NOTHING IS HERE, ABOVE THE TABLE AND NOT BELOW IT. An empty inbox has
+  // five causes and only one of them is "nothing has happened"; `status()`
+  // works out which apply and this draws them in the order a reader should
+  // check them. It is drawn even when rows ARE present, because a stream that
+  // has been paused since this morning explains a page that stops rather than
+  // a page that is empty.
+  const why = st.why && st.why.length
+    ? '<div class="err"><p><strong>Some or all of this console\'s signals ' +
+      'are not arriving.</strong></p><ul>' +
+      st.why.map(function (line) {
+        return '<li>' + esc(line) + '</li>';
+      }).join('') + '</ul></div>'
+    : '';
+
+  const streamBlock = stream
+    ? '<table>' +
+      '<tr><th>Stream</th><td><code>' + esc(stream.stream_id) + '</code></td></tr>' +
+      '<tr><th>Audience</th><td><code>' + esc(String(stream.aud)) + '</code>' +
+      ' <span class="sub">' +
+      esc('This console checks for this name in every SET\'s aud and refuses ' +
+          'one addressed to anybody else with invalid_audience — recording ' +
+          'it either way, so a misaddressed event is visible rather than ' +
+          'merely absent.') + '</span></td></tr>' +
+      '<tr><th>Issuer</th><td><code>' + esc(String(stream.iss)) + '</code></td></tr>' +
+      '<tr><th>Delivered to</th><td><code>' +
+      esc(stream.endpoint_url) + '</code> <span class="sub">' +
+      esc('RFC 8935 push, over the loopback interface, with this service\'s ' +
+          'own TLS certificate pinned. It is a real HTTP request on purpose: ' +
+          'handing the event to the page in process would skip the body, the ' +
+          'media type, the authorization header and the signature.') +
+      '</span></td></tr>' +
+      '<tr><th>Event types</th><td>' + esc(String(stream.delivers)) +
+      ' delivered of ' + esc(String(stream.requested)) + ' requested ' +
+      '<span class="sub">' +
+      esc('The difference is the intersection SSF 1.0 section 7.1.1 defines: ' +
+          'a type this transmitter does not support is answered by its ' +
+          'absence from events_delivered rather than by a refusal.') +
+      '</span></td></tr>' +
+      '<tr><th>Status</th><td><span class="' +
+      (stream.status === 'enabled' ? '' : 'state-invalid') + '">' +
+      esc(stream.status) + '</span> <span class="sub">' +
+      esc(stream.statusReason) + '</span></td></tr>' +
+      '<tr><th>Last push</th><td>' +
+      (stream.lastPushAt
+        ? esc(stream.lastPushAt) +
+          (stream.lastPushError
+            ? ' <span class="state-invalid">' + esc(stream.lastPushError) +
+              '</span>'
+            : '')
+        : '<span class="sub">nothing has been pushed here yet</span>') +
+      '</td></tr></table>'
+    : note('<strong>There is no stream for this console in the &ldquo;' +
+      esc(st.realm) + '&rdquo; realm.</strong> It is seeded at startup and is ' +
+      'an ORDINARY stream — if it was paused, narrowed or deleted at ' +
+      '<a href="/admin/ssf">Shared Signals</a> or through ' +
+      '<code>/admin-api/ssf</code>, it stays that way until a restart. That ' +
+      'is the same rule this service\'s seeded application entries follow.');
+
+  const search = sectionSearchForm({
+    path: '/admin/signals', param: 'sigq', pageParam: 'receivedPage',
+    query: req.query, label: 'Find',
+    placeholder: 'alice, session-revoked, a jti, a stream id',
+    what: 'Over the event name, the type URI, the subject as this receiver ' +
+          'read it, the issuer, the audience, the jti and the stream — ' +
+          'because a reader arrives holding one of those and does not know ' +
+          'which column it is in.' });
+
+  const nav = pageNavPair('/admin/signals', pageParamsOf(req.query),
+                          json.paging.received);
+
+  const rows = json.received.map(function (row) {
+    return '<tr>' +
+      '<td class="sub">' + esc(whenText(Date.parse(row.at))) + '</td>' +
+      '<td><code>' + esc(row.vocabulary) + '</code> ' + esc(row.name) +
+      (row.types.length > 1
+        ? ' <span class="sub">and ' + esc(String(row.types.length - 1)) +
+          ' more in the same SET</span>'
+        : '') +
+      '<div class="sub"><code>' + esc(row.types[0] || '(none)') +
+      '</code></div></td>' +
+      '<td>' + (row.subject
+        ? esc(row.subject)
+        : '<span class="sub" title="' +
+          esc('SSF\'s own two events are about the STREAM rather than about ' +
+              'anybody, so they carry no subject at all. Every CAEP and RISC ' +
+              'event does.') + '">&mdash;</span>') + '</td>' +
+      '<td>' + (row.verified
+        ? '<span title="' + esc(row.verificationNote) + '">verified</span>'
+        : '<span class="state-invalid" title="' +
+          esc(row.verificationNote) + '">not verified</span>') +
+      (row.audienceOk
+        ? ''
+        : '<div class="state-invalid" title="' +
+          esc('This receiver is "' + String(st.audience) + '" and that name ' +
+              'is not in this token\'s aud. It was refused with ' +
+              'invalid_audience and recorded anyway, because what arrived is ' +
+              'the question being asked.') + '">wrong audience</div>') +
+      (row.correctMediaType
+        ? ''
+        : '<div class="sub" title="' +
+          esc('RFC 8935 section 2.1 says application/secevent+jwt. This one ' +
+              'said "' + String(row.contentType || '(nothing)') + '". It was ' +
+              'accepted — a receiver that refused would be testing the ' +
+              'transmitter\'s pedantry — and it is said out loud rather than ' +
+              'passed over.') + '">media type</div>') +
+      '</td>' +
+      '<td class="sub"><code>' + esc(row.jti) + '</code>' +
+      '<div><code>' + esc(row.stream || '') + '</code></div></td>' +
+      '<td>' + (Object.keys(row.payload).length
+        ? '<details><summary>' +
+          esc(String(Object.keys(row.payload).length) + ' member(s)') +
+          '</summary><pre>' + esc(JSON.stringify(row.payload, null, 2)) +
+          '</pre></details>'
+        : '<span class="sub" title="' +
+          esc('Eleven of RISC\'s fourteen event types have no payload members ' +
+              'at all — the SUBJECT carries the entire message, which is why ' +
+              'a subject naming the wrong person is a wholly wrong event ' +
+              'rather than a partly wrong one.') + '">no members</span>') +
+      '</td></tr>';
+  }).join('') || '<tr><td colspan="6">' +
+    esc(json.filter.received
+      ? 'Nothing delivered here matches that search.'
+      : 'Nothing has been delivered to this console yet.') +
+    '</td></tr>';
+
+  const inner = '<h1>Signals received</h1>' +
+    '<p>Every Security Event Token <strong>delivered to this console</strong> ' +
+    'in the &ldquo;' + esc(st.realm) + '&rdquo; realm. This console is a ' +
+    'registered Shared Signals receiver: it has a stream of its own, it is ' +
+    'POSTed each event over RFC 8935 push at <code>' +
+    esc(st.receivePath) + '</code>, and it verifies the signature and the ' +
+    'audience before recording anything.</p>' +
+    why +
+    tiles +
+    note('<strong>This is not the transmitter\'s copy.</strong> ' +
+    '<a href="/admin/ssf">Shared Signals</a> shows every stream this service ' +
+    'holds and what it has SENT on each; <a href="/admin/caep-sessions">CAEP ' +
+    'sessions</a> and <a href="/admin/risc-accounts">RISC accounts</a> show ' +
+    'what it BELIEVES about a session and an account. This page shows what ' +
+    'came back through the door — which is the only one of the four that ' +
+    'goes empty when delivery is broken, and is therefore the only one that ' +
+    'can tell you it is.') +
+
+    '<h2>This console\'s stream</h2>' +
+    streamBlock +
+
+    '<h2 id="find-sigq">Delivered events</h2>' +
+    search +
+    nav.head +
+    '<table><tr><th>When</th><th>Event</th><th>Subject</th>' +
+    '<th>How it arrived</th><th>Identifiers</th><th>Payload</th></tr>' +
+    rows + '</table>' +
+    nav.foot +
+
+    // THE ONE CONTROL, and it is drawn only when there is something to
+    // clear: a button that would drop nothing is a button somebody presses to
+    // find out what it does. The CSRF token is put into this form by
+    // `withCsrf()` on the way out, like every other form on this console —
+    // rule 8's arrangement, so a page author does neither half.
+    (json.total
+      ? '<h2>Clear</h2>' +
+        note('This drops what is HELD HERE and nothing else. The stream is ' +
+        'untouched and goes on delivering, and the ' +
+        '<a href="/admin/audit">audit log</a>\'s record of each delivery ' +
+        'cannot be cleared — which is the point of it being the durable ' +
+        'half.') +
+        '<form method="post" action="/admin/signals">' +
+        '<input type="hidden" name="back" value="' +
+        esc(queryWith(listViewFromBack('/admin/signals',
+                                       queryOne(req.query, 'back')), {})) +
+        '">' +
+        '<div class="formrow">' +
+        '<input type="hidden" name="action" value="clear">' +
+        '<button type="submit" class="secondary" title="' +
+        esc('Drops the ' + json.total + ' delivered event(s) held in this ' +
+            'console\'s inbox in this realm.') +
+        '">Clear this inbox</button></div></form>'
+      : '') +
+
+    note('<a href="/admin/signals?format=json">this page as JSON</a> ' +
+    '&middot; <a href="/admin-api/signals">the same over the management ' +
+    'API</a> &middot; <a href="/admin/ssf">the streams and the settings</a> ' +
+    '&middot; <a href="/portal/signals">what a person sees about ' +
+    'themselves</a> &middot; <a href="/admin/audit">the durable record</a>');
+
+  respond(req, res, json, 'Signals received', '/admin/signals', inner);
+  log.debug("Leaving the admin signals page.");
 });
 
 // ---------------------------------------------------------------------------
@@ -29775,9 +31931,10 @@ app.get('/admin/risc-accounts', function (req, res) {
                 state.page.paging.perPage,
                 'Only the accounts table is paged.', {}) +
     acctNav.head +
-    '<table><tr><th>Account</th><th>Subject</th><th>Lifecycle</th>' +
-    '<th>Opt-out</th><th>Credential</th>' + headers +
-    '<th>Total</th><th>Suppressed</th><th></th></tr>' + rows + '</table>' +
+    wideTable('Accounts',
+      '<table><tr><th>Account</th><th>Subject</th><th>Lifecycle</th>' +
+      '<th>Opt-out</th><th>Credential</th>' + headers +
+      '<th>Total</th><th>Suppressed</th><th></th></tr>' + rows + '</table>') +
     acctNav.foot +
 
     '<h2>Where a RISC event could go</h2>' +
@@ -29807,21 +31964,22 @@ app.get('/admin/risc-accounts', function (req, res) {
         'why nothing arrived.'
     }) +
     appNav.head +
-    '<table><tr><th>Receiver</th><th>Streams</th><th>aud</th><th>Takes</th>' +
-    headers + '<th>Total</th><th>Accounts</th><th>Delivered / failed</th>' +
-    '</tr>' +
-    (appState.page.shown.length
-      ? appState.page.shown.map(function (row) {
-          return riscApplicationRow(row, shorts, prefix);
-        }).join('')
-      : '<tr><td colspan="' + (shorts.length + 7) + '">' +
-        (appState.wanted
-          ? 'No receiver matches <code>' + esc(appState.wanted) + '</code>.'
-          : 'No application here supports Shared Signals yet. An entry ' +
-            'appears the moment a receiver creates a stream at ' +
-            '<code>/ssf/stream</code>.') +
-        '</td></tr>') +
-    '</table>' +
+    wideTable('Per application',
+      '<table><tr><th>Receiver</th><th>Streams</th><th>aud</th>' +
+      '<th>Takes</th>' + headers +
+      '<th>Total</th><th>Accounts</th><th>Delivered / failed</th></tr>' +
+      (appState.page.shown.length
+        ? appState.page.shown.map(function (row) {
+            return riscApplicationRow(row, shorts, prefix);
+          }).join('')
+        : '<tr><td colspan="' + (shorts.length + 7) + '">' +
+          (appState.wanted
+            ? 'No receiver matches <code>' + esc(appState.wanted) + '</code>.'
+            : 'No application here supports Shared Signals yet. An entry ' +
+              'appears the moment a receiver creates a stream at ' +
+              '<code>/ssf/stream</code>.') +
+          '</td></tr>') +
+      '</table>') +
     appNav.foot +
 
     (json.installed
@@ -30335,7 +32493,456 @@ function persistenceStatusBlock() {
   return { html: html, json: info };
 }
 
+// ===========================================================================
+// THE TWO SECOND-FACTOR PAGES' STATUS BLOCKS (2026-09-10).
+//
+// Each is the `status` member of a row in PROTOCOL_SETTINGS_PAGES below — the
+// same optional function `/admin/persistence` has, and for the same reason it
+// was invented: a settings page describes what this service is CONFIGURED to
+// do, and these two also have to say what the MECHANISM is, which is a
+// different fact. Which digests exist as against which one is in use; which
+// COSE algorithms this relying party can verify as against which two it is
+// offering. **Every table below is READ FROM THE MODULE THAT PERFORMS THE
+// ALGORITHM** — `common/totp.js`'s `report()` and
+// `authn/webauthn_policy.js`'s — which is the rule `/admin/crypto-metadata` is
+// built on, one layer down. A page that wrote the list out would describe
+// something this service does not do the first time one was added.
+// ===========================================================================
+function totpMechanismBlock() {
+  log.debug("Entering totpMechanismBlock().");
+  const info = totp.report();
+  const algorithmRows = info.algorithms.map(function (alg) {
+    return '<tr><td><code>' + esc(alg.name) + '</code></td>' +
+      '<td>' + (alg.inUse
+        ? '<span class="state-valid">in use</span>'
+        : '<span class="state-none">available</span>') + '</td>' +
+      '<td>' + esc(alg.note || '') + '</td></tr>';
+  }).join('');
+  const html = '<h2>The mechanism</h2>' +
+    (info.offered
+      ? ''
+      : warn('<strong><code>totp.enabled</code> is off</strong>, so nobody ' +
+        'new can enrol an authenticator app. <strong>It does not disable a ' +
+        'secret somebody already holds</strong> — that account is still ' +
+        'configured for two factors and the sign-in screen still asks for the ' +
+        'code, because a switch that silently downgraded it would be a ' +
+        'security control whose off position does something other than what ' +
+        'it says. Clearing an existing enrolment is on that person\'s row ' +
+        'under <a href="/admin/users">Users</a>.')) +
+    '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+    '<tr><th>Code</th><td>' + esc(String(info.digits)) + ' digits, a new one ' +
+      'every ' + esc(String(info.period)) + ' seconds</td></tr>' +
+    '<tr><th>Skew forgiven</th><td>' + esc(String(info.window)) + ' step(s) ' +
+      'either side, so a code lives about ' +
+      esc(String(info.period * (1 + 2 * info.window))) + ' seconds. ' +
+      '<strong>This one applies to everybody</strong>, existing enrolments ' +
+      'included.</td></tr>' +
+    '<tr><th>Shared secret</th><td>' + esc(String(info.secretBits)) + ' bits, ' +
+      esc(info.encoding) + '</td></tr>' +
+    '<tr><th>Truncation</th><td>' + esc(info.truncation) + '</td></tr>' +
+    '</table>' +
+    '<h3>Digests</h3>' +
+    '<table><tr><th>Algorithm</th><th>State</th><th>Note</th></tr>' +
+    algorithmRows + '</table>';
+  log.debug("Leaving totpMechanismBlock(). offered=" + info.offered);
+  return { html: html, json: info };
+}
+
+function webauthnMechanismBlock() {
+  log.debug("Entering webauthnMechanismBlock().");
+  const info = webauthnPolicy.report();
+  const algorithmRows = info.algorithms.map(function (alg) {
+    return '<tr><td><code>' + esc(alg.name) + '</code></td>' +
+      '<td class="num"><code>' + esc(String(alg.coseAlg)) + '</code></td>' +
+      '<td>' + (alg.offered
+        ? '<span class="state-valid">offered</span>'
+        : '<span class="state-none">verifiable, not offered</span>') +
+      '</td></tr>';
+  }).join('');
+  const html = '<h2>The ceremony</h2>' +
+    (info.offered
+      ? ''
+      : warn('<strong><code>webauthn.enabled</code> is off</strong>, so no new ' +
+        'security key can be enrolled here. <strong>It does not disable a key ' +
+        'somebody already holds</strong>, for <code>totp.enabled</code>\'s ' +
+        'reason — and there is a sharper edge: somebody whose only credential ' +
+        'is a <code>primary</code> key would be locked out of their own ' +
+        'account by this switch. Removing a key is on that person\'s row ' +
+        'under <a href="/admin/users">Users</a>.')) +
+    '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+    '<tr><th>RP ID</th><td>' +
+      (info.rpId
+        ? '<code>' + esc(info.rpId) + '</code> — configured. It is used only ' +
+          'where it is a <strong>registrable domain suffix</strong> of the ' +
+          'host this service was reached on; anything else is refused here, ' +
+          'with the reason in the log, because a browser would refuse it with ' +
+          'an error indistinguishable from a hardware failure.'
+        : 'the host this service was reached on. That is the default and it ' +
+          'is what a credential is bound to.') + '</td></tr>' +
+    '<tr><th>RP name</th><td><code>' + esc(info.rpName) + '</code> — what a ' +
+      'browser shows while somebody decides. It has no security meaning: ' +
+      'WebAuthn binds a credential to the RP ID and to nothing else.</td></tr>' +
+    '<tr><th>User verification</th><td><code>' + esc(info.userVerification) +
+      '</code> — ' + (info.userVerificationEnforced
+        ? '<strong>requested AND CHECKED</strong>. The UV flag is inside the ' +
+          'bytes the authenticator signed, so an authenticator that did not ' +
+          'verify the person is refused rather than quietly accepted. It is ' +
+          'the only ceremony option on this page this service can check, ' +
+          'because it is the only one anything signed says anything about.'
+        : 'requested only. Nothing is refused on it.') + '</td></tr>' +
+    '<tr><th>Attestation</th><td><code>' + esc(info.attestation) + '</code>, ' +
+      'conveyance requested. <strong>NO ATTESTATION STATEMENT IS VERIFIED ' +
+      'HERE whatever is asked for</strong> — there is no metadata service, no ' +
+      'vendor trust anchor and no model allow-list — so the statement is ' +
+      'parsed, reported and believed. Formats recognised: ' +
+      esc(info.attestationFormats.join(', ')) + '.</td></tr>' +
+    '<tr><th>Timeout</th><td>' + esc(String(info.timeoutMs)) + 'ms, and it is ' +
+      'a HINT: the specification lets a client clamp it and browsers do. The ' +
+      'pending step this service holds expires on its own five-minute clock ' +
+      'regardless.</td></tr>' +
+    '<tr><th>Signature counter</th><td>' + esc(info.signatureCounter) +
+      '</td></tr>' +
+    '</table>' +
+    '<h3>CTAP</h3>' +
+    note('These three are what a browser translates into what it asks the ' +
+    'AUTHENTICATOR for. <strong>They are requests and not checks</strong>: ' +
+    'nothing signed says what the browser was asked for, so a check here would ' +
+    'be a comparison against a value this service itself supplied. What this ' +
+    'service does instead is RECORD what came back, beside the key.') +
+    '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+    '<tr><th>Attachment</th><td>' +
+      (info.authenticatorAttachment === 'any'
+        ? 'no preference sent, so any authenticator may answer — the member is ' +
+          'omitted from the options rather than sent as a wide value, because ' +
+          'the dictionary has no value meaning &ldquo;any&rdquo;'
+        : '<code>' + esc(info.authenticatorAttachment) + '</code> only. The ' +
+          'browser filters; this service does not refuse a credential whose ' +
+          'attachment turned out to be the other one.') + '</td></tr>' +
+    '<tr><th>Discoverable credential</th><td><code>' + esc(info.residentKey) +
+      '</code> — a CTAP2 <em>resident key</em>, stored on the authenticator ' +
+      'itself. That is what a passkey is and what a usernameless sign-in ' +
+      'needs. <strong>This service offers no usernameless flow</strong>, so ' +
+      '<code>required</code> consumes one of the small number of slots a ' +
+      'roaming authenticator has — which cannot always be freed again — and ' +
+      'buys nothing here beyond seeing what a client does when the browser ' +
+      'prompts differently.</td></tr>' +
+    '<tr><th>credProps</th><td>' + (info.credProps
+      ? 'asked for. It is the only way to find out whether a ' +
+        '<code>preferred</code> ceremony actually produced a discoverable ' +
+        'credential — nothing in the attestation says. The answer is recorded ' +
+        'beside the key and decides nothing.'
+      : 'not asked for, so nothing here knows whether an enrolled credential ' +
+        'is discoverable.') + '</td></tr>' +
+    '</table>' +
+    '<h3>What a key may BE here</h3>' +
+    note('The three rows below are <strong>not WebAuthn</strong>. They are ' +
+    'what THIS service will do with a key once the ceremony is over, decided ' +
+    'here rather than by any specification — and all three refuse an ' +
+    '<strong>enrolment</strong> and never an authentication. A key already on ' +
+    'somebody\'s entry goes on working when the role that produced it is ' +
+    'switched off.') +
+    '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+    '<tr><th>Primary (passwordless)</th><td>' + (info.primaryAllowed
+      ? '<span class="state-valid">allowed</span> — a key may be the only ' +
+        'credential on an account. The session then records <code>amr ' +
+        '["hwk"]</code> and <code>acr "1"</code>.'
+      : '<span class="state-none">not allowed</span> — the passwordless box is ' +
+        'off the sign-in screen and the <code>primary</code> choice is off the ' +
+        'portal.') + '</td></tr>' +
+    '<tr><th>Second factor</th><td>' + (info.mfaAllowed
+      ? '<span class="state-valid">allowed</span> — beside a password. The ' +
+        'session then records <code>amr ["pwd","hwk"]</code> and <code>acr ' +
+        '"mfa"</code>.'
+      : '<span class="state-none">not allowed</span> — the other second factor ' +
+        'is <a href="/admin/totp">an authenticator app</a>.') + '</td></tr>' +
+    '<tr><th>Keys per person</th><td>' + esc(String(info.maxKeysPerPerson)) +
+      '. Several is the ordinary case and the specification expects it: an ' +
+      'assertion NAMES the credential that produced it, so there is none of ' +
+      'the ambiguity two shared secrets would have.</td></tr>' +
+    '</table>' +
+    '<h3>Algorithms</h3>' +
+    note('<code>pubKeyCredParams</code> is built from the OFFERED rows, in ' +
+    'order. The list is filtered against what <code>authn/webauthn.js</code> ' +
+    'can actually verify — a name outside that table is dropped with a warning ' +
+    'rather than sent, because offering an algorithm this service cannot check ' +
+    'produces a credential that enrols perfectly and then fails every ' +
+    'assertion it is ever used for, at sign-in rather than at enrolment.') +
+    '<table><tr><th>Algorithm</th><th class="num">COSE</th><th>State</th></tr>' +
+    algorithmRows + '</table>' +
+    '<p class="sub">Curves: ' +
+    info.curves.map(function (curve) {
+      return '<code>' + esc(curve.name) + '</code>';
+    }).join(', ') + '.</p>';
+  log.debug("Leaving webauthnMechanismBlock(). offered=" + info.offered);
+  return { html: html, json: info };
+}
+
+// ---------------------------------------------------------------------------
+// THE RECOVERY CODE MECHANISM, for `/admin/backup-codes` (2026-09-10).
+//
+// Read from `common/backup_codes.js` — the module that generates and compares
+// a code — rather than written down here, which is the design every `status`
+// block on this page follows: the table lives with the code that performs the
+// thing, so this cannot describe something the service does not do.
+//
+// **IT IS THE ONE BLOCK HERE WITH NO SPECIFICATION COLUMN**, because there is
+// no specification. Everything in it is a decision this service made, and the
+// page says which decision and why rather than citing a document.
+// ---------------------------------------------------------------------------
+function backupCodesMechanismBlock() {
+  log.debug("Entering backupCodesMechanismBlock().");
+  const info = backupCodes.report();
+  const html =
+    '<h3>What a code is</h3>' +
+    '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+    '<tr><th>Offered</th><td>' + (info.offered
+      ? '<span class="state-valid">yes</span> — a set is issued the first time ' +
+        'somebody enrols a second factor.'
+      : '<span class="state-none">no</span> — no NEW set will be issued. ' +
+        '<strong>A set already issued goes on working</strong>, which is the ' +
+        'contract <code>totp.enabled</code> and <code>webauthn.enabled</code> ' +
+        'both keep: a switch that took away the only way back into an account ' +
+        'whose phone is lost would be the worst one on this console.') +
+      '</td></tr>' +
+    '<tr><th>Set</th><td>' + esc(String(info.count)) + ' codes of ' +
+      esc(String(info.length)) + ' characters, printed in groups of ' +
+      esc(String(info.groupSize || 0)) + '.</td></tr>' +
+    '<tr><th>Strength</th><td><strong>' + esc(String(info.bitsPerCode)) +
+      ' bits</strong> per code, out of an alphabet of ' +
+      esc(String(info.alphabetSize)) + '. That is the number that matters ' +
+      'rather than the length, and it is what makes the rate limit on the ' +
+      'recovery screen a belt rather than the whole trousers.</td></tr>' +
+    '<tr><th>Alphabet</th><td><code>' + esc(info.alphabet) + '</code> — the ' +
+      'same thirty-two characters RFC 4648 base32 uses, and <strong>not shared ' +
+      'with <a href="/admin/totp">TOTP</a></strong>. That one is base32 ' +
+      'because the <code>otpauth</code> URI says so; this one is these ' +
+      'characters because <strong>no pair of them is confusable</strong> — no ' +
+      '<code>0</code> beside <code>O</code>, no <code>1</code> beside ' +
+      '<code>I</code> — and a recovery code is the one credential here that ' +
+      'somebody writes on paper and types back months later.</td></tr>' +
+    '<tr><th>Generated</th><td>' + esc(info.source) + '</td></tr>' +
+    '<tr><th>Compared</th><td>' + esc(info.comparison) + ' Every code in the ' +
+      'set is compared even after a match, so the time taken does not depend ' +
+      'on WHICH one matched.</td></tr>' +
+    '<tr><th>At rest</th><td>' + esc(info.atRest) + '</td></tr>' +
+    '</table>' +
+    '<h3>What this service will not do with them</h3>' +
+    note('<strong>There is no control anywhere that issues a set on ' +
+    'request.</strong> Not on this console, not on <code>/admin-api</code>, ' +
+    'not on <code>/portal</code>. A set is created by the ACT of enrolling a ' +
+    'second factor and by nothing else, because a way back that somebody has ' +
+    'to remember to ask for produces exactly the population it exists to ' +
+    'protect — the people who did not ask are the people who will need it.') +
+    note('<strong>A set is issued ONCE and is never topped up.</strong> ' +
+    'Enrolling a different second factor does not reissue: somebody who ' +
+    'printed a list in March and replaced their authenticator app in June ' +
+    'would otherwise be holding a page of strings that had stopped working ' +
+    'with nothing having said so. The only route to a second set is an ' +
+    'operator\'s Clear on that person\'s row under ' +
+    '<a href="/admin/users">Users</a>, after which the next enrolment issues ' +
+    'one.') +
+    note('<strong>This console never shows a code.</strong> The person reads ' +
+    'their own set back on <code>/portal/mfa</code> and nowhere else. Showing ' +
+    'them here would hand a working second factor to whoever holds Admin ' +
+    'Read, which is the same door this console already refuses to open for an ' +
+    'authenticator enrolment.') +
+    note('<strong>A recovery code is never a FIRST factor and never the ' +
+    'factor a sign-in asks for.</strong> ' +
+    '<code>credentials.mechanismsFor().secondFactor</code> answers ' +
+    '<code>webauthn</code> or <code>totp</code> and never this; the recovery ' +
+    'screen is reachable only as a way OUT of one of those two, with a step ' +
+    'id the person already holds.');
+  log.debug("Leaving backupCodesMechanismBlock(). offered=" + info.offered);
+  return { html: html, json: info };
+}
+
 const PROTOCOL_SETTINGS_PAGES = [
+  // -------------------------------------------------------------------------
+  // THE TWO SECOND FACTORS, ONE PAGE EACH, BOTH UNDER PROTOCOLS (2026-09-10).
+  //
+  // **THERE WAS ONE PAGE AND IT WAS FILED UNDER IDENTITIES.** `/admin/mfa`
+  // drew the eight `totp.*` settings AND a roster of who held a second factor,
+  // and the argument for putting it beside Users was that it answered a
+  // question about PEOPLE. That argument was right about the roster and wrong
+  // about the settings, and the page could not be filed by both halves at
+  // once: a reader looking for the skew window and a reader looking for *who
+  // has no second factor* landed on the same screen and read past each other.
+  //
+  // So it is split by the question each half answers, which is the rule
+  // `/admin/xacml/monitor` established. **The MECHANISMS are protocols** — RFC
+  // 6238 and W3C WebAuthn are specifications this service implements, and they
+  // belong beside SCIM and Kerberos. **The PEOPLE are the directory** — the
+  // roster is columns on <a href="/admin/users">Users</a> now and the per-person
+  // detail, including the Clear buttons, is on that person's own row.
+  //
+  // **WEBAUTHN HAD NO SETTINGS AT ALL UNTIL THIS DAY**, which is why nothing
+  // like this page ever existed for it. `common/config.js`'s own comment said
+  // *what it does is decided by the specification and by the browser, and
+  // there is nothing an operator could usefully turn* — true of the
+  // cryptography and false of the ceremony, every parameter of which was a
+  // literal inside a string in `authn/authn.js`.
+  // -------------------------------------------------------------------------
+  { path: '/admin/totp', title: 'TOTP MFA',
+    lead: '<strong>An authenticator app as a second factor — RFC 6238 over ' +
+          'RFC 4226 — and the eight parameters the specification leaves ' +
+          'open.</strong> A person enrols one at <code>/portal/mfa</code> or ' +
+          'while spending an activation link: a QR code this server drew, and ' +
+          'the same secret in base32 beside it. <strong>Codes are checked FOR ' +
+          'REAL in both modes</strong>, which almost nothing else on this ' +
+          'service is. Who actually holds one is ' +
+          '<a href="/admin/users">Users</a>, and clearing an enrolment is on ' +
+          'that person\'s own row.',
+    also: ['<strong>Changing the digest, the digits or the period affects NEW ' +
+           'enrolments only.</strong> An existing secret is verified with the ' +
+           'parameters it was enrolled under — the ones the QR code told the ' +
+           'app — because this service cannot change them retrospectively and ' +
+           'a setting that silently locked out everybody who had already ' +
+           'enrolled would be the worst kind of knob. <strong>The skew window ' +
+           'is the exception and applies to everybody</strong>: how much a ' +
+           'deployment forgives a drifting clock is a policy rather than ' +
+           'something the app was told.',
+           '<strong>LEAVE THE DIGEST AT SHA1 UNLESS YOU ARE TESTING EXACTLY ' +
+           'THAT.</strong> Several widely used authenticator apps — Google ' +
+           'Authenticator among them — IGNORE the <code>algorithm</code> ' +
+           'parameter in the QR code and always compute SHA-1, so any other ' +
+           'value produces a code that scans perfectly and then generates ' +
+           'codes this service refuses, with nothing anywhere saying why. ' +
+           'SHA-1 is not a weakness here: this is a keyed MAC over a counter, ' +
+           'not a collision-resistant digest.',
+           '<strong>A shared secret can be read back and a password ' +
+           'cannot.</strong> Verifying a code means COMPUTING it, so the ' +
+           'secret is stored in a form this service can recover — unlike ' +
+           '<code>userPassword</code>, which is a scrypt hash. In PRODUCT mode ' +
+           'it is sealed under the same key-encryption key that protects the ' +
+           'signing keys, so <a href="/admin/ldap/directory">the directory ' +
+           'page</a> shows ciphertext; in DEVELOPMENT mode it is stored as ' +
+           'base32, because the key-encryption key there is generated per run ' +
+           'and sealing would mean an authenticator that silently stopped ' +
+           'working at the next restart. That is also the whole reason this ' +
+           'mechanism is a SECOND factor and can never be made a first one.',
+           '<strong>A code can only be used once</strong> (RFC 6238 section ' +
+           '5.2). The step this service last accepted is stored on the ' +
+           'enrolment, so somebody signing in twice inside one window is asked ' +
+           'to wait for the next code. That is correct and it surprises ' +
+           'people, which is why the sign-in screen says which of the two ' +
+           'happened rather than answering &ldquo;wrong code&rdquo; to both.'],
+    status: totpMechanismBlock,
+    links: [['/admin/webauthn', 'the other second factor'],
+            ['/admin/users', 'who holds one, and how to clear it'],
+            ['/admin/crypto-metadata', 'every algorithm this service performs'],
+            ['/portal/mfa', 'where a person enrols one']] },
+
+  // -------------------------------------------------------------------------
+  // THE THIRD MECHANISM PAGE (2026-09-10), AND THE ONLY ONE ON THIS CONSOLE
+  // THAT IMPLEMENTS NO SPECIFICATION.
+  //
+  // It is a page of its own rather than a section of `/admin/totp` because a
+  // recovery code stands in for EITHER of the two mechanisms above it. Filing
+  // it under one of them would put it where half the people looking for it
+  // would not look, and the console's own rule — where a page goes is decided
+  // by the question it answers — says the question here is *how does somebody
+  // get back in*, which is neither of those two pages' question.
+  // -------------------------------------------------------------------------
+  { path: '/admin/backup-codes', title: 'Recovery codes',
+    lead: '<strong>The way back in when the second factor is not to hand.</strong> ' +
+          'A set of single-use codes, issued AUTOMATICALLY and ONCE the first ' +
+          'time a person enrols an authenticator app or a security key in the ' +
+          '<code>mfa</code> role. There is no control anywhere — here, on ' +
+          '<code>/admin-api</code>, or on <code>/portal</code> — that issues a ' +
+          'set on request. Who holds one is <a href="/admin/users">Users</a>, ' +
+          'and clearing a set is on that person\'s own row.',
+    also: ['<strong>THIS IS THE ONLY MECHANISM ON THIS CONSOLE THAT NO ' +
+           'SPECIFICATION DEFINES.</strong> Everything else here implements ' +
+           'somebody\'s document and can be checked against it; there is no ' +
+           'RFC for a recovery code. What every identity provider does ' +
+           'converges anyway — a handful of random strings, shown once, each ' +
+           'accepted once — and the decisions that are left are this ' +
+           'service\'s own. <code>common/backup_codes.js</code> argues each of ' +
+           'them, and the four settings below are what it leaves open.',
+           '<strong>THEY ARE ENCRYPTED AND NOT HASHED, AND THAT IS A PRODUCT ' +
+           'DECISION RATHER THAN A CRYPTOGRAPHIC ONE.</strong> This ' +
+           'repository\'s own rule is that a secret this service VERIFIES is ' +
+           'hashed and a secret it must PRESENT cannot be — which is why ' +
+           '<code>userPassword</code> is scrypt. A recovery code is both, and ' +
+           'what decides it is whether a person may look at their remaining ' +
+           'codes again. <strong>This service says yes</strong>, because a ' +
+           'list shown exactly once at the end of an enrolment somebody is ' +
+           'rushing through is a list most people close without reading — and ' +
+           'the moment it matters is months later, when the phone is gone. ' +
+           'The cost is said out loud: anybody holding the key-encryption key ' +
+           'can read somebody\'s codes, exactly as they can read a ' +
+           '<a href="/admin/totp">TOTP</a> shared secret, which is why both ' +
+           'are SECOND factors here and neither can be made a first one.',
+           '<strong>A SET IS ISSUED ONCE.</strong> Not once per enrolment — ' +
+           'once. Enrolling a different second factor does not reissue, ' +
+           'because somebody who printed a list and later replaced their ' +
+           'authenticator app would otherwise be holding strings that had ' +
+           'stopped working with nothing anywhere having said so. A recovery ' +
+           'credential that silently expires is worse than none, because the ' +
+           'person believes they have a way back. An operator\'s Clear is the ' +
+           'only route to a second set.',
+           '<strong>CHANGING THESE SETTINGS AFFECTS NEW SETS ONLY, AND ' +
+           'NOTHING HERE SAYS "NEW ENROLMENTS ONLY" THE WAY ' +
+           '<a href="/admin/totp">TOTP</a> DOES.</strong> That page has to, ' +
+           'because its parameters were TOLD TO AN APP this service cannot ' +
+           'reach. Nothing here is told to anybody: a recovery code is a ' +
+           'string compared against a stored string, so shortening the length ' +
+           'changes what the next set looks like and leaves an existing set ' +
+           'matching exactly as it did.'],
+    status: backupCodesMechanismBlock,
+    links: [['/admin/totp', 'one of the two factors these stand in for'],
+            ['/admin/webauthn', 'the other'],
+            ['/admin/users', 'who holds a set, and how to clear one'],
+            ['/portal/mfa', 'where a person reads their own set back']] },
+
+  { path: '/admin/webauthn', title: 'WebAuthn',
+    lead: '<strong>Security keys — W3C WebAuthn Level 3 over FIDO CTAP2 — as ' +
+          'a second factor OR as the only credential on an account.</strong> ' +
+          'This service is the relying party: it builds the ceremony\'s ' +
+          'options, and it verifies the challenge, the origin, the RP ID hash, ' +
+          'the flags and the signature when the result comes back. Who holds ' +
+          'a key is <a href="/admin/users">Users</a>, and removing one is on ' +
+          'that person\'s own row.',
+    also: ['<strong>NOT ONE of these settings existed until 2026-09-10, and ' +
+           'the sentence they replace is worth knowing.</strong> This service ' +
+           'said WebAuthn had nothing an operator could usefully turn — true ' +
+           'of the cryptography and false of the ceremony. The RP name, the ' +
+           'algorithms offered, the user verification requirement, the ' +
+           'attestation conveyance and the timeout were literals in a string, ' +
+           'so a client author trying to find out what their client does with ' +
+           '<code>attestation: "none"</code> or with a resident key had no way ' +
+           'to ask this service for one.',
+           '<strong>ONE of them is enforced and the rest are requests.</strong> ' +
+           '<code>webauthn.userVerification</code> is sent to the browser AND ' +
+           'checked against the UV flag when the ceremony returns, because ' +
+           'that flag is inside the bytes the authenticator signed. Nothing ' +
+           'signed says what the browser was asked about attestation, the ' +
+           'resident key or the attachment — so a check on those would be a ' +
+           'comparison against a value this service itself supplied. What it ' +
+           'does instead is RECORD what came back.',
+           '<strong>Raising user verification does not change what a session ' +
+           'CLAIMS.</strong> A passwordless sign-in still records <code>amr ' +
+           '["hwk"]</code> and <code>acr "1"</code> — one factor — even under ' +
+           '<code>required</code>. RFC 8176 has no value for <em>the ' +
+           'authenticator verified the user</em> that this service could ' +
+           'honestly assert, and claiming <code>mfa</code> because the ' +
+           'ceremony was phishing-resistant would be the exact fake this ' +
+           'profile refuses everywhere else.',
+           '<strong>The RP ID is the host this service was reached on, and ' +
+           '<code>webauthn.rpId</code> can only widen it to a registrable ' +
+           'domain suffix.</strong> That is WebAuthn\'s own rule and browsers ' +
+           'enforce it; this service enforces it too, refusing anything else ' +
+           'by name in the log — because a browser refuses it with a ' +
+           '<code>SecurityError</code> the ceremony reports as one of its ' +
+           'several indistinguishable failures, so a wrong value looks like a ' +
+           'broken authenticator. Widening it means every host under that ' +
+           'suffix can assert these credentials.'],
+    status: webauthnMechanismBlock,
+    links: [['/admin/totp', 'the other second factor'],
+            ['/admin/users', 'who holds a key, and how to remove one'],
+            ['/admin/crypto-metadata', 'every algorithm this service performs'],
+            ['/portal/keys', 'where a person enrols one']] },
+
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
     lead: '<strong>The authorization server\'s own settings.</strong> ' +
           'Everything about what this service will ACCEPT at ' +
@@ -30843,8 +33450,8 @@ function spiffePostureNote() {
         '<code>local</code> entity and needs no credential. The Workload API ' +
         'is deliberately untouched: its specification says a client MUST NOT ' +
         'be required to authenticate.'
-      : '<strong>And nobody is authenticated on the SPIRE Server API either, ' +
-        'because <code>spiffe.authRequired</code> is off.</strong> That port ' +
+      : '<strong>And nobody is authenticated on the SPIRE Server API ' +
+        'either.</strong> That port ' +
         'is plain gRPC, any caller can create a registration entry granting ' +
         'any identity here and then collect an SVID for it, and the ' +
         '<code>admin</code> and <code>downstream</code> flags below are ' +
@@ -30877,7 +33484,12 @@ function spiffeJson(req) {
       sequence: state.sequence,
       refreshHint: state.refreshHint
     },
-    authorities: { x509: state.x509Authorities, jwt: state.jwtAuthorities,
+    authorities: { source: state.authoritySource,
+                   realm: state.realm,
+                   x509: state.x509Authorities, jwt: state.jwtAuthorities,
+                   trustAnchors: state.trustAnchors,
+                   chainSubjects: state.chainSubjects,
+                   root: state.root,
                    maxRetained: spiffeCa.MAX_RETAINED_AUTHORITIES },
     listeners: { workloadApi: bindings.workload, serverApi: bindings.api },
     federated: state.federated,
@@ -30995,16 +33607,64 @@ function spiffePage(req) {
     'bundle&rdquo;.') +
 
     '<h2>Authorities</h2>' +
-    note('Generated per start and held in memory, exactly like the STS signing ' +
-    'key and the TLS certificate &mdash; so a workload holding a bundle from ' +
-    'before a restart will fail to verify every SVID minted after it. ' +
-    'Rotating PREPENDS a new authority and keeps the old one published: an SVID ' +
-    'minted a minute ago has to go on verifying, which is what a bundle is for. ' +
-    'At most ' + esc(json.authorities.maxRetained) + ' are retained, and past ' +
-    'that the oldest is dropped &mdash; anything it signed stops verifying at ' +
-    'that moment.') +
+    // ---------------------------------------------------------------------
+    // THE X.509 AUTHORITY CAME FROM ONE OF TWO PLACES AND THIS PAGE SAYS
+    // WHICH (2026-09-11).
+    //
+    // The two differ in the one thing an operator has to ACT on — what to
+    // install as a trust anchor and how often — so the note is branched
+    // rather than generalised into a sentence true of both. A page that read
+    // the same either way would be describing a self-signed authority's
+    // maintenance burden to somebody who no longer has one, or hiding it from
+    // somebody who does.
+    // ---------------------------------------------------------------------
+    (json.authorities.source === 'pki'
+      ? note('The X.509 authority is this realm\'s <strong>SPIFFE Issuing ' +
+        'CA</strong>, under this service\'s own Root &mdash; ' +
+        '<a href="/admin/pki">manage it on the PKI page</a>, where it is one ' +
+        'of the Issuing CAs in this realm\'s branch. So the trust anchor a ' +
+        'consumer installs is the <strong>Root</strong>, which every realm ' +
+        'shares and which also covers 8443, 9443, LDAPS 636, the main port ' +
+        'and every token this service signs: one anchor, installed once. An ' +
+        'X509-SVID carries the Issuing CA and this realm\'s Intermediate in ' +
+        'its own chain' +
+        (json.authorities.chainSubjects.length
+          ? ' (' + json.authorities.chainSubjects.map(function (subject) {
+              return '<code>' + esc(subject) + '</code>';
+            }).join(' &rarr; ') + ')'
+          : '') + '. <strong>Rotating it re-issues that Issuing CA and ' +
+        'leaves the anchor alone</strong>, so the bundle does not change, ' +
+        'nothing has to be re-fetched, and SVIDs minted under the old ' +
+        'authority go on verifying &mdash; which is the whole difference ' +
+        'from the self-signed arrangement this replaced. The JWT authority ' +
+        'has no certificate and no hierarchy to hang from: it is generated ' +
+        'per start and rotating it still prepends, keeping at most ' +
+        esc(json.authorities.maxRetained) + '.')
+      : warn('This realm has <strong>no certificate authority</strong>, so ' +
+        'its X.509 authority is <strong>self-signed</strong> and IS the trust ' +
+        'anchor &mdash; generated per start and held in memory, exactly like ' +
+        'the STS signing key and the TLS certificate, so a workload holding ' +
+        'a bundle from before a restart will fail to verify every SVID minted ' +
+        'after it. Rotating PREPENDS a new authority and keeps the old one ' +
+        'published: an SVID minted a minute ago has to go on verifying, which ' +
+        'is what a bundle is for. At most ' +
+        esc(json.authorities.maxRetained) + ' are retained, and past that the ' +
+        'oldest is dropped &mdash; anything it signed stops verifying at that ' +
+        'moment. <a href="/admin/pki">Build this realm\'s certificate ' +
+        'authority</a> to put the SPIFFE authority under this service\'s ' +
+        'Root instead.')) +
     '<table><tr><th>Id</th><th>State</th><th>Key</th><th>Until</th>' +
     '<th>Subject</th></tr>' + x509Rows + jwtRows + '</table>' +
+    // **WHAT SIGNS AND WHAT IS TRUSTED ARE TWO TABLES.** They were one, and
+    // could be, while a self-signed authority was both. See `/spiffe`'s own
+    // version of this note.
+    '<h3>What a consumer trusts</h3>' +
+    '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
+    (json.authorities.trustAnchors || []).map(function (anchor) {
+      return '<tr><td><code>' + esc(anchor.id) + '</code></td><td><code>' +
+        esc(anchor.subject) + '</code></td><td>' + esc(anchor.notAfter) +
+        '</td></tr>';
+    }).join('') + '</table>' +
     '<form method="post" action="/admin/spiffe"><div class="formrow">' +
     '<input type="hidden" name="action" value="rotate">' +
     '<label for="which">Rotate</label>' +
@@ -33392,6 +36052,8 @@ module.exports = {
   // still works when nobody holds a role and `admin.openWhenEmpty` is off.
   rbacView: rbacView,
   rbacAction: rbacAction,
+  mfaView: mfaView,
+  mfaAction: mfaAction,
   // The federation register's page and its seven writes. Rule 7 again: the API
   // calls exactly these, so an action added to that switch is most of adding it
   // to /admin-api. This one matters more than most — the management API is not
@@ -33435,6 +36097,12 @@ module.exports = {
   // POST beside it because the page has no control — the reset was
   // refused rather than forgotten. See the header on scimMonitorJson().
   scimMonitorJson: scimMonitorJson,
+  // THIS CONSOLE'S OWN SHARED SIGNALS INBOX. Rule 7: `/admin/signals` is a
+  // page, so `/admin-api/signals` mirrors it, and both answer with this one
+  // function — the reason every parity pair here does.
+  signalsView: signalsJson,
+  signalsAction: signalsAction,
+  SIGNALS_CONSOLE_ACTIONS: SIGNALS_CONSOLE_ACTIONS,
   configJson: configJson,
   // It takes the REQUEST, unlike most of the views here, and for a reason worth
   // the line: every URL it prints is built from the one the call arrived on —

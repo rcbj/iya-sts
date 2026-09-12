@@ -1,6 +1,6 @@
 ---
 title: CAEP events
-nav_order: 8
+nav_order: 11
 ---
 
 # The eight CAEP events, and what makes each one fire

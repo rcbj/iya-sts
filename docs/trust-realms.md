@@ -1,6 +1,6 @@
 ---
 title: Trust realms
-nav_order: 5
+nav_order: 8
 ---
 
 # Trust realms
@@ -112,8 +112,13 @@ SPIFFE containers under each. So:
 - the same name signing in to two realms is **two entries**, one per realm;
 - an **OAuth client** registered under one realm is unknown to every other;
 - a **SAML service provider** entry belongs to the realm it was created in;
-- the **SPIFFE registry** is per realm, though the trust domain and the signing
-  authority in front of it are not;
+- the **SPIFFE registry** is per realm, and **so is the X.509 signing authority
+  since 2026-09-11** — each realm has a SPIFFE Issuing CA of its own on
+  [`/admin/pki`](pki.md). The **trust domain** is still one for the whole
+  service, and so is the trust **anchor**: the bundle publishes the service
+  Root, so every realm's bundle is the same document and an SVID minted in any
+  realm verifies against it. What a realm's own authority adds is a line in the
+  SVID's chain saying which realm issued it;
 - and a realm is reachable over LDAP: `ldapsearch -b "dc=acme,dc=example,dc=com"`.
 
 That last point is *why* the realm is in the DN rather than in a partition of its
@@ -169,6 +174,13 @@ SPIFFE's four sockets. A socket has no path in it. LDAP's 389 and 636 were on
 this list until the directory was partitioned: the sockets are still shared, but
 what they serve is told apart by DN.
 
+**SPIFFE is the second case of that** since 2026-09-11: its four sockets are
+still shared and answer in the default realm, while the authority behind them is
+a realm's. That is only coherent because the trust **anchor** is not — the
+bundle is the service Root, identical in every realm — so partitioning the
+authority partitions who SIGNED an SVID without partitioning who can verify
+one.
+
 Kerberos is the one with an obvious way forward, and it is written down here
 rather than left to be rediscovered: Kerberos already *has* a realm, so the
 natural design is to give each trust realm a `krb5.realm` of its own and dispatch
@@ -177,6 +189,20 @@ stands in the way today is that `krb5.realm` cannot be changed while the service
 runs — the principal database and every long-term key in it is built from it when
 the process starts — so that database has to become per-realm and lazily built
 first.
+
+### Not separated — the key-encryption key
+
+**A realm is not a cryptographic boundary at rest.** Each realm has its own
+signing keys and its own branch of the certificate authority — that is the table
+above — but the key that ENCRYPTS all of it before it reaches the store is a
+single one for the whole deployment, read once at startup from
+`keys.kekProvider`.
+
+So anybody who can read that key can open every realm's sealed data, and
+rotating it rotates every realm at once. Per-record separation does exist (every
+sealed value gets its own derived key), but it is per record and not per tenant.
+[Encryption at rest](encryption-at-rest.md) argues it, and says what making it
+per realm would cost.
 
 `GET /realms` and `/admin/realms` both publish this list family by family, so it
 is something the service tells you rather than something to remember.

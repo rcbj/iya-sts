@@ -55,10 +55,10 @@
 //    header, wherever the Location said.
 //
 // **AND ONE THING THAT IS NOT A BOUND AND IS WORTH NOT MISTAKING FOR ONE.**
-// The management API is not gated by default (`ssf.authRequired` gates it and
-// ships ON, but every credential this service accepts is a turnstile — see
-// `ssf/CLAUDE.md`). So "a receiver created the stream" is not evidence of
-// anything much. The bounds above are the bounds; the gate is not one of them.
+// These endpoints are gated — unconditionally, since `global.mode` replaced
+// `ssf.authRequired` on 2026-09-06 — but every credential this service
+// accepts is a turnstile, see `ssf/CLAUDE.md`. So "a receiver created the
+// stream" is not evidence of anything much. The bounds above are the bounds; the gate is not one of them.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT DOES NOT DO, AND THE ONE THAT SURPRISES PEOPLE.
@@ -82,7 +82,7 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const config = require('../common/config');
-const { log } = require('../common/helpers');
+const { log, PORT } = require('../common/helpers');
 // WHO IS CALLING, AND WHICH BUILD OF IT. A Security Event Token arrives at a
 // receiver unasked — that is what RFC 8935 push IS — so the receiver's log is
 // the only place its operator can find out what has been talking to them. RFC
@@ -135,6 +135,77 @@ function allowedHosts() {
   return out;
 }
 
+// ===========================================================================
+// THIS PROCESS'S OWN ADDRESS, AND THE ONE ENDPOINT FAMILY THAT IS NOT
+// SOMEBODY ELSE'S (2026-09-10).
+//
+// The admin console and the user portal are SSF receivers now — each with a
+// seeded stream and a receive endpoint of its own — and the stream's
+// `delivery.endpoint_url` is this service's own loopback address. That was a
+// decision with an alternative, and the alternative was rejected for
+// `common/oidc_rp.js`'s reason: handing the SET to the inbox by function call
+// would have been a receiver that never parses a body, never checks a media
+// type, never presents an authorization header and never verifies a
+// signature — the half of a receiver that only looks run. `ssf/CLAUDE.md`
+// argues it beside that file's own.
+//
+// **SO TWO OF THE FOUR BOUNDS IN THE HEADER DO NOT APPLY TO THIS ONE ADDRESS,
+// AND BOTH EXEMPTIONS ARE ABOUT WHAT THEY WERE PROTECTING.**
+//
+//   * The ALLOWLIST (`ssf.pushAllowedHosts`) exists to stop this service
+//     dialling a host somebody named in a stream configuration. This host is
+//     not named by anybody — it is computed here, from `global.port`, and it
+//     is the process making the request. A deployment that narrows the list to
+//     its own receivers would otherwise silently take its own console offline,
+//     and the failure would read as "the console shows nothing" rather than as
+//     a setting.
+//
+//   * The https RULE exists because a Security Event Token is somebody's
+//     security posture IN TRANSIT and the receiver's `authorization_header`
+//     travels beside it. A request from this process to itself over
+//     127.0.0.1 does not traverse a network — the same reading RFC 8252
+//     section 8.3 gives the loopback interface — so with `global.https` off,
+//     where the listener genuinely is http, the internal push is dialled
+//     rather than refused. Nothing else about http changes.
+//
+// **WHAT IS NOT EXEMPT IS `ssf.pushDelivery`.** With it off this service makes
+// no outbound request at all, including this one, and the two internal
+// receivers go quiet. That is stated at seeding time and on both inbox pages
+// rather than left to be discovered — see `ssf_receivers.js`.
+//
+// It is a computed ORIGIN comparison and never a substring match: a receiver
+// whose endpoint is `https://evil.example/?x=https://127.0.0.1:8081/` is not
+// this service and must not inherit either exemption.
+// ===========================================================================
+function loopbackOrigin() {
+  log.debug('Entering loopbackOrigin().');
+  const scheme = config.value('global.https') ? 'https' : 'http';
+  // 127.0.0.1 rather than `localhost`, which resolves to ::1 first on some
+  // hosts while this service binds 0.0.0.0 — a connection refused on a name
+  // that pings, which is among the least obvious failures available.
+  // `oidc_rp.js` chose the same literal for the same reason.
+  const out = scheme + '://127.0.0.1:' + PORT;
+  log.debug('Leaving loopbackOrigin(). ' + out);
+  return out;
+}
+
+function isOwnLoopback(raw) {
+  log.debug('Entering isOwnLoopback().');
+  let parsed = null;
+  try {
+    parsed = new URL(String(raw || '').trim());
+  } catch (e) {
+    // Not a URL at all. `urlProblem()` says so properly a few lines down; here
+    // the only question is whether it is OURS, and an unparseable string is
+    // not.
+    log.debug('Leaving isOwnLoopback(). It will not parse.');
+    return false;
+  }
+  const mine = parsed.origin === loopbackOrigin();
+  log.debug('Leaving isOwnLoopback(). ' + mine);
+  return mine;
+}
+
 // ---------------------------------------------------------------------------
 // WHETHER THIS URL MAY BE DIALLED, as a sentence rather than a boolean.
 //
@@ -166,7 +237,8 @@ function urlProblem(raw) {
     return 'its scheme is "' + parsed.protocol.replace(':', '') + '", and a ' +
            'push endpoint is https (or http, with ssf.pushAllowInsecure on)';
   }
-  if (parsed.protocol === 'http:' && !allowInsecure()) {
+  const ours = isOwnLoopback(text);
+  if (parsed.protocol === 'http:' && !allowInsecure() && !ours) {
     log.debug('Leaving urlProblem(). http, refused.');
     return 'it is an http:// URL and ssf.pushAllowInsecure is off. A ' +
            'Security Event Token is somebody\'s security posture in ' +
@@ -175,7 +247,8 @@ function urlProblem(raw) {
            'otherwise';
   }
   const hosts = allowedHosts();
-  if (hosts.length && hosts.indexOf(parsed.hostname.toLowerCase()) < 0) {
+  if (hosts.length && !ours &&
+      hosts.indexOf(parsed.hostname.toLowerCase()) < 0) {
     log.debug('Leaving urlProblem(). Not on the allowlist.');
     return 'its host "' + parsed.hostname + '" is not in ' +
            'ssf.pushAllowedHosts (' + hosts.join(', ') + '). That list is ' +
@@ -222,7 +295,56 @@ function pushSet(url, token, options) {
   }
   const target = new URL(String(url).trim());
   const secure = target.protocol === 'https:';
-  if (!secure) {
+  const ours = isOwnLoopback(url);
+  // ---------------------------------------------------------------------
+  // THE PIN, FOR THIS SERVICE'S OWN RECEIVERS ONLY (2026-09-10).
+  //
+  // The certificate on 8081 is generated per start and signed by nobody, so
+  // the ordinary check below would refuse every push to the console's and the
+  // portal's receive endpoints — and `ssf.pushAllowInsecure` is NOT the way
+  // round it, because that setting turns the check off for every receiver in
+  // the world to fix a connection to ourselves.
+  //
+  // So: our own certificate as the trust anchor — it is self-signed, so it is
+  // its own root — and the hostname check skipped, because the certificate
+  // names this service and the connection names the loopback interface.
+  // Pinning the key is the stronger half of the two. `common/oidc_rp.js`'s
+  // back channel does exactly this and these are the same three lines.
+  //
+  // **THE REQUIRE IS LAZY AND HAS TO BE.** `tls/tls_server.js` registers three
+  // routes (rule 1), and this file is required by `ssf.js` at 23b — but also,
+  // through `ssf_receivers.js`, by `admin-ui/admin.js` at 18 and
+  // `portal/portal.js` at 8c, either of which would drag /tls ahead of the
+  // management API's own routes. Here every module is loaded and it is a
+  // cache hit.
+  // ---------------------------------------------------------------------
+  let anchor = null;
+  if (ours && secure) {
+    try {
+      // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.js's
+      // back channel, which pinned the leaf and stopped being able to reach
+      // this service at all the hour that leaf acquired an issuer.
+      anchor = require('../tls/tls_server').serverCertificate().trustAnchorPem;
+    } catch (e) {
+      // Reported as a push failure rather than thrown, like every other
+      // outcome here: the stream's log is where a receiver's operator finds
+      // out, and a throw would have to be caught at every call site.
+      log.debug('Leaving pushSet(). No server certificate: ' + e.message);
+      return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+        why: 'this is one of this service\'s own receivers, on the loopback ' +
+             'address, and its TLS certificate could not be read to verify ' +
+             'the connection against: ' + e.message });
+    }
+  }
+  if (!secure && ours) {
+    // NOT the warning below. That one is about a Security Event Token
+    // travelling in clear across a network; this request does not leave the
+    // host. Said at debug so that a reader chasing a push can still see which
+    // branch it took.
+    log.debug('pushSet(): ' + target.origin + ' is this process, so plain ' +
+              'http is not a transit exposure. See isOwnLoopback().');
+  }
+  if (!secure && !ours) {
     // Every insecure request, not just the setting. See federation_http.js's
     // header, point 2 — a check disabled six months ago and forgotten is the
     // worst kind of leftover.
@@ -263,7 +385,15 @@ function pushSet(url, token, options) {
         // is the receiver's authorization_header and the fact that somebody's
         // session was revoked. `ssf.pushAllowInsecure` turns it off for
         // localhost work and is warned about above.
-        rejectUnauthorized: secure && !allowInsecure()
+        //
+        // For one of this service's own receivers it stays ON and the anchor
+        // above is what it checks against — a PIN rather than a relaxation,
+        // which is the whole difference between this and setting that
+        // setting.
+        rejectUnauthorized: secure && (!!anchor || !allowInsecure()),
+        ca: anchor ? [anchor] : undefined,
+        checkServerIdentity: anchor ? function () { return undefined; }
+                                    : undefined
       }, function (response) {
         const status = response.statusCode || 0;
         const location = response.headers.location;
@@ -369,6 +499,8 @@ function pushSet(url, token, options) {
 }
 
 module.exports = {
+  loopbackOrigin: loopbackOrigin,
+  isOwnLoopback: isOwnLoopback,
   MAX_BODY_BYTES: MAX_BODY_BYTES,
   SET_MEDIA_TYPE: SET_MEDIA_TYPE,
   pushAllowed: pushAllowed,

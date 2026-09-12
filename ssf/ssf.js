@@ -110,11 +110,13 @@
 // nothing.
 // ---------------------------------------------------------------------------
 
-const nodeCrypto = require('crypto');
 const app = require('../common/app');
-const { log, xmlEscape, baseUrlOf, iso, nowSec, allSigningKeys, numberWord,
-        STS } = require('../common/helpers');
-const stsCrypto = require('../common/crypto');
+// `allSigningKeys`, `STS`, node's `crypto` and `common/crypto` left this list
+// on 2026-09-10 with the three functions that read a received SET — they are
+// `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were. See
+// the note above POST /ssf/receive.
+const { log, xmlEscape, baseUrlOf, iso, nowSec, numberWord } =
+  require('../common/helpers');
 const config = require('../common/config');
 const realms = require('../common/realms');
 const stats = require('../common/admin_stats');
@@ -141,6 +143,13 @@ const risc = require('./risc');
 // travels back the other direction is one function: see riscAutoEmit().
 const directory = require('../ldap/ldap_server');
 const streams = require('./ssf_streams');
+// THIS SERVICE'S OWN TWO RECEIVERS. A LIBRARY (rule 3) — the two receive
+// endpoints and the two inbox pages are registered by the SURFACES, because a
+// receiver hosts its own endpoint; what this module does with it is SEED the
+// streams, which is why the require is here and not only there. A process that
+// loaded `admin-ui/admin.js` and not this file would have an inbox page and no
+// stream behind it, and the page says exactly that rather than looking empty.
+const receivers = require('./ssf_receivers');
 const transport = require('./ssf_http');
 const ssfAuth = require('./ssf_auth');
 
@@ -1049,134 +1058,16 @@ app.post('/ssf/poll', function (req, res) {
 // here" rather than as invalid — those are different sentences and conflating
 // them would be a receiver blaming a transmitter for its own missing key.
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// THE PUBLIC KEY A RECEIVED SET IS CHECKED AGAINST, and the reason this is a
-// function rather than one line.
-//
-// This service can only verify a signature made with a key IT HOLDS — it
-// follows no `jwks_uri`, here or anywhere else, for the reason
-// `applications.js` gives about `oauthJwksUri` and `federation_http.js`
-// repeats: fetching a URL a caller supplied in order to verify a credential is
-// a server-side request forgery with a specification citation attached. So the
-// key is looked up in this realm's own key set, BY `kid` FIRST and by
-// algorithm second.
-//
-// **BY kid FIRST IS THE PART THAT MATTERS.** Two of this service's keys share
-// an `alg` — the Ed25519 and Ed448 pair, because RFC 8037 registers one
-// algorithm value for both curves and puts the curve in the key — so an
-// algorithm-only lookup would pick one of them and report a perfectly good
-// Ed448 signature as not verifying.
-//
-// A SET signed by anybody else resolves to no key, and that is reported as NOT
-// VERIFIABLE HERE rather than as invalid. Those are different sentences and
-// conflating them would be a receiver blaming a transmitter for its own
-// missing key.
-// ---------------------------------------------------------------------------
-function publicKeyForHeader(header) {
-  log.debug('Entering publicKeyForHeader().');
-  const kid = String((header || {}).kid || '');
-  const alg = String((header || {}).alg || '');
-  if (alg === 'RS256' || kid === STS.kid) {
-    // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,
-    // where eight modules already read it — so it is resolved separately from
-    // the certificate this service publishes for it.
-    try {
-      log.debug('Leaving publicKeyForHeader(). The service RSA key.');
-      return { key: nodeCrypto.createPublicKey(STS.certPem), pq: false };
-    } catch (e) {
-      log.debug('Leaving publicKeyForHeader(). The certificate would not ' +
-                'load: ' + e.message);
-      return null;
-    }
-  }
-  const list = allSigningKeys();
-  const found = list.filter(function (one) {
-    return kid ? one.publicJwk.kid === kid : one.alg === alg;
-  })[0];
-  if (!found) {
-    log.debug('Leaving publicKeyForHeader(). No key of ours matches.');
-    return null;
-  }
-  if (found.publicJwk.kty === 'AKP') {
-    // A post-quantum key. `verifyCompactJws()` wants the raw public bytes,
-    // which the AKP JWK carries in `pub`.
-    log.debug('Leaving publicKeyForHeader(). A post-quantum key.');
-    return { key: { pub: found.publicJwk.pub }, pq: true };
-  }
-  try {
-    log.debug('Leaving publicKeyForHeader(). ' + found.alg + '.');
-    return { key: nodeCrypto.createPublicKey({ key: found.publicJwk,
-      format: 'jwk' }), pq: false };
-  } catch (e) {
-    log.debug('Leaving publicKeyForHeader(). The JWK would not load: ' +
-              e.message);
-    return null;
-  }
-}
-
-function verifyReceivedSet(token, header) {
-  log.debug('Entering verifyReceivedSet().');
-  if (!header) {
-    log.debug('Leaving verifyReceivedSet(). No readable header.');
-    return { verified: false,
-      note: 'there is no readable protected header, so there is nothing to ' +
-            'look a key up by' };
-  }
-  const resolved = publicKeyForHeader(header);
-  if (!resolved) {
-    log.debug('Leaving verifyReceivedSet(). No key.');
-    return { verified: false,
-      note: 'not verifiable here: this service holds no key matching kid "' +
-            String(header.kid || '(none)') + '" / alg "' +
-            String(header.alg || '(none)') + '". It follows no jwks_uri — ' +
-            'fetching a URL a caller supplied in order to verify a ' +
-            'credential is the request forgery this repository refuses ' +
-            'everywhere — so a SET signed by anybody else is UNVERIFIABLE ' +
-            'here rather than invalid. Those are different sentences.' };
-  }
-  try {
-    stsCrypto.verifyCompactJws(token, resolved.key,
-      { algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS });
-    log.debug('Leaving verifyReceivedSet(). Verified.');
-    return { verified: true,
-      note: 'verified against this service\'s own ' +
-            String(header.alg) + ' key' };
-  } catch (e) {
-    // A signature that does not verify, or one this build cannot check. Both
-    // are reported rather than thrown: the whole point of this endpoint is to
-    // say what arrived, and "it did not verify" IS what arrived.
-    log.debug('Leaving verifyReceivedSet(). It did not verify.');
-    return { verified: false,
-      note: 'the signature did not verify against this service\'s own key: ' +
-            e.message };
-  }
-}
-
-function readSetForDisplay(token) {
-  log.debug('Entering readSetForDisplay().');
-  const parts = String(token || '').split('.');
-  const out = { header: null, claims: null, problem: '' };
-  if (parts.length !== 3) {
-    out.problem = 'This is not a compact JWS — a Security Event Token has ' +
-      'three dot-separated parts and this has ' + parts.length + '.';
-    log.debug('Leaving readSetForDisplay(). Not a compact JWS.');
-    return out;
-  }
-  try {
-    out.header = JSON.parse(Buffer.from(parts[0], 'base64url')
-      .toString('utf8'));
-    out.claims = JSON.parse(Buffer.from(parts[1], 'base64url')
-      .toString('utf8'));
-  } catch (e) {
-    // Undecodable. Reported rather than thrown: the whole point of this
-    // endpoint is to say what arrived, and "it would not decode" IS what
-    // arrived.
-    out.problem = 'The header or the payload would not decode as base64url ' +
-      'JSON: ' + e.message;
-  }
-  log.debug('Leaving readSetForDisplay(). ' + (out.problem || 'read'));
-  return out;
-}
+// THE READING AND THE VERIFICATION ARE `ssf_events.js`'s SINCE 2026-09-10, AND
+// THEY MOVED BECAUSE A SECOND RECEIVER ARRIVED. `publicKeyForHeader()`,
+// `verifyReceivedSet()` and `readSetForDisplay()` were private to this file
+// while this endpoint was the only thing in the service that ever read a SET it
+// was handed. The admin console and the user portal are receivers of their own
+// now (`ssf/ssf_receivers.js`), with a receive endpoint each, and three
+// receivers reading a SET three ways would be three opinions about what
+// arrived. `events.readSet()` and `events.verifySet()` are the same code in the
+// file that owns the envelope — building a SET and reading one back are the two
+// directions of one format.
 
 app.post('/ssf/receive', function (req, res) {
   log.debug('Entering POST /ssf/receive.');
@@ -1206,8 +1097,8 @@ app.post('/ssf/receive', function (req, res) {
   }
   const contentType = String((req.headers || {})['content-type'] || '')
     .split(';')[0].trim().toLowerCase();
-  const read = readSetForDisplay(token);
-  const verdict = verifyReceivedSet(token, read.header);
+  const read = events.readSet(token);
+  const verdict = events.verifySet(token, read.header);
   const verified = verdict.verified;
   const verificationNote = verdict.note;
   if (!verified && config.value('ssf.receiveRequireSignature')) {
@@ -1537,7 +1428,7 @@ app.get('/ssf', function (req, res) {
     'the transmitter PUBLISH what it accepts, in ' +
     '<code>authorization_schemes</code> &mdash; so a receiver discovers how ' +
     'to authenticate rather than guessing. It is ' +
-    (info.authentication.required ? 'ON' : 'OFF (<code>ssf.authRequired' +
+    (info.authentication.required ? 'ON' : 'OFF (<code>unreachable since 2026-09-06' +
       '</code>)') + '. ' + xmlEscape(info.authentication.note) + '</p>' +
     '<table><tr><th>Scheme</th><th>spec_urn</th><th>What</th></tr>' +
     schemeRows + '</table>' +
@@ -1889,7 +1780,8 @@ authn.setSessionObserver(caepAutoEmit);
 // which of the two states it is in.
 //
 // **A STREAM WITH NO APPLICATION IS COUNTED TOO**, under one row for all of
-// them. That happens when `ssf.authRequired` is off: there is no principal, so
+// them. That happened while these endpoints could be left unauthenticated
+// (`ssf.authRequired`, removed 2026-09-06): there is no principal, so
 // nothing was recorded in the registry, and the events are real. Dropping them
 // would make the totals here disagree with the totals two tables up.
 // ---------------------------------------------------------------------------
@@ -1949,7 +1841,7 @@ function caepApplications() {
     row.endpoints = ((entry.attributes || {}).ssfDeliveryEndpoint || []).slice();
   });
 
-  const NOBODY = '(no application — ssf.authRequired is off)';
+  const NOBODY = '(no application — the stream was agreed unauthenticated)';
   all.forEach(function (record) {
     const who = String(record.createdBy || '');
     const known = who && who !== '(unauthenticated)';
@@ -2389,7 +2281,7 @@ function riscApplications() {
       .slice();
   });
 
-  const NOBODY = '(no application — ssf.authRequired is off)';
+  const NOBODY = '(no application — the stream was agreed unauthenticated)';
   all.forEach(function (record) {
     const who = String(record.createdBy || '');
     const known = who && who !== '(unauthenticated)';
@@ -2687,6 +2579,35 @@ adminConsole.setRiscReporter({
   }
 });
 
+// ===========================================================================
+// AND THIS SERVICE'S OWN TWO SURFACES ARE REGISTERED AS RECEIVERS (2026-09-10).
+//
+// One stream each, per trust realm, asking for every CAEP and every RISC event
+// type. `ssf/ssf_receivers.js` carries the whole argument — why delivery is a
+// real RFC 8935 push over the loopback interface rather than a function call,
+// why the streams are in every realm while the console's CLIENT entry is in one,
+// and what an empty inbox page can mean.
+//
+// **THE DEFAULT REALM IS SEEDED HERE AND EVERY LATER REALM FROM `onCreate()`**,
+// which is the arrangement `applications.js`'s internal client entries have and
+// is made for its reason: a realm created at runtime is a whole logical copy of
+// this service, and a copy whose console could not be told anything would be a
+// copy with a page that is empty for a reason nobody could see.
+//
+// It is at require time rather than from `server.js`'s `listen()` because it
+// binds nothing and opens nothing — it writes two rows into a store this
+// process already holds. What it DOES need is `ssf_streams.js`, `ssf_events.js`
+// and the realm registry, all of which are above this line.
+// ===========================================================================
+receivers.seedStreams();
+realms.onCreate(function (id) {
+  log.debug('Entering the SSF internal receiver seeder. id=' + id);
+  realms.run(realms.get(id), function () {
+    receivers.seedStreams();
+  });
+  log.debug('Leaving the SSF internal receiver seeder.');
+});
+
 module.exports = {
   WELL_KNOWN: WELL_KNOWN,
   metadata: metadata,
@@ -2702,5 +2623,6 @@ module.exports = {
   riscAutoEmit: riscAutoEmit,
   riscReport: riscReport,
   riscAction: riscAction,
-  RISC_CONSOLE_ACTIONS: RISC_CONSOLE_ACTIONS
+  RISC_CONSOLE_ACTIONS: RISC_CONSOLE_ACTIONS,
+  receivers: receivers
 };

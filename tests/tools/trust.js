@@ -35,11 +35,24 @@
 // certificate, including the one this same service will generate on its next
 // start, still meets an interstitial.
 //
-// NODE_EXTRA_CA_CERTS ACCEPTS THIS CERTIFICATE DESPITE `basicConstraints
-// CA:FALSE`, which surprises people: OpenSSL takes a self-signed leaf found in
-// the trust store as an anchor. Without it the jobs fail with
-// DEPTH_ZERO_SELF_SIGNED_CERT — a message that names TLS and nothing about
-// which service or why.
+// NODE_EXTRA_CA_CERTS ACCEPTS A SELF-SIGNED CERTIFICATE DESPITE
+// `basicConstraints CA:FALSE`, which surprises people: OpenSSL takes a
+// self-signed leaf found in the trust store as an anchor. Without it the jobs
+// fail with DEPTH_ZERO_SELF_SIGNED_CERT — a message that names TLS and nothing
+// about which service or why.
+//
+// **AND IT WILL NOT DO THE SAME FOR A CERTIFIED ONE, WHICH IS WHY THAT
+// DOCUMENT CARRIES THE CHAIN AND THE ROOT SINCE 2026-09-11.** That is the day
+// this service's listener certificate became a LEAF of its own Root, and the
+// leaf this file used to write out stopped being an anchor at all: the path
+// walks up to the Intermediate, finds no Root, and every node-driven job fails
+// with UNABLE_TO_GET_ISSUER_CERT_LOCALLY before it makes a single assertion.
+// Nothing here had to change — `/tls/server-certificate` publishes a truststore
+// that terminates now — but what this file writes is a BUNDLE rather than one
+// certificate, and the leaf being FIRST is load-bearing: `spkiPin()` below
+// reads the first certificate in it, and a pin computed over the Root would
+// match nothing while looking exactly like a pin.
+// `tests/tls_trust_anchor.js` is the in-process half of this.
 //
 // A NO-OP ON A PLAIN-HTTP SERVICE, and that matters: `STS_HTTPS=false` is the
 // documented way back to an unencrypted port, and a run against one must add

@@ -77,6 +77,23 @@ const { log } = require('./helpers');
 const realms = require('./realms');
 const config = require('./config');
 const stats = require('./admin_stats');
+// THE FAN-IN FOR OTHER PROCESSES' ACTS. A LIBRARY (rule 3) that registers no
+// route and requires only `config` and `realms`, so it can be required from
+// here without closing a cycle or moving anything. With one process it answers
+// an empty array and this file behaves exactly as it always has.
+//
+// **IT IS NOT OPTIONAL AND THIS FILE WENT WITHOUT IT UNTIL 2026-09-11.** The
+// store below is declared `merge: 'own'`, which means an act recorded in one
+// process is written down as THAT PROCESS'S row and never adopted into
+// anybody else's memory — see `persistence_minted.js`'s applier, which hands
+// such a row to `replication.contribute()` rather than to the store. So the
+// merge has to happen on the way OUT, here, exactly as `audit.js` does it for
+// the event ring; without it a reader in another process sees only what it
+// recorded itself. In `dispatch` mode that is three processes and three
+// disjoint registers: `sts_jwt_bearer_grant` and `sts_saml2_bearer_grant`
+// both asked `/admin-api/delegation` for an act the token endpoint had just
+// recorded on a different worker, and both were answered with an empty list.
+const replication = require('../persistence/persistence_replication');
 
 // ---------------------------------------------------------------------------
 // THE TWO AXES, AND WHY THE PROTOCOL-INDEPENDENT ONE IS `mode` RATHER THAN THE
@@ -185,7 +202,67 @@ const TYPES = [
     policed: false,
     what: 'A subject_token AND an actor_token. What comes back carries an ' +
           '`act` claim naming the actor — and `act` nests, so a second hop ' +
-          'appears underneath the first rather than replacing it.' }
+          'appears underneath the first rather than replacing it.' },
+  // -------------------------------------------------------------------------
+  // RFC 7523 SECTION 2.1 (2026-09-10). The THIRD OAuth mechanism here, and it
+  // is `delegation` rather than `impersonation` for a reason worth stating,
+  // because the two shapes of RFC 8693 above are told apart by whether an
+  // actor is NAMED and this one names none.
+  //
+  // What decides it is section 1.1's own distinction — impersonation is a
+  // token indistinguishable from one the subject obtained themselves, and
+  // delegation is one that records that somebody acted. **An assertion grant's
+  // token is not indistinguishable**: the issuer is on the assertion, the
+  // assertion's `jti` is in this register, and a resource server holding the
+  // token can be told which trusted party asserted the subject. The party is
+  // acting openly, which is what the word means.
+  // -------------------------------------------------------------------------
+  { type: 'oauth-assertion-grant', protocol: 'OAuth 2.0', mode: 'delegation',
+    label: 'JWT bearer assertion grant', spec: 'RFC 7523 §2.1',
+    // POLICED, and it is the only OAuth row here that is. Kerberos is policed
+    // because the KDC checks two attributes on every request; this is policed
+    // because the assertion ISSUER has to be declared before this service will
+    // believe anything it signs — there is no permissive answer available for
+    // a grant whose whole security is one signature, which is the argument
+    // federation makes and the reason both refuse by default.
+    policed: true,
+    what: 'A trusted party signs a JWT saying who the token is for, and this ' +
+          'authorization server issues one. No browser, no password and no ' +
+          'consent step: the signature is the whole of the authorization, ' +
+          'which is why the issuer must be declared on an application entry ' +
+          'as `oauthAssertionIssuer` before any of it is believed.' },
+
+  // -------------------------------------------------------------------------
+  // RFC 7522 SECTION 2.1 (2026-09-11). The FOURTH OAuth mechanism, and it is
+  // a ROW OF ITS OWN rather than the one above with a format noted on it.
+  //
+  // The temptation is real — the two are the same act, and the picture draws
+  // them identically — and the reason to resist it is what this register is
+  // FOR: a reader asking *how was this token authorized* has to be told which
+  // document was spent and which declaration allowed it, and those are
+  // different for the two profiles. An RFC 7522 grant is allowed by
+  // `oauthSamlAssertionIssuer` and verified against a certificate registered
+  // under the RFC 7522 attributes; the RFC 7523 key pair on the same
+  // application would not have done. A shared row would have to say "one or
+  // the other" about every one of those, which is a register that cannot
+  // answer the question it exists for.
+  //
+  // `delegation` and `policed` for the row above's reasons, word for word: no
+  // actor is named, the issuer is on the assertion and in this register, and
+  // the issuer has to be declared before anything it signs is believed.
+  // -------------------------------------------------------------------------
+  { type: 'oauth-saml-assertion-grant', protocol: 'OAuth 2.0',
+    mode: 'delegation',
+    label: 'SAML 2.0 bearer assertion grant', spec: 'RFC 7522 §2.1',
+    policed: true,
+    what: 'A trusted party signs a SAML 2.0 assertion saying who the token is ' +
+          'for, and this authorization server issues one. No browser, no ' +
+          'password and no consent step: the XML Signature is the whole of ' +
+          'the authorization, which is why the Issuer must be declared on an ' +
+          'application entry as `oauthSamlAssertionIssuer` and the ' +
+          'certificate registered there before any of it is believed. It is ' +
+          'RFC 7523\'s sibling and NOT the same mechanism — the two profiles ' +
+          'hold separate key pairs, and neither can sign for the other.' }
 ];
 
 const TYPE_IDS = TYPES.map(function (one) { return one.type; });
@@ -449,11 +526,69 @@ function recordUnguarded(info) {
   return record;
 }
 
+// ---------------------------------------------------------------------------
+// THIS PROCESS'S ACTS, AND EVERY OTHER PROCESS'S, IN ONE LIST.
+//
+// The store is declared `merge: 'own'`, which means each process writes only
+// its OWN acts down and never adopts another's into its memory. That is not a
+// limitation to work around, it is the only correct arrangement, and it is
+// `audit.js`'s argument word for word because it is the same shape of store: a
+// register of things that HAPPENED is a sequence rather than a value, so a
+// process that merged another's acts into its own array would flush the
+// combined list back as its own contribution and every restart would multiply
+// the register.
+//
+// So the merge happens HERE, on the way out, and it is the only place a reader
+// ever sees more than this process's own acts. Two consequences, and they are
+// audit.js's two:
+//
+//   * **`seq` IS ONLY MONOTONIC WITHIN ONE PROCESS.** It always was — it is a
+//     per-realm counter assigned here — and with several processes it is per
+//     process as well. The sort below is by TIME, because time is the only
+//     ordering two processes share.
+//   * **THE CAP IS PER PROCESS**, so three workers hold up to three times
+//     `delegation.maxRecords` between them. That is the honest behaviour
+//     rather than a bug: each process bounds its own memory, and trimming
+//     another's contribution here would throw away rows that process still
+//     holds and would report.
+//
+// `chainKey` is computed from the act's own parties, so a chain that crosses
+// two processes still folds into one — which it must, because a browser flow
+// holds affinity but the `/admin-api` read that draws the picture fans out.
+// ---------------------------------------------------------------------------
+function merged() {
+  const mine = acts.slice(0);
+  const others = replication.remoteRows('delegation.acts', undefined, '');
+  if (!others.length) {
+    // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
+    // copy and a length check rather than a sort of everything.
+    return mine;
+  }
+  let all = mine;
+  others.forEach(function (rows) {
+    if (Array.isArray(rows)) {
+      all = all.concat(rows);
+    }
+  });
+  // BY TIME, and stably by sequence within one millisecond so that two acts a
+  // process recorded in one tick keep the order it recorded them in. There is
+  // no `origin` on a delegation row to break the tie with — audit.js has one —
+  // so two processes that recorded in the same millisecond sort by their own
+  // sequences, which is arbitrary between them and stable within each.
+  all.sort(function (a, b) {
+    if ((a.at || 0) !== (b.at || 0)) {
+      return (a.at || 0) - (b.at || 0);
+    }
+    return (a.seq || 0) - (b.seq || 0);
+  });
+  return all;
+}
+
 // Newest first, the way the audit log and the tokens page both answer. A copy,
 // because the caller filters and pages it.
 function list() {
-  log.debug("Entering list(). " + acts.length + " act(s) held.");
-  const out = acts.slice(0).reverse();
+  log.debug("Entering list(). " + acts.length + " act(s) held here.");
+  const out = merged().reverse();
   log.debug("Leaving list(). " + out.length + " act(s) returned, newest first.");
   return out;
 }
@@ -475,7 +610,12 @@ function summary() {
   TYPE_IDS.forEach(function (id) { byType[id] = 0; });
   MODE_IDS.forEach(function (id) { byMode[id] = 0; });
   OUTCOMES.forEach(function (name) { byOutcome[name] = 0; });
-  acts.forEach(function (row) {
+  // EVERY PROCESS'S ACTS, like list() — a summary that counted only this
+  // process's while the page below it listed everybody's would be two numbers
+  // for one thing, which is the shape of disagreement this repository spends
+  // most of its design on avoiding.
+  const all = merged();
+  all.forEach(function (row) {
     byType[row.type] = (byType[row.type] || 0) + 1;
     if (row.mode) byMode[row.mode] = (byMode[row.mode] || 0) + 1;
     byOutcome[row.outcome] = (byOutcome[row.outcome] || 0) + 1;
@@ -483,10 +623,23 @@ function summary() {
     chains[row.chainKey] = (chains[row.chainKey] || 0) + 1;
   });
   const out = {
-    held: acts.length, recorded: recorded, dropped: dropped,
+    held: all.length,
+    // WHAT THIS PROCESS ITSELF HOLDS, beside the total, for audit.js's reason:
+    // with one process the two are equal and the second is noise; with several,
+    // the difference is the whole of what coordination is doing.
+    heldHere: acts.length,
+    processes: 1 + replication.remoteRows('delegation.acts', undefined,
+                                          '').length,
+    // THIS PROCESS'S OWN TALLIES, AND SAID SO. `recorded` and `dropped` are
+    // plain module counters rather than a persisted store, so there is nothing
+    // to fan in — unlike `audit.nums`, which exists precisely because the audit
+    // log needed the total. Reporting three workers' `held` beside one
+    // worker's `recorded` is the honest pair; inventing a second store to make
+    // them match would be a store nothing else reads.
+    recorded: recorded, dropped: dropped,
     maxRecords: maxRecords(),
     chains: Object.keys(chains).length,
-    oldestSeq: acts.length ? acts[0].seq : 0,
+    oldestSeq: all.length ? all[0].seq : 0,
     newestSeq: seq,
     byType: byType, byMode: byMode, byOutcome: byOutcome, byProtocol: byProtocol
   };

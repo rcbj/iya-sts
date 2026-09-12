@@ -14,8 +14,9 @@ family here and the first one that TALKS BACK.
 | `ssf_auth.js` | Who may drive a stream: two schemes and two scopes. A LIBRARY. |
 | `caep.js` | **CAEP's session register**: what state CAEP believes each session is in, and how many events of which type have been sent about it. A LIBRARY, and one of the two files here that are not vocabulary. |
 | `risc.js` | **RISC's account register**: the three states RISC tracks per account, the opt-out gate, and how many events of which type have been sent. A LIBRARY, and `caep.js`'s SIBLING rather than a generalization of it — see below. |
+| `ssf_receivers.js` | **THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS** (2026-09-10): the seeded streams, the inboxes, what a receive endpoint checks, and the per-person filter the portal narrows with. A LIBRARY — the two receive endpoints and the two inbox pages are registered by the SURFACES, because a receiver hosts its own endpoint. |
 
-Seven of the eight register nothing (rule 3), so their position in the route
+Eight of the nine register nothing (rule 3), so their position in the route
 order is not a position. `ssf.js` is required at **23b in `server.js`** — after
 `admin-ui/admin.js`, whose eighth slot it fills, and before `sts_metadata.js`,
 which is last for everybody.
@@ -142,6 +143,133 @@ each fall out of that and none of them is a preference:
   credential standing, moving independently: an account can be opted out and
   perfectly healthy, or compromised and still enabled. A CAEP row has one
   `state` because a session is alive or it is not.
+
+---
+
+## THE ADMIN CONSOLE AND THE USER PORTAL ARE RECEIVERS (2026-09-10)
+
+Each has a **stream of its own**, seeded per trust realm, asking for every CAEP
+and every RISC event type; each hosts a **receive endpoint**; and each draws
+what arrived on a page of its own — `/admin/signals` and `/portal/signals`.
+`ssf_receivers.js` is the module and carries the design at length. Six things
+about it reach outside that file and this is the index of them.
+
+**THE ARGUMENT IS `common/oidc_rp.js`'s, MADE A SECOND TIME.** That file turned
+these same two surfaces into OpenID Connect relying parties on 2026-09-06, and
+its complaint was that this service's own two applications were the only
+applications in the process that did not use the protocol this service exists
+to demonstrate — a real relying party has no access to the provider's session
+store and these two read it. The same sentence was true here: a page drawing a
+security event by reaching into `caep.js`'s register is not a receiver, it is
+this service reading its own notes. A receiver is something a stream was agreed
+with, that gets a signed document it has to verify, addressed to an audience it
+has to recognise.
+
+**1. DELIVERY IS A REAL RFC 8935 PUSH OVER THE LOOPBACK INTERFACE, AND THE
+IN-PROCESS VERSION WAS WRITTEN FIRST AND TAKEN OUT.** Handing the SET to the
+inbox by function call would have skipped the body, the media type, the
+authorization header and the signature — everything a receiver does, leaving
+only the part that looks run. So `ssf_http.js` dials this service's own address
+like any other receiver.
+
+**2. TWO OF `ssf_http.js`'s FOUR BOUNDS DO NOT APPLY TO THAT ONE ADDRESS, AND A
+THIRD DELIBERATELY DOES.** `ssf.pushAllowedHosts` exists to stop this service
+dialling a host somebody named in a stream configuration, and this host is not
+named by anybody — it is computed from `global.port`. The https rule exists
+because a SET is somebody's security posture in transit, and a request from this
+process to itself does not traverse a network. **`ssf.pushDelivery` is NOT
+exempt**: with it off both internal receivers go silent, which is said at
+seeding time, on both inbox pages and in `status()`. `isOwnLoopback()` is an
+ORIGIN comparison and never a substring match, and `tests/ssf_receivers.js`
+asserts the refusal rather than the match.
+
+**3. THE CERTIFICATE IS PINNED RATHER THAN THE CHECK RELAXED.** The listener's
+certificate is generated per start and signed by nobody, so the ordinary check
+would refuse every internal push — and `ssf.pushAllowInsecure` is NOT the way
+round it, because that setting turns the check off for every receiver in the
+world to fix a connection to ourselves. Our own certificate as the trust anchor,
+the hostname check skipped: `oidc_rp.js`'s back channel does exactly this and
+these are the same three lines.
+
+**4. THE STREAMS ARE IN EVERY REALM AND THE CONSOLE'S CLIENT ENTRY IS IN ONE.**
+That disagreement is the interesting part. `applications.js` seeds
+`sts-admin-console` in the default realm only, because the console's gate reads
+the default realm's session wherever it is reached. A stream is not that kind of
+thing: events happen in the realm they happen in, streams are per realm, and the
+console draws one realm at a time — so a console with no stream in `acme` would
+show an empty page in `acme` while `acme`'s sessions were being revoked. **A
+client entry is about signing somebody IN and a stream is about what HAPPENED.**
+
+**5. THE RECEIVE ENDPOINTS ARE GUARDED BY THE STREAM'S OWN
+`authorization_header`**, minted per stream and per start and given to nothing
+but this service's own transmitter, compared in constant time; then the `aud`,
+refusing `invalid_audience`; then the signature. **That member had never been
+set by anything here before** — a receiver supplies it, and this service had
+never been one — so the code path that sends it had never run against a receiver
+that reads it. It is what lets `/admin/signals/receive` sit outside the console's
+gate without being a hole, which `admin-ui/CLAUDE.md` argues as the console's
+third gate exemption.
+
+**AND IT IS DERIVED RATHER THAN RANDOM SINCE 2026-09-11, WHICH IS THE ONE PLACE
+"per start" WAS NOT A COMPLETE SENTENCE.** `seedStreams()` runs at startup in
+whichever process is starting, and a dispatched service starts FOUR: the front
+process and every request worker load the whole protocol stack. These streams
+are minted state, which development mode neither persists nor coordinates, so
+nothing reconciled them afterwards — each process seeded its own pair with its
+own `randomId(32)`. The transmitter ran in the process the event happened in and
+the loopback push landed on whichever worker the front process routed it to, so
+the two almost never agreed: **every push this service made to itself was
+refused with "the wrong authorization header"**.
+
+Measured on 2026-09-11 in `dispatch` mode: **132,546 refused pushes in half an
+hour** across eight realms, while the SCIM bulk load ran — a real HTTP request
+each, through the proxy, competing with the traffic under test for the workers'
+unix sockets until they answered `EAGAIN`. That job died on the suite's
+thirty-minute bound.
+
+**NOTHING COULD SEE IT, AND THAT IS THE part worth keeping.** No assertion
+anywhere fails when a receiver hears nothing: an inbox that was never delivered
+to and an inbox that refused everything are the same empty page, and
+`ssf/CLAUDE.md`'s own list of what an empty inbox can mean did not have this on
+it. The only signal was a `warn` line in a log nobody reads while the suite is
+green.
+
+So the token is DERIVED — one per-run secret in the environment, which a forked
+worker inherits, and an HMAC over the realm and the surface, so every process
+arrives at the same answer without being told and the console's token is still
+not the portal's. `crypto.js`'s `deriveSharedCredential()` is the derivation,
+because that is the one place this service does cryptography.
+`tests/ssf_receivers.js` asserts it by computing what a SECOND process would
+derive rather than by starting one — the property is that two processes agree
+WITHOUT talking, so a test that made them talk would be testing something else.
+
+**6. THE PORTAL'S FILTER FAILS CLOSED AND THAT IS A RULE RATHER THAN A
+SETTING.** One stream carries events about everybody the portal serves, so the
+narrowing is on the way out and the person is composed from the session and from
+nothing else. An identifier the filter cannot resolve to an account — a phone
+number, an opaque id this service did not compose — is **not** a match: showing
+one person another person's account lockout is a disclosure, and failing to show
+somebody one of their own is an incomplete page, and those are not the same size
+of mistake. The page says so out loud. `portal/CLAUDE.md` argues it as this
+directory's hardest A01 case.
+
+**AND ONE THING IT COST OUTSIDE SHARED SIGNALS ENTIRELY, WHICH NOTHING HERE
+WOULD HAVE PREDICTED.** `authn.js` mints an ARRIVAL SESSION on the front doors,
+matched by prefix, and both receive endpoints are registered UNDER a front door
+— `/admin` and `/portal`. So every delivered event minted a browser session for
+a machine that will never send the cookie back: a service telling its own
+console about every sign-in minted a second session for every session. That is
+the failure that file's own comment names ("one row per metadata poll, for
+ever") arriving from a direction a prefix match cannot see, and it is fixed by
+`NOT_ARRIVAL_PATHS` there rather than by moving the endpoints, because the path
+is what says which receiver a SET was delivered to. **It was found by running
+the thing, not by reading it.**
+
+**WHAT THE READING OF A SET COST THIS DIRECTORY** is three functions moving:
+`readSet()`, `verifySet()` and `publicKeyForHeader()` are `ssf_events.js`'s now
+and were private to `ssf.js`, because three receivers reading a SET three ways
+would be three opinions about what arrived. Building a SET and reading one back
+are the two directions of one format and belong in one file.
 
 ---
 
@@ -338,7 +466,8 @@ address a caller chose, and these are the four bounds:
    and the receiver's authorization header — wherever the Location said.
 
 **One thing is NOT a bound and must not be mistaken for one.** The management
-API is gated by `ssf.authRequired`, which ships ON, but every credential this
+API is gated unconditionally — `mode.gatesSharedSignals()`, where this was
+`ssf.authRequired` until 2026-09-06 — but every credential this
 service accepts is a turnstile: anybody can get a token with either SSF scope,
 and any username with any password but `invalid` passes Basic. "A receiver
 created the stream" is therefore not evidence of much.
@@ -423,7 +552,7 @@ next person to "fix" the paths will reach for the colon.
 
 Two separate decisions, both deliberate.
 
-**Never gated**, whatever `ssf.authRequired` says: a receiver has to be able to
+**Never gated**, whatever the endpoints it describes require: a receiver has to be able to
 read what the endpoints are and which schemes they take BEFORE it can
 authenticate to one, and a transmitter whose discovery document needs a
 credential is one nothing can bootstrap against. It is the rule
@@ -857,6 +986,6 @@ legitimate — so the table carries both and says "the same" where they agree.
 with NO STREAM is the commonest state a receiver under test is in, and a list
 that showed only receivers with streams would answer "where is my application"
 with silence. And a row for streams belonging to no application at all is what
-`ssf.authRequired` off produces — no principal, nothing recorded, and the events
+a stream agreed unauthenticated produces — no principal, nothing recorded, and the events
 are real; dropping them would make this table's totals disagree with the two
 above it.

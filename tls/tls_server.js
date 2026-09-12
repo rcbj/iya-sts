@@ -244,10 +244,60 @@ function handedInCertificate() {
   if (!certPem || !keyPem) {
     return null;
   }
+  // ---------------------------------------------------------------------
+  // **THE CHAIN AND THE ANCHOR COME WITH IT (2026-09-11), AND WITHOUT THEM
+  // THIS HAND-OFF WAS ONLY HALF DONE.**
+  //
+  // The block above solved one half: every process presents the SAME
+  // certificate. The other half is that every process must publish the same
+  // ANCHOR — and a worker that was handed a leaf and nothing else fell back to
+  // asking `common/pki.js`, which in a worker answers a Root that worker built
+  // itself. So the certificate came from the front process and the anchor came
+  // from here, they were from different hierarchies with the same subject
+  // name, and `/admin` and `/portal` failed their own OpenID Connect back
+  // channel with `unable to get local issuer certificate`.
+  //
+  // They are PUBLIC, unlike the key, so `process.env` costs nothing here: a
+  // chain travels in every handshake and the anchor is published at
+  // `GET /tls/server-certificate`.
+  //
+  // The chain arrives CONCATENATED and is split on the END marker, which is
+  // how every other reader of a PEM bundle in this repository does it. It was
+  // briefly NUL-separated, and that is the one byte an environment variable
+  // cannot carry — the value truncates at it, so the worker got the Issuing
+  // CA and lost the Intermediate.
+  // ---------------------------------------------------------------------
+  //
+  // **THE NEWLINE IN THE LOOKBEHIND IS REQUIRED, NOT OPTIONAL.** Written as
+  // `\n?` the split lands BEFORE the newline, so the first certificate loses
+  // its final line ending and the next one gains a leading blank line —
+  // OpenSSL rejects both with `error:04800066:PEM routines::bad end line`, and
+  // the whole worker pool failed to start. Every piece is re-normalised below
+  // rather than trusted, so a bundle that arrives without a trailing newline
+  // is still split into usable PEMs.
+  const chainPem = (process.env.STS_TLS_SERVER_CHAIN_PEM || '')
+    .split(/(?<=-----END CERTIFICATE-----)\n?/)
+    .map(function (one) { return one.trim(); })
+    .filter(function (one) { return one; })
+    .map(function (one) { return one + '\n'; });
+  const anchorPem = process.env.STS_TLS_SERVER_ANCHOR_PEM || '';
   log.info('tls: using the server certificate handed in by the front ' +
            'process rather than generating one, so that every process in ' +
-           'this service presents and pins the same certificate.');
+           'this service presents and pins the same certificate. ' +
+           chainPem.length + ' chain certificate(s) and ' +
+           (anchorPem ? 'its trust anchor' : 'NO trust anchor') +
+           ' came with it.');
   return { privateKeyPem: keyPem, certPem: certPem,
+           chainPem: chainPem,
+           // **THE MARKER THAT SAYS THIS PROCESS DOES NOT OWN THE SOCKET.**
+           // Read by certifyServerCertificateUnderPki() below, which is the
+           // one place it decides anything. See that block for the run it was
+           // written after.
+           handedIn: true,
+           // **THE ANCHOR THE FRONT PROCESS PUBLISHES**, remembered so that
+           // trustAnchorPems() can prefer it over anything this process's own
+           // PKI would answer. See that function.
+           handedAnchorPem: anchorPem,
            subject: 'CN=' + (TLS_HOSTNAMES[0] || 'localhost') + ', O=mock-sts',
            names: TLS_HOSTNAMES.concat(TLS_IPS),
            fingerprint256: fingerprintOf(certPem),
@@ -596,6 +646,144 @@ const SERVER_CERTIFICATES = (function buildServerCertificates() {
 
 const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
 
+// ===========================================================================
+// AND IT IS CERTIFIED BY THIS SERVICE'S OWN CERTIFICATE AUTHORITY (2026-09-11).
+//
+// The certificate built above is SELF-SIGNED, and until this date that was the
+// end of it: anybody who wanted to verify this service had to fetch that exact
+// certificate and trust it, and a restart invalidated what they had trusted.
+// Now `common/pki.js` builds a Root for the service at startup, and this
+// listener's key is a leaf of it — so **one anchor covers 8443, 9443, LDAPS
+// 636, the main port AND every token this service signs**, and it survives a
+// restart wherever the keystore does.
+//
+// **IT IS A REGISTRATION AND NOT A CALL, and the ordering is the whole of why
+// it works.** This module is required at 20 and its certificate is built at
+// require time; `pki.start()` runs afterwards, from
+// `common/service_state.js`, and BEFORE `listen()` binds anything. So the
+// swap below has already happened by the time a socket exists — nothing is
+// re-keyed under a live listener, and no client ever sees the self-signed one.
+//
+// **THE PRIVATE KEY DOES NOT MOVE.** What is replaced is the certificate over
+// the key that was already made here; `secureContextOptions()` reads
+// `certPem` off this record on every context build, so mutating it is the
+// whole mechanism.
+//
+// **A SUPPLIED CERTIFICATE IS LEFT ALONE.** `tls.certificateFile` means an
+// operator handed this service a certificate somebody else issued, and
+// re-issuing it under this mock's Root would be the opposite of what they
+// asked for.
+// ===========================================================================
+// ---------------------------------------------------------------------------
+// **AND A REQUEST WORKER DOES NOT DO IT AT ALL (2026-09-12), BECAUSE IT DOES
+// NOT OWN THE SOCKET.**
+//
+// A worker was handed this certificate, its chain and its anchor by the front
+// process — handedInCertificate() above is the whole of that — and it binds no
+// TLS listener of its own. Registering here anyway meant `pki.start()` issued
+// it a leaf from the hierarchy THIS process holds and `onCertified()` below
+// overwrote the record with it: a certificate no socket in this service
+// presents, and a chain the handed-in anchor does not sign.
+//
+// Nothing showed until somebody rebuilt the Root. `POST /admin-api/pki/build-root`
+// is dispatched like any other request, so it lands on ONE worker, which
+// rebuilds every branch it holds and re-certifies its own copy of this record
+// under the new Root. From that moment `trustAnchorPems()` finds that the
+// handed-in anchor no longer signs the chain beside it, reports the hand-off as
+// broken — which it is not — and falls back to this process's own Root. That
+// Root signs nothing the front process is serving, so every OpenID Connect back
+// channel this worker runs fails with `unable to get local issuer certificate`,
+// and `/admin` and `/portal` answer 400 at their own callback. On 2026-09-12
+// that was six jobs in the dispatch mode of the suite, none of which mentions a
+// certificate.
+//
+// **THE RULE IS THE ONE THE LDAP CONNECTION ALREADY ESTABLISHED** (see the root
+// CLAUDE.md): a store is shared by coordination, and a socket is not. The
+// listener certificate belongs to the process holding the listener. A worker
+// serves what it was handed and certifies nothing.
+// ---------------------------------------------------------------------------
+(function certifyServerCertificateUnderPki() {
+  if (SERVER_CERTIFICATE && SERVER_CERTIFICATE.algorithm === 'supplied') {
+    log.debug('tls: the server certificate was handed in, so it is not ' +
+              'certified under this service\'s own Root.');
+    return;
+  }
+  if (SERVER_CERTIFICATE && SERVER_CERTIFICATE.handedIn) {
+    log.info('tls: this process was handed its server certificate by the ' +
+             'front process and binds no TLS listener of its own, so it does ' +
+             'NOT certify one under this process\'s Root. What it presents ' +
+             'and what it pins are the front process\'s, which is the only ' +
+             'pair that can agree with the socket a client actually reaches.');
+    return;
+  }
+  // A LEAF (rule 3w): it registers no route, so requiring it here moves
+  // nothing. The registration is passive — `pki.start()` is what acts on it.
+  const pki = require('../common/pki');
+  pki.registerCertifiable({
+    scope: pki.PROCESS_SCOPE,
+    useCase: 'tls',
+    slot: 'server',
+    alg: 'RS256',
+    keyAlg: 'rsa-2048',
+    label: 'TLS server certificate',
+    commonName: TLS_HOSTNAMES[0] || 'localhost',
+    profile: 'tls-server',
+    keyUsage: ['digitalSignature', 'keyEncipherment'],
+    extensions: {
+      extKeyUsage: { present: true, critical: false, usages: ['serverAuth'] },
+      // **THE NAMES ARE THE POINT OF THIS CERTIFICATE AND ARE CARRIED OVER
+      // EXACTLY.** Every current client reads the subjectAltName and ignores
+      // the Common Name (RFC 6125, since 2011), so a re-issued certificate
+      // that lost them would be a listener nothing can verify — which is a
+      // worse state than the self-signed one it replaced.
+      subjectAltName: { present: true, critical: false,
+                        names: TLS_HOSTNAMES.map(function (name) {
+                          return { kind: 'dns', value: name };
+                        }).concat(TLS_IPS.map(function (address) {
+                          return { kind: 'ip', value: address };
+                        })) }
+    },
+    publicKeyPem: function () {
+      return crypto.createPublicKey(SERVER_CERTIFICATE.privateKeyPem)
+        .export({ type: 'spki', format: 'pem' });
+    },
+    onCertified: function (certPem, chainPem) {
+      SERVER_CERTIFICATE.certPem = certPem;
+      // The chain travels with it: without the Issuing CA and the
+      // Intermediate a client holding only the Root cannot build a path, and
+      // "trust this one anchor" would be true and unusable.
+      SERVER_CERTIFICATE.chainPem = chainPem.slice();
+      SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(certPem);
+      SERVER_CERTIFICATE.selfSigned = false;
+      try {
+        const read = new crypto.X509Certificate(certPem);
+        SERVER_CERTIFICATE.subject = read.subject.replace(/\n/g, ', ');
+        SERVER_CERTIFICATE.notAfter = new Date(read.validTo).toISOString();
+      } catch (e) {
+        // The certificate is in use either way; what is lost is a page's
+        // subject line. Named rather than swallowed.
+        log.warn('tls: the certified server certificate could not be read ' +
+                 'back for its subject and expiry: ' + e.message);
+      }
+      // **AND THE LISTENERS HAVE TO BE TOLD, because they were built at
+      // require time.** `permissiveServer` and `strictServer` are created at
+      // module top level with the secure context evaluated THERE — before
+      // `pki.start()` has run — so mutating the record above is invisible to
+      // a socket that already has a context. `applyAnchors()` is the rebuild
+      // path `POST /tls/trust` already uses, and it re-reads
+      // `secureContextOptions()`, which is where the new certificate and its
+      // chain are picked up. Without this line the certificate is issued,
+      // recorded, reported on every page — and not served, which is the most
+      // convincing way for this to look finished and be wrong.
+      applyAnchors();
+      log.info('tls: the listener certificate is issued by this service\'s ' +
+               'own TLS Issuing CA and chains to its Root — so one anchor ' +
+               'covers 8443, 9443, LDAPS 636, the main port and every token ' +
+               'this service signs.');
+    }
+  });
+})();
+
 // ---------------------------------------------------------------------------
 // ONE CERTIFICATE FOR EVERY TLS SOCKET IN THIS PROCESS.
 //
@@ -671,9 +859,352 @@ function secureContextOptions() {
   // certificate this is the same thing it always was.
   return {
     key: SERVER_CERTIFICATES.map(function (one) { return one.privateKeyPem; }),
-    cert: SERVER_CERTIFICATES.map(function (one) { return one.certPem; }),
+    // **THE CHAIN GOES WITH THE CERTIFICATE**, which is what node's `cert`
+    // takes: a PEM bundle, leaf first. Since 2026-09-11 this listener's
+    // certificate is issued by this service's own TLS Issuing CA, so a client
+    // holding only the Root needs the two certificates between them — without
+    // that, "trust this one anchor" is true and unusable, and the failure is
+    // `unable to get local issuer certificate`, which names nothing.
+    cert: SERVER_CERTIFICATES.map(function (one) {
+      return (one.chainPem && one.chainPem.length)
+        ? [one.certPem].concat(one.chainPem).join('')
+        : one.certPem;
+    }),
     ca: anchors.map(function (anchor) { return anchor.pem; })
   };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A CALLER VERIFIES THIS LISTENER AGAINST — WHICH IS NOT THE CERTIFICATE
+// IT PRESENTS ANY MORE (2026-09-11).
+//
+// While the certificate above was SELF-SIGNED those were one question with one
+// answer, and three callers in this repository answered it by pinning the leaf:
+// the back channel in `common/oidc_rp.js`, the loopback push in
+// `ssf/ssf_http.js`, and the suite's anchor in `tests/tools/trust.js`.
+//
+// The hour the leaf acquired an ISSUER all three broke, and they broke in the
+// way that names nothing about what changed. OpenSSL takes a self-signed leaf
+// found in a truststore as an anchor and will NOT take a certified one, so the
+// path walks leaf -> Issuing CA -> Intermediate, finds no Root, and fails with
+// `unable to get local issuer certificate` — at depth 2, about a certificate
+// the caller never mentioned. The admin console reported it as **Signing in
+// did not complete**, which is the sign-in flow correctly describing a token
+// request that never got a connection.
+//
+// So the anchor is ASKED FOR here rather than assumed: the Root when this
+// service has one, and the self-signed certificate itself when it does not —
+// which is what `tls.certificateFile` and any process that never ran
+// `pki.start()` (`npm test`, every in-process job) leave behind. Callers pin
+// what this returns and stop caring which of the two they are looking at.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// DOES THIS ANCHOR ACTUALLY SIGN THIS CHAIN? (2026-09-11)
+//
+// **THE ANCHOR AND THE CHAIN ARE FETCHED FROM TWO DIFFERENT PLACES AND CAN
+// DRIFT APART, WHICH IS A BUG THAT LOOKS EXACTLY LIKE A WORKING SERVICE.**
+// `SERVER_CERTIFICATE.chainPem` is a SNAPSHOT, taken when the listener was
+// certified; `pki.serviceRoot()` is read LIVE, and answers whatever Root the
+// store holds now. Every one of these pulls them apart:
+//
+//   * the hierarchy is rebuilt and the listener is not re-certified with it;
+//   * a REQUEST WORKER answers this route — it holds its own `pki` state and
+//     its own Root, while the certificate it presents was handed in by the
+//     front process that owns the socket;
+//   * a rebuild half-fails and leaves a new Root over an old branch.
+//
+// What comes out is a bundle whose four certificates look perfectly right —
+// `CN=mock-sts Root CA` at the top, correct names all the way down — and whose
+// Root has a different KEY from the one that signed the Intermediate. OpenSSL
+// calls it `error 30 at 2 depth lookup: authority and subject key identifier
+// mismatch`; node calls it `unable to get local issuer certificate`; curl is
+// permissive enough to accept it, so it is invisible from a shell and fatal to
+// every node client — which is every test job in this repository and this
+// service's own OpenID Connect back channel.
+//
+// **SO THE ANCHOR IS CHECKED AGAINST THE CHAIN BEFORE IT IS PUBLISHED.** Not
+// reasoned about, not arranged by whoever rebuilds a hierarchy remembering to
+// re-certify: verified here, at the one place both halves are in hand, with
+// the signature itself.
+//
+// It answers the ANCHOR and never a diagnosis, because its callers are a
+// truststore endpoint and a TLS agent. The diagnosis goes to the log.
+// ---------------------------------------------------------------------------
+function anchorSigns(anchorPem, record) {
+  const chain = (record && record.chainPem) || [];
+  // The certificate the anchor has to have signed is the TOP of what travels
+  // with the leaf — the Intermediate — or the leaf itself where nothing does.
+  const topPem = chain.length ? chain[chain.length - 1]
+                              : (record && record.certPem);
+  if (!anchorPem || !topPem) {
+    return false;
+  }
+  try {
+    const anchor = new crypto.X509Certificate(anchorPem);
+    const top = new crypto.X509Certificate(topPem);
+    // `verify()` is the SIGNATURE and not the name. That is the whole point:
+    // the two Roots this has to tell apart have identical subjects, so
+    // comparing issuer strings — the obvious check, and the one a reader will
+    // want to replace this with — passes on exactly the case that is broken.
+    return top.verify(anchor.publicKey);
+  } catch (e) {
+    log.warn('tls: a candidate trust anchor could not be checked against the ' +
+             'server certificate chain (' + e.message + '), so it is not ' +
+             'published. A bundle whose anchor does not sign its own chain is ' +
+             'refused by every node client and accepted by curl, which is the ' +
+             'worst way for this to be wrong.');
+    return false;
+  }
+}
+
+function trustAnchorPems() {
+  log.debug('Entering trustAnchorPems().');
+  const out = [];
+  // ---------------------------------------------------------------------
+  // **AN ANCHOR HANDED IN BY THE FRONT PROCESS WINS, AND IT IS THE ONLY
+  // ANSWER A REQUEST WORKER CAN HONESTLY GIVE** (2026-09-11).
+  //
+  // A worker does not own the socket and did not make the certificate it
+  // serves — both were handed to it. Its own `common/pki.js` holds a Root it
+  // built itself, which signs nothing this process presents. Asking that Root
+  // is how the console and the portal came to fail their own back channel.
+  //
+  // It is checked like any other candidate rather than trusted because it
+  // arrived: `anchorSigns()` below is the same gate, and an anchor that does
+  // not sign the chain it came with is a hand-off that has gone wrong in some
+  // new way worth hearing about.
+  // ---------------------------------------------------------------------
+  const handed = SERVER_CERTIFICATES.map(function (one) {
+    return one.handedAnchorPem;
+  }).filter(function (pem) { return !!pem; });
+  handed.forEach(function (pem) {
+    if (out.indexOf(pem) >= 0) {
+      return;
+    }
+    const covers = SERVER_CERTIFICATES.some(function (one) {
+      return anchorSigns(pem, one);
+    });
+    if (covers) {
+      out.push(pem);
+    } else {
+      log.error('tls: the trust anchor handed in by the front process does ' +
+                'not sign the certificate handed in with it. That is a ' +
+                'hand-off gone wrong rather than a hierarchy drifting — both ' +
+                'came from one process in one message — so it is reported ' +
+                'rather than worked around, and no anchor is published.');
+    }
+  });
+  if (out.length) {
+    log.debug('Leaving trustAnchorPems(). ' + out.length +
+              ' handed-in anchor(s).');
+    return out;
+  }
+  try {
+    // A LEAF (rule 3w), and lazily for the reason the certification block
+    // above gives: requiring it at the top of this file would move nothing but
+    // reading it here is a cache hit either way.
+    const root = require('../common/pki').serviceRoot();
+    if (root && root.certificatePem) {
+      // **CHECKED, NOT ASSUMED.** See anchorSigns() above.
+      const certified = SERVER_CERTIFICATES.filter(function (one) {
+        return one.chainPem && one.chainPem.length;
+      });
+      const covers = !certified.length ||
+                     certified.some(function (one) {
+                       return anchorSigns(root.certificatePem, one);
+                     });
+      if (covers) {
+        out.push(root.certificatePem);
+      } else {
+        // **AND NOTHING IS PUBLISHED IN ITS PLACE.** The obvious substitute
+        // is the chain's own Intermediate — it IS a CA, so it looks like a
+        // usable anchor — and it was tried and is wrong: OpenSSL will not
+        // terminate a path at a trusted certificate that is not SELF-SIGNED
+        // without `-partial_chain`, so `openssl verify` still fails and so
+        // does every client that does not set that flag. An anchor that only
+        // some clients can use is the same class of mistake as the one this
+        // branch exists to catch.
+        //
+        // So the bundle goes out as leaf + chain with no anchor, which is
+        // honest — this process cannot prove what signed that chain — and the
+        // error below is the thing that gets somebody to fix it. In practice
+        // this should never fire: `common/pki.js`'s `certify()` rebuilds a
+        // stale branch before issuing, so the drift is repaired before a
+        // certificate carrying it exists.
+        log.error('tls: this service\'s Root CA does NOT sign the certificate ' +
+                  'chain this listener presents — two hierarchies with the ' +
+                  'same name have got mixed, most likely because the ' +
+                  'hierarchy was rebuilt without the listener being ' +
+                  're-certified, or because this process is a request worker ' +
+                  'holding a Root of its own while the front process owns the ' +
+                  'socket. The Root is NOT being published as an anchor, ' +
+                  'because a bundle whose anchor does not sign its own chain ' +
+                  'is refused by every node client (`unable to get local ' +
+                  'issuer certificate`) while curl accepts it. NO anchor is ' +
+                  'published in its place — an Intermediate is a CA but is ' +
+                  'not self-signed, and OpenSSL will not terminate a path at ' +
+                  'one. Rebuild the hierarchy on /admin/pki.');
+      }
+    }
+  } catch (e) {
+    // NOT an error and named rather than swallowed: a process with no PKI is
+    // the ordinary case for `npm test` and for a supplied certificate, and the
+    // self-signed leaves below are the right answer there.
+    log.debug('trustAnchorPems(): this service has no Root of its own (' +
+              e.message + '); the listener certificates are their own anchors.');
+  }
+  SERVER_CERTIFICATES.forEach(function (one) {
+    // **A CERTIFIED LEAF IS NOT AN ANCHOR.** Putting one in a truststore is
+    // exactly the bug above: the path does not terminate there, so it is worse
+    // than useless — it looks like a pin and refuses every connection.
+    if (one.certPem && !(one.chainPem && one.chainPem.length)) {
+      out.push(one.certPem);
+    }
+  });
+  log.debug('Leaving trustAnchorPems(). ' + out.length + ' anchor(s).');
+  return out;
+}
+
+// ===========================================================================
+// THE HIERARCHY MOVED UNDERNEATH THE SOCKET (2026-09-12).
+//
+// `POST /admin-api/pki/build-root` replaces the Root and every branch under it.
+// In one process that is the end of it: `certify()` fires `onCertified()`
+// above, the record is replaced and `applyAnchors()` puts the new certificate
+// on the listener in the same act.
+//
+// **WITH REQUEST WORKERS IT IS NOT, BECAUSE THE PROCESS THAT REBUILT THE
+// HIERARCHY IS NOT THE PROCESS HOLDING THE SOCKET.** That request is dispatched
+// like any other, so it lands on a worker; the worker rebuilds, publishes the
+// new hierarchy over the IPC channel, and every process adopts it — including
+// this one, which goes on serving a leaf whose Root nothing here holds any
+// more. `trustAnchorPems()` then correctly refuses to publish an anchor (see
+// its error, which names exactly this state), so `GET /tls/server-certificate`
+// answers a bundle that terminates nowhere and every client that fetched it
+// fails with `unable to get local issuer certificate`.
+//
+// So the front process RECONCILES: if the certificate it is serving no longer
+// chains to the Root this service now holds, it re-certifies from the current
+// hierarchy. `certifyRegistered()` is the same call `pki.start()` makes, and
+// `certify()` rebuilds a branch that no longer chains before it issues from
+// it — so one call repairs the branch and the leaf together.
+//
+// **IT IS IDEMPOTENT AND THE CHECK IS THE SIGNATURE**, not a name or a serial:
+// `anchorSigns()` is the same gate `trustAnchorPems()` uses, and the two Roots
+// this has to tell apart have identical subjects. Called on every adopted
+// hierarchy, it does nothing at all in the ordinary case.
+//
+// A WORKER NEVER TAKES THIS PATH — it owns no socket and was handed its
+// certificate; see certifyServerCertificateUnderPki() above.
+// ===========================================================================
+async function reconcileWithHierarchy() {
+  log.debug('Entering reconcileWithHierarchy().');
+  if (!SERVER_CERTIFICATE || SERVER_CERTIFICATE.algorithm === 'supplied' ||
+      SERVER_CERTIFICATE.handedIn) {
+    log.debug('Leaving reconcileWithHierarchy(). Not this process\'s to make.');
+    return false;
+  }
+  let root = null;
+  try {
+    root = require('../common/pki').serviceRoot();
+  } catch (e) {
+    // A process with no PKI is the ordinary case for `npm test`; the
+    // self-signed certificate is its own anchor and there is nothing to
+    // reconcile with.
+    log.debug('Leaving reconcileWithHierarchy(). No hierarchy: ' + e.message);
+    return false;
+  }
+  if (!root || !root.certificatePem) {
+    log.debug('Leaving reconcileWithHierarchy(). No Root.');
+    return false;
+  }
+  if (anchorSigns(root.certificatePem, SERVER_CERTIFICATE)) {
+    log.debug('Leaving reconcileWithHierarchy(). Already chains.');
+    return false;
+  }
+  const was = SERVER_CERTIFICATE.fingerprint256;
+  try {
+    await require('../common/pki').certifyRegistered();
+  } catch (e) {
+    // Reported rather than thrown: the caller is the worker pool's message
+    // handler, and a listener that could not be re-certified must not take the
+    // service down. What it leaves is the state above — a bundle with no
+    // anchor — which trustAnchorPems() already reports at error level.
+    log.error('tls: the listener certificate could not be re-issued under ' +
+              'the hierarchy this service now holds: ' + e.message + '. It ' +
+              'goes on presenting the one it has, which chains to a Root ' +
+              'that is gone, so GET /tls/server-certificate publishes no ' +
+              'anchor until somebody rebuilds on /admin/pki.');
+    log.debug('Leaving reconcileWithHierarchy(). Failed.');
+    return false;
+  }
+  if (SERVER_CERTIFICATE.fingerprint256 === was) {
+    log.warn('tls: the listener certificate does not chain to this service\'s ' +
+             'Root and re-issuing it produced the same certificate. Nothing ' +
+             'was changed, and GET /tls/server-certificate publishes no ' +
+             'anchor while that is true.');
+    log.debug('Leaving reconcileWithHierarchy(). No change.');
+    return false;
+  }
+  log.info('tls: the certificate authority was rebuilt in another process of ' +
+           'this service, so this listener has been re-issued under it. ' +
+           'ANYTHING THAT FETCHED THIS SERVICE\'S ANCHOR BEFORE NOW NEEDS IT ' +
+           'AGAIN — GET /tls/server-certificate publishes the new one.');
+  log.debug('Leaving reconcileWithHierarchy(). Re-issued.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE FRONT PROCESS HANDS A WORKER, AND WHAT A WORKER DOES WITH A SECOND
+// ONE (2026-09-12).
+//
+// The first hand-off is `process.env`, set before this module is loaded —
+// handedInCertificate() above argues why. It is a SNAPSHOT, and reconciling
+// above means there is now a second edition of it: the front process re-issues
+// its listener and every worker is still pinning the certificate it was forked
+// with. A worker that pins the previous leaf fails its own OpenID Connect back
+// channel, which is the defect this whole pair of functions exists to close.
+//
+// The private key does NOT travel here and does not need to: what a worker
+// does with this material is PIN it and report it, never present it — the
+// socket is the front process's. The key it was handed at fork is left alone.
+// ---------------------------------------------------------------------------
+function serverCertificateBundle() {
+  return {
+    certPem: SERVER_CERTIFICATE.certPem,
+    chainPem: (SERVER_CERTIFICATE.chainPem || []).slice(0),
+    anchorPem: trustAnchorPems()[0] || ''
+  };
+}
+
+function adoptServerCertificate(bundle) {
+  log.debug('Entering adoptServerCertificate().');
+  if (!bundle || !bundle.certPem) {
+    log.debug('Leaving adoptServerCertificate(). Nothing in it.');
+    return false;
+  }
+  SERVER_CERTIFICATE.certPem = bundle.certPem;
+  SERVER_CERTIFICATE.chainPem = (bundle.chainPem || []).slice(0);
+  SERVER_CERTIFICATE.handedAnchorPem = bundle.anchorPem || '';
+  SERVER_CERTIFICATE.handedIn = true;
+  SERVER_CERTIFICATE.selfSigned = !(bundle.chainPem || []).length;
+  SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(bundle.certPem);
+  try {
+    const read = new crypto.X509Certificate(bundle.certPem);
+    SERVER_CERTIFICATE.subject = read.subject.replace(/\n/g, ', ');
+    SERVER_CERTIFICATE.notAfter = new Date(read.validTo).toISOString();
+  } catch (e) {
+    // The certificate is pinned either way; what is lost is a page's subject
+    // line. Named rather than swallowed.
+    log.warn('tls: the re-issued server certificate handed in by the front ' +
+             'process could not be read back for its subject and expiry: ' +
+             e.message);
+  }
+  log.info('tls: the front process re-issued this service\'s listener ' +
+           'certificate and handed in the new one. This process now pins and ' +
+           'reports what the socket actually presents.');
+  log.debug('Leaving adoptServerCertificate(). Adopted.');
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -2004,9 +2535,37 @@ app.get('/tls/server-certificate', function (req, res) {
   // in its truststore would fail to verify the connection it actually got —
   // which one it gets is OpenSSL's choice, made from the signature algorithms
   // the caller itself offered.
+  //
+  // **AND SINCE 2026-09-11 THE CHAIN AND THE ROOT GO WITH THEM**, which is a
+  // change of content and not of contract: every document in this repository
+  // that names this path tells a reader to fetch it and TRUST it
+  // (`NODE_EXTRA_CA_CERTS=/tmp/sts.pem`, `--cacert`, an LDAP client's
+  // truststore), and the hour these certificates were certified under this
+  // service's own Root that stopped being possible. OpenSSL takes a
+  // self-signed leaf in a truststore as an anchor and will not take a
+  // certified one, so what came back here was a pin that matched nothing:
+  // `unable to get local issuer certificate`, about a Root the caller was
+  // never given. A truststore built from this document terminates now.
+  //
+  // THE LEAVES STAY FIRST. `tests/tools/trust.js` reads the first certificate
+  // in this document to compute the SPKI pin the browser job uses, and a
+  // reader looking for "the server certificate" should find it at the top.
+  const chain = [];
+  SERVER_CERTIFICATES.forEach(function (one) {
+    (one.chainPem || []).forEach(function (pemText) {
+      if (chain.indexOf(pemText) < 0) {
+        chain.push(pemText);
+      }
+    });
+  });
   const pem = SERVER_CERTIFICATES.map(function (one) {
     return one.certPem;
-  }).join('');
+  }).concat(chain).concat(trustAnchorPems().filter(function (anchorPem) {
+    // The self-signed case answers the leaf here, and it is already above.
+    return SERVER_CERTIFICATES.every(function (one) {
+      return one.certPem !== anchorPem;
+    });
+  })).join('');
   res.status(200).type('text/plain').set('Cache-Control', 'no-store')
      .send(pem);
   log.debug('Leaving GET /tls/server-certificate. ' +
@@ -2324,12 +2883,40 @@ module.exports = {
     return {
       certPem: SERVER_CERTIFICATE.certPem,
       privateKeyPem: SERVER_CERTIFICATE.privateKeyPem,
+      // THE CHAIN AND THE ANCHOR ARE TWO DIFFERENT THINGS AND BOTH ARE HERE
+      // (2026-09-11). `chainPem` is what this certificate TRAVELS WITH — the
+      // Issuing CA and the Intermediate, leaf-first and without the Root, as
+      // RFC 5246 section 7.4.2 asks — and it is empty while the certificate is
+      // self-signed. `trustAnchorPem` is what a caller VERIFIES it against,
+      // which is the Root. A caller that pins the leaf builds no path; see
+      // trustAnchorPems() above for what that cost.
+      chainPem: (SERVER_CERTIFICATE.chainPem || []).slice(0),
+      // **THE LEAF IS THE FALLBACK ONLY WHERE THERE IS NO CHAIN**, which is
+      // the self-signed case and is the one arrangement where the leaf really
+      // is its own anchor. Where there IS a chain and `trustAnchorPems()`
+      // answers nothing, the Root has been found not to sign it (see
+      // `anchorSigns()`) and there is no honest anchor to give: the leaf
+      // terminates no path, and neither does the Intermediate under OpenSSL's
+      // default rules. An empty string is what a caller can test.
+      trustAnchorPem: trustAnchorPems()[0] ||
+        ((SERVER_CERTIFICATE.chainPem || []).length
+          ? '' : SERVER_CERTIFICATE.certPem),
       subject: SERVER_CERTIFICATE.subject,
       names: SERVER_CERTIFICATE.names.slice(0),
       fingerprint256: SERVER_CERTIFICATE.fingerprint256,
       notAfter: SERVER_CERTIFICATE.notAfter
     };
   },
+  // Every anchor, for a caller building a truststore rather than one
+  // connection: with two listener certificates configured there are two, and
+  // which one a connection gets is OpenSSL's choice from the signature
+  // algorithms the caller itself offered.
+  trustAnchorPems: trustAnchorPems,
+  // The three the request-worker pool uses. See their headers: the hierarchy
+  // can be rebuilt in a process that does not own this socket.
+  reconcileWithHierarchy: reconcileWithHierarchy,
+  serverCertificateBundle: serverCertificateBundle,
+  adoptServerCertificate: adoptServerCertificate,
   anchorCount: function () { return anchors.length; },
   ports: function () {
     return { tls: boundTlsPort || TLS_PORT,

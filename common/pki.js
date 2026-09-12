@@ -1,0 +1,3687 @@
+'use strict';
+//
+// File: pki.js
+//
+// ===========================================================================
+// A CERTIFICATE AUTHORITY THIS SERVICE MAINTAINS, PER TRUST REALM.
+//
+// **WHAT IT IS FOR, IN ONE SENTENCE**: RFC 7521 and RFC 7523 let an application
+// authenticate with a signed assertion instead of a shared secret, and a
+// signing key that nobody vouched for is a key an operator has to move by hand.
+// This is the other half — a Root CA, an Intermediate CA and an Issuing CA that
+// this service builds and keeps, and a signing key pair per application issued
+// from the bottom of it.
+//
+// ---------------------------------------------------------------------------
+// THREE TIERS, BUILT IN ONE ACT, AND THAT IS NOT LAZINESS.
+//
+// A trust chain is only worth anything WHOLE: an Issuing CA with no
+// Intermediate above it is a two-tier chain wearing a three-tier name, and a
+// half-built hierarchy is exactly the state in which somebody issues a
+// certificate that verifies here and nowhere else. So `buildChain()` makes all
+// three or none, and a second call REPLACES the hierarchy rather than adding to
+// it — with everything already issued from the old one saying so, because a
+// leaf whose issuer is gone is a leaf that stopped verifying and there is no
+// honest way to hide that.
+//
+// The three tiers are the debugger's own `root-ca`, `intermediate-ca` and
+// `issuing-ca` PROFILES, taken from `common/vendored/x509.js` rather than
+// written out again — same `pathLen` (null, 1, 0), same key usages, same
+// default lifetimes. That module is byte-identical to the parent project's, so
+// a certificate issued here and one issued on that project's PKI / X.509 page
+// are built by ONE encoder, and a difference between them is a difference in
+// the arguments rather than in two implementations that drifted.
+//
+// ---------------------------------------------------------------------------
+// WHERE THE PRIVATE KEYS LIVE, AND WHY IT IS NOT A STORE OF THIS MODULE'S OWN.
+//
+// In `sts_keys`, in the realm's own row, beside the signing keys this service
+// already keeps there — sealed under the same key-encryption key, read back by
+// the same `keystore.start()`, and shared across the request-worker pool over
+// the same IPC channel. `keystore.attachPki()` is the whole of the mechanism
+// and its header argues it.
+//
+// **SO IT INHERITS THE MODE, WHICH IS THE HONEST ANSWER RATHER THAN A GAP.** In
+// PRODUCT mode the hierarchy survives a restart, because the keystore persists.
+// In DEVELOPMENT mode — the default — it lives exactly as long as the process
+// does, which is the same rule the signing key follows and for the same reason:
+// a mock is disposable and its credentials are meant to die with it. A page
+// that promised otherwise would be promising on behalf of a mode it is not in.
+//
+// **AND IT IS PER REALM.** A trust realm is a logical identity service with its
+// own signing key, its own sessions and its own applications; a CA shared
+// across realms would be one authority vouching for several services, which is
+// the one thing a realm boundary exists to prevent. `common/realms.js` argues
+// the general rule; this is one more store obeying it, declared per realm AT
+// ITS DECLARATION as rule 2 of the realm design requires.
+//
+// ---------------------------------------------------------------------------
+// WHAT IS HANDED OUT AND WHAT NEVER IS.
+//
+// A CA's private key never leaves this module. What leaves is a LEAF: a key
+// pair generated for one application, its certificate, and the chain above it —
+// handed back ONCE, at issuance, and written onto that application's entry.
+// After that this module holds no copy, because holding one would make
+// `ou=applications` and this module two answers to "what is that client's
+// signing key" and the second one unreadable.
+//
+// A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto`,
+// `keystore`, `realms` and the two vendored PKI modules — none of which
+// requires it back — so it is a LEAF and anything here may require it.
+// ===========================================================================
+
+// A LOGGER OF ITS OWN rather than helpers.js's, for `keystore.js`'s reason one
+// file along: this module is required by `oauth-oidc/assertion_grant.js`, which
+// is on the token endpoint's path, and a require of `helpers.js` here would put
+// the whole key-set proxy behind a module whose only job is certificates.
+// `crypto.js`, `config.js` and `keystore.js` all make their own for the same
+// reason.
+const bunyan = require('bunyan');
+const config = require('./config');
+
+const log = bunyan.createLogger({
+  name: 'pki',
+  level: config.value('global.logLevel')
+});
+
+const nodeCrypto = require('crypto');
+// THE ONE PLACE THIS SERVICE SIGNS AND HASHES. Used here for the thumbprint and
+// the JWK canonicalisation only — the certificate encoding is the vendored
+// module's, which is the point of vendoring it.
+const stsCrypto = require('./crypto');
+const keystore = require('./keystore');
+const realms = require('./realms');
+// The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
+// `common/vendored/CLAUDE.md`.
+const x509 = require('./vendored/x509');
+const keyMaterial = require('./vendored/key_material');
+
+// ---------------------------------------------------------------------------
+// THE THREE TIERS. The `profile` names an entry in the vendored module's
+// PROFILES table, which is where the basicConstraints, the key usages and the
+// default lifetime come from — so a change to what an Intermediate CA IS
+// happens in one place and reaches the debugger's page and this one together.
+//
+// `order` is the position from the ROOT downwards, which is the order they are
+// built in and the reverse of the order they are sent in a chain. Both spellings
+// exist in the wild and getting them the wrong way round produces a chain that
+// every validator refuses with a message about the leaf.
+// ---------------------------------------------------------------------------
+const TIERS = [
+  { id: 'root', order: 0, profile: 'root-ca', label: 'Root CA',
+    what: 'The trust anchor. Self-signed, the longest-lived of the three, and ' +
+          'the only certificate in the hierarchy a relying party has to be ' +
+          'given out of band — everything below it travels in the chain.' },
+  { id: 'intermediate', order: 1, profile: 'intermediate-ca',
+    label: 'Intermediate CA',
+    what: 'Signed by the Root. It exists so that the Root\'s key can be used ' +
+          'once and then left alone: a compromise here is repaired by ' +
+          'reissuing this tier, and a compromise of the Root is not repaired ' +
+          'at all. pathLen is 1, so it may sign one more CA and no deeper.' },
+  { id: 'issuing', order: 2, profile: 'issuing-ca', label: 'Issuing CA',
+    what: 'Signed by the Intermediate, and the only tier that signs anything ' +
+          'this service hands out. pathLen is 0 — it signs LEAVES and no ' +
+          'further CA, which is what makes "an application certificate cannot ' +
+          'be used to mint another" a property of the encoding rather than of ' +
+          'this service\'s manners.' }
+];
+
+const TIER_IDS = TIERS.map(function (one) { return one.id; });
+
+// ===========================================================================
+// THE SHAPE OF THE HIERARCHY (2026-09-11), AND THE SENTENCE IT REVERSED.
+//
+// Until this date the three tiers were PER REALM and this file said, at
+// length, that a CA shared across realms would be "one authority vouching for
+// several identity services, which is the one thing a realm boundary exists to
+// prevent". **That is reversed deliberately and by request**, and what replaces
+// it is not a weaker claim but a different one:
+//
+//        Root CA                          ONE, service-wide
+//        ├── Intermediate — process       for what belongs to no realm
+//        │    ├── Issuing: TLS
+//        │    └── Issuing: SPIFFE
+//        ├── Intermediate — realm ""      the default realm
+//        │    ├── Issuing: JOSE signing
+//        │    ├── Issuing: XML signing
+//        │    └── Issuing: application assertions
+//        └── Intermediate — realm acme    …and one per realm, unique
+//
+// **THE BOUNDARY MOVED DOWN A TIER AND IT HAD TO BE MOVED IN CODE AS WELL.**
+// With one Root, "this certificate chains to our Root" is true of every realm's
+// leaves, so it stopped being a realm boundary the moment the Root was shared.
+// `verifyLeaf()` therefore requires the path to pass through THIS SCOPE'S OWN
+// INTERMEDIATE, and a leaf from another realm is refused there rather than
+// being accepted by an anchor check that is now too weak. That is the single
+// most important consequence of this change: **an anchor test that was a
+// boundary became an anchor test that is not one**, and a reader who assumed
+// the old rule still held would have written a check that passes for every
+// certificate this service has ever issued.
+//
+// What the shared Root buys is what was asked for: one trust anchor an
+// operator installs once, under which every key this service holds — in every
+// realm, for every use case — is a leaf with a path.
+// ===========================================================================
+
+// The two rows that are not a realm's. A realm id is `[a-z0-9-]` and must
+// start with a letter or a digit (`realms.js` enforces it), so a leading `*`
+// cannot collide with one — which is what lets these share `keystore`'s one
+// `pki:` row family rather than needing a table of their own.
+const SERVICE_SCOPE = '*service';
+const PROCESS_SCOPE = '*process';
+
+// ---------------------------------------------------------------------------
+// THE USE CASES: ONE ISSUING CA EACH.
+//
+// A use case is a FAMILY of key material with one reason to exist, and it gets
+// an Issuing CA of its own so that an operator can narrow, reissue or replace
+// one without touching the rest. Cutting them any finer — an Issuing CA per
+// ALGORITHM — was considered and refused: the eleven post-quantum keys alone
+// would then be eleven authorities, and what an operator actually wants to say
+// is "reissue what signs my tokens", not "reissue what signs my ES384".
+//
+// `scope` is which Intermediate signs it, and it is a property of the KEY
+// rather than a filing decision: a TLS certificate is served on a socket every
+// realm answers on, so a realm's Intermediate signing it would be one realm
+// vouching for every other realm's front door.
+//
+// **`assertions` IS THE OLD `issuing` TIER UNDER A NEW NAME**, and that is why
+// the compatibility shape below still reports three tiers: everything this
+// module did before this change it still does, through that use case.
+// ---------------------------------------------------------------------------
+const USE_CASES = [
+  { id: 'jose', scope: 'realm', label: 'JOSE signing',
+    cn: 'JOSE Signing CA',
+    what: 'The keys this realm signs JWTs with — the RSA key behind RS256, ' +
+          'the four ECDSA curves, both Edwards curves, and the eleven ' +
+          'post-quantum keys when they are made. What a client verifies ' +
+          'against /oauth2/jwks.' },
+  { id: 'xml', scope: 'realm', label: 'XML signing',
+    cn: 'XML Signing CA',
+    what: 'What signs an XML document: SAML 2.0 and 1.1 assertions and ' +
+          'responses, WS-Federation, WS-Trust, and the per-service-provider ' +
+          'metadata. It is a SEPARATE authority from the one above even ' +
+          'though one RSA key does both jobs today — a relying party that ' +
+          'trusts this service for SAML has not thereby said anything about ' +
+          'its OAuth tokens, and two Issuing CAs are how that is sayable.' },
+  { id: 'assertions', scope: 'realm', label: 'Application assertions',
+    cn: 'Application Assertion CA',
+    what: 'The signing key pairs issued to APPLICATIONS for RFC 7521 and RFC ' +
+          '7523 — a client assertion, or a JWT bearer authorization grant. ' +
+          'This is the Issuing CA this module had before the hierarchy grew ' +
+          'the others, under a name that says which of the five it is.' },
+  { id: 'tls', scope: 'process', label: 'TLS listeners',
+    cn: 'TLS Issuing CA',
+    what: 'The certificate served on 8443, on the mutual-TLS listener 9443, ' +
+          'on LDAPS 636 and on the main port when global.https is on. ' +
+          'PROCESS-scoped because those sockets are: one certificate answers ' +
+          'every realm, so a realm\'s Intermediate signing it would make one ' +
+          'realm vouch for every other realm\'s front door.' },
+  // **THE ONE USE CASE WITH ROOM BENEATH IT (2026-09-11).** Every other
+  // Issuing CA here signs LEAVES and nothing else, which is what `pathLen: 0`
+  // in the `issuing-ca` profile says. This one signs leaves AND, for
+  // `NewDownstreamX509CA` on the SPIRE Server API, one further CA — so it
+  // carries `pathLen: 1` and the Intermediate above it is widened to match
+  // (see `intermediatePathLen()`). Without both numbers the downstream CA
+  // encodes perfectly and every path builder refuses the chain with a message
+  // about path length that names neither certificate.
+  // **AND THE ONE USE CASE WITH A KEY ALGORITHM OF ITS OWN**, for the reason
+  // `spiffe/spiffe_ca.js`'s header gives at length and which is why the
+  // vendored encoder is here at all: EC P-256 is what SPIRE issues and what
+  // the X509-SVID specification recommends, and `node-forge` — what this
+  // service used before that module arrived — cannot sign with an EC key at
+  // all. It is a PREFERENCE and not an override: an operator who chose an
+  // algorithm for the branch, on /admin/pki or through `pki.keyAlgorithm`,
+  // gets the one they chose for every Issuing CA in it including this one.
+  // See `algorithmsForUseCase()`.
+  { id: 'spiffe', scope: 'realm', label: 'SPIFFE authority',
+    cn: 'SPIFFE Issuing CA', pathLen: 1,
+    keyAlg: 'ec-p256', signatureAlg: 'sha256-ecdsa',
+    what: 'The X.509 authority every X509-SVID minted in this realm is ' +
+          'signed by. REALM-scoped since 2026-09-11 \u2014 it was under the ' +
+          'process Intermediate, self-signed and outside this tree entirely ' +
+          'before that. The trust ANCHOR is unaffected by the move and that ' +
+          'is the point: the bundle publishes the service Root, which every ' +
+          'realm shares, so an SVID signed by any realm\'s authority ' +
+          'verifies against one anchor while its chain still says which ' +
+          'realm issued it.' }
+];
+
+const USE_CASE_IDS = USE_CASES.map(function (one) { return one.id; });
+
+function useCase(id) {
+  return USE_CASES.filter(function (one) {
+    return one.id === String(id || '');
+  })[0] || null;
+}
+
+// The use cases an Intermediate of this kind carries. `realm` for a realm's
+// own, `process` for the one beside them.
+function useCasesFor(kind) {
+  return USE_CASES.filter(function (one) { return one.scope === kind; });
+}
+
+// ---------------------------------------------------------------------------
+// HOW DEEP AN INTERMEDIATE HAS TO BE, WHICH IS COMPUTED RATHER THAN WRITTEN
+// DOWN (2026-09-11).
+//
+// `intermediate-ca`'s profile says `pathLen: 1` — one more CA below it, which
+// is the Issuing CA and nothing further. That was true of every use case until
+// `spiffe` needed room for a downstream CA, and the fix has to be made in TWO
+// places or it is made in none: widening the Issuing CA alone leaves the
+// Intermediate refusing the extra level, and widening the Intermediate alone
+// leaves the Issuing CA refusing it. Both numbers, or a chain that encodes
+// cleanly and validates nowhere.
+//
+// **IT IS DERIVED FROM THE USE CASES SO THAT THE TWO CANNOT DRIFT.** A scope's
+// Intermediate is one deeper than the deepest Issuing CA it carries, so adding
+// a `pathLen` to a use case widens the branch that carries it AND ONLY THAT
+// BRANCH: the process Intermediate holds `tls` alone and stays at 1, and a
+// realm's holds `spiffe` and becomes 2. Writing the 2 in by hand would have
+// widened every Intermediate in the service for one use case in one of them.
+// ---------------------------------------------------------------------------
+function intermediatePathLen(kind) {
+  const deepest = useCasesFor(kind).reduce(function (most, one) {
+    return Math.max(most, Number(one.pathLen) || 0);
+  }, 0);
+  return 1 + deepest;
+}
+
+// ---------------------------------------------------------------------------
+// THE ALGORITHMS ONE ISSUING CA IS BUILT WITH, which are the branch's unless
+// NOBODY CHOSE and the use case prefers something else.
+//
+// **"NOBODY CHOSE" IS TWO TESTS AND THE SECOND ONE IS AWKWARD ON PURPOSE.** A
+// build from `/admin/pki` or `/admin-api/pki/build` names its algorithms in
+// the call, so a hierarchy an operator asked to be RSA-4096 is RSA-4096 all
+// the way down — including the SPIFFE authority, which is what choosing one
+// algorithm for your certificate authority means. `pki.keyAlgorithm` is the
+// other way to say it, and it cannot be tested for presence: it has a non-empty
+// DEFAULT (`rsa-2048`, beside `pki.signatureAlgorithm`, which is `""`), so
+// `config.value()` is never falsy and a presence test would make this branch
+// unreachable — which is exactly what the first version of this function did,
+// silently, and it took an `openssl x509 -text` on a leaf to notice.
+//
+// So it is compared with `DEFAULT_KEY_ALG`, which is the same string the
+// setting defaults to. The consequence is one stated edge: an operator who
+// sets `pki.keyAlgorithm` to `rsa-2048` EXPLICITLY is indistinguishable from
+// one who left it alone, and gets an EC SPIFFE authority. Naming the algorithm
+// in the build is how to say it unambiguously, and that is the door the
+// console uses.
+//
+// What the preference is FOR is the default case: out of the box an X509-SVID
+// is signed ES256 by an EC P-256 authority, as it was before the SPIFFE
+// authority joined this hierarchy and as SPIRE does. `spiffe/spiffe_ca.js`'s
+// header argues why that particular fidelity was worth vendoring a certificate
+// encoder for.
+//
+// A preference that cannot be honoured falls back to the branch's rather than
+// failing the build: a use case asking for an algorithm this service cannot
+// generate is a defect in the table above, and a certificate authority that
+// will not build is a much worse way to report one than a log line.
+// ---------------------------------------------------------------------------
+function algorithmsForUseCase(uc, chosen, options) {
+  const configured = String(config.value('pki.keyAlgorithm') || '');
+  if (!uc.keyAlg || options.keyAlg ||
+      (configured && configured !== DEFAULT_KEY_ALG)) {
+    return chosen;
+  }
+  const preferred = algorithmsFrom({ keyAlg: uc.keyAlg,
+                                     signatureAlg: uc.signatureAlg });
+  if (!preferred.ok) {
+    log.error('pki: the ' + uc.label + ' use case prefers "' + uc.keyAlg +
+              '", which this service cannot use (' +
+              preferred.errors.join(' ') + '). Building it with the ' +
+              'branch\'s ' + chosen.keyAlg + ' instead.');
+    return chosen;
+  }
+  return preferred;
+}
+
+// The `pathLen` an Issuing CA for this use case carries. `0` — leaves and no
+// further authority — unless the use case says otherwise, which exactly one
+// does.
+function issuingPathLen(useCaseId) {
+  const uc = useCase(useCaseId);
+  return (uc && Number(uc.pathLen)) || 0;
+}
+
+// Which row an Intermediate lives in. A realm id is the row; the process
+// branch has one of its own.
+function scopeKindOf(scopeId) {
+  return String(scopeId) === PROCESS_SCOPE ? 'process' : 'realm';
+}
+
+
+// The default key algorithm and signature algorithm for a hierarchy nobody
+// chose one for. RSA-2048 with SHA-256 because it is what every JWS verifier in
+// existence can read, and because the leaf this chain is FOR signs a client
+// assertion that somebody else's OAuth library has to check.
+const DEFAULT_KEY_ALG = 'rsa-2048';
+const DEFAULT_SIG_ALG = 'sha256-rsa';
+
+// The default subject fields. Overridable per build; they are here so that a
+// hierarchy built with the button and nothing typed still reads as something
+// rather than as `CN=RootCA`.
+const DEFAULT_ORGANISATION = 'mock-sts';
+
+// ---------------------------------------------------------------------------
+// WHICH ALGORITHMS MAY BE ASKED FOR. Both lists are READ FROM THE MODULE THAT
+// PERFORMS THEM rather than written here, which is `crypto_metadata.js`'s rule
+// applied one layer down: a page offering an algorithm the encoder cannot
+// produce is a dropdown whose third entry is a 500.
+// ---------------------------------------------------------------------------
+function keyAlgorithms() {
+  log.debug('Entering keyAlgorithms().');
+  const out = keyMaterial.keyAlgIds().map(function (id) {
+    const desc = keyMaterial.keyAlg(id);
+    return { id: id, label: desc.label, kind: desc.kind };
+  });
+  log.debug('Leaving keyAlgorithms(). ' + out.length + ' algorithm(s).');
+  return out;
+}
+
+// The signature algorithms a key of this kind can produce. Handed the KEY
+// algorithm id, because that is what a form has — offering ECDSA against an RSA
+// key produces a Web Crypto error naming neither.
+function signatureAlgorithms(keyAlgId) {
+  log.debug('Entering signatureAlgorithms(). keyAlg=' + keyAlgId);
+  const desc = keyMaterial.keyAlg(keyAlgId || DEFAULT_KEY_ALG);
+  if (!desc) {
+    log.debug('Leaving signatureAlgorithms(). Unknown key algorithm.');
+    return [];
+  }
+  // It answers a list of IDS rather than descriptors — the descriptor comes
+  // from `sigAlg()` beside it — so this maps rather than reshapes. Getting
+  // that backwards produces a dropdown of `undefined`, which is what the
+  // first version of this function did.
+  const out = x509.signatureAlgorithmsFor(desc).map(function (id) {
+    const spec = x509.sigAlg(id) || {};
+    return { id: id, label: spec.label || id, weak: !!spec.weak };
+  });
+  log.debug('Leaving signatureAlgorithms(). ' + out.length + ' algorithm(s).');
+  return out;
+}
+
+// The default signature algorithm for a key algorithm, so that a caller that
+// names only the key gets a matching pair rather than a refusal.
+function defaultSignatureAlgorithmFor(keyAlgId) {
+  // The vendored module's own answer, not a first-non-weak scan: for an EC key
+  // the right digest is decided by the CURVE (P-384 wants SHA-384) and a scan
+  // over its list would hand a P-521 key SHA-256, which is legal, verifies,
+  // and is nobody's intention.
+  const desc = keyMaterial.keyAlg(keyAlgId || DEFAULT_KEY_ALG);
+  if (!desc) {
+    return DEFAULT_SIG_ALG;
+  }
+  return x509.defaultSignatureAlgorithm(desc) || DEFAULT_SIG_ALG;
+}
+
+// ---------------------------------------------------------------------------
+// THE REALM THIS CALL IS ABOUT. Every function here takes an explicit realm id
+// or falls back to the AMBIENT one, which is the shape every per-realm store in
+// this service has: the console passes what the switcher is showing, and a
+// protocol endpoint passes nothing and gets the realm the request arrived in.
+// ---------------------------------------------------------------------------
+function realmIdOf(realmId) {
+  if (realmId !== undefined && realmId !== null && realmId !== '') {
+    return String(realmId);
+  }
+  const current = realms.current();
+  return String((current && current.id) || '');
+}
+
+// ---------------------------------------------------------------------------
+// BUILD THE HIERARCHY. Asynchronous all the way down — the encoder is Web
+// Crypto and every signature in it is a promise — and it is the only
+// asynchronous thing in this module that a console action awaits.
+//
+// `opts`:
+//   keyAlg        one of keyAlgorithms(). One algorithm for all three tiers,
+//                 because a hierarchy that mixes them is a thing to be able to
+//                 build deliberately and a terrible default: the leaf's
+//                 signature algorithm is what a client library has to support,
+//                 and it is decided by the ISSUING CA's key.
+//   signatureAlg  one of signatureAlgorithms(keyAlg).
+//   organisation  the O= every tier carries.
+//   country       the C=, optional. PrintableString, which the encoder handles.
+//   commonNames   { root, intermediate, issuing } — each optional.
+//   years         { root, intermediate, issuing } — each optional; the profile's
+//                 own default is used where one is absent.
+// ---------------------------------------------------------------------------
+// The signature algorithm a tier is signed WITH: one the issuer's key can
+// actually produce. For a self-signed Root that is the subject's own key, so
+// the preference stands; under a parent it is the parent's, and a preference
+// its key cannot produce is REPLACED rather than refused — the caller asked
+// for an EC *hierarchy*, and the tier they asked for is EC whatever signed it.
+function signatureForIssuer(parent, preferred, subjectKeyAlg) {
+  const issuerKeyAlg = parent ? parent.keyAlg : subjectKeyAlg;
+  const issuerDesc = keyMaterial.keyAlg(issuerKeyAlg);
+  const wanted = x509.sigAlg(preferred);
+  if (issuerDesc && wanted && wanted.kind === issuerDesc.kind) {
+    return preferred;
+  }
+  return defaultSignatureAlgorithmFor(issuerKeyAlg);
+}
+
+// ---------------------------------------------------------------------------
+// ISSUE ONE CA CERTIFICATE. The shared half of building a Root, an
+// Intermediate or an Issuing CA: generate a pair, issue the certificate from
+// the profile, and hand back the record. `parent` is null for the Root, which
+// signs itself.
+//
+// It is a function rather than three because the three differ ONLY in the
+// profile and the parent, and the vendored PROFILES table already holds every
+// other difference — the basicConstraints, the pathLen, the key usages and the
+// default lifetime. Writing them out here would be a second table that agrees
+// with that one until somebody edits one of them.
+// ---------------------------------------------------------------------------
+// A CERTIFICATE VALIDITY INSTANT, WITH THE MILLISECONDS TAKEN OFF (2026-09-11).
+//
+// **RFC 5280 SECTION 4.1.2.5.2: A GeneralizedTime IN A CERTIFICATE MUST NOT
+// INCLUDE FRACTIONAL SECONDS.** `new Date()` carries milliseconds and the
+// encoder writes what it is handed, so a `notAfter` of 2056 came out as
+// `20560911143530.614Z` and OpenSSL refused the certificate outright:
+// `format error in certificate's notAfter`.
+//
+// **IT ONLY EVER BIT THE ROOT, WHICH IS WHY IT LOOKED LIKE SOMETHING ELSE.**
+// RFC 5280 section 4.1.2.5 makes a time before 2050 a UTCTime and 2050 or
+// later a GeneralizedTime; UTCTime has no fractional part at all, so the leaf,
+// the Issuing CA and the Intermediate — one, five and ten years out — were all
+// encoded cleanly. Only the Root's thirty-year lifetime crosses 2050.
+//
+// So the single malformed certificate was the TRUST ANCHOR. The chain
+// verified, every console page drew it correctly, `openssl x509` printed it
+// happily — and any client asked to TRUST it rejected it before it could check
+// anything. To a node client that is `unable to get local issuer certificate`;
+// on this service's own console it is **Signing in did not complete**, because
+// the OpenID Connect back channel puts exactly that certificate in its
+// truststore to dial itself.
+//
+// **IT IS FIXED HERE AND NOT IN THE ENCODER**, and that is a rule rather than
+// a preference: `common/vendored/x509.js` is a byte-identical copy of the
+// parent project's file and the root CLAUDE.md says not to edit one here. The
+// encoder writing what it is handed is defensible; handing it a time with
+// milliseconds in it is what this module was doing wrong. The parent project
+// should still drop fractional seconds on the way out — that is its bug to
+// fix, and `docs/parent-project-migration.md` is where this repository records
+// what it owes that one.
+// ---------------------------------------------------------------------------
+function certificateInstant(at) {
+  const when = (at === undefined || at === null) ? new Date() : new Date(at);
+  when.setUTCMilliseconds(0);
+  return when;
+}
+
+// ---------------------------------------------------------------------------
+async function issueCaTier(spec) {
+  log.debug('Entering issueCaTier(). profile=' + spec.profile);
+  const profile = x509.profile(spec.profile);
+  const keyAlgId = spec.keyAlg;
+  // **THE SIGNATURE IS THE PARENT'S TO MAKE, NOT THE SUBJECT'S**, and this
+  // line is the whole of that. Asking for an EC hierarchy under an RSA Root
+  // hands `sha256-ecdsa` to a key that cannot produce it, and the primitive
+  // answers `Invalid key type` — naming neither the tier, the key nor the
+  // algorithm. `common/vendored/x509.js`'s own header spends a paragraph on
+  // what getting this backwards produces; `tests/pki.js` caught it here within
+  // a minute of the hierarchy growing a shared Root, because a shared Root is
+  // the first arrangement in which the two can legitimately differ.
+  const sigAlgId = signatureForIssuer(spec.parent, spec.signatureAlg, keyAlgId);
+  const years = Number(spec.years) > 0 ? Math.floor(Number(spec.years))
+                                       : profile.years;
+  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // SECONDS AND NO FINER — see certificateInstant(). The Root's thirty years
+  // cross 2050, which makes it the one validity in this hierarchy encoded as a
+  // GeneralizedTime and therefore the one a fractional second invalidates.
+  const notBefore = certificateInstant();
+  const notAfter = certificateInstant(notBefore.getTime());
+  notAfter.setUTCFullYear(notAfter.getUTCFullYear() + years);
+  // A CA may not outlive the CA that signed it. Clamped rather than refused,
+  // for `issueSigningKeyPair()`'s reason: the ordinary cause is a twenty-year
+  // Root in its nineteenth year, and an operator who asked for ten should get
+  // one rather than an error about arithmetic.
+  if (spec.parent) {
+    const parentEnds = new Date(spec.parent.notAfter).getTime();
+    if (notAfter.getTime() > parentEnds) {
+      log.warn('pki: the ' + spec.profile + ' asked for would outlive the CA ' +
+               'that signs it, so it was shortened to that CA\'s own expiry (' +
+               spec.parent.notAfter + ').');
+      notAfter.setTime(parentEnds);
+    }
+  }
+  const subject = [{ name: 'CN', value: spec.cn },
+                   { name: 'O', value: spec.organisation }]
+    .concat(spec.country ? [{ name: 'C', value: spec.country }] : []);
+  const issued = await x509.issueCertificate({
+    subject: subject,
+    subjectPublicKey: pair.publicPem,
+    signatureAlg: sigAlgId,
+    profile: spec.profile,
+    notBefore: notBefore.toISOString(),
+    notAfter: notAfter.toISOString(),
+    issuer: spec.parent
+      ? { certificatePem: spec.parent.certificatePem,
+          privateKeyPem: spec.parent.privateKeyPem,
+          keyAlg: spec.parent.keyAlg }
+      : { privateKeyPem: pair.privatePem, keyAlg: keyAlgId },
+    extensions: Object.assign({
+      // **THE PROFILE'S `pathLen` UNLESS THE CALLER NAMES ONE**, which since
+      // 2026-09-11 one caller does: the SPIFFE Issuing CA needs room for a
+      // downstream CA and the Intermediate above it needs room for both. See
+      // `intermediatePathLen()`. `spec.pathLen` is checked against `undefined`
+      // rather than for truthiness, because the value that matters most here
+      // is 0 and `|| profile.pathLen` would silently discard it.
+      basicConstraints: { present: true, critical: true, ca: true,
+                          pathLen: spec.pathLen === undefined
+                            ? profile.pathLen : spec.pathLen },
+      keyUsage: { present: true, critical: true, usages: profile.keyUsage },
+      subjectKeyIdentifier: { present: true },
+      // Present on every tier including the Root, where it names the
+      // certificate's own key. RFC 5280 section 4.2.1.1 says it MAY be omitted
+      // on a self-signed one; several path builders are much happier when it
+      // is there, and nothing is worse for having it.
+      authorityKeyIdentifier: { present: true }
+    },
+    // **WHERE THE LIST THAT WOULD REVOKE *THIS* CA IS — ITS PARENT'S.** A
+    // self-signed Root gets none: a Root that named its own CRL would be
+    // asking a validator to consult a list the Root itself signs to find out
+    // whether the Root is trustworthy, which answers nothing.
+    spec.parent
+      ? revocationExtensionsFor(spec.parent.scope || spec.scope,
+                                spec.parent.useCase || spec.parent.tier)
+      : {})
+  });
+  log.debug('Leaving issueCaTier(). ' + issued.subject);
+  return {
+    tier: spec.tier,
+    label: spec.label,
+    useCase: spec.useCase || null,
+    scope: spec.scope || null,
+    keyAlg: keyAlgId,
+    signatureAlg: sigAlgId,
+    subject: issued.subject || spec.cn,
+    serialHex: issued.serialHex,
+    notBefore: notBefore.toISOString(),
+    notAfter: notAfter.toISOString(),
+    certificatePem: issued.pem,
+    privateKeyPem: pair.privatePem,
+    publicKeyPem: pair.publicPem,
+    thumbprint: thumbprintOf(issued.pem),
+    imported: false,
+    createdAt: Date.now()
+  };
+}
+
+// ---------------------------------------------------------------------------
+// THE ROOT, WHICH IS THE SERVICE'S AND NOT A REALM'S.
+//
+// `serviceRoot()` answers what is there; `ensureRoot()` makes one if there is
+// none. **An EXISTING Root is never replaced by ensure()** — every realm's
+// Intermediate is signed by it, so replacing it silently would break every
+// chain in the process at the moment somebody created their second realm.
+// Replacing it is `buildRoot()`, which is a deliberate act with its own button
+// and its own warning.
+// ---------------------------------------------------------------------------
+function serviceRow() {
+  return keystore.pkiFor(SERVICE_SCOPE) || null;
+}
+
+function serviceRoot() {
+  const row = serviceRow();
+  return (row && row.root) || null;
+}
+
+function hasRoot() {
+  return !!serviceRoot();
+}
+
+// ---------------------------------------------------------------------------
+// DOES A SCOPE'S INTERMEDIATE CARRY THIS SERVICE'S CURRENT ROOT'S SIGNATURE?
+//
+// **THE SIGNATURE AND NOT THE NAME.** Every Root this service builds is called
+// `<organisation> Root CA`, so two of them are indistinguishable by subject,
+// issuer, or anything else a comparison of strings could reach — which is
+// precisely how the state this detects survives being looked at. `verify()`
+// against the Root's public key is the only check that tells them apart.
+//
+// A scope with no Intermediate answers TRUE rather than false: there is
+// nothing to be stale, `certify()`'s own "no Issuing CA" refusal is the right
+// message for it, and rebuilding on the way past would turn a clear error into
+// a confusing one.
+// ---------------------------------------------------------------------------
+function scopeChainsToRoot(scopeId) {
+  log.debug('Entering scopeChainsToRoot(). scope=' + scopeId);
+  const root = serviceRoot();
+  const row = rawRowFor(String(scopeId));
+  const intermediate = row && row.intermediate;
+  if (!root || !root.certificatePem || !intermediate ||
+      !intermediate.certificatePem) {
+    log.debug('Leaving scopeChainsToRoot(). Nothing to compare.');
+    return true;
+  }
+  try {
+    const signed = new nodeCrypto.X509Certificate(intermediate.certificatePem)
+      .verify(new nodeCrypto.X509Certificate(root.certificatePem).publicKey);
+    log.debug('Leaving scopeChainsToRoot(). ' + signed);
+    return signed;
+  } catch (e) {
+    // NAMED rather than swallowed, and answered TRUE: a certificate this
+    // module cannot parse is not evidence that a rebuild is wanted, and
+    // rebuilding a hierarchy on the strength of a parse failure would throw
+    // away key material over a bad read.
+    log.warn('pki: the "' + scopeId + '" branch could not be checked against ' +
+             'the Root (' + e.message + '), so it is left alone.');
+    log.debug('Leaving scopeChainsToRoot(). It threw.');
+    return true;
+  }
+}
+
+async function buildRoot(opts) {
+  log.debug('Entering buildRoot().');
+  const options = opts || {};
+  const chosen = algorithmsFrom(options);
+  if (!chosen.ok) {
+    log.debug('Leaving buildRoot(). ' + chosen.errors.join(' '));
+    return chosen;
+  }
+  const organisation = String(options.organisation || DEFAULT_ORGANISATION);
+  const country = String(options.country || '');
+  let root;
+  try {
+    root = await issueCaTier({
+      tier: 'root', profile: 'root-ca', label: 'Root CA', scope: SERVICE_SCOPE,
+      cn: String(options.commonName || (organisation + ' Root CA')),
+      organisation: organisation, country: country,
+      keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
+      years: options.years, parent: null
+    });
+  } catch (e) {
+    log.error('pki: the Root CA could not be issued: ' + e.message +
+              '. Nothing was stored.');
+    log.debug('Leaving buildRoot(). The encoder refused.');
+    return { ok: false,
+             errors: ['The Root CA could not be issued: ' + e.message +
+                      '. Nothing was stored.'] };
+  }
+  const row = serviceRow() || {};
+  // **A ROOT CANNOT USEFULLY REVOKE ITSELF AND THIS DOES NOT PRETEND TO.**
+  // The old Root is self-signed, so the only list that could carry it is the
+  // one it signs — and a validator that does not already trust it will not
+  // read that list, while one that does has no reason to. What replaces a Root
+  // is an operator removing it from their truststore, which is said on the
+  // page rather than faked here with an entry nobody consults.
+  keystore.attachPki(SERVICE_SCOPE, Object.assign({}, row, {
+    version: 2, scope: SERVICE_SCOPE, root: root,
+    organisation: organisation, country: country,
+    keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
+    createdAt: Date.now()
+  }));
+  log.info('pki: THE SERVICE HAS A ROOT CA — ' + root.subject + ', ' +
+           chosen.keyAlg + ' signed ' + chosen.signatureAlg + '. Every ' +
+           'realm\'s Intermediate is signed by it, so it is the one anchor ' +
+           'an operator installs. ' +
+           (keystore.persists()
+             ? 'It is written to the persistence store, sealed.'
+             : 'It is held in memory only — this service is in development ' +
+               'mode, where key material is generated per start.'));
+  log.debug('Leaving buildRoot().');
+  return { ok: true, root: describeTier(root) };
+}
+
+async function ensureRoot(opts) {
+  const held = serviceRoot();
+  if (held) {
+    return { ok: true, root: describeTier(held), existing: true };
+  }
+  return buildRoot(opts);
+}
+
+// The key and signature algorithm a build is to use, checked as a PAIR. It is
+// one function because the three checks belong together — an unknown key
+// algorithm, an unknown signature algorithm, and a pair whose families
+// disagree — and because every builder below makes all three.
+function algorithmsFrom(options) {
+  const keyAlgId = String(options.keyAlg || config.value('pki.keyAlgorithm') ||
+                          DEFAULT_KEY_ALG);
+  const keyDesc = keyMaterial.keyAlg(keyAlgId);
+  if (!keyDesc) {
+    return { ok: false,
+             errors: ['"' + keyAlgId + '" is not a key algorithm this service ' +
+                      'can generate. It knows ' +
+                      keyMaterial.keyAlgIds().join(', ') + '.'] };
+  }
+  const sigAlgId = String(options.signatureAlg ||
+                          defaultSignatureAlgorithmFor(keyAlgId));
+  const sig = x509.sigAlg(sigAlgId);
+  if (!sig) {
+    return { ok: false,
+             errors: ['"' + sigAlgId + '" is not a signature algorithm this ' +
+                      'service can produce.'] };
+  }
+  if (sig.kind !== keyDesc.kind) {
+    // Refused here rather than left to Web Crypto, which reports it as a key
+    // usage error naming neither the key nor the algorithm.
+    return { ok: false,
+             errors: ['A ' + keyDesc.label + ' key cannot produce a ' +
+                      sig.label + ' signature. The algorithms this key can ' +
+                      'sign with are ' +
+                      signatureAlgorithms(keyAlgId).map(function (one) {
+                        return one.id;
+                      }).join(', ') + '.'] };
+  }
+  return { ok: true, keyAlg: keyAlgId, signatureAlg: sigAlgId,
+           keyDesc: keyDesc, sig: sig };
+}
+
+// ---------------------------------------------------------------------------
+// BUILD ONE SCOPE'S BRANCH: an Intermediate signed by the service Root, and an
+// Issuing CA under it for each of that scope's use cases.
+//
+// **ALL OF IT OR NONE OF IT, which is the rule the three tiers had and is now
+// about more tiers.** A branch with an Intermediate and two of its three
+// Issuing CAs is exactly the state in which one use case silently has no
+// authority and its keys come out uncertified — so a failure anywhere stores
+// nothing.
+//
+// An IMPORTED tier is never replaced by a rebuild unless the caller says so:
+// somebody who pasted a corporate Intermediate in did not press this button to
+// have it thrown away.
+// ---------------------------------------------------------------------------
+async function buildScope(scopeId, opts) {
+  log.debug('Entering buildScope(). scope=' + scopeId);
+  const id = String(scopeId);
+  const kind = scopeKindOf(id);
+  const options = opts || {};
+  const rooted = await ensureRoot(options);
+  if (!rooted.ok) {
+    log.debug('Leaving buildScope(). No Root.');
+    return rooted;
+  }
+  const root = serviceRoot();
+  const chosen = algorithmsFrom(options);
+  if (!chosen.ok) {
+    log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
+    return chosen;
+  }
+  const organisation = String(options.organisation ||
+                              (serviceRow() || {}).organisation ||
+                              DEFAULT_ORGANISATION);
+  const country = String(options.country === undefined
+                           ? ((serviceRow() || {}).country || '')
+                           : options.country);
+  const existing = rawRowFor(id) || {};
+  const label = kind === 'process' ? 'the process'
+                                   : ('the "' + (id || 'default') + '" realm');
+  const named = kind === 'process' ? 'Process' : (id || 'default');
+
+  // THE INTERMEDIATE. Kept where it was imported, unless this call says
+  // otherwise — see the header.
+  let intermediate = existing.intermediate;
+  const keepImported = intermediate && intermediate.imported &&
+                       !options.replaceImported;
+  if (!intermediate || !keepImported) {
+    try {
+      intermediate = await issueCaTier({
+        tier: 'intermediate', profile: 'intermediate-ca',
+        label: 'Intermediate CA', scope: id,
+        // **NOT `String(a && b) || c`** — `String(undefined)` is the string
+        // "undefined", which is truthy, so the fallback was unreachable and
+        // every Intermediate this built was called `CN=undefined`. It shipped
+        // in the first run of this function and was visible in the
+        // console's own tree.
+        cn: (options.commonNames && options.commonNames.intermediate) ||
+            (organisation + ' Intermediate CA (' + named + ')'),
+        organisation: organisation, country: country,
+        keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
+        // One deeper than the deepest Issuing CA this scope carries — see
+        // `intermediatePathLen()`. A realm's is 2 because it carries `spiffe`;
+        // the process branch's is 1, exactly as the profile says.
+        pathLen: intermediatePathLen(kind),
+        years: options.years && options.years.intermediate, parent: root
+      });
+    } catch (e) {
+      log.error('pki: ' + label + '\'s Intermediate CA could not be issued: ' +
+                e.message + '. Nothing was stored.');
+      log.debug('Leaving buildScope(). The Intermediate failed.');
+      return { ok: false,
+               errors: ['The Intermediate CA could not be issued: ' +
+                        e.message + '. Nothing was stored.'] };
+    }
+  }
+
+  // THE ISSUING CAs, one per use case this scope carries.
+  const issuing = {};
+  const wanted = useCasesFor(kind);
+  for (let i = 0; i < wanted.length; i++) {
+    const uc = wanted[i];
+    const held = (existing.issuing || {})[uc.id];
+    if (held && held.imported && !options.replaceImported) {
+      issuing[uc.id] = held;
+      continue;
+    }
+    const forThis = algorithmsForUseCase(uc, chosen, options);
+    try {
+      issuing[uc.id] = await issueCaTier({
+        tier: 'issuing', profile: 'issuing-ca', label: uc.label + ' CA',
+        useCase: uc.id, scope: id,
+        cn: organisation + ' ' + uc.cn + ' (' + named + ')',
+        organisation: organisation, country: country,
+        keyAlg: forThis.keyAlg, signatureAlg: forThis.signatureAlg,
+        pathLen: issuingPathLen(uc.id),
+        years: options.years && options.years.issuing,
+        parent: intermediate
+      });
+    } catch (e) {
+      log.error('pki: ' + label + '\'s ' + uc.label + ' Issuing CA could not ' +
+                'be issued: ' + e.message + '. Nothing was stored.');
+      log.debug('Leaving buildScope(). The ' + uc.id + ' Issuing CA failed.');
+      return { ok: false,
+               errors: ['The ' + uc.label + ' Issuing CA could not be ' +
+                        'issued: ' + e.message + '. Nothing was stored.'] };
+    }
+  }
+
+  // **THE BRANCH BEING REPLACED IS SUPERSEDED.** Everything under the old
+  // Intermediate chains to an authority that is about to stop existing, so the
+  // Intermediate goes on the ROOT's list and each old Issuing CA on the old
+  // Intermediate's. Done here, before the row is written, because these are
+  // the certificates that are about to be overwritten.
+  if (existing.intermediate && intermediate !== existing.intermediate) {
+    Object.keys(existing.issuing || {}).forEach(function (useCaseId) {
+      supersede(id, 'intermediate', existing.issuing[useCaseId],
+                'its Intermediate CA was rebuilt');
+    });
+    supersede(pki_rootScopeOf(), 'root', existing.intermediate,
+              'the "' + (id || 'default') + '" branch was rebuilt');
+  }
+  const row = Object.assign({}, existing, {
+    version: 2,
+    scope: id,
+    realm: kind === 'realm' ? id : null,
+    createdAt: existing.createdAt || Date.now(),
+    keyAlg: chosen.keyAlg,
+    signatureAlg: chosen.signatureAlg,
+    organisation: organisation,
+    country: country,
+    intermediate: intermediate,
+    issuing: issuing,
+    // Everything the workbench authored is left alone — those are somebody's
+    // key pairs and a button labelled "build the certificate authority" has no
+    // business discarding them.
+    objects: existing.objects || [],
+    // **THE COUNT RESETS, because the Issuing CA it counts for is new.** It is
+    // how many leaves THIS hierarchy has signed, and a rebuild replaces the
+    // authority that signed them — everything it issued chains to nothing from
+    // this moment, which is what the page says, so carrying the number over
+    // would be counting certificates that no longer have an issuer.
+    issuedCount: 0
+  });
+  // THE COMPATIBILITY SHAPE IS NOT STORED. `tiers` is composed on the way out
+  // by `rawChainFor()` — the Root lives in the service row and one copy of a
+  // private key is the whole of `pki.js`'s placement argument.
+  delete row.tiers;
+  saveRow(id, row);
+  log.info('pki: ' + label + ' has a certificate authority branch: an ' +
+           'Intermediate CA signed by the service Root, and ' + wanted.length +
+           ' Issuing CA(s) — ' +
+           wanted.map(function (one) { return one.label; }).join(', ') + '. ' +
+           chosen.keyAlg + ' keys signed ' + chosen.signatureAlg + '.');
+  log.debug('Leaving buildScope(). ' + wanted.length + ' Issuing CA(s).');
+  return { ok: true, chain: describeChain(rawChainFor(id)),
+           scope: describeScope(id) };
+}
+
+// The door the console and `/admin-api` have always called, and the realm's
+// branch is what it builds. **`buildChain()` KEEPS ITS NAME AND ITS SHAPE**:
+// every caller of it means "give this realm a certificate authority", which is
+// still exactly what happens — the Root it hangs from is simply the service's
+// now rather than one of this realm's own.
+async function buildChain(realmId, opts) {
+  return buildScope(realmIdOf(realmId), opts);
+}
+
+// ---------------------------------------------------------------------------
+// THE HIERARCHY THIS REALM HOLDS, WHOLE — private keys included. Internal:
+// nothing outside this module should call it, and `describe()` is what the
+// console and the management API get.
+//
+// **`rawRowFor()` AND `rawChainFor()` ARE TWO QUESTIONS AND THE SPLIT ARRIVED
+// WITH THE OBJECT STORE (2026-09-10).** The `pki:<realm>` row holds the three
+// tiers AND the workbench's objects, and the two can exist independently: a
+// self-signed certificate authored on `/admin/pki` before anybody pressed
+// Build is a row with objects and no tiers. So the row accessor answers
+// whatever is there and the CHAIN accessor keeps the check it has always had —
+// three tiers or nothing — because "is there a hierarchy" is the question nine
+// callers here ask and a half-built one must go on answering no.
+// ---------------------------------------------------------------------------
+function rawRowFor(realmId) {
+  const id = realmIdOf(realmId);
+  return keystore.pkiFor(id) || null;
+}
+
+// **THE THREE-TIER VIEW IS COMPOSED AND NOT STORED, SINCE 2026-09-11.** The
+// Root lives in the service row and one copy of a private key is the whole of
+// this module's placement argument, so a realm's row holds its Intermediate
+// and its Issuing CAs and this puts the Root back on top of them on the way
+// out. Every caller that has ever asked for `tiers` — `describeChain()`,
+// `chainPemFor()`, `trustAnchorsFor()`, `issueSigningKeyPair()`, the console
+// and `/admin-api` — therefore sees exactly the shape it saw before the
+// hierarchy grew: Root, Intermediate, Issuing.
+//
+// **WHICH ISSUING CA IT SHOWS AS THE THIRD TIER IS `assertions`**, because that
+// use case IS the old `issuing` tier under a name: everything those callers did
+// before this change they still do, through it. The other Issuing CAs are
+// beside it in `issuing` and on `describeScope()`.
+function rawChainFor(realmId) {
+  const held = rawRowFor(realmId);
+  const root = serviceRoot();
+  if (!root || !held || !held.intermediate) {
+    return null;
+  }
+  const primary = (held.issuing || {})[primaryUseCaseFor(realmIdOf(realmId))];
+  if (!primary) {
+    return null;
+  }
+  return Object.assign({}, held, { tiers: [root, held.intermediate, primary] });
+}
+
+// The Issuing CA a scope's three-tier view ends at. A realm's is the
+// application-assertion one, for the reason above; the process branch has no
+// `assertions` use case at all, so it shows its TLS one — the branch still has
+// a chain and a reader asking for it should get the one that certifies the
+// thing that surface is mostly about.
+function primaryUseCaseFor(scopeId) {
+  return scopeKindOf(scopeId) === 'process' ? 'tls' : 'assertions';
+}
+
+function hasChain(realmId) {
+  return !!rawChainFor(realmId);
+}
+
+// Write the row back, or REMOVE it when there is nothing left in it. An empty
+// row is not the same as no row for a store that persists: a `pki:` row with
+// neither tiers nor objects would be read back at the next start, counted in
+// the "certificate authorities recovered" line and describe as nothing, which
+// is a service reporting a hierarchy it does not have.
+function saveRow(realmId, row) {
+  log.debug('Entering saveRow().');
+  const id = realmIdOf(realmId);
+  const tiers = (row && row.tiers) || [];
+  const objects = (row && row.objects) || [];
+  // **AND THE BRANCH, SINCE 2026-09-11.** A scope's row holds an Intermediate
+  // and its Issuing CAs where it used to hold three tiers, and a row counted as
+  // empty because it has no `tiers` member would be a branch deleted the next
+  // time anything wrote to it.
+  const branch = (row && row.intermediate) ? 1 : 0;
+  // **AND THE ROOT, AND THE REVOCATION LISTS (2026-09-11), AND THIS OMISSION
+  // DESTROYED THE SERVICE'S ROOT CA.**
+  //
+  // The emptiness test above was written when every row held `tiers`. Two
+  // kinds of row have arrived since that hold NEITHER `tiers`, `objects` nor
+  // an `intermediate`:
+  //
+  //   * **the SERVICE row**, which holds the Root and nothing else — it is the
+  //     whole point of that row that the branches are elsewhere;
+  //   * **a row that holds only REVOCATION ENTRIES**, which is what an
+  //     authority's list is when its scope carries nothing else.
+  //
+  // So `saveRow(SERVICE_SCOPE, row)` counted the Root as nothing and called
+  // `attachPki(id, null)`, which REMOVES the row. `pki_revocation.revoke()`
+  // saves through here, and a rotation supersedes the certificate it replaced
+  // at its issuer — so `buildChain()` on any realm revoked the old
+  // Intermediate at the ROOT's authority and deleted the Root in the same
+  // act. Every chain in the process then composed to nothing.
+  //
+  // **NOTHING THREW AND THE BUILD REPORTED SUCCESS.** `buildChain()` answered
+  // `{ ok: true }`, the branch it had just built was intact, and the failure
+  // appeared one call later as `trustAnchorsFor()` returning an empty array —
+  // an anchor test with nothing to test. `tests/pki.js`'s *and KEEPS the
+  // Root* is what caught it, which is the assertion that exists because the
+  // Root moving to service scope was itself a reversal.
+  //
+  // The test is *is there anything in this row at all*, spelt out rather than
+  // narrowed to the two new cases, because that is the question and the last
+  // three answers to it were each right when they were written.
+  const rooted = (row && row.root) ? 1 : 0;
+  const lists = (row && row.revoked &&
+                 Object.keys(row.revoked).some(function (caId) {
+                   return (row.revoked[caId] || []).length;
+                 })) ? 1 : 0;
+  if (!tiers.length && !objects.length && !branch && !rooted && !lists) {
+    keystore.attachPki(id, null);
+    log.debug('Leaving saveRow(). Nothing left; the row was removed.');
+    return;
+  }
+  keystore.attachPki(id, row);
+  log.debug('Leaving saveRow(). ' + tiers.length + ' tier(s), ' +
+            objects.length + ' object(s).');
+}
+
+// The public view. Every private key is dropped HERE and not at each caller,
+// which is the one rule that keeps a PEM out of `/admin-api` and out of the
+// audit log: a caller that forgot would be handing out the Root's key.
+function describeChain(chain) {
+  log.debug('Entering describeChain().');
+  if (!chain) {
+    log.debug('Leaving describeChain(). Nothing to describe.');
+    return null;
+  }
+  log.debug('Leaving describeChain(). ' + (chain.tiers || []).length +
+            ' tier(s).');
+  return {
+    realm: chain.realm,
+    createdAt: chain.createdAt,
+    keyAlg: chain.keyAlg,
+    signatureAlg: chain.signatureAlg,
+    organisation: chain.organisation,
+    country: chain.country,
+    issuedCount: chain.issuedCount || 0,
+    persisted: keystore.persists(),
+    tiers: (chain.tiers || []).map(function (one, index) {
+      const tier = TIERS[index] || {};
+      return {
+        tier: one.tier,
+        label: one.label,
+        what: tier.what || '',
+        subject: one.subject,
+        serialHex: one.serialHex,
+        notBefore: one.notBefore,
+        notAfter: one.notAfter,
+        keyAlg: one.keyAlg,
+        signatureAlg: one.signatureAlg,
+        thumbprint: one.thumbprint,
+        // The certificate is PUBLIC and is the thing a relying party needs, so
+        // it goes out whole. The private key is not here at all.
+        certificatePem: one.certificatePem,
+        expired: new Date(one.notAfter).getTime() < Date.now()
+      };
+    })
+  };
+}
+
+function describe(realmId) {
+  log.debug('Entering describe().');
+  const out = describeChain(rawChainFor(realmId));
+  log.debug('Leaving describe(). ' + (out ? 'A hierarchy.' : 'None.'));
+  return out;
+}
+
+// ONE TIER, PUBLIC. The same dropping rule `describeChain()` follows and for
+// its reason: every private key goes on the way out HERE, so a caller cannot
+// leak one by forgetting.
+function describeTier(one) {
+  if (!one) {
+    return null;
+  }
+  const uc = one.useCase ? useCase(one.useCase) : null;
+  return {
+    tier: one.tier,
+    useCase: one.useCase || null,
+    label: one.label,
+    what: uc ? uc.what
+             : ((TIERS.filter(function (t) { return t.id === one.tier; })[0] ||
+                 {}).what || ''),
+    scope: one.scope || null,
+    subject: one.subject,
+    serialHex: one.serialHex,
+    notBefore: one.notBefore,
+    notAfter: one.notAfter,
+    keyAlg: one.keyAlg,
+    signatureAlg: one.signatureAlg,
+    thumbprint: one.thumbprint,
+    imported: !!one.imported,
+    certificatePem: one.certificatePem,
+    expired: new Date(one.notAfter).getTime() < Date.now()
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ONE SCOPE'S WHOLE BRANCH — the Intermediate and every Issuing CA under it,
+// with the certificates each one has issued counted. This is what the console
+// draws a tree from and what `GET /admin-api/pki` publishes beside the
+// three-tier view.
+// ---------------------------------------------------------------------------
+function describeScope(scopeId) {
+  log.debug('Entering describeScope(). scope=' + scopeId);
+  const id = String(scopeId);
+  const kind = scopeKindOf(id);
+  const row = rawRowFor(id);
+  const out = {
+    scope: id,
+    kind: kind,
+    label: kind === 'process' ? 'Process' : (id || 'default'),
+    built: !!(row && row.intermediate),
+    keyAlg: (row && row.keyAlg) || '',
+    signatureAlg: (row && row.signatureAlg) || '',
+    organisation: (row && row.organisation) || '',
+    country: (row && row.country) || '',
+    intermediate: describeTier(row && row.intermediate),
+    issuing: useCasesFor(kind).map(function (uc) {
+      const held = (row && row.issuing) ? row.issuing[uc.id] : null;
+      return {
+        id: uc.id,
+        label: uc.label,
+        what: uc.what,
+        built: !!held,
+        ca: describeTier(held),
+        // What this Issuing CA has actually certified, which is the half a
+        // tree of authorities cannot show on its own: an Issuing CA with no
+        // leaves under it is either brand new or the one nothing is wired to.
+        certified: certificatesFor(id, uc.id).map(describeCertificate)
+      };
+    })
+  };
+  log.debug('Leaving describeScope(). ' + out.issuing.length + ' Issuing CA(s).');
+  return out;
+}
+
+// THE WHOLE TREE: the Root, the process branch, and every realm's. It is one
+// function because the console's picture and the management API's reply are
+// one question asked twice, and two walks of this store would eventually
+// disagree about what a branch is.
+function describeTree(realmIds) {
+  log.debug('Entering describeTree().');
+  const root = serviceRoot();
+  const scopes = [PROCESS_SCOPE].concat(
+    (realmIds || []).map(function (one) { return String(one); }));
+  const out = {
+    root: describeTier(root),
+    rootBuilt: !!root,
+    persisted: keystore.persists(),
+    organisation: (serviceRow() || {}).organisation || '',
+    useCases: USE_CASES.map(function (one) {
+      return { id: one.id, label: one.label, scope: one.scope,
+               what: one.what };
+    }),
+    scopes: scopes.map(describeScope)
+  };
+  log.debug('Leaving describeTree(). ' + out.scopes.length + ' scope(s).');
+  return out;
+}
+
+// The chain a leaf issued here travels with, leaf-first and WITHOUT the root —
+// which is what RFC 5246 section 7.4.2 asks of a TLS certificate_list and what
+// every JWS `x5c` header does. The root is a trust anchor: sending it is
+// harmless and relying on it having been sent is the mistake.
+function chainPemFor(realmId) {
+  const chain = rawChainFor(realmId);
+  if (!chain) {
+    return [];
+  }
+  return chain.tiers.slice().reverse()
+    .filter(function (one) { return one.tier !== 'root'; })
+    .map(function (one) { return one.certificatePem; });
+}
+
+// The trust anchors — the Root, and nothing else. What `verifyLeaf()` builds a
+// path to, and what an operator hands to a relying party out of band.
+function trustAnchorsFor(realmId) {
+  const chain = rawChainFor(realmId);
+  if (!chain) {
+    return [];
+  }
+  return chain.tiers.filter(function (one) { return one.tier === 'root'; })
+    .map(function (one) { return one.certificatePem; });
+}
+
+// ---------------------------------------------------------------------------
+// ISSUE A SIGNING KEY PAIR FOR ONE APPLICATION.
+//
+// The leaf is a `digital-signature` profile certificate — `digitalSignature`
+// and `nonRepudiation`, no extended key usage — because what it signs is a JWT,
+// not a TLS handshake. Giving it `clientAuth` would make it usable for RFC 8705
+// as well, which is a DIFFERENT credential with a different registration
+// attribute, and one certificate quietly doing both is how a deployment ends up
+// unable to revoke either.
+//
+// **THE PRIVATE KEY IS RETURNED AND NOT KEPT.** The caller writes it onto the
+// application's entry; this module forgets it on the way out. See the header.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WHAT A LEAF IS FOR, AND WHY IT IS A FIELD RATHER THAN A CONVENTION.
+//
+// An application may hold TWO signing key pairs issued from this hierarchy —
+// one for RFC 7523 (a JWT assertion) and one for RFC 7522 (a SAML 2.0
+// assertion) — and they must be genuinely separate: `applications.js` keeps
+// them in two attribute sets and no verifier reads the other's.
+//
+// **THE PURPOSE IS PUT IN THE CERTIFICATE ITSELF, as a second URI
+// subjectAltName**, so that a certificate read out of context says which
+// profile it was issued for. That is worth a line of encoder work because the
+// alternative — telling them apart by which directory attribute they were
+// stored in — is an answer nobody holding a PEM file can get to.
+//
+// `jwt` is the DEFAULT and its certificate is byte-for-byte what this function
+// produced before purposes existed: one SAN, the application URI. That is
+// deliberate rather than tidy — every certificate issued before 2026-09-11 is
+// a `jwt` one, and a default that changed their shape would make this
+// function's output depend on when it was called.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WHO A LEAF IS ISSUED TO, AND WHY THAT IS A FIELD AS WELL (2026-09-11).
+//
+// This function issued to APPLICATIONS and to nothing else until RFC 7523
+// section 2.1 grew a second kind of issuer. A PERSON may hold a signing key
+// pair now — `common/person_assertions.js` is the register — and sign an
+// assertion saying *this is me, issue a token for me*, which is the shape
+// section 2.1 describes when the `sub` is a resource owner rather than a
+// client.
+//
+// **IT IS A FIELD RATHER THAN A SECOND FUNCTION** because nothing else about
+// the issue differs: the same Issuing CA, the same profile, the same
+// `digital-signature` certificate, the same JWKS with the chain in `x5c`. Two
+// functions would be two answers to *how does this service issue a signing key
+// pair*, and the second would be the one that stopped getting the next fix.
+//
+// **WHAT IT DECIDES IS TWO STRINGS, AND BOTH ARE READ BY SOMETHING.** The URN
+// in the certificate's URI subjectAltName — which `assertion_grant.js` reads
+// off a presented `x5c` to decide whether a certificate this service issued
+// authorizes an assertion ABOUT ANYBODY or only about the person named in it —
+// and the `kid` prefix, which is a display convention and is what an operator
+// looking at a JWKS sees first.
+//
+// `application` is the DEFAULT and both of its strings are what this function
+// produced before this field existed, so every certificate and every kid
+// issued before 2026-09-11 reads the same. That is the same decision the
+// PURPOSES table below records about `jwt`.
+// ---------------------------------------------------------------------------
+const SUBJECT_KINDS = [
+  { id: 'application', label: 'an application',
+    urnPrefix: 'urn:sts-mock:application:', kidPrefix: 'app-',
+    what: 'A registered OAuth client or relying party. Its key pair is ' +
+          'written onto its own entry in ou=applications.' },
+  { id: 'person', label: 'a person',
+    urnPrefix: 'urn:sts-mock:person:', kidPrefix: 'person-',
+    what: 'Somebody in ou=users. Their key pair signs an RFC 7523 section ' +
+          '2.1 assertion ABOUT THEMSELVES and about nobody else — see ' +
+          'common/person_assertions.js, which is where the refusal is ' +
+          'argued.' }
+];
+
+const SUBJECT_KIND_IDS = SUBJECT_KINDS.map(function (one) { return one.id; });
+
+function subjectKindFor(id) {
+  const wanted = String(id || 'application');
+  return SUBJECT_KINDS.filter(function (one) {
+    return one.id === wanted;
+  })[0] || null;
+}
+
+const PURPOSES = [
+  { id: 'jwt', label: 'RFC 7523 — a JWT assertion',
+    profileUri: '',
+    what: 'A JWS signing key. Its public half is written onto the application ' +
+          'as a JWKS (oauthAssertionJwks) carrying the certificate chain in ' +
+          'x5c, which is how RFC 7523 registers a key.' },
+  { id: 'saml', label: 'RFC 7522 — a SAML 2.0 assertion',
+    profileUri: 'urn:ietf:params:oauth:grant-type:saml2-bearer',
+    what: 'An XML Signature key. Its certificate is written onto the ' +
+          'application as a PEM (oauthSamlAssertionCertificate), because SAML ' +
+          'has no JWKS and what a party registers for that profile IS a ' +
+          'certificate.' }
+];
+
+const PURPOSE_IDS = PURPOSES.map(function (one) { return one.id; });
+
+function purposeFor(id) {
+  const wanted = String(id || 'jwt');
+  return PURPOSES.filter(function (one) { return one.id === wanted; })[0] || null;
+}
+
+async function issueSigningKeyPair(realmId, opts) {
+  log.debug('Entering issueSigningKeyPair().');
+  const id = realmIdOf(realmId);
+  const options = opts || {};
+  const chain = rawChainFor(id);
+  if (!chain) {
+    log.debug('Leaving issueSigningKeyPair(). No hierarchy.');
+    return { ok: false,
+             errors: ['The "' + (id || 'default') + '" realm has no ' +
+                      'certificate authority yet. Build one on /admin/pki — ' +
+                      'or POST /admin-api/pki/build — and then issue from it. ' +
+                      'A key pair signed by nothing is a key pair an operator ' +
+                      'has to move by hand, which is what this exists to ' +
+                      'avoid.'] };
+  }
+  const identifier = String(options.identifier || '');
+  if (!identifier) {
+    log.debug('Leaving issueSigningKeyPair(). No identifier.');
+    return { ok: false,
+             errors: ['A certificate is issued TO something. Name the ' +
+                      'application it is for.'] };
+  }
+  // WHICH PROFILE THIS LEAF IS FOR. Refused rather than defaulted when it is
+  // named and unknown: a caller that asked for a purpose this service does not
+  // have wants a certificate for something, and silently handing back a JWT
+  // one would put a key pair on the wrong attribute set with nothing saying so.
+  const purpose = purposeFor(options.purpose);
+  if (!purpose) {
+    log.debug('Leaving issueSigningKeyPair(). Unknown purpose.');
+    return { ok: false,
+             errors: ['"' + options.purpose + '" is not a purpose this ' +
+                      'service issues a signing key pair for. It issues ' +
+                      PURPOSE_IDS.join(' and ') + '.'] };
+  }
+  // WHO THIS LEAF IS FOR. Refused rather than defaulted when it is named and
+  // unknown, for the reason the purpose above is: a caller that asked for a
+  // subject kind this service does not have wants a certificate that says
+  // something, and handing back an `application` one would put the wrong URN
+  // in the subjectAltName with nothing saying so.
+  const subjectKind = subjectKindFor(options.subjectKind);
+  if (!subjectKind) {
+    log.debug('Leaving issueSigningKeyPair(). Unknown subject kind.');
+    return { ok: false,
+             errors: ['"' + options.subjectKind + '" is not a kind of subject ' +
+                      'this service issues a signing key pair to. It issues ' +
+                      'to ' + SUBJECT_KIND_IDS.join(' and ') + '.'] };
+  }
+  const issuing = chain.tiers[chain.tiers.length - 1];
+  // The leaf follows the ISSUING CA's key algorithm by default, because a chain
+  // whose leaf and issuer are the same family is the one a client library is
+  // least likely to surprise anybody with. A caller may name another.
+  const keyAlgId = String(options.keyAlg || chain.keyAlg);
+  const keyDesc = keyMaterial.keyAlg(keyAlgId);
+  if (!keyDesc) {
+    return { ok: false,
+             errors: ['"' + keyAlgId + '" is not a key algorithm this service ' +
+                      'can generate.'] };
+  }
+  // The SIGNATURE on the leaf is made by the ISSUING CA's key, so it is the
+  // issuer's algorithm that constrains it and not the subject's. Getting this
+  // the wrong way round produces a certificate whose declared algorithm and
+  // actual signature disagree, which `openssl verify` reports as a bad
+  // signature naming neither — the vendored module's header says so at length.
+  const sigAlgId = String(options.signatureAlg || chain.signatureAlg);
+  const sig = x509.sigAlg(sigAlgId);
+  const issuerDesc = keyMaterial.keyAlg(issuing.keyAlg);
+  if (!sig || !issuerDesc || sig.kind !== issuerDesc.kind) {
+    return { ok: false,
+             errors: ['The Issuing CA holds a ' + (issuerDesc || {}).label +
+                      ' key, which cannot produce a "' + sigAlgId +
+                      '" signature. It can produce ' +
+                      signatureAlgorithms(issuing.keyAlg).map(function (one) {
+                        return one.id;
+                      }).join(', ') + '.'] };
+  }
+
+  const days = Number(options.days) > 0 ? Math.floor(Number(options.days)) : 365;
+  const commonName = String(options.commonName || identifier);
+  // Seconds and no finer, like the CA tiers above. A leaf is years rather than
+  // decades out, so it is a UTCTime and carries no fractional part anyway — it
+  // goes through the same helper so that there is ONE answer to "what does a
+  // validity in this module look like" rather than one per lifetime.
+  const notBefore = certificateInstant();
+  const notAfter = certificateInstant(notBefore.getTime() + days * 86400000);
+  // A leaf may not outlive the CA that signed it. Clamped rather than refused:
+  // the ordinary cause is a five-year Issuing CA in its fifth year, and an
+  // operator who asked for a year should get eleven months rather than an error
+  // about arithmetic.
+  const issuerNotAfter = new Date(issuing.notAfter).getTime();
+  if (notAfter.getTime() > issuerNotAfter) {
+    log.warn('pki: the certificate asked for "' + identifier + '" would ' +
+             'outlive the Issuing CA that signs it, so it was shortened to ' +
+             'the CA\'s own expiry (' + issuing.notAfter + ').');
+    notAfter.setTime(issuerNotAfter);
+  }
+
+  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  const subject = [{ name: 'CN', value: commonName },
+                   { name: 'O', value: chain.organisation }]
+    .concat(chain.country ? [{ name: 'C', value: chain.country }] : []);
+  let issued;
+  try {
+    issued = await x509.issueCertificate({
+      subject: subject,
+      subjectPublicKey: pair.publicPem,
+      signatureAlg: sigAlgId,
+      profile: 'digital-signature',
+      notBefore: notBefore.toISOString(),
+      notAfter: notAfter.toISOString(),
+      issuer: { certificatePem: issuing.certificatePem,
+                privateKeyPem: issuing.privateKeyPem,
+                keyAlg: issuing.keyAlg },
+      extensions: {
+        basicConstraints: { present: true, critical: true, ca: false },
+        keyUsage: { present: true, critical: true,
+                    usages: ['digitalSignature', 'nonRepudiation'] },
+        subjectKeyIdentifier: { present: true },
+        authorityKeyIdentifier: { present: true },
+        // The subject's own identifier as a URI subjectAltName, so that a
+        // certificate read out of context says WHO it is for. The CN says it
+        // too; a CN is a display name and a SAN is the machine-readable one,
+        // and every path validator written since RFC 2818 reads the SAN.
+        // A SECOND URI NAME WHERE THE PURPOSE HAS ONE — see the PURPOSES
+        // table. `jwt` carries none, so a certificate issued for it is
+        // byte-identical to what this function produced before purposes
+        // existed.
+        //
+        // **AND THE URN SAYS WHICH KIND OF SUBJECT IT IS** — see SUBJECT_KINDS
+        // above. `application` is the default and its URN is unchanged, so
+        // every certificate issued before 2026-09-11 still reads the same; a
+        // PERSON's says `person`, and `assertion_grant.js` reads exactly that
+        // to decide what an assertion signed with this key may say.
+        subjectAltName: { present: true, critical: false,
+                          names: [{ kind: 'uri',
+                                    value: subjectKind.urnPrefix + identifier }]
+                            .concat(purpose.profileUri
+                              ? [{ kind: 'uri', value: purpose.profileUri }]
+                              : []) }
+      }
+    });
+  } catch (e) {
+    log.error('pki: a signing certificate for "' + identifier + '" could not ' +
+              'be issued: ' + e.message);
+    log.debug('Leaving issueSigningKeyPair(). The encoder refused.');
+    return { ok: false,
+             errors: ['The certificate could not be issued: ' + e.message] };
+  }
+
+  // The public half as a JWK, with a `kid` derived FROM THE KEY MATERIAL — the
+  // same rule every kid in this service follows, and for the same reason: two
+  // keys under one name is a verifier reporting a bad signature about a key it
+  // fetched from the wrong place.
+  const publicJwk = publicJwkOf(pair.publicPem);
+  const jwsAlg = jwsAlgFor(keyDesc, sigAlgId);
+  publicJwk.kid = subjectKind.kidPrefix +
+                  stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  publicJwk.use = 'sig';
+  if (jwsAlg) {
+    publicJwk.alg = jwsAlg;
+  }
+  // `x5c` is the certificate chain in the JWK itself (RFC 7517 section 4.7):
+  // base64 DER, leaf first, NOT base64url. A client that registers this JWKS
+  // therefore registers the chain as well, which is what lets `client_auth.js`
+  // check a path to this realm's Root instead of trusting a bare public key.
+  // **NO `slice()` HERE — `chainPemFor()` DOES NOT INCLUDE THE LEAF.** It
+  // answers the Issuing CA and the Intermediate, leaf-first order without the
+  // leaf, so dropping its first member drops the ISSUING CA — and an `x5c`
+  // missing the certificate that signed the leaf is a chain nothing can build
+  // a path from. `tests/pki.js` counts the members for exactly that reason.
+  publicJwk.x5c = [stsCrypto.stripPem(issued.pem)]
+    .concat(chainPemFor(id).map(stsCrypto.stripPem));
+  publicJwk['x5t#S256'] = stsCrypto.certificateThumbprint(issued.pem,
+                                                          { format: 'base64url' });
+
+  const record = {
+    identifier: identifier,
+    realm: id,
+    // WHICH PROFILE, on the record as well as in the certificate. The caller
+    // decides which attribute set to write from this rather than from what it
+    // asked for, so a purpose that was defaulted and one that was named land
+    // in the same place.
+    purpose: purpose.id,
+    purposeLabel: purpose.label,
+    // WHICH KIND OF SUBJECT, on the record for the reason the purpose is on
+    // it: the caller writes from the record rather than from what it asked
+    // for, so a kind that was defaulted and one that was named land in the
+    // same place.
+    subjectKind: subjectKind.id,
+    subjectKindLabel: subjectKind.label,
+    subjectUri: subjectKind.urnPrefix + identifier,
+    kid: publicJwk.kid,
+    keyAlg: keyAlgId,
+    signatureAlg: sigAlgId,
+    jwsAlg: jwsAlg,
+    subject: issued.subject,
+    serialHex: issued.serialHex,
+    notBefore: notBefore.toISOString(),
+    notAfter: notAfter.toISOString(),
+    certificatePem: issued.pem,
+    chainPem: chainPemFor(id),
+    privateKeyPem: pair.privatePem,
+    publicKeyPem: pair.publicPem,
+    publicJwk: publicJwk,
+    jwks: { keys: [publicJwk] },
+    thumbprint: thumbprintOf(issued.pem),
+    // THE SAME DIGEST IN THE SPELLING RFC 7522's VERIFIER MATCHES ON. The
+    // `thumbprint` above is this module's own display form; this is
+    // `certificateThumbprint(..., base64url)`, which is what `x5t#S256` above
+    // carries and what `saml_assertion_grant.js` compares a presented
+    // <ds:KeyInfo> against. Two spellings of one digest, both computed here,
+    // because a caller deriving the second from the first would be a second
+    // place for the encoding to go wrong.
+    certificateThumbprint: stsCrypto.certificateThumbprint(issued.pem,
+                                                           { format: 'base64url' }),
+    issuedAt: Date.now()
+  };
+  // The count moves and the hierarchy is written back. Nothing about the LEAF
+  // is stored — see the header — so this is one integer and not a register.
+  chain.issuedCount = (chain.issuedCount || 0) + 1;
+  saveRow(id, chain);
+  log.info('pki: a ' + keyDesc.label + ' signing key pair was issued for "' +
+           identifier + '" in the "' + id + '" realm for ' + purpose.label +
+           ', signed ' + sig.label + ' by the Issuing CA. kid=' + record.kid +
+           ', thumbprint=' + record.certificateThumbprint + ', expires ' +
+           record.notAfter + '.');
+  log.debug('Leaving issueSigningKeyPair(). kid=' + record.kid);
+  return { ok: true, issued: record };
+}
+
+// ---------------------------------------------------------------------------
+// DOES THIS CERTIFICATE CHAIN TO THIS REALM'S ROOT?
+//
+// **THIS IS A REAL PATH CHECK AND IT IS THE ONE THING IN THIS MODULE A SECURITY
+// CLAIM RESTS ON.** `oauth-oidc/client_auth.js` calls it when a client
+// authenticates with an assertion whose `x5c` this service is asked to believe,
+// and the answer decides whether a signature counts. So it verifies every link
+// — the signature, the issuer name, the validity window — and it refuses a
+// chain that ends anywhere but this realm's Root.
+//
+// **WHAT IT DOES NOT DO IS CONSULT A REVOCATION LIST**, and since 2026-09-11
+// that sentence is narrower than it was and more important. It used to read
+// *this service publishes no CRL and answers no OCSP, so a certificate it
+// issued is good until it expires.* Both halves of that are now wrong — every
+// authority signs a CRL and answers OCSP, and `common/pki_revocation.js` is
+// the register.
+//
+// **THIS FUNCTION STILL DOES NOT LOOK.** A chain presented in an `x5c` is
+// checked link by link and against this realm's own Intermediate, and no list
+// is fetched for any certificate in it — so a certificate revoked on this
+// service's own `/admin/pki` is still accepted HERE. Publishing revocation and
+// consulting it are different pieces of work; only the first is done, and
+// running the two together is the reading that gets somebody hurt.
+// `admin-ui/crypto_metadata.js` draws them as two rows for that reason, and
+// `common/mode.js`'s `certificate-revocation` row is the durable copy.
+// ---------------------------------------------------------------------------
+async function verifyLeaf(realmId, leafPem, presentedChainPems) {
+  log.debug('Entering verifyLeaf().');
+  const id = realmIdOf(realmId);
+  const anchors = trustAnchorsFor(id);
+  if (!anchors.length) {
+    log.debug('Leaving verifyLeaf(). No trust anchor.');
+    return { ok: false,
+             why: 'The "' + (id || 'default') + '" realm has no certificate ' +
+                  'authority, so there is no anchor to build a path to.' };
+  }
+  // The path this service will check: what was presented, then whatever of this
+  // realm's own hierarchy is missing from it. A client that sends the whole
+  // chain and one that sends only its leaf are both answerable, and a client
+  // that sends a DIFFERENT chain is refused by the signature check below rather
+  // than by being told what to send.
+  const presented = (presentedChainPems || []).slice();
+  const path = [leafPem].concat(presented);
+  const chain = rawChainFor(id);
+  // -------------------------------------------------------------------------
+  // FILL IN WHAT THIS REALM'S OWN HIERARCHY WOULD SUPPLY — but only where the
+  // presented path does not already END somewhere.
+  //
+  // **GRAFTING UNCONDITIONALLY MAKES THE REFUSAL SAY THE WRONG THING**, which
+  // is what the first version of this function did and what `tests/pki.js`
+  // caught. A caller presenting a complete chain to SOMEBODY ELSE'S root — a
+  // real hierarchy, every link of which verifies — had this realm's three
+  // tiers appended after it, so the link walk reported that their root "is not
+  // signed by" our Issuing CA. True, useless, and about a signature when the
+  // thing that is wrong is the ANCHOR.
+  //
+  // A path that already ends at a self-signed certificate is FINISHED: it is
+  // walked as it stands and refused, if it must be, by the anchor check below,
+  // which says so in those words. Only an incomplete path is filled in, which
+  // is the case this exists for — a client sending its leaf and nothing else.
+  // -------------------------------------------------------------------------
+  const terminates = (function () {
+    try {
+      const last = new nodeCrypto.X509Certificate(path[path.length - 1]);
+      return last.subject === last.issuer;
+    } catch (e) {
+      // Unreadable: let the link walk below report it, which says more about a
+      // malformed certificate than a guess here could.
+      return false;
+    }
+  })();
+  // -------------------------------------------------------------------------
+  // **AND IT FOLLOWS THE ISSUER RATHER THAN APPENDING THE BRANCH, SINCE
+  // 2026-09-11.** The rule above was "append this realm's three tiers", which
+  // was right while every realm had a Root of its own: a presented path always
+  // either terminated at somebody else's root or was one of ours missing its
+  // top, and appending the whole branch completed the second case.
+  //
+  // One shared Root breaks that. A leaf issued in ANOTHER realm arrives with
+  // its own Issuing CA and Intermediate — a path that does NOT terminate,
+  // because the Root is missing — so the old rule appended THIS realm's tiers
+  // after another realm's Intermediate, and the link walk reported that their
+  // Intermediate "is not signed by" our Issuing CA. True, useless, and about a
+  // signature when the thing that is wrong is the REALM. It is the same defect
+  // the paragraph above records, in the new shape, and `tests/pki.js` caught
+  // it the same way.
+  //
+  // So the walk matches SUBJECT to ISSUER and appends only a certificate that
+  // really signed the top of the path. A path that cannot be continued is left
+  // short and refused below by the check that is actually about it.
+  // -------------------------------------------------------------------------
+  if (!terminates) {
+    const candidates = [];
+    Object.keys(chain.issuing || {}).forEach(function (id) {
+      candidates.push(chain.issuing[id].certificatePem);
+    });
+    if (chain.intermediate) {
+      candidates.push(chain.intermediate.certificatePem);
+    }
+    const root = serviceRoot();
+    if (root) {
+      candidates.push(root.certificatePem);
+    }
+    const nameOf = function (pem) {
+      try {
+        const cert = new nodeCrypto.X509Certificate(pem);
+        return { subject: cert.subject, issuer: cert.issuer };
+      } catch (e) {
+        // Unreadable: the link walk below reports it, which says more about a
+        // malformed certificate than a guess here could.
+        return null;
+      }
+    };
+    for (let hop = 0; hop < 8; hop++) {
+      const top = nameOf(path[path.length - 1]);
+      if (!top || top.subject === top.issuer) {
+        break;
+      }
+      const next = candidates.filter(function (pem) {
+        const named = nameOf(pem);
+        if (!named || named.subject !== top.issuer) {
+          return false;
+        }
+        return !path.some(function (had) {
+          return stsCrypto.stripPem(had) === stsCrypto.stripPem(pem);
+        });
+      })[0];
+      if (!next) {
+        break;
+      }
+      path.push(next);
+    }
+  }
+  let links;
+  try {
+    links = await x509.verifyChain(path);
+  } catch (e) {
+    log.debug('Leaving verifyLeaf(). The path would not parse.');
+    return { ok: false,
+             why: 'The certificate path could not be read: ' + e.message };
+  }
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    if (!link.signatureValid) {
+      log.debug('Leaving verifyLeaf(). Link ' + i + ' does not verify.');
+      return { ok: false, links: links,
+               why: 'The certificate "' + link.subject + '" is not signed by ' +
+                    '"' + link.signedBy + '"' +
+                    (link.error ? ' (' + link.error + ')' : '') + '.' };
+    }
+    if (!link.namesMatch) {
+      return { ok: false, links: links,
+               why: 'The certificate "' + link.subject + '" names "' +
+                    link.issuer + '" as its issuer and the next certificate in ' +
+                    'the path is "' + link.signedBy + '".' };
+    }
+    if (link.expired) {
+      return { ok: false, links: links,
+               why: 'The certificate "' + link.subject + '" has expired.' };
+    }
+    if (link.notYetValid) {
+      return { ok: false, links: links,
+               why: 'The certificate "' + link.subject + '" is not valid yet.' };
+    }
+  }
+  // And the top of the path has to be OUR root. A perfectly self-consistent
+  // chain to somebody else's anchor verifies every link and means nothing here.
+  const top = path[path.length - 1];
+  const anchored = anchors.some(function (anchor) {
+    return stsCrypto.stripPem(anchor) === stsCrypto.stripPem(top);
+  });
+  if (!anchored) {
+    log.debug('Leaving verifyLeaf(). It anchors somewhere else.');
+    return { ok: false, links: links,
+             why: 'The path is internally consistent and does not end at this ' +
+                  'service\'s Root CA. A chain to somebody else\'s anchor ' +
+                  'verifies every link and proves nothing here.' };
+  }
+
+  // =======================================================================
+  // **AND IT HAS TO PASS THROUGH THIS REALM'S OWN INTERMEDIATE. THIS IS THE
+  // CHECK THAT REPLACED THE ANCHOR TEST AS THE REALM BOUNDARY (2026-09-11).**
+  //
+  // Until the Root was shared, "it ends at this realm's Root" WAS the realm
+  // boundary: every realm had a Root of its own, so a certificate from another
+  // realm failed the test above. One Root for the service makes that test true
+  // of every leaf this service has ever issued, in any realm — so on the day
+  // the Root was shared, the anchor check silently stopped being a boundary
+  // and started being a check that the certificate is ours at all.
+  //
+  // What is still a boundary is the INTERMEDIATE, which is per realm and
+  // unique by construction. So the path must contain it. A reader who assumed
+  // the old rule still held would have left a gate that admits every realm's
+  // clients to every other realm's token endpoint, with every signature
+  // verifying and nothing to see.
+  // =======================================================================
+  const mine = rawRowFor(id);
+  const ourIntermediate = mine && mine.intermediate
+    ? stsCrypto.stripPem(mine.intermediate.certificatePem) : '';
+  const through = ourIntermediate && path.some(function (pem) {
+    return stsCrypto.stripPem(pem) === ourIntermediate;
+  });
+  if (!through) {
+    log.debug('Leaving verifyLeaf(). It is another scope\'s branch.');
+    return { ok: false, links: links,
+             why: 'The path ends at this service\'s Root CA and does NOT pass ' +
+                  'through the "' + (id || 'default') + '" realm\'s own ' +
+                  'Intermediate CA, so it was issued somewhere else in this ' +
+                  'service. One Root is shared by every realm — the ' +
+                  'Intermediate is what a realm has of its own, and it is the ' +
+                  'boundary.' };
+  }
+  log.debug('Leaving verifyLeaf(). It anchors here.');
+  return { ok: true, links: links, anchor: 'the "' + (id || 'default') +
+           '" realm\'s Root CA' };
+}
+
+// ---------------------------------------------------------------------------
+// THROW THE HIERARCHY AWAY. Destructive and it says so: every certificate
+// issued from it stops chaining to anything the moment this returns, and this
+// service holds no copy of what was issued, so nothing here can list what
+// broke.
+// ---------------------------------------------------------------------------
+function clearChain(realmId) {
+  log.debug('Entering clearChain().');
+  const id = realmIdOf(realmId);
+  const held = rawChainFor(id);
+  if (!held) {
+    log.debug('Leaving clearChain(). Nothing to clear.');
+    return { ok: false,
+             errors: ['The "' + (id || 'default') + '" realm has no ' +
+                      'certificate authority.'] };
+  }
+  // THE OBJECT STORE SURVIVES THIS, which is the other half of what
+  // `buildChain()` does with it. Removing the hierarchy is a statement about
+  // the three tiers; a workbench object is somebody's own key pair, possibly
+  // self-signed and owing nothing to those tiers at all, and taking them away
+  // together would make one button mean two things. `saveRow()` removes the
+  // row outright where nothing is left, so a realm with no objects behaves
+  // exactly as it did before this store existed.
+  // **THE BRANCH IS WHAT IS REMOVED, AND `tiers` IS NOT A STORED MEMBER SINCE
+  // 2026-09-11** — it is composed on the way out of the service Root and this
+  // scope's own Intermediate. Emptying it emptied a member nothing reads, so
+  // the hierarchy came back on the next render; `tests/pki_authoring.js`
+  // caught it.
+  delete held.tiers;
+  delete held.intermediate;
+  delete held.issuing;
+  // And the certificates under it, which is the honest half: a certificate
+  // whose Issuing CA has been removed chains to nothing this service holds,
+  // and reporting it as current would be the console vouching for a path it
+  // can no longer build.
+  delete held.certs;
+  saveRow(id, held);
+  log.warn('pki: the "' + id + '" realm\'s certificate authority was removed. ' +
+           held.issuedCount + ' certificate(s) were issued from it and every ' +
+           'one of them now chains to nothing. This service keeps no copy of ' +
+           'what it issued, so none of them can be listed.');
+  log.debug('Leaving clearChain(). Removed.');
+  return { ok: true, issuedCount: held.issuedCount || 0 };
+}
+
+// ---------------------------------------------------------------------------
+// SMALL THINGS, in one place so that two call sites cannot spell them
+// differently.
+// ---------------------------------------------------------------------------
+function thumbprintOf(pem) {
+  return stsCrypto.certificateThumbprint(pem, { format: 'hex' });
+}
+
+// A certificate PEM as DER. Here rather than in one of the vendored modules
+// because those are byte-identical to the parent project's and must stay so;
+// `spiffe/spiffe_ca.js` has the same three lines for the same reason.
+function pemToDer(pem) {
+  return Buffer.from(String(pem).replace(/-----[^-]+-----/g, '')
+    .replace(/\s+/g, ''), 'base64');
+}
+
+function publicJwkOf(publicPem) {
+  return nodeCrypto.createPublicKey(publicPem).export({ format: 'jwk' });
+}
+
+// The JWS `alg` a key of this kind signs with, so that the JWK this module
+// hands out names one. The signature algorithm chosen for the CERTIFICATE
+// decides the digest — an RSA key issued under a SHA-384 chain gets RS384 —
+// which is what makes "the certificate and the assertion agree" true rather
+// than approximately true.
+function jwsAlgFor(keyDesc, sigAlgId) {
+  log.debug('Entering jwsAlgFor(). sigAlg=' + sigAlgId);
+  const sig = x509.sigAlg(sigAlgId) || {};
+  const digit = /512/.test(sig.hash || '') ? '512'
+    : (/384/.test(sig.hash || '') ? '384' : '256');
+  if (keyDesc.kind === 'okp') {
+    log.debug('Leaving jwsAlgFor(). EdDSA.');
+    return 'EdDSA';
+  }
+  if (keyDesc.kind === 'ec') {
+    // The CURVE decides an ECDSA alg and the certificate's digest does not:
+    // RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a
+    // P-256 key signed under a SHA-512 chain is still ES256 and naming it
+    // ES512 would produce assertions nothing can verify.
+    log.debug('Leaving jwsAlgFor(). ECDSA on ' + keyDesc.curve + '.');
+    if (keyDesc.curve === 'P-384') {
+      return 'ES384';
+    }
+    if (keyDesc.curve === 'P-521') {
+      return 'ES512';
+    }
+    return 'ES256';
+  }
+  if (keyDesc.kind === 'rsa') {
+    log.debug('Leaving jwsAlgFor(). RSA.');
+    return (sig.pss ? 'PS' : 'RS') + digit;
+  }
+  log.debug('Leaving jwsAlgFor(). No JWS algorithm for that key.');
+  return null;
+}
+
+
+// ===========================================================================
+// THE CERTIFICATE REGISTER: WHAT EACH ISSUING CA HAS CERTIFIED (2026-09-11).
+//
+// **A SLOT IS (use case, algorithm) AND NOT (use case, kid), WHICH IS THE ONE
+// DECISION IN HERE.** A `kid` is derived from the certificate and changes
+// whenever the key is regenerated; a slot has to survive that, because what an
+// operator pins, reissues or overrides is *what signs my ES384*, not *the key
+// that happened to be there on Tuesday*. So the handle is the algorithm — which
+// is also the granularity the request asked for: "their own CAs and key pairs
+// for each use case, each signing algorithm".
+//
+// **NO PRIVATE KEY IS STORED HERE FOR A KEY THIS SERVICE GENERATED.** The
+// signing keys live in `keystore.js`'s key set and this holds their
+// CERTIFICATES — one copy of a private key is the whole of this module's
+// placement argument, and a second one under a certificate record would be a
+// second thing to seal, purge and rotate. The exception is a PINNED pair,
+// where the operator supplied key material this service has nowhere else to
+// keep; those are marked and are the only records with a key in them.
+// ===========================================================================
+
+function slotKey(useCaseId, slot) {
+  return String(useCaseId) + ':' + String(slot);
+}
+
+// Every certificate this Issuing CA has minted, newest first.
+function certificatesFor(scopeId, useCaseId) {
+  const row = rawRowFor(scopeId);
+  const held = (row && row.certs) || {};
+  const prefix = String(useCaseId) + ':';
+  return Object.keys(held).filter(function (key) {
+    return key.indexOf(prefix) === 0;
+  }).map(function (key) {
+    return held[key];
+  }).sort(function (a, b) {
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+}
+
+function certificateFor(scopeId, useCaseId, slot) {
+  const row = rawRowFor(scopeId);
+  return ((row && row.certs) || {})[slotKey(useCaseId, slot)] || null;
+}
+
+// The public view of one certificate. A pinned record HAS a private key in it
+// and this is where it is dropped, for `describeChain()`'s reason: one place,
+// so a caller cannot leak an operator's own key by forgetting.
+function describeCertificate(one) {
+  if (!one) {
+    return null;
+  }
+  return {
+    slot: one.slot,
+    useCase: one.useCase,
+    label: one.label,
+    alg: one.alg || '',
+    keyAlg: one.keyAlg || '',
+    signatureAlg: one.signatureAlg || '',
+    subject: one.subject,
+    serialHex: one.serialHex,
+    notBefore: one.notBefore,
+    notAfter: one.notAfter,
+    expired: new Date(one.notAfter).getTime() < Date.now(),
+    thumbprint: one.thumbprint,
+    pinned: !!one.pinned,
+    certificatePem: one.certificatePem,
+    chainPem: (one.chainPem || []).slice(),
+    createdAt: one.createdAt
+  };
+}
+
+// ---------------------------------------------------------------------------
+// CERTIFY ONE KEY PAIR FROM A USE CASE'S ISSUING CA.
+//
+// The caller owns the key and keeps it; this issues the certificate and
+// records it. **It answers `{ ok: false }` rather than throwing when there is
+// no Issuing CA**, because the callers are startup paths — a service that
+// would not start because a certificate could not be minted for a key it
+// already has would be trading a working mock for a cosmetic one.
+// ---------------------------------------------------------------------------
+async function certify(scopeId, useCaseId, spec) {
+  log.debug('Entering certify(). scope=' + scopeId + ' use=' + useCaseId +
+            ' slot=' + (spec && spec.slot));
+  const id = String(scopeId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug('Leaving certify(). Unknown use case.');
+    return { ok: false,
+             errors: ['"' + useCaseId + '" is not a use case this service ' +
+                      'issues for. They are ' + USE_CASE_IDS.join(', ') + '.'] };
+  }
+  // ---------------------------------------------------------------------
+  // **DOES THIS BRANCH STILL CHAIN TO THE ROOT WE WOULD PUBLISH?** (2026-09-11)
+  //
+  // It can stop doing. `buildRoot()` replaces the Root and leaves the branches
+  // where they are — `pki_admin.js`'s Replace-the-Root control rebuilds them
+  // afterwards, and a branch whose rebuild FAILS is logged and skipped, which
+  // leaves exactly this state. So does any other path that gets a new Root
+  // without getting new branches.
+  //
+  // Certifying from a stale branch is the worst available outcome, because
+  // everything downstream looks right: the leaf is issued, the chain travels
+  // with it, `/tls/server-certificate` publishes the current Root beside them
+  // — and the Root does not sign the Intermediate, so no client can build a
+  // path. The two Roots have the SAME SUBJECT, so every page, every log line
+  // and every `openssl x509 -subject` agrees with itself. What it costs is
+  // every node client (`unable to get local issuer certificate`), while curl
+  // accepts it — so it is invisible from a shell and fatal to this
+  // repository's whole test suite and to this service's own OpenID Connect
+  // back channel.
+  //
+  // **SO IT IS REPAIRED HERE RATHER THAN GUARDED AGAINST FURTHER OUT.** This
+  // is the one funnel every leaf in this service goes through, and it is the
+  // only place that holds both the branch and the Root at once. Rebuilding is
+  // safe and is what the operator asked for implicitly by replacing the Root:
+  // the branch was already worthless.
+  // ---------------------------------------------------------------------
+  if (!scopeChainsToRoot(id)) {
+    log.warn('pki: the "' + (id || 'default') + '" branch does not chain to ' +
+             'this service\'s Root CA — a Root was replaced without its ' +
+             'branches being rebuilt. Rebuilding the branch before issuing, ' +
+             'because a leaf issued from it would carry a chain nothing can ' +
+             'verify against the Root this service publishes.');
+    const rebuilt = await buildScope(id, {});
+    if (!rebuilt.ok) {
+      log.error('pki: that branch could not be rebuilt (' +
+                (rebuilt.errors || []).join(' ') + '), so nothing was ' +
+                'certified. Issuing from the stale branch would have produced ' +
+                'a certificate that verifies against nothing this service ' +
+                'publishes.');
+      log.debug('Leaving certify(). The stale branch could not be rebuilt.');
+      return { ok: false, errors: rebuilt.errors };
+    }
+  }
+
+  const row = rawRowFor(id);
+  const ca = row && row.issuing ? row.issuing[uc.id] : null;
+  if (!ca) {
+    log.debug('Leaving certify(). No Issuing CA.');
+    return { ok: false,
+             errors: ['The "' + (id || 'default') + '" scope has no ' +
+                      uc.label + ' Issuing CA. Build the hierarchy on ' +
+                      '/admin/pki first.'] };
+  }
+  // ---------------------------------------------------------------------
+  // **THE ALGORITHM THIS CA CAN SIGN WITH, NOT THE ONE IT WAS SIGNED WITH**
+  // (2026-09-11). `ca.signatureAlg` is what the INTERMEDIATE used on this
+  // authority's certificate — a property of the parent's key — and it was
+  // being handed to the primitive as the algorithm to sign a LEAF with, using
+  // this authority's own key. The two coincide exactly when every tier in the
+  // branch is the same key family, which was true of every hierarchy this
+  // service had ever built, so nothing could see it.
+  //
+  // It stopped being true the moment a use case was allowed a key algorithm of
+  // its own: an EC SPIFFE Issuing CA under an RSA Intermediate carries
+  // `signatureAlg: 'sha256-rsa'`, and `sha256-rsa` over an EC key is
+  // `Invalid key type` out of Web Crypto, naming neither the tier nor the
+  // algorithm. `signatureForIssuer()` answers the stored value when the key
+  // can produce it and the right default when it cannot, so this is a repair
+  // and not a new policy.
+  // ---------------------------------------------------------------------
+  const issuerDesc = keyMaterial.keyAlg(ca.keyAlg);
+  const sigAlgId = signatureForIssuer(ca, ca.signatureAlg, ca.keyAlg);
+  const days = Number(spec.days) > 0 ? Math.floor(Number(spec.days))
+                                     : Number(config.value('pki.leafLifetimeDays'));
+  // Seconds and no finer, like the CA tiers above. A leaf is years rather than
+  // decades out, so it is a UTCTime and carries no fractional part anyway — it
+  // goes through the same helper so that there is ONE answer to "what does a
+  // validity in this module look like" rather than one per lifetime.
+  const notBefore = certificateInstant();
+  const notAfter = certificateInstant(notBefore.getTime() + days * 86400000);
+  const caEnds = new Date(ca.notAfter).getTime();
+  if (notAfter.getTime() > caEnds) {
+    notAfter.setTime(caEnds);
+  }
+  const organisation = (row && row.organisation) || DEFAULT_ORGANISATION;
+  const subject = [{ name: 'CN', value: String(spec.commonName || spec.slot) },
+                   { name: 'O', value: organisation }]
+    .concat(row && row.country ? [{ name: 'C', value: row.country }] : []);
+  let issued;
+  try {
+    issued = await x509.issueCertificate({
+      subject: subject,
+      subjectPublicKey: spec.publicKeyPem,
+      signatureAlg: sigAlgId,
+      profile: spec.profile || 'digital-signature',
+      notBefore: notBefore.toISOString(),
+      notAfter: notAfter.toISOString(),
+      issuer: { certificatePem: ca.certificatePem,
+                privateKeyPem: ca.privateKeyPem, keyAlg: ca.keyAlg },
+      extensions: Object.assign({
+        basicConstraints: { present: true, critical: true, ca: false },
+        keyUsage: { present: true, critical: true,
+                    usages: spec.keyUsage ||
+                            ['digitalSignature', 'nonRepudiation'] },
+        subjectKeyIdentifier: { present: true },
+        authorityKeyIdentifier: { present: true }
+      }, revocationExtensionsFor(id, uc.id), spec.extensions || {})
+    });
+  } catch (e) {
+    log.error('pki: the ' + uc.label + ' certificate for "' + spec.slot +
+              '" could not be issued: ' + e.message);
+    log.debug('Leaving certify(). The encoder refused.');
+    return { ok: false,
+             errors: ['That certificate could not be issued: ' + e.message] };
+  }
+  const record = {
+    slot: String(spec.slot),
+    useCase: uc.id,
+    scope: id,
+    label: String(spec.label || spec.slot),
+    alg: String(spec.alg || ''),
+    keyAlg: String(spec.keyAlg || ''),
+    signatureAlg: sigAlgId,
+    subject: issued.subject,
+    serialHex: issued.serialHex,
+    notBefore: notBefore.toISOString(),
+    notAfter: notAfter.toISOString(),
+    certificatePem: issued.pem,
+    // LEAF-FIRST AND WITHOUT THE ROOT, which is what RFC 5246 section 7.4.2
+    // asks of a TLS certificate_list and what every JWS `x5c` header does. The
+    // Root is a trust anchor: sending it is harmless and relying on it having
+    // been sent is the mistake.
+    chainPem: [ca.certificatePem, row.intermediate.certificatePem],
+    thumbprint: thumbprintOf(issued.pem),
+    pinned: !!spec.pinned,
+    createdAt: Date.now()
+  };
+  if (spec.pinned && spec.privateKeyPem) {
+    // THE ONE RECORD SHAPE WITH A PRIVATE KEY IN IT — see the header. An
+    // operator pasted this pair in and this service has nowhere else to keep
+    // it; `describeCertificate()` drops it on the way out.
+    record.privateKeyPem = spec.privateKeyPem;
+    record.publicKeyPem = spec.publicKeyPem;
+  }
+  const fresh = rawRowFor(id) || {};
+  fresh.certs = Object.assign({}, fresh.certs || {});
+  fresh.certs[slotKey(uc.id, record.slot)] = record;
+  saveRow(id, fresh);
+  log.debug('Leaving certify(). ' + record.subject);
+  return { ok: true, certificate: describeCertificate(record), record: record };
+}
+
+// A slot the operator supplied key material for, or null. Read SYNCHRONOUSLY
+// by `helpers.js` while it builds a key set, which is why it is a plain map
+// lookup and issues nothing.
+function pinnedKeyFor(scopeId, useCaseId, slot) {
+  const held = certificateFor(scopeId, useCaseId, slot);
+  if (!held || !held.pinned || !held.privateKeyPem) {
+    return null;
+  }
+  return { privateKeyPem: held.privateKeyPem,
+           publicKeyPem: held.publicKeyPem,
+           certificatePem: held.certificatePem,
+           chainPem: (held.chainPem || []).slice() };
+}
+
+// The certificate a caller should PUBLISH for a slot, and the chain under it.
+// Synchronous, for `pinnedKeyFor()`'s reason.
+function publishedCertificateFor(scopeId, useCaseId, slot) {
+  const held = certificateFor(scopeId, useCaseId, slot);
+  if (!held) {
+    return null;
+  }
+  return { certificatePem: held.certificatePem,
+           chainPem: (held.chainPem || []).slice() };
+}
+
+function forgetCertificate(scopeId, useCaseId, slot) {
+  log.debug('Entering forgetCertificate().');
+  const id = String(scopeId);
+  const row = rawRowFor(id);
+  const key = slotKey(useCaseId, slot);
+  if (!row || !row.certs || !row.certs[key]) {
+    log.debug('Leaving forgetCertificate(). Nothing there.');
+    return { ok: false,
+             errors: ['There is no ' + useCaseId + ' certificate for "' +
+                      slot + '" in that scope.'] };
+  }
+  const was = row.certs[key];
+  delete row.certs[key];
+  saveRow(id, row);
+  log.debug('Leaving forgetCertificate(). Removed.');
+  return { ok: true, pinned: !!was.pinned };
+}
+
+// ===========================================================================
+// ISSUING SOMETHING THIS MODULE DOES NOT KEEP (2026-09-11): `issueUnder()`.
+//
+// **EVERY OTHER DOOR IN HERE RECORDS WHAT IT ISSUED, AND THAT IS EXACTLY WHY
+// THIS ONE EXISTS.** `certify()` writes a row into the certificate register
+// under a SLOT, which is right for the handful of long-lived keys this service
+// holds — one per algorithm per use case, reissued when somebody presses a
+// button. It is wrong for an X509-SVID: a SPIFFE agent holding `FetchX509SVID`
+// open re-mints every half-lifetime, so one workload left running overnight
+// would put several hundred rows in a sealed keystore row that exists to hold
+// certificate AUTHORITIES. The register would stop being a register.
+//
+// So this signs and hands back, and the caller owns what comes out. What it
+// still does is everything that must not be decided twice:
+//
+//   * **the signature algorithm is the ISSUER'S**, never the subject's. A
+//     caller naming one is refused rather than obliged — `common/vendored/
+//     x509.js`'s header spends a paragraph on what a certificate whose
+//     declared algorithm and actual signature disagree costs to diagnose.
+//   * **the validity is clamped to the Issuing CA's**, for `certify()`'s
+//     reason: a leaf outliving its issuer is an identity that works until it
+//     suddenly does not, with nothing in the failure naming the CA.
+//   * **the chain travels with it**, leaf-first and WITHOUT the Root, which is
+//     what RFC 5246 section 7.4.2 asks of a certificate_list and what the
+//     Workload API's `x509_svid` field is. The Root is the trust anchor: it is
+//     published in the bundle and relying on it having been sent is the
+//     mistake.
+//   * **a stale branch is repaired before anything is signed**, through the
+//     same `scopeChainsToRoot()` check `certify()` makes and for the identical
+//     reason — a leaf issued from a branch the current Root does not sign
+//     looks perfect and builds no path.
+//
+// **AND IT CARRIES NO REVOCATION POINTERS, WHICH IS A DECISION AND NOT AN
+// OMISSION.** Every certificate `certify()` and `issueCaTier()` produce names
+// a CRL and an OCSP responder, because this service holds those certificates
+// and can put one of their serials on a list. It does not hold these. A
+// `cRLDistributionPoints` on an SVID would point a verifier at a list that
+// structurally cannot ever contain it — the worst kind of pointer, because it
+// resolves, parses, and answers "not revoked" about everything forever. SPIFFE
+// answers the same question with SHORT LIFETIMES instead, which is the design
+// rationale in its own specification, and `spiffe.svidTtl` is the knob.
+// ===========================================================================
+async function issueUnder(scopeId, useCaseId, spec) {
+  log.debug('Entering issueUnder(). scope=' + scopeId + ' use=' + useCaseId);
+  const id = String(scopeId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug('Leaving issueUnder(). Unknown use case.');
+    return { ok: false,
+             errors: ['"' + useCaseId + '" is not a use case this service ' +
+                      'issues for. They are ' + USE_CASE_IDS.join(', ') + '.'] };
+  }
+  if (!spec || !spec.publicKeyPem) {
+    log.debug('Leaving issueUnder(). No subject public key.');
+    return { ok: false,
+             errors: ['A certificate is issued OVER a public key. None was ' +
+                      'given.'] };
+  }
+  // The same repair `certify()` makes, for the same reason. See its header.
+  if (!scopeChainsToRoot(id)) {
+    log.warn('pki: the "' + (id || 'default') + '" branch does not chain to ' +
+             'this service\'s Root CA, so it is being rebuilt before ' +
+             'anything is issued from it.');
+    const rebuilt = await buildScope(id, {});
+    if (!rebuilt.ok) {
+      log.debug('Leaving issueUnder(). The stale branch could not be rebuilt.');
+      return { ok: false, errors: rebuilt.errors };
+    }
+  }
+  const row = rawRowFor(id);
+  const ca = row && row.issuing ? row.issuing[uc.id] : null;
+  if (!ca || !row.intermediate) {
+    log.debug('Leaving issueUnder(). No Issuing CA.');
+    return { ok: false,
+             errors: ['The "' + (id || 'default') + '" scope has no ' +
+                      uc.label + ' Issuing CA. Build the hierarchy on ' +
+                      '/admin/pki first.'] };
+  }
+  const notBefore = certificateInstant(spec.notBefore);
+  let notAfter = certificateInstant(spec.notAfter);
+  const caEnds = new Date(ca.notAfter).getTime();
+  if (notAfter.getTime() > caEnds) {
+    log.debug('issueUnder(): the lifetime asked for outlives the ' + uc.label +
+              ' Issuing CA; shortening it to that CA\'s own notAfter.');
+    notAfter = certificateInstant(caEnds);
+  }
+  let issued;
+  try {
+    issued = await x509.issueCertificate({
+      // A STRING OR A LIST, both passed straight through. `spiffe.svidSubject`
+      // is the string `C=US,O=SPIRE` and the vendored encoder parses one; the
+      // realm's own tiers build a list. One parameter rather than two shapes
+      // to reconcile here.
+      subject: spec.subject,
+      subjectPublicKey: spec.publicKeyPem,
+      // The algorithm this CA's own key can produce — see `certify()`'s note
+      // on why that is not `ca.signatureAlg`.
+      signatureAlg: signatureForIssuer(ca, ca.signatureAlg, ca.keyAlg),
+      profile: spec.profile || 'digital-signature',
+      notBefore: notBefore.toISOString(),
+      notAfter: notAfter.toISOString(),
+      issuer: { certificatePem: ca.certificatePem,
+                privateKeyPem: ca.privateKeyPem, keyAlg: ca.keyAlg },
+      extensions: spec.extensions || {}
+    });
+  } catch (e) {
+    log.error('pki: a ' + uc.label + ' certificate could not be issued: ' +
+              e.message);
+    log.debug('Leaving issueUnder(). The encoder refused.');
+    return { ok: false,
+             errors: ['That certificate could not be issued: ' + e.message] };
+  }
+  const chainPem = [ca.certificatePem, row.intermediate.certificatePem];
+  log.debug('Leaving issueUnder(). serial=' + issued.serialHex);
+  return {
+    ok: true,
+    certificatePem: issued.pem,
+    certificateDer: Buffer.from(issued.der),
+    subject: issued.subject,
+    serialHex: issued.serialHex,
+    notBefore: notBefore.toISOString(),
+    notAfter: notAfter.toISOString(),
+    signatureAlg: ca.signatureAlg,
+    // Leaf-first, Root excluded. See the header.
+    chainPem: [issued.pem].concat(chainPem),
+    issuerChainPem: chainPem,
+    issuerChainDer: chainPem.map(pemToDer)
+  };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT ONE ISSUING CA IS, WITHOUT ITS KEY. For a module that signs through
+// `issueUnder()` and has to REPORT what signed: the authority's own
+// certificate, the chain above it, and the Root it ends at.
+//
+// **THE ROOT IS SEPARATE FROM THE CHAIN AND MUST STAY SO.** A caller that
+// concatenated them would publish the anchor as though it travelled with the
+// leaf, which is the confusion `issueUnder()`'s chain rule exists to prevent —
+// and for SPIFFE specifically it is the difference between a bundle and a
+// certificate list.
+// ---------------------------------------------------------------------------
+function describeIssuer(scopeId, useCaseId) {
+  const id = String(scopeId);
+  const row = rawRowFor(id);
+  const ca = row && row.issuing ? row.issuing[useCaseId] : null;
+  const root = serviceRoot();
+  if (!ca || !row.intermediate || !root) {
+    return null;
+  }
+  return {
+    scope: id,
+    useCase: String(useCaseId),
+    subject: ca.subject,
+    serialHex: ca.serialHex,
+    keyAlg: ca.keyAlg,
+    // WHAT THIS AUTHORITY SIGNS WITH, which is what a caller reporting on it
+    // means — not `ca.signatureAlg`, which is what its parent signed IT with.
+    signatureAlg: signatureForIssuer(ca, ca.signatureAlg, ca.keyAlg),
+    signedWith: ca.signatureAlg,
+    notBefore: ca.notBefore,
+    notAfter: ca.notAfter,
+    thumbprint: ca.thumbprint,
+    imported: !!ca.imported,
+    certificatePem: ca.certificatePem,
+    // Leaf-first from the authority upward, Root excluded — the same order
+    // `issueUnder()` hands back, so the two cannot disagree.
+    chainPem: [ca.certificatePem, row.intermediate.certificatePem],
+    intermediate: { subject: row.intermediate.subject,
+                    notAfter: row.intermediate.notAfter,
+                    thumbprint: row.intermediate.thumbprint,
+                    certificatePem: row.intermediate.certificatePem },
+    root: { subject: root.subject,
+            serialHex: root.serialHex,
+            notBefore: root.notBefore,
+            notAfter: root.notAfter,
+            thumbprint: root.thumbprint,
+            certificatePem: root.certificatePem }
+  };
+}
+
+// ===========================================================================
+// THE OBJECT STORE (2026-09-10), which is what the Certificate & Key
+// Configuration pane on `/admin/pki` issues INTO.
+//
+// **IT IS IN THE SAME ROW AS THE HIERARCHY AND THAT IS THE WHOLE OF THE
+// PLACEMENT ARGUMENT.** This module's header says it keeps no store of its
+// own, because a second place to put a private key is the one nobody
+// remembers to seal, to purge with the realm, or to share with a request
+// worker. An object authored on that pane is a private key this service
+// generated — exactly what the three CA keys are — so it goes where they go:
+// `keystore.attachPki()`'s `pki:<realm>` row, sealed under the same
+// key-encryption key, read back by the same `start()`, forwarded to the
+// worker pool by the same channel, and gone with the realm by the same purge.
+//
+// **THE DEBUGGER'S EQUIVALENT IS `localStorage` AND THIS IS DELIBERATELY NOT
+// AN ANALOGUE OF IT.** That page holds the key in the browser because its
+// whole claim is that the key never leaves it; this page's claim is the
+// opposite — the private keys of a certificate authority belong in the
+// process that signs — so the store is where the signing happens, and it
+// inherits the mode: product keeps it, development loses it with the process,
+// which is the rule the signing key already follows.
+//
+// An object is a key pair, its certificate, and what it took to make them.
+// Nothing here interprets one — `common/pki_authoring.js` does — so this is
+// four accessors and a cap.
+// ===========================================================================
+
+// The most objects one realm may hold. A cap rather than unbounded growth for
+// the reason `admin_stats.js` caps its lists: every one of these is sealed,
+// written to the store and pushed to every request worker on change, so a page
+// somebody leaves issuing in a loop would otherwise grow one row without
+// limit. The OLDEST goes, and the reply says so — silently dropping the thing
+// somebody just made would be worse than refusing.
+const MAX_OBJECTS = 200;
+
+function objects(realmId) {
+  const row = rawRowFor(realmId);
+  return ((row && row.objects) || []).slice();
+}
+
+function objectFor(realmId, objectId) {
+  const wanted = String(objectId || '');
+  if (!wanted) {
+    return null;
+  }
+  return objects(realmId).filter(function (one) {
+    return one.id === wanted;
+  })[0] || null;
+}
+
+// Put one in, REPLACING any object with the same id. The row is read back
+// through `rawRowFor()` on every call rather than held here, because a request
+// worker's copy of it is replaced wholesale when another process writes — a
+// cached reference would go on appending to a row nobody else has.
+function putObject(realmId, object) {
+  log.debug('Entering putObject(). id=' + (object && object.id));
+  const id = realmIdOf(realmId);
+  const row = rawRowFor(id) || { version: 1, realm: id, createdAt: Date.now() };
+  const kept = ((row.objects) || []).filter(function (one) {
+    return one.id !== object.id;
+  });
+  kept.push(object);
+  let dropped = 0;
+  while (kept.length > MAX_OBJECTS) {
+    kept.shift();
+    dropped += 1;
+  }
+  row.objects = kept;
+  row.realm = id;
+  saveRow(id, row);
+  if (dropped) {
+    log.warn('pki: the "' + id + '" realm holds the most objects this store ' +
+             'keeps (' + MAX_OBJECTS + '), so ' + dropped + ' of the oldest ' +
+             'was discarded. Their private keys are gone; the certificates ' +
+             'they signed are unaffected and still chain.');
+  }
+  log.debug('Leaving putObject(). ' + kept.length + ' object(s).');
+  return { ok: true, dropped: dropped, object: object };
+}
+
+function removeObject(realmId, objectId) {
+  log.debug('Entering removeObject(). id=' + objectId);
+  const id = realmIdOf(realmId);
+  const row = rawRowFor(id);
+  const before = ((row && row.objects) || []).length;
+  if (!before) {
+    log.debug('Leaving removeObject(). Nothing stored.');
+    return { ok: false, errors: ['There is nothing in this realm\'s store.'] };
+  }
+  row.objects = row.objects.filter(function (one) {
+    return one.id !== String(objectId || '');
+  });
+  if (row.objects.length === before) {
+    log.debug('Leaving removeObject(). No such object.');
+    return { ok: false,
+             errors: ['There is no object "' + objectId + '" in this ' +
+                      'realm\'s store.'] };
+  }
+  saveRow(id, row);
+  log.debug('Leaving removeObject(). Removed.');
+  return { ok: true };
+}
+
+function clearObjects(realmId) {
+  log.debug('Entering clearObjects().');
+  const id = realmIdOf(realmId);
+  const row = rawRowFor(id);
+  const count = ((row && row.objects) || []).length;
+  if (!count) {
+    log.debug('Leaving clearObjects(). Nothing stored.');
+    return { ok: false, errors: ['There is nothing in this realm\'s store.'] };
+  }
+  row.objects = [];
+  saveRow(id, row);
+  log.warn('pki: the "' + id + '" realm\'s object store was emptied. ' +
+           count + ' key pair(s) are gone; anything they signed is still a ' +
+           'valid document and still chains to whatever signed IT.');
+  log.debug('Leaving clearObjects(). ' + count + ' removed.');
+  return { ok: true, removed: count };
+}
+
+// EVERY SCOPE THIS PROCESS HOLDS A BRANCH FOR. Read from the keystore rather
+// than from the realm registry, because a branch can outlive the realm that
+// asked for it — a row is what this module is about, and a scope with a row is
+// a scope with authorities whose CRLs somebody may still be fetching.
+// **`pkiAll()` ANSWERS AN ARRAY OF `{ realm, chain }` AND NOT A MAP**, which
+// this function read as a map for a day: `Object.keys()` over an array gives
+// `'0'`, `'1'`, `'2'` — three scope ids that name nothing — so every caller
+// was handed a list of branches that do not exist while the ones that do were
+// invisible. Nothing threw. `/pki/revocation` listed the Root and no
+// Intermediate, and `issuedHere()` answered false for every serial this
+// service had ever minted, which is an OCSP responder saying `unknown` about
+// its own leaves.
+function knownScopes() {
+  if (typeof keystore.pkiAll !== 'function') {
+    return [];
+  }
+  return (keystore.pkiAll() || []).map(function (one) {
+    return String(one && one.realm !== undefined ? one.realm : '');
+  }).filter(function (id) { return id !== SERVICE_SCOPE; });
+}
+
+// ---------------------------------------------------------------------------
+// WHAT MAY SIGN THE NEXT CERTIFICATE: the three tiers, then every stored
+// object that is a CA. **Only ones whose private key is here**, which is the
+// debugger page's rule word for word and for its reason — offering an issuer
+// that cannot sign produces a Web Crypto error two clicks later naming neither
+// the authority nor the missing key.
+//
+// It answers the SIGNING MATERIAL as well as the label, because every caller
+// needs both and a second lookup by id is a second chance to hand one
+// certificate the other's key.
+// ---------------------------------------------------------------------------
+function issuers(realmId) {
+  log.debug('Entering issuers().');
+  const chain = rawChainFor(realmId);
+  const out = [];
+  if (chain) {
+    chain.tiers.forEach(function (tier) {
+      out.push({ id: 'tier:' + tier.tier, label: tier.label + ' — ' +
+                 tier.subject, tier: tier.tier, subject: tier.subject,
+                 keyAlg: tier.keyAlg, notAfter: tier.notAfter,
+                 certificatePem: tier.certificatePem,
+                 privateKeyPem: tier.privateKeyPem,
+                 altKeyAlg: tier.altKeyAlg || null,
+                 altPrivateKeyPem: tier.altPrivateKeyPem || null });
+    });
+  }
+  objects(realmId).forEach(function (one) {
+    if (!one.ca || !one.privateKeyPem) {
+      return;
+    }
+    out.push({ id: one.id, label: (one.profileLabel || 'CA') + ' — ' +
+               one.subject, subject: one.subject, keyAlg: one.keyAlg,
+               notAfter: one.notAfter, certificatePem: one.certificatePem,
+               privateKeyPem: one.privateKeyPem,
+               altKeyAlg: one.altKeyAlg || null,
+               altPrivateKeyPem: one.altPrivateKeyPem || null });
+  });
+  log.debug('Leaving issuers(). ' + out.length + ' of them.');
+  return out;
+}
+
+function issuerFor(realmId, issuerId) {
+  const wanted = String(issuerId || '');
+  return issuers(realmId).filter(function (one) {
+    return one.id === wanted;
+  })[0] || null;
+}
+
+
+// ===========================================================================
+// STARTUP: THE TREE IS BUILT BEFORE THE LISTENER BINDS, AND EVERY KEY THIS
+// SERVICE HOLDS IS CERTIFIED UNDER IT (2026-09-11).
+//
+// **THIS REVERSES "THE HIERARCHY IS BUILT BY PRESSING A BUTTON", AND IT HAD
+// TO.** A key pair can only be issued by a certificate authority that exists
+// when the key is made, and the keys are made at startup — so a hierarchy that
+// waited for an operator would mean every key in a default deployment is
+// self-signed for ever, which is the state this change exists to end.
+//
+// **WHAT DID NOT CHANGE IS THE KEY GENERATION ITSELF**, which was the
+// requirement: the same RSA key, the same six curve keys, the same eleven
+// post-quantum keys made lazily, the same algorithms, in the same order, at
+// the same moment. `makeStsKeys()` is untouched. What is added happens
+// AFTERWARDS and only ever adds a certificate.
+//
+// ---------------------------------------------------------------------------
+// WHY IT IS HERE AND NOT IN `helpers.js`, WHICH IS WHERE THE KEYS ARE MADE.
+//
+// Issuing a certificate is Web Crypto and therefore ASYNCHRONOUS, and
+// `makeStsKeys()` is reached through a property read on a Proxy — it cannot
+// await anything. That is the same constraint `keystore.js` has and it is
+// solved the same way: **everything asynchronous happens in `start()`, before
+// the listener binds, and what is left at read time is a map lookup.**
+//
+// A realm created at RUNTIME is the case that does not fit, and it is handled
+// honestly rather than ignored: `realms.onChange()` certifies the new realm's
+// keys on the spot, asynchronously, so there is a window of milliseconds in
+// which that realm's key set has no CA-issued certificate and reports the
+// self-signed one it was born with. Saying so beats a service that blocks a
+// realm creation on nine signatures.
+// ===========================================================================
+
+// The JOSE slots a realm's key set fills, derived from the key set itself
+// rather than written out — `helpers.js` decides which curves exist and a
+// second list here would be the first thing to disagree with it.
+function joseSlotsOf(keys) {
+  const out = [{ slot: 'RS256', alg: 'RS256', keyAlg: 'rsa-2048',
+                 publicKeyPem: null, label: 'RSA signing key' }];
+  (keys.extraKeys || []).forEach(function (one) {
+    const jwk = one.publicJwk || {};
+    // The SLOT names the curve as well as the algorithm, because the two EdDSA
+    // entries share an `alg` and a slot that did not tell them apart would
+    // certify one of them twice and the other never. It is `kidOf()`'s own
+    // reasoning, applied to a different handle.
+    const slot = jwk.crv ? (one.alg + ':' + jwk.crv) : one.alg;
+    out.push({ slot: slot, alg: one.alg, crv: jwk.crv || '',
+               keyAlg: '', publicKeyPem: null,
+               label: (jwk.crv || one.alg) + ' signing key' });
+  });
+  return out;
+}
+
+// Certify one realm's signing keys under its JOSE and XML Issuing CAs.
+//
+// **THE RSA KEY IS CERTIFIED TWICE, ON PURPOSE.** It signs JWTs and it signs
+// XML documents, and those are two use cases with two Issuing CAs — so it gets
+// a certificate from each, with the same public key in both. A relying party
+// that trusts this service for SAML has not thereby said anything about its
+// OAuth tokens, and two certificates is how that stays sayable. It is also why
+// the slot is per USE CASE rather than per key.
+async function certifyKeySet(realmId, keys, nodeCryptoModule) {
+  log.debug('Entering certifyKeySet(). realm=' + realmId);
+  const id = realmIdOf(realmId);
+  const nodeC = nodeCryptoModule || nodeCrypto;
+  if (!rawRowFor(id) || !rawRowFor(id).issuing) {
+    log.debug('Leaving certifyKeySet(). No branch for that realm.');
+    return { ok: false, certified: 0,
+             errors: ['The "' + (id || 'default') + '" realm has no ' +
+                      'certificate authority branch.'] };
+  }
+  let certified = 0;
+  const failed = [];
+
+  // --- the RSA key, under JOSE and under XML -------------------------------
+  let rsaPublicPem = '';
+  try {
+    rsaPublicPem = nodeC.createPublicKey(keys.privateKeyPem)
+      .export({ type: 'spki', format: 'pem' });
+  } catch (e) {
+    log.error('pki: the "' + id + '" realm\'s signing key could not be read ' +
+              'to certify it: ' + e.message);
+    return { ok: false, certified: 0, errors: [e.message] };
+  }
+  const rsaJobs = [
+    { useCase: 'jose', slot: 'RS256', cn: 'JOSE signing (RS256)' },
+    { useCase: 'xml', slot: 'RS256', cn: 'XML signing (RS256)' }
+  ];
+  for (let i = 0; i < rsaJobs.length; i++) {
+    const job = rsaJobs[i];
+    const done = await certify(id, job.useCase, {
+      slot: job.slot, alg: 'RS256', keyAlg: 'rsa-2048',
+      label: job.cn, commonName: job.cn, publicKeyPem: rsaPublicPem,
+      // XML Signature and JWS are both DIGITAL SIGNATURES, and this key also
+      // DECRYPTS — a JWE sent to this service, and an EncryptedID in a SAML
+      // document — so it carries keyEncipherment as well. A certificate whose
+      // keyUsage forbids the thing the key is actually used for is refused by
+      // a strict validator and by nothing here, which is the worst of both.
+      keyUsage: ['digitalSignature', 'nonRepudiation', 'keyEncipherment']
+    });
+    if (done.ok) {
+      certified += 1;
+    } else {
+      failed.push(job.useCase + '/' + job.slot + ': ' + done.errors.join(' '));
+    }
+  }
+
+  // --- the curve keys, under JOSE -----------------------------------------
+  const extras = keys.extraKeys || [];
+  for (let i = 0; i < extras.length; i++) {
+    const one = extras[i];
+    const jwk = one.publicJwk || {};
+    const slot = jwk.crv ? (one.alg + ':' + jwk.crv) : one.alg;
+    let publicPem = '';
+    try {
+      publicPem = nodeC.createPublicKey({ key: jwk, format: 'jwk' })
+        .export({ type: 'spki', format: 'pem' });
+    } catch (e) {
+      failed.push('jose/' + slot + ': ' + e.message);
+      continue;
+    }
+    const done = await certify(id, 'jose', {
+      slot: slot, alg: one.alg, crv: jwk.crv || '',
+      keyAlg: (jwk.crv || '').toLowerCase(),
+      label: (jwk.crv || one.alg) + ' signing key',
+      commonName: 'JOSE signing (' + (jwk.crv || one.alg) + ')',
+      publicKeyPem: publicPem
+    });
+    if (done.ok) {
+      certified += 1;
+    } else {
+      failed.push('jose/' + slot + ': ' + done.errors.join(' '));
+    }
+  }
+
+  if (failed.length) {
+    log.warn('pki: the "' + id + '" realm has ' + certified + ' certified ' +
+             'signing key(s) and ' + failed.length + ' that could not be ' +
+             'certified: ' + failed.join('; ') + '. Those keys still SIGN — ' +
+             'what they lack is a certificate chaining to this service\'s ' +
+             'Root.');
+  } else {
+    log.info('pki: the "' + id + '" realm\'s ' + certified + ' signing keys ' +
+             'are certified under its own Intermediate CA — ' + extras.length +
+             ' curve key(s) and the RSA key, which is certified twice because ' +
+             'it signs both JWTs and XML documents.');
+  }
+  log.debug('Leaving certifyKeySet(). ' + certified + ' certified.');
+  return { ok: !failed.length, certified: certified, failed: failed };
+}
+
+
+// ---------------------------------------------------------------------------
+// THE REVOCATION POINTERS EVERY CERTIFICATE THIS SERVICE MINTS CARRIES
+// (2026-09-11): where its CRL is, in three schemes, and where its OCSP
+// responder is.
+//
+// **THE ADDRESSES NAME THE ISSUER AND NOT THE SUBJECT**, which is the thing to
+// get right: a certificate's cRLDistributionPoints says where the list that
+// would revoke IT is published, and that list belongs to whoever signed it. So
+// a leaf under the JOSE Issuing CA points at the JOSE CA's CRL, and the JOSE
+// CA's own certificate points at its parent's.
+//
+// **`common/pki_revocation.js` IS REQUIRED LAZILY AND THAT IS DELIBERATE.**
+// That module requires THIS one, so a require at the top of this file would
+// close a cycle (rule 2) — node answers one with a half-initialised module
+// whose exports are `undefined`, and the symptom would arrive later as
+// "distributionPoints is not a function" from inside an issue.
+function revocationExtensionsFor(scopeId, caId) {
+  let points = null;
+  try {
+    points = require('./pki_revocation').distributionPoints(scopeId, caId);
+  } catch (e) {
+    // No revocation module in this process. A certificate with no pointers is
+    // what this service minted for its whole life until this date, so it is
+    // issued exactly as it was rather than refused.
+    return {};
+  }
+  return {
+    // ALL THREE SCHEMES, as separate distribution points rather than three
+    // names in one. RFC 5280 section 4.2.1.13 makes each DistributionPoint an
+    // ALTERNATIVE — a client picks one it can reach — and several names inside
+    // ONE point are meant to be different addresses of the SAME list, which is
+    // a claim about equivalence this service would rather not make about
+    // three protocols.
+    cRLDistributionPoints: {
+      present: true, critical: false,
+      urls: [points.http, points.ldap, points.ldaps]
+    },
+    authorityInfoAccess: {
+      present: true, critical: false,
+      entries: [{ method: 'ocsp', url: points.ocsp },
+                // caIssuers: where the certificate that SIGNED this one can be
+                // fetched, for a client that was sent an incomplete chain.
+                { method: 'caIssuers', url: points.caIssuers }]
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// **ANYTHING THIS SERVICE REPLACES GOES ON THE LIST THAT REVOKES IT
+// (2026-09-11).**
+//
+// A rotation that left the old certificate valid would be the most misleading
+// thing this hierarchy could do: an operator presses *Reissue* precisely
+// because they no longer want the old key trusted, and until this date the
+// only thing that happened was that a new certificate appeared beside it. The
+// old one went on chaining to the same Root, for its whole validity period,
+// with nothing anywhere saying otherwise.
+//
+// **THE REASON IS ALWAYS `superseded`** (RFC 5280 code 4), which is what the
+// word means: a replacement was issued. `keyCompromise` is a different claim
+// and only a person can make it, which is why the console's revoke pane asks.
+//
+// **IT IS REVOKED AT THE ISSUER THAT SIGNED IT**, not at the one replacing it
+// — a serial is only unique within one authority, so putting a leaf's serial
+// on the Intermediate's list would be an entry no validator ever consults.
+// Lazily required for `revocationExtensionsFor()`'s reason.
+function supersede(scopeId, caId, tier, note) {
+  if (!tier || !tier.serialHex) {
+    return false;
+  }
+  try {
+    const revocation = require('./pki_revocation');
+    const done = revocation.revoke(scopeId, caId, {
+      serialHex: tier.serialHex,
+      reason: 'superseded',
+      subject: tier.subject || '',
+      note: note || ''
+    });
+    return !!done.ok;
+  } catch (e) {
+    // No revocation module in this process, or it refused. The replacement
+    // still happens — a rotation that could be stopped by a bookkeeping
+    // failure would be worse than one whose old certificate is not listed.
+    log.warn('pki: ' + (tier.subject || 'a certificate') + ' was replaced and ' +
+             'could not be put on a revocation list: ' + e.message);
+    return false;
+  }
+}
+
+// A PEM somebody pasted, as a PEM every tool will accept. The trim is for the
+// textarea it arrives from — browsers add whitespace — and the trailing
+// newline is put BACK because a PEM without one is refused by several readers
+// that are perfectly happy with everything else about it, and because what is
+// stored should be byte-identical to what the same key exports as. Trimming
+// and not restoring it was a one-character difference that
+// `tests/pki_hierarchy.js` caught by comparing what it supplied with what came
+// back.
+function tidyPem(text) {
+  const body = String(text || '').trim();
+  return body ? body + '\n' : '';
+}
+
+// ===========================================================================
+// EDITING THE HIERARCHY (2026-09-11): reissue one authority, renew what hangs
+// under it, or replace either with material an operator supplied.
+//
+// **THE FOUR ARE DELIBERATELY DIFFERENT ACTS AND THE PAGE NAMES THEM APART.**
+// They are easy to confuse and the consequences are not alike:
+//
+//   reissueUseCase()   a NEW KEY for one Issuing CA. Everything it had signed
+//                      chains to nothing, so it re-certifies in the same act.
+//   recertifyUseCase() the SAME authorities and the same keys, fresh
+//                      certificates. A renewal: nothing stops verifying.
+//   importCa()         an authority this service did not generate.
+//   pinKeyPair()       a LEAF key an operator supplied, used instead of the
+//                      one this service would have made.
+// ===========================================================================
+
+// Re-mint everything one Issuing CA has certified, from whatever authority it
+// now is. Shared by the reissue and the renewal, which differ only in whether
+// the authority changed first.
+async function recertifyUseCase(scopeId, useCaseId) {
+  log.debug('Entering recertifyUseCase(). scope=' + scopeId + ' use=' +
+            useCaseId);
+  const id = String(scopeId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    return { ok: false,
+             errors: ['"' + useCaseId + '" is not a use case. They are ' +
+                      USE_CASE_IDS.join(', ') + '.'] };
+  }
+  const held = certificatesFor(id, uc.id);
+  let done = 0;
+  const failed = [];
+  for (let i = 0; i < held.length; i++) {
+    const was = held[i];
+    // **THE PUBLIC KEY COMES FROM THE CERTIFICATE THAT IS BEING REPLACED**,
+    // which is what makes this a renewal rather than a regeneration: the
+    // subject key is read back out of the old certificate, so the new one is
+    // over the same key and everything that verifies against the published
+    // JWKS goes on verifying.
+    let publicPem = '';
+    try {
+      publicPem = new nodeCrypto.X509Certificate(was.certificatePem)
+        .publicKey.export({ type: 'spki', format: 'pem' });
+    } catch (e) {
+      failed.push(was.slot + ': ' + e.message);
+      continue;
+    }
+    const made = await certify(id, uc.id, {
+      slot: was.slot, alg: was.alg, keyAlg: was.keyAlg,
+      label: was.label, commonName: subjectCnOf(was.subject) || was.slot,
+      publicKeyPem: publicPem,
+      pinned: was.pinned, privateKeyPem: was.privateKeyPem,
+      publicKeyPemStored: was.publicKeyPem
+    });
+    if (made.ok) {
+      done += 1;
+      // **THE CERTIFICATE THAT WAS REPLACED IS SUPERSEDED**, even though the
+      // KEY is the same one. That is the point: two certificates over one key
+      // with different validity windows are two documents, and the older one
+      // is no longer what this service publishes — a relying party holding it
+      // should be told.
+      if (normalSerialsDiffer(was.serialHex, made.record.serialHex)) {
+        supersede(id, uc.id, was, 'renewed');
+      }
+    } else {
+      failed.push(was.slot + ': ' + made.errors.join(' '));
+    }
+  }
+  if (failed.length) {
+    log.warn('pki: ' + failed.length + ' certificate(s) under the ' + uc.label +
+             ' Issuing CA could not be re-minted: ' + failed.join('; '));
+  }
+  log.debug('Leaving recertifyUseCase(). ' + done + ' re-minted.');
+  return { ok: true, recertified: done, failed: failed };
+}
+
+// Two serials that are not the same certificate. Written out because a renewal
+// that produced an identical serial — which cannot happen, but a future
+// caller-supplied serial could — would otherwise revoke the certificate it had
+// just issued.
+// The scope the ROOT's own revocation list lives in, which is the service row.
+// A function rather than the constant inline so that the one place this is
+// asked reads as a question about where a list lives.
+function pki_rootScopeOf() {
+  return SERVICE_SCOPE;
+}
+
+function normalSerialsDiffer(a, b) {
+  const tidy = function (one) {
+    return String(one || '').toLowerCase().replace(/[^0-9a-f]/g, '')
+      .replace(/^0+/, '');
+  };
+  return tidy(a) !== tidy(b);
+}
+
+// The CN out of a subject string, so a renewal keeps the name the certificate
+// had rather than falling back to the slot.
+function subjectCnOf(subject) {
+  const found = /CN=([^,\n]+)/.exec(String(subject || ''));
+  return found ? found[1].trim() : '';
+}
+
+// A NEW KEY for one Issuing CA, and everything under it re-certified from it.
+async function reissueUseCase(scopeId, useCaseId) {
+  log.debug('Entering reissueUseCase(). scope=' + scopeId + ' use=' + useCaseId);
+  const id = String(scopeId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    return { ok: false,
+             errors: ['"' + useCaseId + '" is not a use case. They are ' +
+                      USE_CASE_IDS.join(', ') + '.'] };
+  }
+  const row = rawRowFor(id);
+  if (!row || !row.intermediate) {
+    return { ok: false,
+             errors: ['That scope has no Intermediate CA to issue from. ' +
+                      'Build its branch first.'] };
+  }
+  if (useCasesFor(scopeKindOf(id)).every(function (one) { return one.id !== uc.id; })) {
+    // Refused rather than built: a `tls` Issuing CA under a realm's
+    // Intermediate would be a realm vouching for a socket every realm answers
+    // on, which is the reason the use cases carry a scope at all.
+    return { ok: false,
+             errors: ['The ' + uc.label + ' use case belongs to the ' +
+                      uc.scope + ' scope and not to this one. ' +
+                      (uc.scope === 'process'
+                        ? 'It is under the process Intermediate, because the ' +
+                          'sockets it certifies are shared by every realm.'
+                        : 'It is under a realm\'s Intermediate.')] };
+  }
+  let made;
+  try {
+    made = await issueCaTier({
+      tier: 'issuing', profile: 'issuing-ca', label: uc.label + ' CA',
+      useCase: uc.id, scope: id,
+      cn: (row.organisation || DEFAULT_ORGANISATION) + ' ' + uc.cn + ' (' +
+          (scopeKindOf(id) === 'process' ? 'Process' : (id || 'default')) + ')',
+      organisation: row.organisation || DEFAULT_ORGANISATION,
+      country: row.country || '',
+      // **THE ALGORITHM THIS AUTHORITY ALREADY HAD, not the branch's.** A
+      // reissue replaces a key and nothing else; taking `row.keyAlg` here
+      // would silently turn an EC SPIFFE authority into an RSA one on the
+      // first rotation, which is a change of SVID signature algorithm that
+      // nobody asked for and nothing would report.
+      keyAlg: (row.issuing[uc.id] || {}).keyAlg || row.keyAlg,
+      signatureAlg: (row.issuing[uc.id] || {}).signatureAlg ||
+                    row.signatureAlg,
+      // The same `pathLen` the branch build gives it. Left off here for a day
+      // and it is the kind of omission nothing reports: the reissued SPIFFE
+      // authority came back at `pathLen: 0`, every SVID went on verifying, and
+      // only `NewDownstreamX509CA` broke.
+      pathLen: issuingPathLen(uc.id),
+      parent: row.intermediate
+    });
+  } catch (e) {
+    log.error('pki: the ' + uc.label + ' Issuing CA could not be re-issued: ' +
+              e.message);
+    return { ok: false,
+             errors: ['That Issuing CA could not be re-issued: ' + e.message] };
+  }
+  // THE OLD AUTHORITY IS SUPERSEDED, at the Intermediate that signed it — and
+  // so is everything it had issued, at the old authority itself. Both are
+  // done BEFORE the new one is stored, because `supersede()` reads the row and
+  // the old certificates are what is being listed.
+  supersede(id, 'intermediate', row.issuing[uc.id],
+            'replaced by a reissue of the ' + uc.label + ' Issuing CA');
+  certificatesFor(id, uc.id).forEach(function (one) {
+    supersede(id, uc.id, one,
+              'its issuing authority was reissued, so this certificate ' +
+              'chains to an authority that no longer exists');
+  });
+  const fresh = rawRowFor(id);
+  fresh.issuing = Object.assign({}, fresh.issuing || {});
+  fresh.issuing[uc.id] = made;
+  saveRow(id, fresh);
+  const again = await recertifyUseCase(id, uc.id);
+  log.info('pki: the ' + uc.label + ' Issuing CA in "' + (id || 'default') +
+           '" was re-issued with a new key pair, and ' + again.recertified +
+           ' certificate(s) under it were re-minted from it.');
+  log.debug('Leaving reissueUseCase().');
+  return { ok: true, recertified: again.recertified,
+           ca: describeTier(made) };
+}
+
+// ---------------------------------------------------------------------------
+// AN AUTHORITY THIS SERVICE DID NOT GENERATE.
+//
+// `useCaseId` of `root` replaces the service Root; anything else replaces one
+// scope's Issuing CA. **Both are checked before anything is stored**: a CA
+// whose certificate and key do not go together is a hierarchy that builds
+// perfectly and issues certificates nothing can verify, and the failure would
+// arrive at somebody else's relying party.
+// ---------------------------------------------------------------------------
+async function importCa(scopeId, useCaseId, material) {
+  log.debug('Entering importCa(). scope=' + scopeId + ' use=' + useCaseId);
+  const certificatePem = tidyPem((material || {}).certificatePem);
+  const privateKeyPem = tidyPem((material || {}).privateKeyPem);
+  if (!certificatePem || !privateKeyPem) {
+    return { ok: false,
+             errors: ['Both the certificate and its private key are needed. ' +
+                      'A certificate without its key is a trust anchor rather ' +
+                      'than an authority — this service cannot issue from it.'] };
+  }
+  let cert;
+  try {
+    cert = new nodeCrypto.X509Certificate(certificatePem);
+  } catch (e) {
+    return { ok: false,
+             errors: ['That certificate could not be read: ' + e.message] };
+  }
+  let key;
+  try {
+    key = nodeCrypto.createPrivateKey(privateKeyPem);
+  } catch (e) {
+    return { ok: false,
+             errors: ['That private key could not be read: ' + e.message] };
+  }
+  // **THE PAIR HAS TO MATCH, AND THIS IS THE CHECK THAT MATTERS.** node
+  // answers it directly, and without it an authority whose key belongs to a
+  // different certificate would be stored, would issue, and would produce
+  // certificates whose signature verifies against nothing.
+  if (!cert.checkPrivateKey(key)) {
+    return { ok: false,
+             errors: ['That private key does not belong to that certificate. ' +
+                      'An authority whose key and certificate do not go ' +
+                      'together issues certificates that verify nowhere, and ' +
+                      'the failure arrives at somebody else\'s relying party.'] };
+  }
+  if (!cert.ca) {
+    return { ok: false,
+             errors: ['That certificate is not a CA — its basicConstraints ' +
+                      'says cA:FALSE, so nothing it signs will be accepted by ' +
+                      'a path validator. A leaf cannot be an issuing ' +
+                      'authority.'] };
+  }
+  const desc = await keyMaterial.describePublicPem(
+    cert.publicKey.export({ type: 'spki', format: 'pem' }));
+  const record = {
+    tier: useCaseId === 'root' ? 'root' : 'issuing',
+    useCase: useCaseId === 'root' ? null : useCaseId,
+    label: useCaseId === 'root' ? 'Root CA'
+                                : ((useCase(useCaseId) || {}).label || useCaseId) + ' CA',
+    scope: String(scopeId),
+    keyAlg: (desc && desc.id) || '',
+    signatureAlg: defaultSignatureAlgorithmFor((desc && desc.id) || ''),
+    subject: cert.subject.replace(/\n/g, ', '),
+    serialHex: cert.serialNumber,
+    notBefore: new Date(cert.validFrom).toISOString(),
+    notAfter: new Date(cert.validTo).toISOString(),
+    certificatePem: certificatePem,
+    privateKeyPem: privateKeyPem,
+    publicKeyPem: cert.publicKey.export({ type: 'spki', format: 'pem' }),
+    thumbprint: thumbprintOf(certificatePem),
+    imported: true,
+    createdAt: Date.now()
+  };
+  if (useCaseId === 'root') {
+    const row = serviceRow() || {};
+    keystore.attachPki(SERVICE_SCOPE, Object.assign({}, row, {
+      version: 2, scope: SERVICE_SCOPE, root: record,
+      organisation: row.organisation || DEFAULT_ORGANISATION,
+      keyAlg: record.keyAlg, signatureAlg: record.signatureAlg,
+      createdAt: Date.now()
+    }));
+    log.warn('pki: THE SERVICE ROOT WAS REPLACED BY AN IMPORTED CA — ' +
+             record.subject + '. Every branch must be rebuilt under it or the ' +
+             'tree does not chain to its own anchor.');
+    return { ok: true, imported: describeTier(record),
+             why: 'That CA is now this service\'s Root. **EVERY BRANCH MUST ' +
+                  'BE REBUILT UNDER IT** — the Intermediates still hanging ' +
+                  'from the old Root chain to nothing, and until they are ' +
+                  'rebuilt every path check in this service fails. Press ' +
+                  'Rebuild on each scope below.' };
+  }
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    return { ok: false,
+             errors: ['"' + useCaseId + '" is not a use case, and `root` is ' +
+                      'the only other thing that can be imported. The use ' +
+                      'cases are ' + USE_CASE_IDS.join(', ') + '.'] };
+  }
+  const row = rawRowFor(scopeId);
+  if (!row || !row.intermediate) {
+    return { ok: false,
+             errors: ['That scope has no branch yet. Build it first — an ' +
+                      'Issuing CA is imported INTO a branch.'] };
+  }
+  row.issuing = Object.assign({}, row.issuing || {});
+  row.issuing[uc.id] = record;
+  saveRow(scopeId, row);
+  const again = await recertifyUseCase(scopeId, uc.id);
+  log.warn('pki: the ' + uc.label + ' Issuing CA in "' +
+           (String(scopeId) || 'default') + '" was REPLACED BY AN IMPORTED ' +
+           'CA — ' + record.subject + '. ' + again.recertified +
+           ' certificate(s) were re-minted from it.');
+  log.debug('Leaving importCa(). Imported.');
+  return { ok: true, imported: describeTier(record),
+           why: 'That CA is now the ' + uc.label + ' authority for this ' +
+                'scope, and ' + again.recertified + ' certificate(s) were ' +
+                're-minted from it. **IT IS NOT UNDER THIS SERVICE\'S ROOT** ' +
+                'unless you issued it from one — so what it signs chains to ' +
+                'YOUR anchor, which is the point of importing one, and this ' +
+                'service\'s own Root no longer covers those certificates.' };
+}
+
+// ---------------------------------------------------------------------------
+// A LEAF KEY PAIR AN OPERATOR SUPPLIED, used instead of the one this service
+// would have generated.
+//
+// **THE CERTIFICATE IS OPTIONAL AND THAT IS THE INTERESTING HALF.** With one,
+// the pair is used exactly as it was handed over — key and certificate
+// together, chaining wherever the operator's own authority chains. Without
+// one, this service ISSUES a certificate over the supplied public key from the
+// use case's Issuing CA, which is what somebody who wants their own key under
+// this service's Root is asking for.
+// ---------------------------------------------------------------------------
+async function pinKeyPair(scopeId, useCaseId, slot, material) {
+  log.debug('Entering pinKeyPair(). scope=' + scopeId + ' use=' + useCaseId +
+            ' slot=' + slot);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    return { ok: false,
+             errors: ['"' + useCaseId + '" is not a use case. They are ' +
+                      USE_CASE_IDS.join(', ') + '.'] };
+  }
+  if (!slot) {
+    return { ok: false,
+             errors: ['Name the slot this key pair is for — the algorithm, as ' +
+                      'it appears in the certified list (RS256, ES256:P-256 ' +
+                      'and so on).'] };
+  }
+  const privateKeyPem = tidyPem((material || {}).privateKeyPem);
+  if (!privateKeyPem) {
+    return { ok: false, errors: ['A private key is needed.'] };
+  }
+  let key;
+  let publicKeyPem;
+  try {
+    key = nodeCrypto.createPrivateKey(privateKeyPem);
+    publicKeyPem = nodeCrypto.createPublicKey(key)
+      .export({ type: 'spki', format: 'pem' });
+  } catch (e) {
+    return { ok: false,
+             errors: ['That private key could not be read: ' + e.message] };
+  }
+  const certificatePem = tidyPem((material || {}).certificatePem);
+  if (certificatePem) {
+    let cert;
+    try {
+      cert = new nodeCrypto.X509Certificate(certificatePem);
+    } catch (e) {
+      return { ok: false,
+               errors: ['That certificate could not be read: ' + e.message] };
+    }
+    if (!cert.checkPrivateKey(key)) {
+      return { ok: false,
+               errors: ['That private key does not belong to that ' +
+                        'certificate.'] };
+    }
+    const row = rawRowFor(scopeId) || {};
+    row.certs = Object.assign({}, row.certs || {});
+    row.certs[slotKey(uc.id, slot)] = {
+      slot: String(slot), useCase: uc.id, scope: String(scopeId),
+      label: 'your ' + slot + ' key', alg: String(slot).split(':')[0],
+      keyAlg: '', signatureAlg: '',
+      subject: cert.subject.replace(/\n/g, ', '),
+      serialHex: cert.serialNumber,
+      notBefore: new Date(cert.validFrom).toISOString(),
+      notAfter: new Date(cert.validTo).toISOString(),
+      certificatePem: certificatePem,
+      chainPem: [],
+      thumbprint: thumbprintOf(certificatePem),
+      pinned: true,
+      privateKeyPem: privateKeyPem,
+      publicKeyPem: publicKeyPem,
+      createdAt: Date.now()
+    };
+    saveRow(scopeId, row);
+    log.warn('pki: a key pair supplied by an operator is now the ' + uc.label +
+             ' key for "' + slot + '" in "' + (String(scopeId) || 'default') +
+             '", with a certificate they supplied too. It does NOT chain to ' +
+             'this service\'s Root.');
+    log.debug('Leaving pinKeyPair(). Pinned with a certificate.');
+    return { ok: true,
+             why: 'That key pair and its certificate are now what this ' +
+                  'service uses for ' + uc.label + ' / ' + slot + '. **IT ' +
+                  'DOES NOT CHAIN TO THIS SERVICE\'S ROOT** — it chains ' +
+                  'wherever the certificate you supplied chains, which is ' +
+                  'what supplying one means.' };
+  }
+  // No certificate: issue one over the supplied key from this scope's own
+  // authority, which is what somebody who wants THEIR key under THIS service's
+  // Root is asking for.
+  const made = await certify(scopeId, uc.id, {
+    slot: String(slot), alg: String(slot).split(':')[0],
+    label: 'your ' + slot + ' key',
+    commonName: uc.label + ' (' + slot + ', supplied key)',
+    publicKeyPem: publicKeyPem,
+    pinned: true, privateKeyPem: privateKeyPem, publicKeyPemStored: publicKeyPem
+  });
+  if (!made.ok) {
+    log.debug('Leaving pinKeyPair(). The certification failed.');
+    return made;
+  }
+  log.warn('pki: a key pair supplied by an operator is now the ' + uc.label +
+           ' key for "' + slot + '" in "' + (String(scopeId) || 'default') +
+           '", certified under this service\'s own ' + uc.label +
+           ' Issuing CA.');
+  log.debug('Leaving pinKeyPair(). Pinned and certified.');
+  return { ok: true,
+           why: 'That key pair is now what this service uses for ' + uc.label +
+                ' / ' + slot + ', and it was CERTIFIED under this scope\'s ' +
+                uc.label + ' Issuing CA — so it chains to this service\'s ' +
+                'Root exactly as a key this service generated would.' };
+}
+
+// ---------------------------------------------------------------------------
+// KEY MATERIAL THAT IS NOT A REALM'S KEY SET, AND HOW IT GETS CERTIFIED.
+//
+// The signing keys are handed to `certifyKeySet()` by the one module that owns
+// them. Everything else this service generates belongs to a module of its own
+// — the TLS listener certificate, and whatever comes after it — and those
+// modules REGISTER what they have here rather than being reached into.
+//
+// **IT IS A REGISTRATION AND NOT A REQUIRE, and rule 3e's test is why.** A
+// `require('../tls/tls_server')` from this module would drag every `/tls`
+// route into the router at whatever position this file is first required from
+// — which is `common/service_state.js`, above everything. This file is a LEAF
+// and must stay one.
+//
+// A registration carries a `publicKeyPem` FUNCTION rather than a string,
+// because the material it names may not exist when the module registers: the
+// TLS certificate is made lazily and `start()` is what asks for it.
+// ---------------------------------------------------------------------------
+const certifiable = [];
+
+function registerCertifiable(spec) {
+  log.debug('Entering registerCertifiable(). ' + (spec && spec.useCase) + '/' +
+            (spec && spec.slot));
+  if (!spec || !useCase(spec.useCase) || !spec.slot ||
+      typeof spec.publicKeyPem !== 'function') {
+    log.error('pki: a key registration was refused — it needs a known use ' +
+              'case, a slot and a publicKeyPem function. Got ' +
+              JSON.stringify({ useCase: spec && spec.useCase,
+                               slot: spec && spec.slot }) + '.');
+    return false;
+  }
+  certifiable.push(spec);
+  log.debug('Leaving registerCertifiable(). ' + certifiable.length +
+            ' registration(s).');
+  return true;
+}
+
+// Certify everything registered. Called from `start()`, before anything binds,
+// which is what lets the TLS listener open with a certificate that already
+// chains to this service's Root rather than swapping one in afterwards.
+async function certifyRegistered() {
+  log.debug('Entering certifyRegistered(). ' + certifiable.length +
+            ' registration(s).');
+  let done = 0;
+  for (let i = 0; i < certifiable.length; i++) {
+    const one = certifiable[i];
+    const scope = one.scope || PROCESS_SCOPE;
+    let publicPem = '';
+    try {
+      publicPem = one.publicKeyPem();
+    } catch (e) {
+      log.error('pki: the ' + one.useCase + ' key "' + one.slot + '" could ' +
+                'not be read to certify it: ' + e.message);
+      continue;
+    }
+    if (!publicPem) {
+      log.debug('certifyRegistered(): ' + one.slot + ' has no key yet.');
+      continue;
+    }
+    const made = await certify(scope, one.useCase, {
+      slot: one.slot,
+      alg: one.alg || '',
+      keyAlg: one.keyAlg || '',
+      label: one.label || one.slot,
+      commonName: one.commonName || one.slot,
+      publicKeyPem: publicPem,
+      profile: one.profile,
+      keyUsage: one.keyUsage,
+      extensions: one.extensions
+    });
+    if (!made.ok) {
+      log.error('pki: the ' + one.useCase + ' key "' + one.slot + '" could ' +
+                'not be certified: ' + made.errors.join(' ') + ' It still ' +
+                'works — what it lacks is a certificate chaining to this ' +
+                'service\'s Root.');
+      continue;
+    }
+    done += 1;
+    if (typeof one.onCertified === 'function') {
+      try {
+        one.onCertified(made.record.certificatePem,
+                        made.record.chainPem.slice());
+      } catch (e) {
+        log.error('pki: the ' + one.useCase + ' key "' + one.slot + '" was ' +
+                  'certified and the module that owns it threw on being told: ' +
+                  e.message);
+      }
+    }
+  }
+  log.debug('Leaving certifyRegistered(). ' + done + ' certified.');
+  return done;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT `server.js` AND `common/service_state.js` CALL, after `keystore.start()`
+// and before anything binds.
+//
+// **IT IS NEVER FATAL.** `persistence.start()` is the one place in this
+// repository where a failure to open something stops the process, and its own
+// header argues why it is the only one: a service that cannot reach its store
+// answers WRONGLY. A service whose certificate authority could not be built
+// answers correctly with self-signed keys, which is what this service did for
+// its whole life until today — so a failure here is logged loudly and the
+// service starts.
+// ---------------------------------------------------------------------------
+// The key-set provider `start()` was given, kept so that the realm watcher
+// below can certify a realm created at RUNTIME. It is not a second mechanism:
+// it is the same function, remembered, because the watcher fires long after
+// the call that supplied it. See the `keySetFor` note in `start()` for why
+// this module does not simply require `helpers.js`.
+let keySetProvider = null;
+
+async function start(opts) {
+  log.debug('Entering pki.start().');
+  const options = opts || {};
+  if (typeof options.keySetFor === 'function') {
+    keySetProvider = options.keySetFor;
+  }
+  if (config.value('pki.autoBuild') === false) {
+    log.info('pki: `pki.autoBuild` is off, so no certificate authority is ' +
+             'built at startup and this service\'s own keys are self-signed ' +
+             'until somebody presses Build on /admin/pki. That is what this ' +
+             'service did before 2026-09-11.');
+    log.debug('Leaving pki.start(). Switched off.');
+    return { ok: true, built: false };
+  }
+  const rooted = await ensureRoot({
+    organisation: config.value('pki.organisation')
+  });
+  if (!rooted.ok) {
+    log.error('pki: THE SERVICE HAS NO ROOT CA — ' + rooted.errors.join(' ') +
+              ' Every key this service holds will be self-signed, which is ' +
+              'what it did before 2026-09-11. Nothing else is affected.');
+    log.debug('Leaving pki.start(). No Root.');
+    return { ok: false, built: false, errors: rooted.errors };
+  }
+  // The process branch, for what belongs to no realm: TLS and SPIFFE.
+  const process = await ensureScope(PROCESS_SCOPE);
+  if (!process.ok) {
+    log.error('pki: the process branch could not be built — ' +
+              (process.errors || []).join(' '));
+  }
+  // Every realm that exists NOW. A realm created later is caught by
+  // `realms.onChange()`, which `helpers.js` wires up.
+  const realmIds = (options.realmIds || []).slice();
+  if (realmIds.indexOf('') < 0) {
+    realmIds.unshift('');
+  }
+  let branches = 0;
+  for (let i = 0; i < realmIds.length; i++) {
+    const made = await ensureScope(realmIds[i]);
+    if (made.ok) {
+      branches += 1;
+    } else {
+      log.error('pki: the "' + (realmIds[i] || 'default') + '" realm\'s ' +
+                'branch could not be built — ' +
+                (made.errors || []).join(' '));
+    }
+  }
+  // -------------------------------------------------------------------------
+  // AND CERTIFY THE DEFAULT REALM'S KEYS HERE, BEFORE THE LISTENER BINDS.
+  //
+  // Every other realm's keys are certified when they are generated — lazily,
+  // on first use, from `helpers.js`'s `certifyLater()`. The default realm is
+  // the exception and it is the one worth making: it is the realm every
+  // process has and every protocol answers in, so certifying it here means
+  // there is no window at all in which this service publishes a self-signed
+  // certificate to anybody.
+  //
+  // **A KEY-SET PROVIDER IS PASSED IN RATHER THAN REQUIRED**, because this
+  // module must not require `helpers.js`: that file reaches for THIS one from
+  // inside a property read (lazily, so there is no cycle), and a require in
+  // the other direction at load time would put a certificate authority in
+  // front of every in-process caller of helpers — the parent project's
+  // Kerberos jobs among them.
+  // -------------------------------------------------------------------------
+  // Everything a module registered — the TLS listener certificate, today.
+  // Before the listener binds, so the socket opens with a certificate that
+  // already chains rather than one swapped in afterwards.
+  const registered = await certifyRegistered();
+  let certified = registered;
+  if (typeof options.keySetFor === 'function') {
+    try {
+      const keys = options.keySetFor('');
+      if (keys) {
+        const done = await certifyKeySet('', keys);
+        certified += done.certified || 0;
+      }
+    } catch (e) {
+      log.error('pki: the default realm\'s signing keys could not be ' +
+                'certified: ' + e.message + '. They still SIGN — what they ' +
+                'lack is a certificate chaining to this service\'s Root.');
+    }
+  }
+  log.info('pki: the certificate authority is ready — one Root CA for the ' +
+           'service, a process Intermediate, and ' + branches + ' realm ' +
+           'branch(es). Every key pair this service generates is a leaf of ' +
+           'it' +
+           (certified ? ', and the default realm\'s ' + certified +
+                        ' signing keys are certified under it' : '') + '.');
+  // -------------------------------------------------------------------------
+  // AND A REALM CREATED AFTERWARDS GETS A BRANCH TOO.
+  //
+  // `start()` builds what exists when it runs; a realm made at RUNTIME —
+  // through `/admin/realms` or `POST /admin-api/realms/create` — appears after
+  // it. Without this it would have no Intermediate, so its keys would be
+  // certified by nothing and would publish the self-signed certificates they
+  // were born with for ever, silently, while every realm created before it
+  // chained correctly. That is exactly the kind of difference nobody looks
+  // for.
+  //
+  // **IT IS SUBSCRIBED HERE AND NOT AT REQUIRE TIME**, which is the same
+  // decision `persistence.js` makes about its own `realms.onChange()`
+  // subscription read one way and the opposite the other: that module
+  // subscribes when it is required, and this one when the SERVICE STARTS —
+  // because `npm test`, the parent project's in-process Kerberos jobs and the
+  // remote PEP container all require this file and none of them wants a
+  // certificate authority built under a realm a test happened to create.
+  // -------------------------------------------------------------------------
+  watchRealms();
+  // -------------------------------------------------------------------------
+  // AND PUBLISH A CRL FOR EVERY AUTHORITY, INTO THE DIRECTORY, ONCE.
+  //
+  // Every certificate above names an `ldap://` and an `ldaps://` distribution
+  // point as well as an `http://` one, and a client that follows either of the
+  // first two reaches the embedded directory — where, until this line ran,
+  // there was NO ENTRY AT ALL. An address published inside a certificate that
+  // answers `LDAP_NO_SUCH_OBJECT` is worse than one that was never named: a
+  // client configured to require a fresh CRL refuses the certificate, and the
+  // reason it gives is about the directory rather than about revocation.
+  //
+  // The HTTP endpoint needs nothing of the kind — it builds on demand — and
+  // that asymmetry is the point: a CRL is a DOCUMENT in LDAP and a RESPONSE
+  // over HTTP, so one has to be put somewhere and the other does not.
+  //
+  // It is lazily required for `revocationExtensionsFor()`'s reason — that
+  // module requires this one, so a require at load time would close a cycle
+  // (rule 2) — and a failure is logged and never fatal: a service whose
+  // directory would not take a CRL is a service that still issues.
+  // -------------------------------------------------------------------------
+  try {
+    const published = await require('./pki_revocation')
+      .publishAll([PROCESS_SCOPE].concat(realmIds));
+    if (published) {
+      log.info('pki: ' + published + ' certificate revocation ' +
+               'list(s) were published into the directory, one per ' +
+               'authority, at the `ldap://` and `ldaps://` addresses every ' +
+               'certificate this service issues names.');
+    }
+  } catch (e) {
+    log.error('pki: the revocation lists could not be published into the ' +
+              'directory: ' + e.message + '. The HTTP distribution point ' +
+              'still answers; the LDAP one does not.');
+  }
+  log.debug('Leaving pki.start(). ' + branches + ' realm branch(es), ' +
+            certified + ' key(s) certified.');
+  return { ok: true, built: true, branches: branches, certified: certified };
+}
+
+// Subscribe once. A second subscription would build a realm's branch twice —
+// harmless, because `ensureScope()` is idempotent, and still two log lines
+// saying a thing happened that happened once.
+let watching = false;
+
+function watchRealms() {
+  if (watching || typeof realms.onChange !== 'function') {
+    return;
+  }
+  watching = true;
+  // **THE ARGUMENTS ARE `(id, what)` AND NOT `(what, realm)`.** Written the
+  // other way round it subscribes successfully, fires on every change and
+  // matches nothing — a realm created at runtime gets no branch and there is
+  // no error anywhere, which is the shape of defect this watcher exists to
+  // prevent in the first place.
+  realms.onChange(function (realmId, what) {
+    if (what !== 'create' || !realmId) {
+      return;
+    }
+    const id = realmId === realms.DEFAULT_ID ? '' : String(realmId);
+    // ASYNCHRONOUS AND NOT AWAITED, for `helpers.js`'s `certifyLater()`
+    // reason: a listener runs inside whatever act created the realm, and a
+    // realm creation must not block on nine signatures. A failure is logged
+    // by the builder and the realm exists either way — with self-signed keys,
+    // which is what every realm had before this existed.
+    Promise.resolve(ensureScope(id)).then(function (made) {
+      if (!made.ok) {
+        log.error('pki: the "' + id + '" realm was created and its ' +
+                  'certificate authority branch could not be built — ' +
+                  (made.errors || []).join(' ') + ' Its keys will publish the ' +
+                  'self-signed certificates they were born with.');
+        return null;
+      }
+      if (made.existing || typeof keySetProvider !== 'function') {
+        return null;
+      }
+      // AND ITS KEYS, if they have been generated already. Where they have
+      // not, `helpers.js`'s own `certifyLater()` catches them when they are —
+      // the two are the same job reached from the two directions a realm's
+      // keys and its branch can arrive in.
+      return certifyKeySet(id, keySetProvider(id));
+    }).then(function (done) {
+      if (done && done.certified) {
+        log.info('pki: the "' + id + '" realm was created, its branch was ' +
+                 'built under the service Root, and its ' + done.certified +
+                 ' signing keys were certified under it.');
+      }
+    }).catch(function (e) {
+      log.error('pki: the "' + id + '" realm\'s certificate authority could ' +
+                'not be set up: ' + e.message);
+    });
+  });
+  log.debug('pki: watching for realms created at runtime.');
+}
+
+// A scope's branch, built only if it is not there. The counterpart of
+// `ensureRoot()` and for its reason: rebuilding a branch that exists would
+// invalidate every certificate under it, and a restart in PRODUCT mode — where
+// the branch is read back from the store — must not do that.
+async function ensureScope(scopeId, opts) {
+  const row = rawRowFor(scopeId);
+  if (row && row.intermediate && row.issuing &&
+      useCasesFor(scopeKindOf(String(scopeId))).every(function (uc) {
+        return !!row.issuing[uc.id];
+      })) {
+    return { ok: true, existing: true, scope: describeScope(scopeId) };
+  }
+  return buildScope(scopeId, opts || {
+    organisation: config.value('pki.organisation')
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE REPORT `/admin/crypto-metadata` DRAWS. Every table in it is read from the
+// module that performs the algorithm — which for the encoding is the vendored
+// x509 module and for the hashing is `crypto.js` — rather than written here.
+// That is `crypto_metadata.js`'s own rule applied to its newest family.
+// ---------------------------------------------------------------------------
+function report(realmId) {
+  log.debug('Entering report().');
+  const chain = describe(realmId);
+  const out = {
+    tiers: TIERS.map(function (one) {
+      return { id: one.id, label: one.label, profile: one.profile,
+               what: one.what,
+               pathLen: (x509.profile(one.profile) || {}).pathLen,
+               keyUsage: (x509.profile(one.profile) || {}).keyUsage || [],
+               years: (x509.profile(one.profile) || {}).years };
+    }),
+    keyAlgorithms: keyAlgorithms(),
+    signatureAlgorithms: ['rsa', 'ec', 'okp'].reduce(function (all, kind) {
+      return all.concat(x509.signatureAlgorithmsFor({ kind: kind })
+        .map(function (id) {
+          const spec = x509.sigAlg(id) || {};
+          return { id: id, label: spec.label || id, weak: !!spec.weak,
+                   kind: kind };
+        }));
+    }, []),
+    encoder: 'common/vendored/x509.js — the parent project\'s own PKI code, ' +
+             'byte-identical, over pkijs and asn1js. One encoder for this ' +
+             'service and for that project\'s PKI / X.509 page.',
+    // The two honest limits, said here so that every surface that draws this
+    // report repeats them rather than each one deciding how to phrase it.
+    // **THIS SENTENCE REVERSED ON 2026-09-11 AND THE OLD ONE IS WORTH KEEPING
+    // IN VIEW**: it read *NONE. This service publishes no CRL and answers no
+    // OCSP, so a certificate it issued is good until it expires.* Every
+    // surface that draws this report repeated it, which is why it is one
+    // string here rather than a paragraph on each page.
+    //
+    // What replaced it has to keep TWO CLAIMS APART that the old absence
+    // made moot, and a reader who runs them together will draw the wrong
+    // conclusion in the more dangerous direction: this service PUBLISHES
+    // revocation, and it CONSULTS none.
+    revocation: 'PUBLISHED, NOT ENFORCED. Every certificate authority here ' +
+                'signs a CRL (RFC 5280 section 5) and answers OCSP (RFC ' +
+                '6960), at /pki/crl/{scope}/{ca} and /pki/ocsp/{scope}/{ca}, ' +
+                'and every certificate this service issues names its own in ' +
+                'three schemes — http, ldap and ldaps. Anything replaced or ' +
+                'rotated is put on the issuer\'s list as `superseded` ' +
+                'automatically. WHAT THIS SERVICE DOES NOT DO IS CONSULT ONE: ' +
+                'a client certificate presented on 8443, 9443 or the main ' +
+                'port is checked against the anchors on /tls/trust and no CRL ' +
+                'is fetched and no responder is asked, so a certificate ' +
+                'revoked here still gets in here. Removing the key pair from ' +
+                'an application\'s entry is a THIRD thing again — it stops ' +
+                'this service trusting an assertion signed with that key, and ' +
+                'says nothing about the certificate.',
+    residency: keystore.persists()
+      ? 'The CA private keys are in the persistence store, sealed under the ' +
+        'same key-encryption key as the signing keys, and survive a restart.'
+      : 'The CA private keys are held in memory only. This service is in ' +
+        'development mode, where key material is generated per start — a ' +
+        'hierarchy built now is gone when this process exits.',
+    chain: chain
+  };
+  log.debug('Leaving report().');
+  return out;
+}
+
+module.exports = {
+  TIERS: TIERS,
+  TIER_IDS: TIER_IDS,
+  MAX_OBJECTS: MAX_OBJECTS,
+  // The hierarchy's new shape (2026-09-11): one Root for the service, an
+  // Intermediate per scope, and an Issuing CA per use case.
+  SERVICE_SCOPE: SERVICE_SCOPE,
+  PROCESS_SCOPE: PROCESS_SCOPE,
+  USE_CASES: USE_CASES,
+  USE_CASE_IDS: USE_CASE_IDS,
+  useCase: useCase,
+  useCasesFor: useCasesFor,
+  scopeKindOf: scopeKindOf,
+  serviceRoot: serviceRoot,
+  hasRoot: hasRoot,
+  buildRoot: buildRoot,
+  ensureRoot: ensureRoot,
+  buildScope: buildScope,
+  ensureScope: ensureScope,
+  describeScope: describeScope,
+  describeTree: describeTree,
+  describeTier: describeTier,
+  // The certificate register.
+  certify: certify,
+  // Issue WITHOUT recording, for a caller that owns what comes out — see
+  // `issueUnder()`'s header. `spiffe/spiffe_ca.js` is the caller.
+  issueUnder: issueUnder,
+  describeIssuer: describeIssuer,
+  certifyKeySet: certifyKeySet,
+  registerCertifiable: registerCertifiable,
+  certifyRegistered: certifyRegistered,
+  // Editing the hierarchy: a new key for one authority, a renewal under the
+  // same one, and the two doors for material an operator supplied.
+  reissueUseCase: reissueUseCase,
+  recertifyUseCase: recertifyUseCase,
+  importCa: importCa,
+  pinKeyPair: pinKeyPair,
+  certificatesFor: certificatesFor,
+  certificateFor: certificateFor,
+  describeCertificate: describeCertificate,
+  pinnedKeyFor: pinnedKeyFor,
+  publishedCertificateFor: publishedCertificateFor,
+  forgetCertificate: forgetCertificate,
+  // Startup. `server.js` and `common/service_state.js` call it after
+  // `keystore.start()` and before anything binds.
+  start: start,
+  SUBJECT_KINDS: SUBJECT_KINDS,
+  SUBJECT_KIND_IDS: SUBJECT_KIND_IDS,
+  subjectKindFor: subjectKindFor,
+  PURPOSES: PURPOSES,
+  PURPOSE_IDS: PURPOSE_IDS,
+  purposeFor: purposeFor,
+  DEFAULT_KEY_ALG: DEFAULT_KEY_ALG,
+  DEFAULT_SIG_ALG: DEFAULT_SIG_ALG,
+  keyAlgorithms: keyAlgorithms,
+  signatureAlgorithms: signatureAlgorithms,
+  defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,
+  buildChain: buildChain,
+  hasChain: hasChain,
+  describe: describe,
+  chainPemFor: chainPemFor,
+  trustAnchorsFor: trustAnchorsFor,
+  issueSigningKeyPair: issueSigningKeyPair,
+  verifyLeaf: verifyLeaf,
+  clearChain: clearChain,
+  // The object store and the issuer list, which `common/pki_authoring.js`
+  // reads. They are here rather than there because the ROW is this module's —
+  // see THE OBJECT STORE above.
+  // The row accessors, for `common/pki_revocation.js`. They are exported
+  // rather than that module keeping its own copy of the store for the reason
+  // this file keeps no store of its own: two readers of one keystore row is
+  // one reader too many, and the second is the one that goes stale.
+  rawRowFor: rawRowFor,
+  saveRow: saveRow,
+  knownScopes: knownScopes,
+  objects: objects,
+  objectFor: objectFor,
+  putObject: putObject,
+  removeObject: removeObject,
+  clearObjects: clearObjects,
+  issuers: issuers,
+  issuerFor: issuerFor,
+  thumbprintOf: thumbprintOf,
+  report: report
+};

@@ -29,8 +29,10 @@ that up silently.
    has no secret and no root of trust until this call gives it one. A real SPIRE
    *server*, by contrast, binds a TCP port whose callers present an X509-SVID
    over mutual TLS and authorizes every method against what the caller IS. So:
-   `spiffe.authRequired` reaches the SPIRE Server API and DELIBERATELY NOT the
-   Workload API. Do not "fix" the asymmetry.
+   the mutual TLS requirement reaches the SPIRE Server API and DELIBERATELY NOT
+   the Workload API. Do not "fix" the asymmetry. (`spiffe.authRequired` used to
+   be the name of it; `global.mode` replaced it on 2026-09-06 and the
+   requirement became unconditional.)
 
    **NOTHING ATTESTS A WORKLOAD OR A NODE, WHICH IS A DIFFERENT CLAIM FROM
    "NOBODY IS AUTHENTICATED" AND THE TWO MUST STAY APART.** A real agent reads
@@ -82,8 +84,8 @@ that up silently.
    refusal it replaced is the argument to keep in view: "nothing here
    authenticates the caller, so answering would mean renewing whichever agent
    the caller named". Something does now, so the method renews the agent on the
-   CONNECTION and never one named in the request — and with `spiffe.authRequired`
-   off it answers `Unimplemented` with that same sentence.
+   CONNECTION and never one named in the request — and where nothing identifies
+   the caller it answers `Unimplemented` with that same sentence.
 
    **AN ACCEPTED CREDENTIAL IS AN IDENTITY**, through the funnel every other
    family uses. Three acceptances reach it: an X509-SVID over mutual TLS (ONCE
@@ -172,17 +174,95 @@ that up silently.
    time and the dependency is NOT inverted (rule 3e's test fails both ways
    round: no cycle, no route moves).
 
-   **TWO PKIs IN ONE PROCESS, ON PURPOSE.** The SPIFFE CA is not
-   `tls_server.js`'s certificate and must not become it: that one is a leaf with
-   `CA:FALSE` and `serverAuth`, and a trust domain's root and a host's TLS
-   identity are unrelated trust decisions. The X.509 authority is **EC P-256 by
+   **THE X.509 AUTHORITY IS A LEAF OF THIS SERVICE'S OWN ROOT SINCE
+   2026-09-11, AND THIS PARAGRAPH SAID THE OPPOSITE.** It read: *TWO PKIs IN
+   ONE PROCESS, ON PURPOSE. The SPIFFE CA is not `tls_server.js`'s certificate
+   and must not become it: that one is a leaf with `CA:FALSE` and `serverAuth`,
+   and a trust domain's root and a host's TLS identity are unrelated trust
+   decisions.* Every clause of that is still true and **none of it was ever an
+   argument against a shared ROOT** — it is an argument against the SPIFFE
+   authority being the TLS certificate, which it is not and never becomes.
+   `/admin/pki`'s own page carried the same argument and ended by saying the
+   SPIFFE Issuing CA was built and certifying nothing *so that reversing this is
+   a decision rather than a rebuild*. The decision was taken.
+
+   The shape now, per realm:
+
+   ```
+   Root CA (the service's, shared by every realm)   <- THE BUNDLE
+   └── Intermediate CA — this realm      pathLen 2
+        └── SPIFFE Issuing CA            pathLen 1  <- the X.509 authority
+             ├── X509-SVID               a leaf
+             └── downstream CA           pathLen 0  (NewDownstreamX509CA)
+                  └── a leaf
+   ```
+
+   **THE SHORTEST TRUE DESCRIPTION IS THAT THIS SERVICE'S PKI IS NOW SPIRE'S
+   UpstreamAuthority.** The bundle publishes the ROOT, not the authority — which
+   is exactly what SPIRE publishes with an upstream plugin configured — and an
+   X509-SVID carries the Issuing CA and this realm's Intermediate in its own
+   chain. Three things follow and each is worth knowing before editing anything
+   here:
+
+   * **A ROTATION NO LONGER CHANGES THE BUNDLE.** Re-issuing the Issuing CA
+     leaves the anchor where it is, so an SVID minted a minute ago goes on
+     building a path and nobody has to re-fetch anything. The
+     prepend-and-retain machinery and `MAX_RETAINED_AUTHORITIES` exist for the
+     SELF-SIGNED path alone now, and `rotateX509Authority()` says which
+     mechanism ran rather than reporting the two identically.
+   * **`trustAnchors` AND `x509Authorities` ARE TWO LISTS AND WERE ONE.** What
+     SIGNS an SVID and what a consumer INSTALLS are different certificates now;
+     they coincided only because a self-signed authority is both. Every report
+     — `state()`, `GET /spiffe`, `/admin/spiffe`, the crypto report — carries
+     both, and `spiffe_auth.js` deliberately verifies a presented SVID against
+     the ISSUING one (a direct-issuer check) while `spiffe_grpc.js`'s client
+     truststore takes the ANCHOR (OpenSSL will not treat a non-self-signed
+     certificate as an anchor without `X509_V_FLAG_PARTIAL_CHAIN`).
+   * **THE `pathLen` NUMBERS ARE DERIVED IN `common/pki.js` AND MUST STAY
+     DERIVED.** `NewDownstreamX509CA` asks this authority for a CA, so the
+     `spiffe` use case carries `pathLen: 1` and `intermediatePathLen()` widens
+     the realm Intermediate to 2 from that one number. Setting either by hand
+     is how they come apart, and a chain whose depth exceeds a constraint
+     encodes cleanly and is refused at the far end of somebody else's path
+     builder with a message naming neither certificate.
+
+   **IT IS PER REALM AND THE TRUST DOMAIN IS NOT, WHICH IS THE ONE THING TO
+   GET STRAIGHT.** `spiffe.trustDomain` is read once, service-wide; the
+   AUTHORITY is a realm's, because `common/pki.js`'s SPIFFE Issuing CA is. That
+   is coherent with four shared sockets only because the anchor is shared:
+   every realm's bundle is byte-identical, the gRPC sockets answer in the
+   DEFAULT realm (a socket still has no path to put a segment in), and what the
+   chain adds is which realm issued the SVID. `tests/spiffe_pki.js` asserts all
+   of it.
+
+   **AND THERE IS STILL A SELF-SIGNED PATH, REACHED BY THREE SUPPORTED
+   CONFIGURATIONS**: `pki.autoBuild: false`, a Root that could not be built
+   (never fatal, by `pki.start()`'s own rule), and every in-process caller that
+   does not run `common/service_state.js` — `npm test`, the parent project's
+   in-process Kerberos jobs. There this module does what it always did, says so
+   on every surface that reports an authority, and nothing about SPIFFE stops
+   working. `tests/spiffe_authority.js` holds that path, in a child process
+   because the suite builds a hierarchy before it runs.
+
+   The X.509 authority is **EC P-256 by
    default** — what SPIRE issues — which is why the four PKI modules are
    VENDORED from the debugger: `node-forge`, which `helpers.js` and
-   `tls_server.js` use, cannot sign with an EC key at all. **`spiffe_ca.js`'s
-   initialisation is ASYNC** (Web Crypto), which nothing else in this service is:
-   one promise started at require time, and every entry point awaits `ready()`
-   itself so no caller can forget. `state()` is the one synchronous exception and
-   says why.
+   `tls_server.js` use, cannot sign with an EC key at all. **That survived the
+   move**: the `spiffe` use case carries a key-algorithm PREFERENCE that
+   `common/pki.js` honours when nobody chose one, so out of the box an SVID is
+   still ES256-signed even though the branch above it is RSA. An operator who
+   names an algorithm for their certificate authority gets it for this Issuing
+   CA too, which is what choosing one means.
+
+   **`spiffe_ca.js`'s
+   initialisation is ASYNC** (Web Crypto), which nothing else in this service is.
+   **It is TWO STEPS since 2026-09-11 and the split is forced by the startup
+   order**: `initialise()` validates the trust domain once at require time, and
+   `ensureTrustMaterial(realm)` resolves a realm's authorities on FIRST USE —
+   because `pki.start()` runs after the whole protocol stack is required, so an
+   authority resolved at require time is resolved when there is provably no
+   hierarchy. Every entry point still awaits `ready()` itself so no caller can
+   forget. `state()` is the one synchronous exception and says why.
 
    **A FOREIGN BUNDLE IS PUSHED IN AND NEVER FETCHED.** `RefreshBundle` refuses,
    naming the URL it is not fetching. Same refusal as `wreqptr` and `jwks_uri`,
@@ -286,8 +366,8 @@ that up silently.
   mint or that has expired or been spent or was minted for another agent, an
   X509-SVID that no authority here signed or that is outside its validity
   window, every method the caller's entity is not allowed, and a federated
-  bundle whose JWKs have no `use`. `spiffe.authRequired` off restores the whole
-  of the old posture. See rule 3k, `spiffe_auth.js` and `GET /spiffe`.
+  bundle whose JWKs have no `use`. The old posture is no longer reachable:
+  `spiffe.authRequired` restored it and was removed on 2026-09-06. See rule 3k, `spiffe_auth.js` and `GET /spiffe`.
 
 ## There is no test for this in either repository, and it is the largest untested surface here
 
@@ -313,8 +393,9 @@ with no URI SAN, with two, signed by nothing here, outside its validity window,
 or naming a trust domain the signing authority does not own; a join token never
 minted, expired, replayed, or minted for another agent; `RenewAgent` renewing
 the agent on the CONNECTION and never one named in the request; and the same run
-with `spiffe.authRequired` off, which must behave exactly as the service did
-before any of it existed. Also that one identity presented three ways is ONE
+with the SPIRE Server API unauthenticated, which must behave exactly as the
+service did before any of it existed — a run that needs arranging now that
+`spiffe.authRequired` is gone. Also that one identity presented three ways is ONE
 directory entry — **and now that one identity ISSUED a certificate fifty times
 is still one entry**, with `x509serialNumber` equal to the last SVID and
 `x509svidsIssued` equal to fifty, which is the assertion that catches the
@@ -356,8 +437,8 @@ second, coarser split here would invite a policy author to think `read` on this
 resource meant something SPIRE agrees with.
 
 **A CALLER THAT AUTHENTICATED NOBODY GETS NO SESSION.** The local Unix socket is
-trusted by path and presents no credential, and `spiffe.authRequired` off checks
-nothing at all — both reach here with `authenticated` false, and a session
+trusted by path and presents no credential, and a port where nothing is checked
+presents none either — both reach here with `authenticated` false, and a session
 recording a sign-in would be untrue. An authenticated caller gets one through
 `authn.startSession()` keyed on its SPIFFE ID rather than its certificate: an
 agent that rotates its SVID mid-run is the same agent, and keying on the

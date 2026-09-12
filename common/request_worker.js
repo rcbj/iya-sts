@@ -870,6 +870,31 @@ if (require.main === module) {
     if (message.tls && message.tls.certPem && message.tls.keyPem) {
       process.env.STS_TLS_SERVER_CERT_PEM = message.tls.certPem;
       process.env.STS_TLS_SERVER_KEY_PEM = message.tls.keyPem;
+      // THE CHAIN AND THE ANCHOR (2026-09-11). **PUBLIC MATERIAL**, so unlike
+      // the key above there is nothing lost by their being readable in
+      // `/proc/<pid>/environ` — a chain travels in every TLS handshake and an
+      // anchor is published at `GET /tls/server-certificate`. They are here
+      // because a worker that has the leaf alone builds no path and pins a
+      // Root of its own making; see tls/tls_server.js's handedInCertificate().
+      if (message.tls.chainPem && message.tls.chainPem.length) {
+        // **CONCATENATED, NOT JOINED ON A SEPARATOR.** The first version used
+        // a NUL between them, on the reasoning that a PEM contains newlines
+        // and so a newline could not delimit one. NUL is the one byte an
+        // environment variable cannot carry — it is a C string, so the value
+        // is TRUNCATED at the first one — and the worker got the Issuing CA
+        // and silently lost the Intermediate. It reported `1 chain
+        // certificate(s)` where there were two, which is the only reason it
+        // was noticed.
+        //
+        // Concatenated PEMs are self-delimiting: every certificate ends with
+        // `-----END CERTIFICATE-----`, which is how `/tls/server-certificate`
+        // already publishes a bundle and how every reader in this repository
+        // already splits one. There was never a separator to choose.
+        process.env.STS_TLS_SERVER_CHAIN_PEM = message.tls.chainPem.join('');
+      }
+      if (message.tls.trustAnchorPem) {
+        process.env.STS_TLS_SERVER_ANCHOR_PEM = message.tls.trustAnchorPem;
+      }
     }
     // -------------------------------------------------------------------
     // THE SIGNING KEYS, ON THE SAME CHANNEL AND FOR THE SAME REASON.
@@ -908,12 +933,30 @@ if (require.main === module) {
         keystore.adoptShared(one.realm, one.blob);
       }
     });
+    // THE CERTIFICATE AUTHORITIES, ON THE SAME CHANNEL AND FOR THE SAME
+    // REASON. A hierarchy is built by an operator pressing a button on ONE
+    // worker; without this a client assertion signed by a certificate that
+    // worker issued would fail to chain on any of the others, which is the
+    // shape of the signing-key defect keystore.js's shared-key block records.
+    (message.pki || []).forEach(function (one) {
+      if (one && one.realm) {
+        keystore.adoptPki(one.realm, one.chain);
+      }
+    });
     keystore.setKeyPublisher(function (realmId, blob) {
       try {
         process.send({ publishKeys: { realm: realmId, blob: blob } });
       } catch (e) {
         // The parent has gone; this worker is about to be told so. Its keys
         // stay its own, which is correct for a process on its way out.
+      }
+    });
+    keystore.setPkiPublisher(function (realmId, chain) {
+      try {
+        process.send({ publishPki: { realm: realmId, chain: chain || null } });
+      } catch (e) {
+        // Same case, same answer: the parent has gone and this worker is on
+        // its way out.
       }
     });
     // A LATE ARRIVAL, or a correction: another process generated this realm's
@@ -926,6 +969,31 @@ if (require.main === module) {
     process.on('message', function (later) {
       if (later && later.adoptKeys && later.adoptKeys.realm) {
         keystore.adoptShared(later.adoptKeys.realm, later.adoptKeys.blob);
+      }
+      // A hierarchy built, rebuilt or thrown away somewhere else. `chain` is
+      // null for the last of those, and adoptPki() reads that as a removal —
+      // a worker still holding a CA the operator deleted would go on issuing
+      // from it.
+      if (later && later.adoptPki && later.adoptPki.realm !== undefined) {
+        keystore.adoptPki(later.adoptPki.realm, later.adoptPki.chain);
+      }
+      // THE FRONT PROCESS RE-ISSUED THE LISTENER CERTIFICATE (2026-09-12).
+      //
+      // The one this process was handed at fork travelled in `process.env`
+      // before the TLS module was loaded, which is a snapshot; when the
+      // hierarchy is rebuilt — on a worker, by an operator, through
+      // /admin/pki — the front process re-issues the leaf its socket presents
+      // and sends the new one here. Without this a worker goes on PINNING the
+      // previous certificate, and the first thing to notice is its own OpenID
+      // Connect back channel failing with `unable to get local issuer
+      // certificate` — which is /admin and /portal answering 400 at their own
+      // callback. See common/request_pool.js's reconcileTheListener().
+      //
+      // No private key comes with it and none is needed: this process pins and
+      // reports this certificate, and never presents it.
+      if (later && later.adoptServerCertificate) {
+        require('../tls/tls_server')
+          .adoptServerCertificate(later.adoptServerCertificate);
       }
       if (later && later.ldapConnections) {
         require('../ldap/ldap_server').setConnectionMirror(later.ldapConnections);

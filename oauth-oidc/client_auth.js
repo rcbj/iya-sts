@@ -81,18 +81,59 @@ const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 const mtls = require('./mtls');
+// RFC 7521 AND THE OTHER HALF OF RFC 7523. That module owns the assertion
+// FORMAT — how a registered JWKS is read, and how an encrypted assertion is
+// unwrapped — and this file takes both from it rather than keeping a second
+// copy of either. The require runs one way only and its header says why.
+const assertionGrant = require('./assertion_grant');
+// RFC 7522's OTHER HALF. That module owns the SAML assertion format — how a
+// registered certificate is read, how an <EncryptedAssertion> is opened, and
+// every one of section 3's eleven items — and this file takes section 2.2 from
+// it rather than keeping a second copy. The require runs ONE WAY, exactly as
+// the one above does and for the same reason: section 2.2 needs the assertion
+// format and that module owns it, and section 2.1 needs nothing at all from
+// client authentication.
+const samlAssertionGrant = require('./saml_assertion_grant');
 
 // RFC 7523 section 2.2. One value, spelt once, because a client that sends the
 // wrong one is told which is expected rather than being told its assertion is
 // invalid.
 const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+// RFC 7522 section 2.2's value, spelt once for the same reason. The two
+// profiles of RFC 7521 both put a document in `client_assertion` and the type
+// is the only thing on the wire that says which document it is, so a client
+// that sends the wrong one is told which is expected.
+const SAML_ASSERTION_TYPE =
+  'urn:ietf:params:oauth:client-assertion-type:saml2-bearer';
 
 // The methods this file can actually verify. `token_endpoint_auth_methods_supported`
 // is built from this in oauth2.js, so the metadata cannot advertise one that
 // falls through to "not checked" — which is the state this file was written to
 // end.
+//
+// ---------------------------------------------------------------------------
+// **`saml2_bearer` IS THIS SERVICE'S OWN NAME AND NOT A REGISTERED ONE**, and
+// that has to be said where the list is rather than in a document nobody
+// reading this will open.
+//
+// The IANA "OAuth Token Endpoint Authentication Methods" registry holds seven
+// values and RFC 7522 registers NONE of them: it defines a
+// `client_assertion_type` and stops, because RFC 7521's framework is about the
+// request parameters and OpenID Connect's registration metadata is where a
+// method name would live. So a deployment that wants to say "this client
+// authenticates with a SAML assertion" has no registered word for it, and
+// every implementation that offers the feature invents one.
+//
+// The invention is PUBLISHED rather than documented — it appears in
+// `token_endpoint_auth_methods_supported` like every other method here — so a
+// client author discovers it from the metadata instead of from this comment.
+// What is NOT invented is anything on the wire: the `client_assertion_type` is
+// RFC 7522's URN exactly, and a client that sends that with its assertion is
+// conforming whatever this service happens to call the method internally.
+// ---------------------------------------------------------------------------
 const SYMMETRIC_METHODS = ['client_secret_basic', 'client_secret_post', 'client_secret_jwt'];
-const ASYMMETRIC_METHODS = ['private_key_jwt', 'tls_client_auth', 'self_signed_tls_client_auth'];
+const ASYMMETRIC_METHODS = ['private_key_jwt', 'saml2_bearer', 'tls_client_auth',
+                            'self_signed_tls_client_auth'];
 const METHODS = ['none'].concat(SYMMETRIC_METHODS, ASYMMETRIC_METHODS);
 
 // Which of them RFC 9700 section 2.5 is asking for. Read by the caller that
@@ -153,60 +194,17 @@ function secretsMatch(presented, expected) {
   return stsCrypto.constantTimeEquals(presented, expected);
 }
 
-// A registered JWKS, as a list of node public keys. Refuses rather than throws:
-// a client that registered a malformed key needs to be told which, and an
-// exception here would surface at the token endpoint as a 500 with nothing in
-// it about keys.
+// A registered JWKS, as a list of node public keys.
+//
+// **IT MOVED TO `assertion_grant.js` ON 2026-09-10 AND THIS IS THE
+// DELEGATION.** Both halves of RFC 7523 read the same registered key material,
+// and two copies of this function would have been two answers to "which of
+// this client's keys may sign" — which is exactly the shape of duplication
+// `crypto.js` was written to end one layer down. The shape it returns is
+// unchanged bar one added member (`jwk`, which the certificate-bound path
+// needs), so every caller here is untouched.
 function keysFrom(jwksText) {
-  log.debug("Entering keysFrom().");
-  let document = null;
-  try {
-    document = typeof jwksText === 'string' ? JSON.parse(jwksText) : jwksText;
-  } catch (e) {
-    log.debug("Leaving keysFrom(). The registered JWKS is not JSON.");
-    return { error: 'the JWKS registered for this client is not valid JSON: ' + e.message };
-  }
-  const jwks = (document && Array.isArray(document.keys)) ? document.keys : [];
-  if (!jwks.length) {
-    log.debug("Leaving keysFrom(). The registered JWKS has no keys.");
-    return { error: 'the JWKS registered for this client contains no keys' };
-  }
-  const keys = [];
-  for (let i = 0; i < jwks.length; i++) {
-    const jwk = jwks[i];
-    try {
-      if (jwk.kty === 'AKP') {
-        // RFC 9964's post-quantum key type. node's createPublicKey() has no
-        // idea what one is — and must not be asked, or the key is dropped as
-        // unreadable and the client is told none of its keys could be read,
-        // which names nothing a person could act on. The JWK travels WHOLE to
-        // stsCrypto.verifyCompactJws(), which routes an AKP to pq_jose.js.
-        //
-        // Without this branch the eleven post-quantum algorithms this service
-        // advertises for client authentication were advertised and
-        // unverifiable — found by tests/sts_jws_verification.js on its first
-        // run, which is what that file is for.
-        keys.push({ kid: jwk.kid ? String(jwk.kid) : '', key: jwk });
-        continue;
-      }
-      keys.push({ kid: jwk.kid ? String(jwk.kid) : '',
-                  key: crypto.createPublicKey({ key: jwk, format: 'jwk' }) });
-    } catch (e) {
-      // One unreadable key does not spoil the set: a JWKS commonly carries a key
-      // this version of node cannot build (an unsupported curve, a private key
-      // where a public one was meant) beside ones it can, and refusing the whole
-      // document would make a client unable to authenticate with the key that
-      // was fine.
-      log.warn('client_auth: a key in this client\'s registered JWKS could not be read and is ' +
-               'ignored (' + (jwk && jwk.kid ? 'kid=' + jwk.kid : 'no kid') + '): ' + e.message);
-    }
-  }
-  if (!keys.length) {
-    log.debug("Leaving keysFrom(). None of the registered keys could be read.");
-    return { error: 'none of the keys in the JWKS registered for this client could be read' };
-  }
-  log.debug("Leaving keysFrom(). " + keys.length + " usable key(s).");
-  return { keys: keys };
+  return assertionGrant.keysFrom(jwksText);
 }
 
 // ---------------------------------------------------------------------------
@@ -232,8 +230,26 @@ function keysFrom(jwksText) {
 // child.
 async function verifyAssertion(opts) {
   log.debug("Entering verifyAssertion(). method=" + opts.method);
-  const assertion = String(opts.assertion || '');
   const clientId = String(opts.clientId || '');
+  // ---------------------------------------------------------------------
+  // RFC 7523 SECTION 3 CLAIM 10 — THE ASSERTION MAY BE ENCRYPTED (2026-09-10).
+  //
+  // It is the same nested JWT the AUTHORIZATION grant may arrive as, so it is
+  // unwrapped by the same function: `assertion_grant.js` owns the format. The
+  // client secret goes with it because a `client_secret_jwt` client's only
+  // shared key IS its secret, and an RSA-OAEP assertion is decrypted with this
+  // realm's own key whichever method the client declared.
+  //
+  // A plain three-part JWS comes back untouched, so every client that
+  // authenticated with one before this existed is on exactly the path it was.
+  // ---------------------------------------------------------------------
+  const unwrapped = assertionGrant.unwrapAssertion(opts.assertion,
+                                                   { secret: opts.clientSecret });
+  if (!unwrapped.ok) {
+    log.debug("Leaving verifyAssertion(). It would not decrypt.");
+    return { ok: false, description: unwrapped.description };
+  }
+  const assertion = unwrapped.jws;
   let header = null;
   try {
     header = JSON.parse(Buffer.from(assertion.split('.')[0], 'base64url').toString('utf8'));
@@ -273,7 +289,51 @@ async function verifyAssertion(opts) {
                                        'HMAC secret — a forgery anybody could produce, since ' +
                                        'the key is public.' };
     }
-    if (opts.jwksUri && !opts.jwks) {
+    // -------------------------------------------------------------------
+    // THREE SOURCES OF KEY SINCE 2026-09-10, AND THEY ARE ORed.
+    //
+    //   `jwks`                what the client REGISTERED, by value. What this
+    //                         has always read.
+    //   `oauthAssertionJwks`  what THIS SERVICE ISSUED it from its own
+    //                         certificate authority (`common/pki.js`).
+    //   the assertion's `x5c` a certificate chain presented WITH the
+    //                         signature — used only after it has been shown to
+    //                         chain to this realm's own Root CA, because a key
+    //                         that arrives with the signature proves nothing.
+    //
+    // The first two are read by `assertion_grant.js`'s `keysForParty()` ... no:
+    // they are read here through `keysFrom()` twice, because this function is
+    // handed FIELDS by its caller rather than an entry. Same table, same
+    // reader, one call per attribute.
+    // -------------------------------------------------------------------
+    const found = [];
+    let readingProblem = '';
+    [opts.jwks, opts.assertionJwks].forEach(function (text) {
+      if (!text) {
+        return;
+      }
+      const read = keysFrom(text);
+      if (read.error) {
+        readingProblem = read.error;
+        return;
+      }
+      read.keys.forEach(function (one) { found.push(one); });
+    });
+    // A CERTIFICATE PRESENTED WITH THE SIGNATURE, checked against this realm's
+    // own certificate authority before a key is taken out of it. Tried
+    // whatever the registry holds, because a certificate this service ISSUED
+    // is evidence in its own right — that is the point of holding a CA — and
+    // a client may present one without a JWKS having been written onto its
+    // entry.
+    const fromChain = await assertionGrant.keyFromChain(header);
+    if (fromChain && fromChain.key) {
+      found.push({ kid: header.kid ? String(header.kid) : '',
+                   key: fromChain.key });
+    } else if (fromChain && fromChain.error && !found.length) {
+      log.debug("Leaving verifyAssertion(). The x5c does not chain here.");
+      return { ok: false, description: fromChain.error };
+    }
+    if (!found.length && opts.jwksUri) {
       log.debug("Leaving verifyAssertion(). Only a jwks_uri is registered.");
       return { ok: false, description: 'this client registered jwks_uri and no jwks. This ' +
                                        'service will NOT fetch a URL somebody registered in ' +
@@ -282,14 +342,14 @@ async function verifyAssertion(opts) {
                                        'and it is the same refusal WS-Federation\'s wreqptr ' +
                                        'gets here. Register the keys by value, as `jwks`.' };
     }
-    if (!opts.jwks) {
+    if (!found.length && readingProblem) {
+      return { ok: false, description: readingProblem + '.' };
+    }
+    if (!found.length) {
       return { ok: false, description: 'this client registered no keys, so a private_key_jwt ' +
                                        'assertion cannot be verified. Register a `jwks` — by ' +
-                                       'value — on its entry.' };
-    }
-    const found = keysFrom(opts.jwks);
-    if (found.error) {
-      return { ok: false, description: found.error + '.' };
+                                       'value — on its entry, or have this service issue it a ' +
+                                       'signing key pair from /admin/pki.' };
     }
     // The kid narrows the set when the assertion names one and the JWKS uses
     // them; otherwise every key is tried. Trying them all is correct rather than
@@ -297,9 +357,9 @@ async function verifyAssertion(opts) {
     // that rotated without updating its kid is a client whose assertion is still
     // genuine.
     const candidates = header.kid
-      ? found.keys.filter(function (one) { return one.kid === String(header.kid); })
-      : found.keys;
-    verifyWith = (candidates.length ? candidates : found.keys).map(function (one) {
+      ? found.filter(function (one) { return one.kid === String(header.kid); })
+      : found;
+    verifyWith = (candidates.length ? candidates : found).map(function (one) {
       return one.key;
     });
   }
@@ -526,6 +586,12 @@ async function verify(opts) {
     const checked = await verifyAssertion({
       method: method, assertion: info.assertion, clientId: info.clientId,
       clientSecret: info.clientSecret, jwks: info.jwks, jwksUri: info.jwksUri,
+      // The JWKS this service ISSUED to this client from its own certificate
+      // authority, beside the one the client registered. Two attributes and
+      // not one: a client that registered its own keys and was later issued a
+      // pair by an operator has two ways to sign, both of which somebody
+      // deliberately arranged.
+      assertionJwks: info.assertionJwks,
       audiences: info.audiences
     });
     if (!checked.ok) {
@@ -536,6 +602,64 @@ async function verify(opts) {
     log.debug("Leaving verify(). The assertion verified.");
     log.debug("Leaving verify().");
     return { ok: true, method: method, alg: checked.alg, jti: checked.jti };
+  }
+
+  // -------------------------------------------------------------------------
+  // RFC 7522 SECTION 2.2 — A SAML 2.0 ASSERTION IN PLACE OF A CLIENT SECRET.
+  //
+  // A BRANCH OF ITS OWN rather than a third case on the one above, because
+  // almost nothing is shared: there is no symmetric variant to tell apart (XML
+  // Signature over a shared secret is not something any SAML stack emits, so
+  // the alg-confusion refusal has nothing to refuse), the key material is a
+  // certificate rather than a JWKS, and the checks are section 3's eleven
+  // items rather than RFC 7523 section 3's ten claims.
+  //
+  // **THE CERTIFICATES ARE THE RFC 7522 ONES AND ONLY THOSE.** A client that
+  // holds an RFC 7523 key pair and no SAML one cannot authenticate this way,
+  // which is the separation the two attribute sets exist for and is stated at
+  // the refusal rather than left to be discovered.
+  // -------------------------------------------------------------------------
+  if (method === 'saml2_bearer') {
+    if (!info.assertion) {
+      log.debug("Leaving verify(). No SAML assertion was presented.");
+      return { ok: false, description: 'this client authenticates with ' + method +
+                                       ', so the request must carry client_assertion and ' +
+                                       'client_assertion_type=' + SAML_ASSERTION_TYPE +
+                                       ' (RFC 7522 section 2.2).' };
+    }
+    if (String(info.assertionType || '') !== SAML_ASSERTION_TYPE) {
+      // NAMED, and the JWT type is named back where it is the one that
+      // arrived: the two profiles put different documents in one parameter,
+      // and "your assertion is invalid" for a client that sent a perfectly
+      // good JWT under the wrong type is the least useful true sentence
+      // available.
+      log.debug("Leaving verify(). The SAML assertion type is wrong.");
+      return { ok: false, description: 'client_assertion_type must be "' +
+                                       SAML_ASSERTION_TYPE + '" (RFC 7522 section 2.2). ' +
+                                       'This request says "' + (info.assertionType || '') +
+                                       '"' +
+                                       (String(info.assertionType || '') === ASSERTION_TYPE
+                                         ? ', which is RFC 7523\'s JWT profile — this ' +
+                                           'client is registered for the SAML 2.0 one'
+                                         : '') + '.' };
+    }
+    const checked = await samlAssertionGrant.verify({
+      assertion: info.assertion,
+      clientId: info.clientId,
+      // The two RFC 7522 attributes, handed over rather than looked up,
+      // because this function is given FIELDS by its caller. Neither of them
+      // is an `oauthAssertion*` one.
+      registeredCertificate: info.samlSigningCertificate,
+      issuedCertificate: info.samlAssertionCertificate,
+      audiences: info.audiences
+    });
+    if (!checked.ok) {
+      log.debug("Leaving verify(). The SAML assertion was refused.");
+      return { ok: false, description: checked.description };
+    }
+    log.debug("Leaving verify(). The SAML assertion verified.");
+    return { ok: true, method: method, alg: checked.signatureMethod,
+             jti: checked.id };
   }
 
   if (method === 'tls_client_auth' || method === 'self_signed_tls_client_auth') {
@@ -567,6 +691,7 @@ async function verify(opts) {
 
 module.exports = {
   ASSERTION_TYPE: ASSERTION_TYPE,
+  SAML_ASSERTION_TYPE: SAML_ASSERTION_TYPE,
   METHODS: METHODS,
   SYMMETRIC_METHODS: SYMMETRIC_METHODS,
   ASYMMETRIC_METHODS: ASYMMETRIC_METHODS,

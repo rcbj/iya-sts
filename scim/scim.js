@@ -86,7 +86,8 @@
 // provider exposes, because it creates and DELETES accounts. So `scim_auth.js`
 // offers all six schemes RFC 7644 section 2 names — OAuth 2.0 bearer and DPoP
 // tokens, HTTP Basic, HTTP Digest, HOBA, the session cookie and a TLS client
-// certificate — a credential is REQUIRED by default (`scim.authRequired`), and
+// certificate — a credential is REQUIRED, unconditionally and in both modes
+// (`mode.gatesScim()`; this was `scim.authRequired` until 2026-09-06), and
 // the OAuth ones must carry `scim:read` or `scim:write` for what they are
 // about to do. That is the first scope requirement anywhere in this service.
 //
@@ -1280,8 +1281,8 @@ function meSubject(req) {
     log.debug("Leaving meSubject(). Nobody authenticated.");
     throw new SCIMMY.Types.Error(501, null,
       '/Me is an alias for the subject the request authenticated as (RFC 7644 section 3.11), ' +
-      'and this request authenticated as nobody — authentication is turned off here ' +
-      '(scim.authRequired), so there is no subject to alias. Present a credential, or ask for ' +
+      'and this request authenticated as nobody — authentication is turned off here, ' +
+      'so there is no subject to alias. Present a credential, or ask for ' +
       'the user by id. This is a 501 rather than a 404 because the alias is unavailable, not ' +
       'because the resource is missing.');
   }
@@ -1746,8 +1747,8 @@ function description(req) {
     // surprised by them.
     doesNotDo: [
       'IT AUTHENTICATES, AND IT CHECKS ALMOST NOTHING. A credential is ' +
-      'required' + (scimAuth.authRequired() ? '' : ' — except that ' +
-      'scim.authRequired is currently OFF, so it is not') + ', and every ' +
+      'required' + (scimAuth.authRequired() ? '' : ' — except that it is ' +
+      'currently turned off here, so it is not') + ', and every ' +
       'scheme behind that requirement is permissive: any caller can get an ' +
       'access token with either scope from this service\'s own token ' +
       'endpoint with any grant, any username with any password but "invalid" ' +
@@ -1907,8 +1908,8 @@ app.get('/scim', function (req, res) {
       '(<code>scim.enabled</code>) — every endpoint answers 501. ') +
     'This page is not a SCIM endpoint; a real server publishes none of it.</p>' +
     '<div class="warn"><strong>These endpoints require a credential' +
-    (auth.required ? '' : ' — except that <code>scim.authRequired</code> is ' +
-      'currently OFF, so right now they do not') + ', and almost nothing is ' +
+    (auth.required ? '' : ' — except that it is currently ' +
+      'turned off here, so right now they do not') + ', and almost nothing is ' +
     'checked about it.</strong> They create and DELETE accounts, which is why ' +
     'this is the one surface in this service that asks at all. Every scheme ' +
     'below is permissive: any caller can get an access token with either ' +
@@ -2001,7 +2002,7 @@ if (typeof adminConsole.setScimReader === 'function') {
 
 log.info('scim: SCIM 2.0 is registered at ' + BASE + ' and provisions into the ' +
          'embedded directory. A credential is ' +
-         (scimAuth.authRequired() ? 'REQUIRED' : 'optional (scim.authRequired is off)') +
+         (scimAuth.authRequired() ? 'REQUIRED' : 'optional — authentication is off') +
          ' and every scheme offered is permissive; active:false still ' +
          'deactivates nobody. GET /scim says what else it will not do.');
 

@@ -240,6 +240,83 @@ Four things about that are load-bearing:
 
 ---
 
+## THIS MODULE KEEPS NO CREDENTIAL STORE, AND FOR FOUR DAYS IT KEPT THE WRONG ONE (2026-09-10)
+
+`webauthnCredentials` was a `realms.map({ persist: 'authn.webauthnCredentials' })`
+holding ONE key per person. It survived a restart and it was still the wrong
+store, because **`common/credentials.js` already held the security keys** — on
+the person's own directory entry, multi-valued, each carrying the ROLE it was
+enrolled in. That is the store `mechanismsFor()` reads, and `mechanismsFor()` is
+what `/portal/keys`, `/admin/users`, `removeKey()`'s last-way-in refusal and
+this module's OWN `mfaRequired` check all consult.
+
+**`credentials.addKey()` had no caller anywhere in the service.** So the second
+store was not merely a duplicate; it was the only one being written, and the one
+everything READ was empty. What that cost:
+
+| | |
+|---|---|
+| `mechanismsFor().mfaKeys` | `0` for everybody, for ever |
+| `mfaRequired` from a key | never true |
+| the second sign-in | **a password alone**, box unticked, no second factor asked for |
+| `GET /authn/webauthn` | its own gate refused everybody |
+| `/portal/keys` | listed and removed keys that could not exist |
+| `/portal/activate`'s key choice | spent the link, said "your account is ready", enrolled nothing |
+
+**THE BYPASS IS THE THIRD ROW AND IT IS WHY THIS IS A SECURITY FIX RATHER THAN
+A TIDY-UP.** Enrolling a key was an opt-in that lasted one sign-in. Anybody who
+knew the password signed in without it — and the account looked, on `/portal/keys`,
+exactly like an account with a second factor on it.
+
+### What it is now
+
+Three changes and one deleted map:
+
+* **`webauthnPage()` draws from `credentials.keysOf()`**, filtered to the role
+  the pending step is about, so `mode` is an ASSERTION for anybody who holds a
+  key of that role and `allowCredentials` is a LIST — a person may hold several
+  and the specification has expected that since Level 1.
+* **The registration branch calls `credentials.addKey()`** with the role off
+  `step.passwordless`, after seeding the entry — the order is load-bearing now,
+  because that function writes an ATTRIBUTE and answers "there is nobody called
+  that in this realm's directory" when there is no entry. **A refused write is
+  a refused ceremony**: the old code could not fail (a map takes anything), and
+  reporting success on a credential that was not recorded would sign somebody
+  in with a key that will not work next time. It is also where the
+  `webauthn.*` policy finally bites.
+* **The assertion branch picks the key by `keyForAssertion()`**, on the role AND
+  the credential id the browser named. `allowCredentials` is a hint to the
+  browser; that function is the enforcement. The counter goes back through
+  `credentials.noteKeyUsed()`, which is the one place it is recorded.
+
+### `keyForAssertion()` is a function because it is a rule, and because of a mutant
+
+A `primary` key must not answer a SECOND-FACTOR step: it signs somebody in on
+its own, so accepting one there would let a person satisfy *a password AND a
+second factor* with a credential this service already considers sufficient by
+itself.
+
+It is EXPORTED, for one test and no caller. The state that makes it worth
+asserting is one person holding TWO keys — the only shape that tells *check the
+one the browser named* from *check the first one you find* — and **no door in
+this service can build it**, because the sign-in screen's checkbox is the only
+enrolment there is and it is reserved for people who hold no second factor yet.
+`tests/webauthn_policy.js` builds it through the credential layer. That mutant
+survived the over-HTTP job, which is the third time this repository has recorded
+*a surviving mutant is telling you about the fixture*.
+
+### What is still missing, and it is a door rather than a store
+
+**There is no way to enrol a SECOND key, and `/portal/keys` and
+`/portal/activate` still cannot enrol a first one.** A WebAuthn ceremony needs
+script, every page of the portal is `script-src 'none'`, and the six-scripted-pages
+rule says a seventh needs its own argument made from scratch. Until that is
+done: `webauthn.maxKeysPerPerson` cannot be exceeded because it cannot be
+reached above one, the multi-key `allowCredentials` list is exercised by no
+door, and the activation flow's *a security key instead of a password* still
+records an intention and produces no credential — which is a link spent on an
+account nobody can sign in to.
+
 ## `setSessionObserver()` — the one INVERTED HOOK this module offers
 
 Added 2026-09-03 for the CAEP profile. `ssf/caep.js` needs to know when a
@@ -633,6 +710,137 @@ work" would answer differently the first time one of them learned a fifth.
 
 ---
 
+## THE SECOND SECOND FACTOR, AND THE DAY `mfaRequired` STARTED MEANING SOMETHING (2026-09-10)
+
+RFC 6238 one-time codes. `/authn/totp` is the screen, `common/totp.js` is the
+mechanism and `common/credentials.js` holds the enrolment; this file's part is
+the two things a sign-in has to decide — **whether a second factor is demanded,
+and which one**.
+
+### The bug that was not a bug until something read the flag
+
+`credentials.mechanismsFor()` has reported `mfaRequired` since the portal was
+written. `/portal/keys` drew it as *a password alone will not sign you in*.
+**Nothing at this door read it.** A person who had enrolled a security key in
+the `mfa` role signed in with a password and an unticked checkbox, exactly like
+somebody who had enrolled nothing — so the sentence on that page was a
+description of an intention rather than of the service.
+
+That was invisible for the same reason the `ALL_AUTHENTICATED_USERS` defect was:
+the only way to reach the second-factor path was to TICK THE BOX, and every test
+that exercised it ticked the box. Nothing ever asserted the negative — that
+somebody who had enrolled one could not get in without it — because until there
+was a mechanism that could be enrolled without a browser ceremony, writing that
+test meant driving WebAuthn.
+
+**The order in `handleLogin()` is now: the passwordless path, then WHAT THIS
+PERSON HOLDS, then the checkbox.**
+
+| The person | What they ticked | What is asked for |
+|---|---|---|
+| holds nothing | nothing | nothing — one factor, as before |
+| holds nothing | `use_webauthn` | the ceremony, which ENROLS on first use |
+| holds an `mfa` key | anything | the key |
+| holds an authenticator app | anything | **the code** |
+| holds both | anything | the key, with a link to the code |
+| holds a `primary` key | `webauthn_only` | the passwordless ceremony, unchanged |
+
+### The checkbox cannot override an enrolment, and here that is a bypass
+
+`record.forcePasswordless`'s argument, read a second time: *a configured
+mechanism a client can opt out of is not a mechanism*. It matters more here
+than there, and the reason is the enrolment-on-first-use behaviour of the
+security-key screen. If the box still won, somebody who knew a TOTP user's
+password could tick it, register a brand new authenticator of their own, and be
+signed in having never met the second factor the account is configured for.
+That is not a weaker second factor; it is none.
+
+**What it costs is worth stating rather than discovering.** Somebody who
+already holds a second factor **cannot enrol a SECURITY KEY at this screen any
+more** — the box is what enrolment goes through, and it is now reserved for
+people who hold no second factor yet. The other two doors are unaffected: an
+activation link enrols a key, and `/portal/mfa` enrols an authenticator app.
+That person's own row under `/admin/users` is where an operator clears a factor
+so that somebody can enrol a different one — it was `/admin/mfa` for a few hours
+on 2026-09-10, and `admin-ui/CLAUDE.md` records where the two halves of that page
+went.
+
+### One pending register for both mechanisms
+
+`pendingMfa` carries a `factor` and an `alternate` now and there is no second
+map beside it — rule 3m, read as it is everywhere else here: a second store
+would be a second answer to *is there a sign-in waiting for a second factor*,
+and the wrong half would be whichever screen a reader happened to open.
+
+`alternate` is resolved when the step is MINTED and not when a page is drawn,
+which is what stops the *use a code instead* link offering a mechanism the
+person has not got. Both screens now have a GET as well as a POST for exactly
+that link, and **each of them checks that the person really holds the factor it
+is about to draw** — a link is markup, and a hand-made GET of
+`/authn/webauthn?mfa=…` must not reach the ENROLMENT ceremony for somebody
+whose account is configured for an authenticator app. That is the bypass above,
+arriving through a different door.
+
+### The code is checked for real, and this screen is the second SPNEGO
+
+`common/totp.js`'s header carries the argument at length and it is the one
+`kerberos/CLAUDE.md` already makes: Kerberos cannot be permissive because the
+password there IS the key, and RFC 6238 cannot be permissive because the code
+IS the comparison. A verifier that accepted any six digits would leave no
+artifact to inspect, no failure to demonstrate and nothing for a client author
+to test their authenticator integration against.
+
+**And unlike a password it costs a tester nothing**, which is the half that
+made it easy to decide: the permissiveness elsewhere exists so somebody can
+type any name and get a token about it, and here the person has ALREADY been
+let in under whatever name they typed. The code is checked against a secret
+this service generated and showed them ninety seconds ago.
+
+### What the session claims, and the fourth branch of `methodPhraseFor()`
+
+`amr ["pwd","otp"]` and `acr "mfa"`. `otp` is RFC 8176's registered value and
+its registry entry names RFC 4226 and RFC 6238 by number, so there was nothing
+to invent — and `acr "mfa"` is honest here in a way it is not for a passwordless
+WebAuthn sign-in: two factors really were presented.
+
+`methodPhraseFor()` grew a branch rather than letting `otp` fall through,
+because the fall-through answers *sign-in screen (password)* — which for
+somebody who typed a password AND a code is a report that quietly loses the
+second factor. That is the identical defect the passwordless ceremony had
+before this function replaced the two-way conditional it started as.
+
+### The refusal SAYS which, where the sign-in screen says nothing
+
+The password screen hides whether a sign-in failed for a wrong password or for
+a person who holds no credential, because either answer is account enumeration.
+**Nothing is enumerable at this door.** The person has already presented a first
+factor, so the only new fact on offer is about their own account — and *that
+code has already been used* against *that code is not right* is the difference
+between waiting thirty seconds and concluding your authenticator is broken.
+
+### Rate limited, and this is the endpoint where it matters most
+
+Six digits is a million values, the window forgives a step either side, and the
+comparison is real in both modes — so an unthrottled door here is about one
+chance in 333,000 per attempt at somebody's second factor. It uses
+`websecurity.attempt('mfa-code', …)`, both buckets, the same pair the password
+screen uses. **A refused code redraws the page and KEEPS the step**: mistyping
+six digits is the ordinary case, and throwing away a password step that
+succeeded would make the commonest mistake the most expensive one. The step's
+own five-minute expiry is what bounds the window; the limiter bounds the
+attempts inside it.
+
+### There is no enrolment on this screen, which is the whole difference from `/authn/webauthn`
+
+That page registers a key on first use and a session comes out of it. **This one
+only ever verifies.** Enrolling an authenticator means being SHOWN a shared
+secret, so it has to happen somewhere the person is already authenticated
+(`/portal/mfa`) or somewhere a credential authorises it (`/portal/activate`). A
+sign-in screen that handed out a shared secret to whoever typed a password would
+be a second factor anybody could set up for themselves.
+
+---
+
 ## A SESSION THAT RAN OUT USED TO SAY NOTHING (2026-09-04)
 
 Every sign-out door in this service goes through `dropSession()` —
@@ -832,3 +1040,111 @@ that is argued where it is: the RSTR was already permitted in its own right
 through `ISSUANCE.WSTRUST_TOKEN`, and the browser session a UsernameToken
 exchange also starts is a side effect rather than the product. Refusing the
 token there would refuse a credential the policy had just allowed.
+
+---
+
+## A MACHINE ENDPOINT REGISTERED UNDER A FRONT DOOR MINTED AN ARRIVAL SESSION PER REQUEST (2026-09-10)
+
+`ARRIVAL_PATHS` is a list of FRONT DOORS, matched by PREFIX, and its own comment
+already names the failure it exists to prevent: *"giving a cookie to a callback
+or a metadata fetch would mint a session for a machine that will never send it
+back — one row per metadata poll, for ever."* That is why the list is entry
+points rather than families.
+
+**A PREFIX MATCH CANNOT PREVENT IT FOR A MACHINE ENDPOINT REGISTERED UNDER A
+FRONT DOOR, AND ON 2026-09-10 TWO OF THOSE ARRIVED.** This service's own admin
+console and user portal became Shared Signals receivers, each hosting a receive
+endpoint at `/admin/signals/receive` and `/portal/signals/receive`. Both are
+under a prefix on that list. What arrives at them is `ssf/ssf_http.js` POSTing a
+Security Event Token over the loopback interface — a server-to-server request
+that carries no cookie, will never send one back, and is answered 202 with an
+empty body.
+
+So every delivered event minted an arrival session. **A service telling its own
+console about every sign-in minted a second session for every session**, and
+the CAEP profile guarantees there is an event per sign-in, per presentation and
+per sign-out. They expire on `AUTHN_TTL_MS` and so it is not a leak that grows
+without bound — which is the reason it would have gone unnoticed: what it
+produces is `/admin/sessions` and `/admin/metrics` carrying rows for a browser
+that never existed, in a service whose whole job is to let somebody read those
+pages and believe them.
+
+`NOT_ARRIVAL_PATHS` is the fix and it is an exclusion HERE rather than two paths
+moved out of `/admin` and `/portal`. The path is what says WHICH RECEIVER a SET
+was delivered to, and a receiver's endpoint living somewhere other than the
+receiver would be the tidier version of a worse design — `ssf/CLAUDE.md` argues
+why a receiver hosts its own endpoint.
+
+**THE TEST FOR A THIRD ENTRY** is the one question: *is this path reached by a
+BROWSER that will hold a cookie?* If yes it belongs on neither list and the
+prefix already handles it. If no, and it sits under a front door, it belongs
+here. Anything else — a metadata document, a callback, a well-known — is
+already outside both prefixes and needs nothing.
+
+**IT WAS FOUND BY RUNNING THE SERVICE AND COUNTING**, not by reading either
+file. Both comments were correct and neither could see the other.
+
+## `/authn/backup-code`: THE THIRD SECOND-FACTOR SCREEN, AND THE ONLY ONE A SIGN-IN NEVER ASKS FOR (2026-09-10)
+
+A person whose second factor is not to hand — the phone is lost or flat, the
+security key is in a drawer at home — types one of the recovery codes they were
+issued, and it signs them in once and is spent.
+
+### It is never the factor, and that is a property of the model rather than of this screen
+
+`credentials.mechanismsFor().secondFactor` answers `webauthn` or `totp` and
+never this, and `mfaRequired` is deliberately not true of somebody who holds
+only a set. So the ONLY way here is a link out of one of the other two screens,
+carrying a step id they already hold: `pendingMfa`'s `backup` flag is resolved
+when the step is MINTED, exactly as `alternate` is, so a link is never drawn for
+somebody with no unspent code.
+
+**`backup` is a separate field from `alternate` even though they are drawn
+beside each other**, and the distinction is worth keeping: `alternate` names the
+OTHER MECHANISM THIS PERSON IS CONFIGURED FOR and the two screens swap between
+them, while a recovery code is configured for nobody and stands in for whichever
+of the two they cannot produce. One field carrying both would make *what is this
+person's second factor* a question with a wrong answer.
+
+**The link is drawn LAST on both screens**, after the ordinary alternative. The
+codes are a finite, single-use resource issued once, and a link offered above
+*use a code from your authenticator app instead* would spend them on a phone
+that was merely in the next room.
+
+### The GET decides nothing and refuses a set that is spent
+
+Like `GET /authn/totp`: it draws the page for a step that already exists. What
+it adds is a check that an UNSPENT code exists at all, because a link is markup
+and this is a door — a screen asking for a credential that cannot exist reads as
+a service that has lost it, and a hand-made GET must not produce one.
+
+### The spend is a REFUSAL when it will not write, which is the opposite of the code screen next door
+
+`POST /authn/totp` treats a failed counter write as a warning: the
+authentication succeeded and the worst case is a replay inside ninety seconds.
+Here a failed spend refuses the sign-in, because a recovery code that cannot be
+marked spent is a permanent credential. `common/credentials.js` carries the
+argument and `verifyBackupCode()` is where it is enforced, so this endpoint has
+no branch of its own for it.
+
+### It has NO SCRIPT, and the argument is made again rather than cited
+
+A person reads a string off a piece of paper and types it into an input. So it
+is served under the service-wide `script-src 'none'` and `sendBackupCodePage()`
+sets no policy of its own — which is `/authn/totp`'s position, argued the same
+day, and the root `CLAUDE.md`'s rule is that a new scripted page needs its case
+made from scratch and *the same as the page next door* is not one. Copying
+`sendWebauthnPage()` because it is in the same file would have added an eighth
+entry to that inventory for a page with no script on it.
+
+### `amr` is `otp` and that is a choice among the registered values
+
+RFC 8176 registers nothing for a recovery code. Inventing one would put a string
+in `amr` that no relying party can look up — the exact fake this profile refuses
+everywhere else — and `otp`'s registry entry describes *one-time password*,
+which a single-use recovery code is by the plainest reading. `acr` is `mfa`
+because two factors really were presented: a password and something from a list
+only this person holds. **A recovery code is a WEAKER second factor than the one
+it stands in for and there is no vocabulary here in which to say so** —
+downgrading to `1` would claim ONE factor when two were checked — so the audit
+row and `/admin/sessions` are where which mechanism it was is recorded.

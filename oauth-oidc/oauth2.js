@@ -84,6 +84,17 @@ const mtls = require('./mtls');
 // verify — read here for the metadata, which must not advertise one that would
 // fall through unchecked.
 const clientAuth = require('./client_auth');
+// RFC 7521 / RFC 7523 SECTION 2.1 — the JWT bearer AUTHORIZATION GRANT. A
+// LIBRARY (rule 3): it registers no route, so its position here is not a
+// position. `client_auth.js` above already does section 2.2, which is the same
+// document format used for a different purpose; that module requires this one
+// and never the reverse.
+const assertionGrant = require('./assertion_grant');
+// RFC 7522 — the SAML 2.0 profile of the SAME framework, in a module of
+// its own rather than a format flag on the one above. A LIBRARY (rule 3);
+// it requires nothing that requires it back, and it deliberately does not
+// require `assertion_grant.js` either. Its header argues both.
+const samlAssertionGrant = require('./saml_assertion_grant');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 const mode = require('../common/mode');
 // MORE THAN ONE AUTHORIZATION SERVER out of one process: the path component the
@@ -345,7 +356,46 @@ function asMetadata(req, raw) {
                             'password', 'urn:ietf:params:oauth:grant-type:token-exchange',
                             // OID4VCI's pre-authorized code grant, which the
                             // cross-device Credential Offers use.
-                            'urn:ietf:params:oauth:grant-type:pre-authorized_code'],
+                            'urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      // RFC 7523 section 2.1, and it is CONDITIONAL where the six above are
+      // not — `oauth2.jwtBearerGrant` can switch it off, and a
+      // grant_types_supported member is a PROMISE. The check at the top of the
+      // token endpoint refuses anything this list does not carry, so a client
+      // that read the metadata and a client that guessed get the same answer.
+      .concat(assertionGrant.enabled() ? [assertionGrant.GRANT_TYPE] : [])
+      // RFC 7522 section 2.1, and CONDITIONAL in exactly the same way and for
+      // exactly the same reason. TWO settings and not one, because a
+      // deployment legitimately offers one profile and not the other — a
+      // single switch would make "turn the JWT grant off" also turn off a
+      // grant a SAML deployment depends on.
+      .concat(samlAssertionGrant.enabled()
+        ? [samlAssertionGrant.GRANT_TYPE] : []),
+    // RFC 7521 section 4.1 and OpenID Connect Core section 9's spelling of the
+    // same thing: what a client_assertion_type may say. It is published for the
+    // GRANT as well as for client authentication, because the one thing a
+    // client author needs to know about this grant before writing any code is
+    // that the assertion is a JWT.
+    'urn:ietf:params:oauth:client-assertion-type:jwt-bearer_supported': true,
+    // RFC 7522 section 2.2's spelling of the same member. Published
+    // UNCONDITIONALLY like the one above, and for its reason: it says what a
+    // client_assertion_type may be, and that is true of this server whether or
+    // not any client has registered for the method — the one thing a client
+    // author needs to know before writing code against this profile is that
+    // the assertion is a base64url SAML 2.0 Assertion rather than a JWT.
+    'urn:ietf:params:oauth:client-assertion-type:saml2-bearer_supported': true,
+    // WHAT AN ASSERTION MAY BE SIGNED WITH, for BOTH halves of RFC 7523. It is
+    // the whole JWS table — every algorithm `common/crypto.js` can verify,
+    // post-quantum ones included — because the assertion is verified against a
+    // key the PARTY registered and this service has no reason to hold an
+    // opinion about which of them somebody's HSM produces.
+    assertion_signing_alg_values_supported: stsCrypto.JWS_SIGNING_ALGS,
+    // AND WHAT ONE MAY BE ENCRYPTED WITH (RFC 7523 section 3 claim 10). These
+    // are the DECRYPT lists rather than the encrypt ones: what is being
+    // described is a document arriving HERE, and the symmetric families are
+    // usable because a client_secret is a shared key. See
+    // `oauth-oidc/assertion_grant.js`'s `unwrapAssertion()`.
+    assertion_encryption_alg_values_supported: stsCrypto.JWE_DECRYPT_ALGS,
+    assertion_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
     // RFC 9396. OID4VCI's other way of saying which credential is wanted:
     // authorization_details of type openid_credential, instead of a scope.
     authorization_details_types_supported: ['openid_credential'],
@@ -706,7 +756,14 @@ function oidcMetadata(req, issuer) {
     //
     // `none` is the default and means the plain JSON of section 5.3.2.
     userinfo_signing_alg_values_supported: USERINFO_SIGNING_ALGS,
-    userinfo_encryption_alg_values_supported: stsCrypto.JWE_ALGS,
+    // **THE ASYMMETRIC LIST AND NOT `JWE_ALGS`, SINCE 2026-09-10.** That table
+    // grew the symmetric families for RFC 7523's encrypted assertions, which
+    // are encrypted TO this service with a key both ends hold. This member is
+    // the other direction — this service encrypts a UserInfo response to the
+    // key the CLIENT registered — so a client could otherwise register
+    // `userinfo_encrypted_response_alg="dir"` off this list and be answered by
+    // a key derived from the JSON of its own public key.
+    userinfo_encryption_alg_values_supported: stsCrypto.JWE_ASYMMETRIC_ALGS,
     userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
     //
     // `public`: the `sub` userFor() mints is urn:sts-mock:user:<username> and is
@@ -910,6 +967,12 @@ function sendJwks(req, res, signingKeys) {
   log.debug("Entering sendJwks().");
   try {
     const pub = forge.pki.certificateFromPem(STS.certPem).publicKey;
+    // The base64 of a PEM's DER, for `x5c` — which is base64 and NOT base64url
+    // (RFC 7517 section 4.7 is explicit, and a base64url `x5c` parses as
+    // garbage in every library that reads it).
+    const forX5c = function (pem) {
+      return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    };
     const b64u = function (hex) {
       return Buffer.from(hex.length % 2 ? '0' + hex : hex, 'hex').toString('base64')
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -947,7 +1010,16 @@ function sendJwks(req, res, signingKeys) {
       keys: [{
         kty: 'RSA', use: 'sig', kid: STS.kid,
         n: b64u(pub.n.toString(16)), e: b64u(pub.e.toString(16)),
-        x5c: [STS.certB64]
+        // **THE CHAIN AND NOT ONLY THE LEAF, SINCE 2026-09-11.** RFC 7517
+        // section 4.7 defines `x5c` as the certificate CHAIN, leaf first — and
+        // this service's signing key stopped being self-signed on that date:
+        // it is issued by this realm's JOSE Issuing CA under the service Root.
+        // A client given only the leaf cannot build a path to the Root it was
+        // told to trust, and the failure is `unable to get local issuer
+        // certificate`, which names nothing. `certChainPem` is empty while a
+        // key is still self-signed, so this is byte for byte what it always
+        // was on a service whose hierarchy has not been built.
+        x5c: [STS.certB64].concat((STS.certChainPem || []).map(forX5c))
       // The whole key list and not STS.extraKeys: the post-quantum keys are
       // made on FIRST USE (see helpers.js), and the call above is what brings
       // them into being. That makes the first JWKS fetch on a realm slow —
@@ -1185,15 +1257,38 @@ function clientFrom(req, body) {
   // assertion would be reading a name an attacker wrote.
   let assertedClientId = '';
   if (body.client_assertion && !body.client_id) {
-    try {
-      const part = String(body.client_assertion).split('.')[1];
-      const claims = JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
-      assertedClientId = String((claims && claims.sub) || '');
-    } catch (e) {
-      // Not a readable JWT. The assertion will be refused on its own merits a
-      // moment later, with a message about the assertion rather than about a
-      // missing client_id.
-      log.debug("The client_assertion could not be read for its subject: " + e.message);
+    // WHICH DOCUMENT IT IS decides how the name is read, and the
+    // `client_assertion_type` is what says so — read here rather than guessed
+    // from the shape, because a base64url SAML assertion and a JWT are both
+    // "a long opaque string" and guessing between them is the kind of sniffing
+    // that goes wrong exactly once and silently.
+    const type = String(body.client_assertion_type || '');
+    if (type === clientAuth.SAML_ASSERTION_TYPE) {
+      // RFC 7522 section 3 item 3B: for client authentication the <Subject>
+      // MUST be the client_id. Read UNVERIFIED and for the same single
+      // purpose the JWT branch below reads `sub` for — choosing which
+      // registered client to check the assertion AGAINST. The assertion is
+      // then verified against THAT client's registered certificate, and
+      // `saml_assertion_grant.js` requires the Subject to be the name it was
+      // given, so a forged Subject selects a client whose certificate will not
+      // verify the signature.
+      const parsed = samlAssertionGrant.read(
+        (samlAssertionGrant.decode(body.client_assertion) || {}).xml || '');
+      assertedClientId = (parsed && parsed.ok) ? String(parsed.subject || '') : '';
+      if (!assertedClientId) {
+        log.debug("The SAML client_assertion could not be read for its subject.");
+      }
+    } else {
+      try {
+        const part = String(body.client_assertion).split('.')[1];
+        const claims = JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+        assertedClientId = String((claims && claims.sub) || '');
+      } catch (e) {
+        // Not a readable JWT. The assertion will be refused on its own merits a
+        // moment later, with a message about the assertion rather than about a
+        // missing client_id.
+        log.debug("The client_assertion could not be read for its subject: " + e.message);
+      }
     }
   }
   log.debug("Leaving clientFrom(). client_id from the body: " +
@@ -1308,8 +1403,28 @@ function accessToken(base, opts) {
   // refuses the reserved names outright, so this is the second of two defences
   // rather than the only one; a token whose `exp` came from a web form would fail
   // to verify with nothing anywhere pointing back at the form.
+  // ---------------------------------------------------------------------
+  // AND WHATEVER THE ASSERTION CARRIED (2026-09-10). RFC 7523 section 3 claim
+  // 8 says an assertion MAY carry claims beyond the seven the profile names,
+  // and the only useful thing an authorization server can do with a statement
+  // a trusted party made about somebody is put it on the token it issues.
+  //
+  // **THREE LAYERS AND THE ORDER IS THE ARGUMENT.** The protocol's own claims
+  // win over everything, as they already did — an `exp` from anywhere but this
+  // function would be a token lifetime chosen by somebody else. Below them the
+  // ASSERTION beats the console's configured claims, because the console's are
+  // a service-wide default and an assertion is a statement about THIS
+  // issuance. Below that, the console's.
+  //
+  // `assertion_grant.js` has already stripped the profile's own claims, so
+  // nothing here can be `iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`,
+  // `scope`, `cnf`, `typ`, `azp` or `client_id` — the protocol layer above is
+  // the second of two defences rather than the only one, which is the same
+  // arrangement the console's reserved-name refusal has.
+  // ---------------------------------------------------------------------
   const payloadWithCustom = Object.assign(
-    stats.jwtClaims('access_token', customClaimContext(base, payload, user)), payload);
+    stats.jwtClaims('access_token', customClaimContext(base, payload, user)),
+    opts.assertionClaims || {}, payload);
   const token = signJwt(payloadWithCustom, issuanceContext(opts));
   log.debug("Leaving accessToken().");
   return token;
@@ -2611,6 +2726,36 @@ function permissionRefusal(scope, clientId) {
 // one place because there are now four of them — a single-element array is a
 // shape some libraries read differently from a string, so the ordinary case
 // stays a string.
+// ---------------------------------------------------------------------------
+// THE `jti` OF A TOKEN THIS FUNCTION JUST SIGNED, for the delegation register.
+//
+// Read back off the string rather than threaded out of `issue()`: that is one
+// decode of a value the caller already holds, against changing the return type
+// of the one helper every grant here mints through — and `jsonFromB64u()` is
+// the same reader an `actor_token` is decoded with.
+//
+// **IT IS AT MODULE SCOPE AND WAS A `const` INSIDE THE TOKEN EXCHANGE UNTIL
+// 2026-09-10.** The RFC 7523 assertion grant records a delegation act too and
+// sits ABOVE that branch, so the second caller either shared this one or
+// carried a copy — and a copy would be a second answer to what identifies a
+// credential on `/admin/delegation`, which is exactly what that register's own
+// header says goes wrong.
+//
+// It CANNOT THROW, for the reason the whole of `delegation.record()` is
+// wrapped: a token this endpoint has already issued must not be failed by a
+// console page.
+function jtiOf(token) {
+  log.debug("Entering jtiOf().");
+  try {
+    log.debug("Leaving jtiOf().");
+    return (jsonFromB64u(String(token || '').split('.')[1]) || {}).jti || '';
+  } catch (e) {
+    log.error('a token just issued could not be re-read for its jti: ' + e.message);
+    log.debug("Leaving jtiOf(). It could not be read.");
+    return '';
+  }
+}
+
 function audienceClaim(list) {
   if (!list || !list.length) {
     return undefined;
@@ -4288,12 +4433,15 @@ async function protectUserinfo(body, registered, base, claims) {
       USERINFO_SIGNING_ALGS.join(', ') + ' (see ' +
       'userinfo_signing_alg_values_supported).');
   }
-  if (encAlg && stsCrypto.JWE_ALGS.indexOf(encAlg) === -1) {
+  if (encAlg && stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(encAlg) === -1) {
     log.debug("Leaving protectUserinfo(). Unsupported encryption alg.");
     throw new Error('This client registered userinfo_encrypted_response_alg="' +
-      encAlg + '" and this service encrypts with ' +
-      stsCrypto.JWE_ALGS.join(', ') + ' (see ' +
-      'userinfo_encryption_alg_values_supported).');
+      encAlg + '" and this service encrypts a UserInfo response with ' +
+      stsCrypto.JWE_ASYMMETRIC_ALGS.join(', ') + ' (see ' +
+      'userinfo_encryption_alg_values_supported). The symmetric algorithms in ' +
+      'this service\'s JWE table are for a document encrypted TO it, where ' +
+      'both ends hold the key; there is no shared key here, only the one you ' +
+      'registered.');
   }
   if (encAlg && !stsCrypto.JWE_ENCS[encEnc]) {
     throw new Error('This client asked for userinfo_encrypted_response_enc="' +
@@ -4821,7 +4969,14 @@ const TOKEN_FORM = vz.looseObject({
 
   // RFC 7523 / OIDC private_key_jwt.
   client_assertion: vz.string().max(validation.CAP.TEXT).optional(),
-  client_assertion_type: vt.opt(vt.uri)
+  client_assertion_type: vt.opt(vt.uri),
+
+  // RFC 7521 section 4.1 — the ASSERTION GRANT's own parameter, and it is a
+  // different one from `client_assertion` above on purpose. That one says who
+  // is CALLING; this says who the token is FOR. A request may legitimately
+  // carry both: a client authenticating with its own assertion and presenting
+  // somebody else's as the grant.
+  assertion: vz.string().max(validation.CAP.TEXT).optional()
 });
 
 // RFC 7662 and RFC 7009. Both take one token and an optional hint about which
@@ -5695,6 +5850,325 @@ async function tokenGrant(req, res) {
     }));
   }
 
+  // ---------------------------------------------------------------------------
+  // RFC 7521 AND RFC 7523 SECTION 2.1 — THE JWT BEARER AUTHORIZATION GRANT.
+  //
+  // A trusted party signs a document saying *this person is alice, and I am
+  // giving you this so you will issue a token for her*, and this authorization
+  // server issues one. There is no browser, no password and no consent step
+  // anywhere in it, so the signature is the whole of the grant's security —
+  // which is why `assertion_grant.js` refuses an issuer nobody declared and
+  // why that refusal is ON by default, alone here with federation's.
+  //
+  // **THE VERIFICATION IS `assertion_grant.js`'s AND THE RESPONSE IS THIS
+  // MODULE'S**, which is the split every library in this directory has: that
+  // module never touches `res`, and what a refusal LOOKS like is protocol
+  // knowledge that stays where there is a response object.
+  // ---------------------------------------------------------------------------
+  if (grant === assertionGrant.GRANT_TYPE) {
+    const checked = await assertionGrant.verify({
+      assertion: String(body.assertion || ''),
+      scope: String(body.scope || ''),
+      // THE CLIENT SECRET, for the symmetric encryption algorithms only. An
+      // assertion encrypted `A256KW` or `dir` is encrypted under the one key
+      // this service and a client both hold, and there is no other candidate —
+      // an RSA-OAEP one is decrypted with this realm's own key and this is
+      // ignored. It is `clientConfigOf()`'s value rather than what the request
+      // presented: the point is what the CLIENT holds, and a caller that could
+      // supply the decryption key would be handing this service a document and
+      // the key to read it.
+      clientSecret: (applications.clientConfigOf(client.client_id) || {})
+        .client_secret,
+      // RFC 7521 section 5.2 (5). The same three this service accepts on a
+      // client assertion, for the same reason: RFC 7523 section 3 names the
+      // token endpoint and OpenID Connect Core section 9 names the ISSUER, and
+      // deployments differ — so both are accepted rather than half the client
+      // libraries in the world being refused.
+      audiences: [base + '/oauth2/token', issuerOf(base), base]
+    });
+    if (!checked.ok) {
+      log.debug("Leaving the token endpoint. The assertion was refused.");
+      return oauthError(res, 400, checked.error, checked.description);
+    }
+    // The subject is a PERSON, named by somebody this service trusts, and need
+    // not be anybody it has heard of — `userFor()` mints the persona exactly as
+    // typing the name at the sign-in screen does. That is the permissiveness
+    // this service keeps everywhere: what is real here is the SIGNATURE, and
+    // `assertion_grant.js`'s header says which half is which.
+    const subject = userFor(checked.subject);
+    stats.recordAuthentication({
+      presented: checked.subject,
+      protocol: 'OAuth 2.0',
+      method: 'RFC 7523 JWT bearer assertion' +
+              (checked.encrypted ? ' (encrypted)' : ''),
+      sub: subject.sub, client_id: client.client_id,
+      note: (checked.issuerKind === 'person'
+              ? 'This person asserted THEMSELVES, with a signing key pair ' +
+                'this service issued to them. '
+              : 'A trusted party asserted this person. ') +
+            'The ASSERTION was verified ' +
+            'for real — signature, issuer, audience, expiry and a jti that ' +
+            'cannot be replayed — against a key registered for "' +
+            checked.issuer + '"' +
+            (checked.keySource === 'x5c'
+              ? ', presented as a certificate chain this service issued'
+              : '') + '. No password was checked and no browser was involved: ' +
+            'this grant has neither.'
+    });
+    // RFC 7523 section 3 claim 8: an assertion MAY carry other claims. They go
+    // onto the token, which is the only useful thing an authorization server
+    // can do with a statement a trusted party made about somebody — and the
+    // protocol's own claims are stripped first, because an `exp` copied off an
+    // assertion would be a token lifetime chosen by whoever signed it.
+    const carried = assertionGrant.extraClaimsFrom(checked.claims);
+    const issued = await issue({
+      jkt: dpopJkt,
+      user: subject,
+      client_id: client.client_id,
+      scope: checked.scope.join(' '),
+      // RFC 8707, read above for every grant. Nothing preceded this request —
+      // there was no authorization endpoint — so what is asked for is granted,
+      // exactly as for the client credentials and password grants.
+      audience: audienceClaim(requestedResources),
+      resources: requestedResources,
+      assertionClaims: carried,
+      grant: assertionGrant.GRANT_TYPE
+    });
+    // THE ACT IS RECORDED AS A DELEGATION, because that is exactly what it is:
+    // one party asked this service to issue a credential in ANOTHER party's
+    // name. It is the third mechanism in that register's OAuth family, beside
+    // the two shapes of RFC 8693, and it is drawn on /admin/delegation with
+    // them.
+    delegation.record({
+      protocol: 'OAuth 2.0',
+      type: 'oauth-assertion-grant',
+      outcome: 'issued',
+      initial: {
+        presented: checked.subject,
+        what: 'the subject of the assertion — the person this token is for. ' +
+              'They authenticated at the ASSERTION ISSUER and not here; this ' +
+              'service has never seen a credential of theirs.'
+      },
+      intermediary: {
+        presented: checked.issuer,
+        application: checked.application || checked.issuer,
+        // **A PERSON WHO ASSERTED ABOUT THEMSELVES IS NOT A THIRD PARTY, AND
+        // THIS SENTENCE IS THE ONLY PLACE THAT CAN SAY SO.** The register
+        // draws one row with an initial, an intermediary and a target; with
+        // the two halves being one person, an intermediary described as *the
+        // party that signed the assertion* reads as somebody else having
+        // vouched for them, which is the opposite of what happened. The row
+        // is still drawn — the act IS an issuance somebody asked for — and it
+        // says which of the two shapes of this grant it was.
+        what: checked.issuerKind === 'person'
+          ? 'the person who signed the assertion, which is the same person ' +
+            'the token is for. They hold an RFC 7523 signing key pair of ' +
+            'their own (stsAssertion* on their entry), and a person\'s key ' +
+            'may only assert about that person — so this is somebody ' +
+            'presenting themselves rather than one party vouching for ' +
+            'another.'
+          : (checked.declared
+            ? 'the party that signed the assertion, declared on an application ' +
+              'entry as oauthAssertionIssuer'
+            : 'the party that signed the assertion. No application declares ' +
+              'this issuer on oauthAssertionIssuer — it was resolved by its own ' +
+              'client_id or identifier, or accepted on a certificate chain this ' +
+              'service issued.')
+      },
+      target: {
+        application: String(client.client_id || ''),
+        what: client.client_id
+          ? 'the client the token was handed to'
+          : 'unstated — this request named no client, which RFC 7521 section ' +
+            '6.2 permits when the assertion identifies the party'
+      },
+      authorizedBy: checked.declared
+        ? 'oauthAssertionIssuer on an application entry in this realm, and a ' +
+          'signature that verified against a key registered for it. This is ' +
+          'one of only two things in this service that refuse by default — an ' +
+          'assertion IS the whole authorization, so accepting one from ' +
+          'anybody would mean anybody who can reach this port getting a token ' +
+          'as anybody.'
+        : 'a signature that verified against a key this service holds for "' +
+          checked.issuer + '". No application DECLARES that issuer, which ' +
+          'means either oauth2.jwtBearerRequireRegisteredIssuer is off or the ' +
+          'assertion carried a certificate chain this service issued.',
+      consumed: [{
+        kind: 'assertion',
+        identifier: checked.jti,
+        note: 'RFC 7523 section 2.1, signed ' + checked.alg +
+              (checked.encrypted
+                ? ' and encrypted ' + checked.encryption.alg + '/' +
+                  checked.encryption.enc
+                : '') + '. Its jti is remembered until it expires, so it ' +
+              'cannot be presented twice.'
+      }],
+      produced: [{
+        kind: 'access_token',
+        identifier: jtiOf(issued.access_token),
+        note: Object.keys(carried).length
+          ? 'carries ' + Object.keys(carried).length + ' claim(s) copied off ' +
+            'the assertion: ' + Object.keys(carried).join(', ')
+          : 'carries nothing from the assertion beyond the subject'
+      }],
+      // No session, and that is a fact about this grant rather than a gap: a
+      // party asserting on somebody's behalf has no browser anywhere in it.
+      sessionId: ''
+    });
+    log.debug("Leaving the token endpoint. An RFC 7523 assertion grant.");
+    return respond(issued);
+  }
+
+  // ---------------------------------------------------------------------------
+  // RFC 7521 AND RFC 7522 SECTION 2.1 — THE SAML 2.0 BEARER AUTHORIZATION
+  // GRANT.
+  //
+  // The same shape as the branch above and a DIFFERENT document: a trusted
+  // party signs a SAML 2.0 assertion saying *this person is alice, and I am
+  // giving you this so you will issue a token for her*. There is no browser,
+  // no password and no consent step in it either, so the signature is the
+  // whole of the grant's security and `saml_assertion_grant.js` refuses an
+  // Issuer nobody declared for the same reason its JWT sibling does.
+  //
+  // **THE TWO BRANCHES ARE NOT FACTORED TOGETHER AND SHOULD NOT BE.** What
+  // they share is this module's half — mint a persona, issue, record a
+  // delegation — and what differs is every sentence describing WHY, because
+  // the two refusals cite different specifications and the two registers have
+  // to say which document was spent. A shared branch would report an RFC 7522
+  // grant as an RFC 7523 one on /admin/delegation, which is the one thing that
+  // register exists not to do.
+  // ---------------------------------------------------------------------------
+  if (grant === samlAssertionGrant.GRANT_TYPE) {
+    const checked = await samlAssertionGrant.verify({
+      assertion: String(body.assertion || ''),
+      scope: String(body.scope || ''),
+      // RFC 7522 section 3 item 2 names the token endpoint URL as an
+      // acceptable Audience and item 5 names it as the Recipient. The SAME
+      // THREE the JWT profile accepts, because the question — which
+      // authorization server was this minted for — has the same three answers
+      // here and a deployment that spells it as the issuer is not wrong.
+      audiences: [base + '/oauth2/token', issuerOf(base), base]
+    });
+    if (!checked.ok) {
+      log.debug("Leaving the token endpoint. The SAML assertion was refused.");
+      return oauthError(res, 400, checked.error, checked.description);
+    }
+    // The subject is a PERSON, named by somebody this service trusts, and need
+    // not be anybody it has heard of — exactly as for the JWT profile.
+    const subject = userFor(checked.subject);
+    stats.recordAuthentication({
+      presented: checked.subject,
+      protocol: 'OAuth 2.0',
+      method: 'RFC 7522 SAML 2.0 bearer assertion' +
+              (checked.encrypted ? ' (encrypted)' : ''),
+      sub: subject.sub, client_id: client.client_id,
+      note: 'A trusted party asserted this person in a SAML 2.0 assertion. It ' +
+            'was verified for real — the XML Signature over the <Assertion> ' +
+            'itself, the Issuer, the AudienceRestriction, the bearer ' +
+            'SubjectConfirmation and its Recipient, both NotOnOrAfter ' +
+            'instants and an ID that cannot be replayed — against a ' +
+            'certificate registered for "' + checked.issuer + '" under the ' +
+            'RFC 7522 attributes. ' +
+            (checked.directlyAuthenticated
+              ? 'The assertion carries an <AuthnStatement>, so the issuer is ' +
+                'saying it authenticated this person itself (RFC 7522 section ' +
+                '3 item 7).'
+              : 'The assertion carries NO <AuthnStatement>, which section 3 ' +
+                'item 7 uses to mean the client is acting autonomously on ' +
+                'this person\'s behalf rather than having watched them sign ' +
+                'in.') +
+            ' No password was checked and no browser was involved: this grant ' +
+            'has neither.'
+    });
+    // RFC 7522 section 3 item 8: other statements MAY be in the assertion.
+    // Every attribute goes onto the token, which is the only useful thing an
+    // authorization server can do with a statement a trusted party made — the
+    // JWT profile's claim 8 treatment of the same thing. A single-valued SAML
+    // attribute becomes a string and a multi-valued one stays a list.
+    const carried = samlAssertionGrant.extraClaimsFrom(checked.attributes);
+    const issued = await issue({
+      jkt: dpopJkt,
+      user: subject,
+      client_id: client.client_id,
+      scope: checked.scope.join(' '),
+      // RFC 8707. Nothing preceded this request — there was no authorization
+      // endpoint — so what is asked for is granted, as for every direct grant.
+      audience: audienceClaim(requestedResources),
+      resources: requestedResources,
+      assertionClaims: carried,
+      grant: samlAssertionGrant.GRANT_TYPE
+    });
+    // THE ACT IS RECORDED AS A DELEGATION, for the JWT grant's reason: one
+    // party asked this service to issue a credential in ANOTHER party's name.
+    // It is the FOURTH mechanism in that register's OAuth family.
+    delegation.record({
+      protocol: 'OAuth 2.0',
+      type: 'oauth-saml-assertion-grant',
+      outcome: 'issued',
+      initial: {
+        presented: checked.subject,
+        what: 'the <Subject> of the assertion — the person this token is ' +
+              'for. They authenticated at the ASSERTION ISSUER and not here; ' +
+              'this service has never seen a credential of theirs.'
+      },
+      intermediary: {
+        presented: checked.issuer,
+        application: checked.application || checked.issuer,
+        what: checked.declared
+          ? 'the party that signed the assertion, declared on an application ' +
+            'entry as oauthSamlAssertionIssuer'
+          : 'the party that signed the assertion. No application declares ' +
+            'this Issuer on oauthSamlAssertionIssuer — it was resolved by its ' +
+            'own client_id or identifier, which means ' +
+            'oauth2.saml2BearerRequireRegisteredIssuer is off or the Issuer ' +
+            'IS a client_id here.'
+      },
+      target: {
+        application: String(client.client_id || ''),
+        what: client.client_id
+          ? 'the client the token was handed to'
+          : 'unstated — this request named no client, which RFC 7521 section ' +
+            '6.2 permits when the assertion identifies the party'
+      },
+      authorizedBy: checked.declared
+        ? 'oauthSamlAssertionIssuer on an application entry in this realm, ' +
+          'and an XML Signature that verified against a certificate ' +
+          'registered for it under the RFC 7522 attributes. **The RFC 7523 ' +
+          'key pair on the same application would not have done**: the two ' +
+          'profiles hold separate key pairs and no verifier reads the ' +
+          'other\'s.'
+        : 'an XML Signature that verified against a certificate this service ' +
+          'holds for "' + checked.issuer + '" under the RFC 7522 attributes. ' +
+          'No application DECLARES that Issuer, which means either ' +
+          'oauth2.saml2BearerRequireRegisteredIssuer is off or the Issuer is ' +
+          'a client_id here.',
+      consumed: [{
+        kind: 'assertion',
+        identifier: checked.id,
+        note: 'RFC 7522 section 2.1, a SAML 2.0 <Assertion> signed ' +
+              (checked.signatureMethod || 'with an XML Signature') +
+              (checked.encrypted
+                ? ' and delivered as an <EncryptedAssertion> (' +
+                  checked.encryption.algorithm + ')'
+                : '') + '. Its ID is remembered until it expires, so it ' +
+              'cannot be presented twice.'
+      }],
+      produced: [{
+        kind: 'access_token',
+        identifier: jtiOf(issued.access_token),
+        note: Object.keys(carried).length
+          ? 'carries ' + Object.keys(carried).length + ' claim(s) copied off ' +
+            'the assertion\'s AttributeStatement: ' +
+            Object.keys(carried).join(', ')
+          : 'carries nothing from the assertion beyond the subject'
+      }],
+      // No session, and that is a fact about this grant rather than a gap.
+      sessionId: ''
+    });
+    log.debug("Leaving the token endpoint. An RFC 7522 assertion grant.");
+    return respond(issued);
+  }
+
   if (grant === 'urn:ietf:params:oauth:grant-type:token-exchange') {
     const subjectToken = String(body.subject_token || '');
     if (!subjectToken) return oauthError(res, 400, 'invalid_request', 'subject_token is required.');
@@ -5925,22 +6399,6 @@ async function tokenGrant(req, res) {
     // already holds, against changing the return type of the one helper every
     // grant here mints through — and jsonFromB64u() is the same reader the
     // actor_token was decoded with twelve lines above.
-    const jtiOf = function (token) {
-      log.debug("Entering jtiOf().");
-      try {
-        log.debug("Leaving jtiOf().");
-        return (jsonFromB64u(String(token || '').split('.')[1]) || {}).jti || '';
-      } catch (e) {
-        // The token was signed by this service a line ago, so this cannot
-        // ordinarily fail — and if it somehow does, a row with no identifier on
-        // it is still a row worth having. Swallowed rather than thrown for the
-        // reason the whole of delegation.record() is wrapped: a console page
-        // must not be able to fail a token this endpoint has already issued.
-        log.error('a token just issued could not be re-read for its jti: ' + e.message);
-        log.debug("Leaving jtiOf(). It could not be read.");
-        return '';
-      }
-    };
     const issuedJti = jtiOf(exchanged.access_token);
     // AND THE ID TOKEN, WHEN ONE CAME WITH IT. An exchange for a scope carrying
     // `openid` mints two credentials and the act produced BOTH — recording only

@@ -87,7 +87,9 @@
 // ---------------------------------------------------------------------------
 // WHAT IT ASSERTS. Nine groups, and the last four did not exist before.
 //
-//   * **THE GATE.** `admin.authRequired` is on by default, so every page and
+//   * **THE GATE.** It is unconditional — `mode.gatesConsole()`, where the
+//     service read `admin.authRequired` until that setting was removed on
+//     2026-09-06 — so every page and
 //     every form is behind a sign-on session and one of two roles. Four
 //     behaviours, each a client's path through it: a browser GET is REDIRECTED
 //     to the sign-in screen carrying the id of the request waiting there; a
@@ -702,8 +704,8 @@ async function signIn(driver, username) {
   await go(driver, root("/admin"));
   const url = await driver.getCurrentUrl();
   if (url.indexOf("/authn/login") < 0) {
-    log.info("The console is OPEN (admin.authRequired is off); no sign-in " +
-             "was needed.");
+    log.info("The console is OPEN; no sign-in was needed. That should not " +
+             "happen any more: the gate became unconditional on 2026-09-06.");
     log.debug("Leaving signIn(). No gate.");
     return false;
   }
@@ -813,8 +815,9 @@ async function theGateBehaves(driver) {
   const landed = await driver.getCurrentUrl();
 
   if (first.status === 200 && landed.indexOf("/authn/login") < 0) {
-    log.warn("The console answered 200 with no session: admin.authRequired " +
-             "is OFF on this service. The gate assertions cannot be made and " +
+    log.warn("The console answered 200 with no session, so the gate is OFF " +
+             "on this service. Since 2026-09-06 there is no setting that does " +
+             "that. The gate assertions cannot be made and " +
              "are being skipped; everything below still runs.");
     gateIsOn = false;
     log.debug("Leaving theGateBehaves(). The gate is off.");
@@ -2106,6 +2109,162 @@ function signOutFormOn(page) {
   });
 }
 
+// ===========================================================================
+// THE ACCOUNT MENU IN THE HEAD ROW (2026-09-10).
+//
+// The Sign out button stopped being a bare control in the corner and became the
+// second row of a menu whose first row is a link to this person's own account
+// in the user portal. Three claims are made here and each of them is a way the
+// menu can be wrong while LOOKING right:
+//
+//   * **IT OPENS WITH NO SCRIPT.** This console is `script-src 'none'` on every
+//     page but `/admin/api-explorer`, so the menu is a `<details>` and the
+//     browser opens it. The assertion is a REAL CLICK on the summary followed
+//     by the panel being displayed — because a menu built the other way (a
+//     class toggled by a listener) draws identically here and does nothing at
+//     all in the browser, where the script never loads.
+//   * **IT IS CLOSED WHEN THE PAGE ARRIVES.** A `<details open>` is a panel
+//     covering the top of every page in the console, and nothing on the page
+//     would look broken.
+//   * **ITS PORTAL LINK IS THE DEFAULT REALM'S, IN EVERY REALM.** This is the
+//     one that cannot be seen by looking. The console's session is the default
+//     realm's whichever realm the page is read in, while `/portal` runs in the
+//     AMBIENT realm — and app.js rewrites every root-relative `href` on the way
+//     out to carry the realm being read. So a link written as `/portal` becomes
+//     `/realm/<id>/portal` on a realm's console page, which is a portal this
+//     person has no session in: they would be asked to sign in again, as an
+//     account in a realm that is not theirs. It is written absolute for exactly
+//     that reason, and this is the check that says so.
+// ===========================================================================
+async function theAccountMenuIsTheReaderSOwnCorner(driver) {
+  log.debug("Entering theAccountMenuIsTheReaderSOwnCorner().");
+  log.info("=== The account menu ===");
+
+  await go(driver, root("/admin/metrics"));
+  // WHETHER THE PANEL IS ACTUALLY SHOWN, AND WHY IT IS NOT `offsetParent`.
+  // A closed <details> in Chrome does not hide its children with
+  // `display:none` — it uses `content-visibility:hidden` on the slot — so the
+  // panel of a CLOSED menu still reports a non-null `offsetParent` and a
+  // bounding box 113px tall. Measured on this suite's own Chrome while writing
+  // this section: `{open:false, offsetParent:true, rects:1, h:113}`. The only
+  // signal that tells the truth is `checkVisibility()` asked about content
+  // visibility, which answers false. The fallback is there for a browser
+  // without it and is the weaker test rather than a second answer.
+  // (No backticks below: this is inside a template literal.)
+  const SHOWN = `
+    function shown(el) {
+      if (!el) { return false; }
+      if (el.checkVisibility) {
+        return el.checkVisibility({ contentVisibilityAuto: true,
+                                    visibilityProperty: true });
+      }
+      return el.offsetParent !== null;
+    }
+  `;
+  const shut = await driver.executeScript(SHOWN + `
+    const d = document.querySelector('details.usermenu');
+    if (!d) { return { there: false }; }
+    const panel = d.querySelector('.usermenupanel');
+    return {
+      there: true,
+      open: d.open,
+      summary: (d.querySelector('summary').textContent || '').trim(),
+      panelShown: shown(panel),
+      rows: Array.from(d.querySelectorAll('a,button')).map(function (e) {
+        return (e.textContent || '').trim();
+      })
+    };
+  `);
+  check("the head row draws an account menu, closed", function () {
+    assert.ok(shut.there,
+      "every page of this console should carry the account menu in its head " +
+      "row while a session is open, and /admin/metrics does not. The shell " +
+      "is one function, so it is on every page or on none.");
+    assert.ok(!shut.open && !shut.panelShown,
+      "the menu should arrive CLOSED. It is open on load, which puts a panel " +
+      "over the top of every page in this console with nothing looking wrong.");
+    assert.ok(shut.summary.indexOf(CONSOLE_USER) >= 0,
+      "the summary should say who this console is being read as, so that the " +
+      "answer is on every page without opening anything. It says " +
+      JSON.stringify(shut.summary) + " and this run signed in as " +
+      CONSOLE_USER +
+      ".");
+  });
+
+  // THE CLICK IS THE ASSERTION. See the note above: a menu that needs script
+  // draws exactly like this one and never opens.
+  await driver.findElement(By.css("details.usermenu > summary")).click();
+  const opened = await driver.executeScript(SHOWN + `
+    const d = document.querySelector('details.usermenu');
+    const panel = d.querySelector('.usermenupanel');
+    const link = d.querySelector('.usermenupanel a');
+    return {
+      open: d.open,
+      panelShown: shown(panel),
+      overlays: panel ? getComputedStyle(panel).position : '',
+      href: link ? link.href : '',
+      text: link ? (link.textContent || '').trim() : '',
+      signOut: !!d.querySelector('form[action$="/admin/signout"] button')
+    };
+  `);
+  check("clicking it opens it, with no script anywhere", function () {
+    assert.ok(opened.open && opened.panelShown,
+      "a click on the summary should open the panel. It did not, which on a " +
+      "page served `script-src 'none'` means the menu is not a <details> any " +
+      "more — whatever it is, the browser will not open it either.");
+    assert.strictEqual(opened.overlays, "absolute",
+      "the panel should overlay the page rather than push it down: a menu " +
+      "that reflows the card under it moves whatever the reader was about to " +
+      "click. Its position is " + opened.overlays + ".");
+  });
+  check("it holds the reader's own two controls", function () {
+    assert.ok(/\/portal$/.test(new URL(opened.href, base).pathname),
+      "the first row should link to this person's own account in the user " +
+      "portal. It points at " + opened.href + ".");
+    assert.ok(opened.signOut,
+      "and the second should be the Sign out form. The menu holds no button " +
+      "posting to /admin/signout, which means the control that used to sit " +
+      "bare in that corner went with the change rather than into it.");
+  });
+
+  // AND IN A REALM. The realm this run created is read here rather than a new
+  // one: the console draws the same shell in it, and the href is the claim.
+  await go(driver, realm("/admin/metrics"));
+  const inRealm = await driver.executeScript(`
+    const d = document.querySelector('details.usermenu');
+    if (!d) { return { there: false }; }
+    d.open = true;
+    const link = d.querySelector('.usermenupanel a');
+    const refresh = document.querySelector('.pagetools a.btn');
+    return { there: true, href: link ? link.href : '',
+             refresh: refresh ? refresh.href : '' };
+  `);
+  check("the portal link is the DEFAULT realm's on a realm's console page",
+        function () {
+    assert.ok(inRealm.there,
+      "the account menu should be drawn in every realm — the shell is one " +
+      "function — and /realm/" + REALM + "/admin/metrics has none.");
+    const path = new URL(inRealm.href, base).pathname;
+    assert.strictEqual(path, "/portal",
+      "the portal link on a REALM's console page must still be the DEFAULT " +
+      "realm's portal, because that is the realm this console's session " +
+      "belongs to whichever realm is being read. It points at " + path +
+      ", which is a portal this person has no session in: following it asks " +
+      "them to sign in again, as an account in a realm that is not theirs. " +
+      "The usual cause is the link being written root-relative, which " +
+      "app.js's realm rewrite then prefixes on the way out.");
+    assert.ok(inRealm.refresh.indexOf("/realm/" + REALM + "/") >= 0,
+      "and the control BESIDE it must still carry the prefix, or this check " +
+      "is passing because the rewrite stopped working rather than because " +
+      "the link is absolute. Refresh points at " + inRealm.refresh + ".");
+  });
+
+  log.info("[menu] OK — the account menu opens with no script, arrives " +
+           "closed, holds the portal link and the Sign out form, and its " +
+           "portal link is the default realm's in every realm.");
+  log.debug("Leaving theAccountMenuIsTheReaderSOwnCorner().");
+}
+
 async function theSignOutButtonSignsYouOut(driver) {
   log.debug("Entering theSignOutButtonSignsYouOut().");
   log.info("=== The Sign out button ===");
@@ -2127,6 +2286,13 @@ async function theSignOutButtonSignsYouOut(driver) {
   assert.ok(form >= 0,
     "the Sign out form should be on /admin/metrics and the walk did not find " +
     "a form with that button on it.");
+  // THE BUTTON IS INSIDE THE ACCOUNT MENU SINCE 2026-09-10, so it has to be
+  // opened before anything can press it — a button in a closed <details> is
+  // not displayed, and a click on it is refused by the driver rather than
+  // doing nothing quietly. The click is a REAL one for the reason
+  // theAccountMenuIsTheReaderSOwnCorner() gives: this console ships no script,
+  // so if the menu ever stops being a <details> this is where it is noticed.
+  await driver.findElement(By.css("details.usermenu > summary")).click();
   await fillAndPress(driver, form, {}, { buttonText: "Sign out" });
 
   const landed = await survey(driver);
@@ -2140,6 +2306,22 @@ async function theSignOutButtonSignsYouOut(driver) {
       "and the shell must no longer draw the Sign out button: it is drawn " +
       "from the gate state, so a button still there is a page claiming a " +
       "session that has just ended.");
+    // AND THE NAVIGATION COLUMN, which is the same claim about the same gate
+    // state read one control further out (2026-09-10). Every link in that
+    // column is a console page behind the gate, so on this page every one of
+    // them answers a redirect to the sign-in screen — and the realm switcher
+    // in it is a FORM, posting to a console that no longer has a session for
+    // it. The count comes off the survey's own `nav` (`nav a, .nav a, aside
+    // a`), so a column drawn under any of those wrappers is caught.
+    assert.ok(before.nav > 0,
+      "the console page BEFORE the sign-out should carry a navigation " +
+      "column — if it does not, the check below proves nothing. " +
+      "/admin/metrics drew " + before.nav + " nav link(s).");
+    assert.strictEqual(landed.nav, 0,
+      "and the shell must no longer draw the navigation column: it drew " +
+      landed.nav + " nav link(s) beside a page whose subject is that the " +
+      "session they navigate with has ended. Every one of them goes to the " +
+      "sign-in screen, and the realm switcher among them posts a form.");
   });
 
   // AND THE SIGN-ON SESSION IS GONE TOO. The browser is sent through the whole
@@ -5005,6 +5187,7 @@ async function test() {
       // AND THE SIGN OUT BUTTON, WHICH MUST BE THE LAST THING: pressing it
       // closes this console against this run's own session, so nothing that
       // needs the console may come after it.
+      await theAccountMenuIsTheReaderSOwnCorner(driver);
       await theSignOutButtonSignsYouOut(driver);
     } finally {
       theRealmIsLeftBehind();

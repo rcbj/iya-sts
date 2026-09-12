@@ -97,9 +97,10 @@
 // socket; there is no attestation of a workload's identity, only of which
 // entries its observable selectors match. Node attestation at `AttestAgent` is
 // still taken on trust — the payload is not verified and every agent entry
-// still carries `unverified:true`. And with `spiffe.authRequired` off, all of
-// this stands down and the service behaves exactly as it did before this file
-// existed. See `GET /spiffe`, which publishes the whole of it.
+// still carries `unverified:true`. It used to be possible to stand all of this
+// down — `spiffe.authRequired` off, and the service behaved exactly as it did
+// before this file existed — and it is not: that setting was removed on
+// 2026-09-06 when `global.mode` took the question over. See `GET /spiffe`, which publishes the whole of it.
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -243,9 +244,9 @@ const ENTITY_ORDER = ['local', 'admin', 'agent', 'downstream'];
 
 // ---------------------------------------------------------------------------
 // SETTINGS, read per call rather than captured. Every one of these is
-// `runtime: true` except `spiffe.authRequired`, which binds a socket — see
-// config.js's header for why a captured `const` is the one thing
-// /admin/config cannot reach.
+// `runtime: true`. The one that was not — `spiffe.authRequired`, which bound a
+// socket — is gone; see config.js's header for why a captured `const` is the
+// one thing /admin/config cannot reach.
 // ---------------------------------------------------------------------------
 // THE MODE, since 2026-09-06, where this read `spiffe.authRequired`. The
 // Workload API is deliberately NOT covered by it and never may be — its
@@ -280,7 +281,7 @@ const ASSERTED_SELECTOR_KEY = 'x-sts-mock-workload-selector';
 // This decides whether the caller is `local`, so it has to be right, and
 // grpc-js does not answer it directly. Two signals, in this order:
 //
-//   * the AUTH CONTEXT. When `spiffe.authRequired` is on, the TCP listener for
+//   * the AUTH CONTEXT. The TCP listener for
 //     the SPIRE Server API is TLS and the Unix socket is not — so
 //     `transportSecurityType === 'ssl'` is conclusive proof of TCP.
 //   * `getPeer()`. grpc-js builds it from `socket.remoteAddress`, which a Unix
@@ -425,6 +426,17 @@ function spiffeIdFromCertificate(certificate) {
 // leaves directly, an intermediate would have to be one this service issued
 // through NewDownstreamX509CA, and pretending to build a path we do not build
 // would be reporting a check that did not happen.
+//
+// **IT IS THE ISSUING AUTHORITY HERE AND NOT THE TRUST ANCHOR, AND AFTER
+// 2026-09-11 THOSE ARE TWO DIFFERENT CERTIFICATES.** `ca.state()`'s
+// `x509Authorities` is what SIGNS an SVID — this realm's SPIFFE Issuing CA
+// under the service Root — and `trustAnchors` is what a consumer installs,
+// which is the Root. This check is a DIRECT ISSUER check, so it wants the
+// first: `checkIssued()` against the Root would be false of every SVID this
+// service has ever minted under the hierarchy, and the refusal would name the
+// certificate rather than the anchor it was compared with. The places that
+// want the anchor instead — the bundle, and the gRPC listener's client
+// truststore — say `trustAnchors` and say why.
 // ---------------------------------------------------------------------------
 function authorityCertificates() {
   log.debug('Entering authorityCertificates().');
@@ -705,7 +717,8 @@ function describeCaller(caller) {
 function authorize(caller, method) {
   log.debug('Entering authorize(). method=' + method);
   if (!authRequired()) {
-    log.debug('Leaving authorize(). spiffe.authRequired is off.');
+    log.debug('Leaving authorize(). Authentication is off. UNREACHABLE since ' +
+              '2026-09-06: mode.gatesSpireServerApi() is unconditional.');
     return null;
   }
   const row = POLICY[method];
@@ -746,8 +759,7 @@ function authorize(caller, method) {
     '. This call came from ' + describeCaller(caller) + '.' +
     (caller.refusal ? ' The certificate presented was not accepted: ' +
                       caller.refusal : '') +
-    ' The rule is SPIRE\'s own — see GET /spiffe for the whole table — and ' +
-    'spiffe.authRequired turns all of it off.';
+    ' The rule is SPIRE\'s own — see GET /spiffe for the whole table.';
   log.debug('Leaving authorize(). Refused.');
   return { status: nothingPresented ? 'UNAUTHENTICATED' : 'PERMISSION_DENIED',
            message: reason };

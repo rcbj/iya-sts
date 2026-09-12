@@ -156,6 +156,9 @@ const realms = require('../common/realms');
 // far ahead of `admin.js`, and exactly the failure rule 1 exists to prevent.
 // ---------------------------------------------------------------------------
 const persistence = require('../persistence/persistence');
+// The revocation register, for the CRL container below. A LEAF (rule 3): it
+// registers no route, so requiring it here moves nothing.
+const pkiRevocation = require('../common/pki_revocation');
 const stats = require('../common/admin_stats');
 // The application registry. This module is its STORE — see the applications
 // section below — so the dependency runs both ways in the shape rule 6
@@ -163,6 +166,27 @@ const stats = require('../common/admin_stats');
 // an inverted slot filled at the bottom of this file for the four functions
 // that read and write the container.
 const applications = require('../common/applications');
+// THE inetOrgPerson CLASS DEFINITION (2026-09-11). A LIBRARY (rule 3) that
+// requires only `common/helpers.js`, so it can neither move a route nor join a
+// cycle. Two things come from it: the canonical spellings, merged into
+// `learnName()` below so that a disagreement with the standard list is
+// reported; and the list itself, handed to `/portal` across the slot this
+// module fills, so that the account page a person reads and the directory they
+// read it out of cannot come to disagree about what a person IS.
+const inetOrgPerson = require('../common/inetorgperson');
+// THE USER PORTAL, for the slot filled at the foot of this file. It is at 8b
+// and this module is at 21, so by the time this line runs the require is a
+// CACHE HIT and registers nothing — the same arrangement this module already
+// has with `admin.js`, and the reason the slot is filled here rather than a
+// require being added over there. See the install itself for rule 3e's test.
+const portal = require('../portal/portal');
+// THE PERSON-ASSERTION REGISTER (2026-09-11), for the slot filled at the foot
+// of this file. A LIBRARY (rule 3) — it registers nothing, holds no store, and
+// requires only `helpers.js` and `keystore.js`, so requiring it here can move
+// no route and close no cycle. What it needs from this module is a read, a
+// write and the list of people in the realm; see the install for rule 3e's
+// test, which it passes both ways round.
+const personAssertions = require('../common/person_assertions');
 // The SPIFFE registry's schema and both conversions. The same division
 // applications.js draws: THAT module owns what a registration entry IS, THIS
 // one owns where the containers are, how an entry is created and what the cap
@@ -359,6 +383,101 @@ function realmBaseDn(id) {
     return ROOT_DN;
   }
   return REALM_RDN_TYPE + '=' + id + ',' + ROOT_DN;
+}
+
+
+// ===========================================================================
+// THE CRL CONTAINER, AND WHY THIS DIRECTORY PUBLISHES ONE (2026-09-11).
+//
+// Every certificate this service issues carries three CRL distribution points
+// — `http(s)://`, `ldap://` and `ldaps://` — and the last two are addresses IN
+// THIS DIRECTORY. An `ldap://` URI in a certificate that resolves to nothing
+// is worse than no URI at all: a client configured to fetch CRLs over LDAP
+// reports a revocation check it could not complete, which most stacks treat as
+// a hard failure.
+//
+// **RFC 4523 SECTION 4 IS THE SHAPE.** A CRL lives in
+// `certificateRevocationList;binary` on an entry of class
+// `cRLDistributionPoint`, and the `;binary` transfer option is what says the
+// value is DER rather than a string. The URI in the certificate names that
+// attribute explicitly, which is what makes a fetch return the list rather
+// than an empty attribute.
+//
+// **THE ENTRY IS A CACHE AND THE REGISTER IS THE TRUTH.** `pki_revocation.js`
+// builds and signs a CRL on demand; this writes the result down so the socket
+// can serve it. A stale entry is therefore possible — the CRL is republished
+// on every revocation and on every start — and that is the honest trade for a
+// protocol with no way to ask a directory to compute something.
+// ===========================================================================
+function crlContainerDn(scopeId) {
+  return 'ou=crl,' + realmBaseDn(scopeIdToRealm(scopeId));
+}
+
+// A PKI scope id as a REALM id. The two starred scopes — the service Root and
+// the process branch — belong to no realm, so their CRLs live in the DEFAULT
+// realm's subtree: it is the one every process has, and a client fetching the
+// Root's CRL has no realm to be in.
+function scopeIdToRealm(scopeId) {
+  const id = String(scopeId || '');
+  if (id === '*service' || id === '*process') {
+    return realms.DEFAULT_ID;
+  }
+  return id || realms.DEFAULT_ID;
+}
+
+// Write one authority's CRL into the directory. Called by
+// `common/pki_revocation.js` through the slot it offers — see `setDirectory()`
+// there for why it is an inverted hook rather than a require.
+function publishCrl(scopeId, caId, der) {
+  log.debug('Entering publishCrl(). scope=' + scopeId + ' ca=' + caId);
+  if (!config.value('pki.publishCrlToDirectory')) {
+    log.debug('Leaving publishCrl(). Switched off.');
+    return false;
+  }
+  const container = crlContainerDn(scopeId);
+  const dn = 'cn=' + String(caId) + ',' + container;
+  try {
+    // The container, made on demand. `putEntry()` is a SET, so writing it
+    // again is harmless and there is no "does it exist" to get wrong.
+    putEntry(container, {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: ['crl'],
+      description: ['Certificate revocation lists published by this ' +
+                    'service\'s own certificate authorities (RFC 4523). ' +
+                    'Each entry carries a signed DER CRL in ' +
+                    'certificateRevocationList;binary, and the ldap:// and ' +
+                    'ldaps:// distribution points in every certificate this ' +
+                    'service issues name one of them.']
+    }, { origin: 'pki' });
+    putEntry(dn, {
+      objectClass: ['top', 'cRLDistributionPoint'],
+      cn: [String(caId)],
+      // **THE ATTRIBUTE NAME CARRIES THE `;binary` OPTION**, because that is
+      // what the URI in the certificate asks for and what RFC 4523 defines.
+      // Writing it without the option produces an entry that answers an
+      // `ldapsearch` for `certificateRevocationList` and NOT the one the
+      // certificate names, which is a fetch that succeeds and returns nothing.
+      'certificateRevocationList;binary': [der.toString('base64')],
+      description: ['The CRL signed by the "' + String(caId) + '" certificate ' +
+                    'authority of the "' + String(scopeId || 'default') +
+                    '" scope. Republished on every revocation and at every ' +
+                    'start; the register in the keystore row is the truth and ' +
+                    'this is a cache of what it currently signs.']
+    }, { origin: 'pki' });
+    log.debug('Leaving publishCrl(). ' + dn + ', ' + der.length + ' bytes.');
+    return true;
+  } catch (e) {
+    // Named and swallowed: a CRL that could not be written to the directory is
+    // still served over HTTPS, and a directory write must not be able to fail
+    // a revocation. The two LDAP distribution points are the ones that then
+    // fetch nothing, which is what this message is for.
+    log.error('ldap: the "' + caId + '" CRL could not be published at ' + dn +
+              ': ' + e.message + '. It is still served over HTTP — the ' +
+              'ldap:// and ldaps:// distribution points in certificates this ' +
+              'authority signed will fetch nothing.');
+    log.debug('Leaving publishCrl(). It threw.');
+    return false;
+  }
 }
 
 // The base DN of whatever realm is ambient. THE function every DN below is
@@ -1417,7 +1536,67 @@ const OWN_NAMES = [
   // consent screen. The OTHER half of the feature is `oauthGlobalConsent`,
   // which is on an APPLICATION's entry and is in the applications schema rather
   // than in this list.
-  'oauthConsent'
+  'oauthConsent',
+
+  // ---------------------------------------------------------------------
+  // THE CREDENTIALS ON A PERSON'S OWN ENTRY THAT ARE NOT `userPassword`.
+  //
+  // `common/credentials.js` writes all four. The first three have been
+  // written since 2026-09-06 and were NOT in this table until 2026-09-10,
+  // which is the ordinary way this table goes wrong: nothing fails, the name
+  // simply renders lower-cased on `/admin/ldap/directory` — the one page
+  // whose whole job is to show an entry faithfully — and the attribute looks
+  // like something a foreign client added rather than something this service
+  // wrote.
+  //
+  // There is no standard type for any of them and none is invented lightly:
+  // WebAuthn, RFC 6238 and the notion of an activation link all postdate the
+  // LDAP schema documents, and `userPassword` (RFC 4519 section 2.41) is the
+  // only credential attribute those documents define.
+  //
+  // **TWO OF THE FOUR HOLD A VERIFIER AND TWO HOLD SOMETHING ELSE**, which is
+  // the distinction to keep in mind when reading an entry: `userPassword` and
+  // `stsActivationToken` are scrypt hashes and are useless to whoever reads
+  // them; a WebAuthn public key is published by design; and
+  // `stsTotpCredential` carries a SHARED SECRET, which is the one credential
+  // in this directory that can be read back and used — sealed under the
+  // key-encryption key in product mode for exactly that reason, and in the
+  // clear in development where the key would not survive a restart.
+  // `common/credentials.js` argues all of it.
+  'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
+  'stsTotpCredential',
+
+  // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
+  // above and it is the SECOND of them that can be read back and used — a set
+  // of single-use strings, issued automatically the first time somebody
+  // enrols a second factor, sealed under the key-encryption key wherever that
+  // key outlives the process and stored as the strings they were shown as
+  // where it does not.
+  //
+  // **IT IS ENCRYPTED RATHER THAN HASHED FOR A REASON THAT IS NOT ABOUT
+  // CRYPTOGRAPHY**: a person may look at their remaining codes again on
+  // `/portal/mfa`, and a hash cannot be shown. `common/backup_codes.js`
+  // argues it, `common/credentials.js` does the sealing, and this module —
+  // which holds no key — only ever sees whatever of the two it was handed.
+  'stsBackupCodes',
+
+  // AND A SIXTH SINCE 2026-09-11: the RFC 7523 SIGNING KEY PAIR a person may
+  // hold. Six attributes and a declaration, and they are the PERSON's
+  // counterpart to `oauthAssertion*` on an application — no code path crosses
+  // the two sets, which is the same rule `applications.js` states about its
+  // own pair. `common/person_assertions.js` is the register and argues the
+  // whole thing, including the one refusal it exists for: a person's key
+  // signs an assertion ABOUT THAT PERSON and about nobody else.
+  //
+  // **`stsAssertionPrivateKey` IS THE THIRD ATTRIBUTE IN THIS DIRECTORY THAT
+  // CAN BE READ BACK AND USED**, after the authenticator's shared secret and
+  // the recovery codes, and it is sealed under the key-encryption key
+  // wherever that key outlives the process for exactly their reason. The
+  // other five are public by construction: a certificate, a chain, a JWKS, a
+  // kid and an expiry are all things a relying party is MEANT to be given.
+  'stsAssertionIssuer', 'stsAssertionJwks', 'stsAssertionCertificate',
+  'stsAssertionCertificateChain', 'stsAssertionPrivateKey',
+  'stsAssertionKid', 'stsAssertionExpiresAt'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -1455,6 +1634,20 @@ function learnName(spelling, source) {
 
 STANDARD_NAMES.forEach(function (spelling) { learnName(spelling, 'the standard list'); });
 OWN_NAMES.forEach(function (spelling) { learnName(spelling, "this service's own list"); });
+
+// AND THE inetOrgPerson CLASS DEFINITION (2026-09-11), for the reason every
+// other merge below is done: `common/inetorgperson.js` is a fourth
+// independently maintained list of spellings — it is what `/portal` draws its
+// account page from — and it names most of the same types the standard list
+// above does. Merged rather than trusted, so that a disagreement between the
+// page a PERSON reads and the page an OPERATOR reads is REPORTED at startup
+// instead of one of them quietly rendering `seealso`.
+//
+// It is a require of a LIBRARY (rule 3) that reaches no further than
+// `common/helpers.js`, so it can neither move a route nor join a cycle.
+Object.keys(inetOrgPerson.CANONICAL_NAMES).forEach(function (lower) {
+  learnName(inetOrgPerson.CANONICAL_NAMES[lower], 'the inetOrgPerson schema');
+});
 
 // The attribute types /admin/vc can put on a person so that a credential has
 // something to carry. They are MERGED rather than typed out a second time: that
@@ -2017,8 +2210,10 @@ function seed() {
   //
   // Seeded for the reason the pair above is: a gate whose grant appears the
   // moment somebody knocks is not a gate, and the DN is predictable, so
-  // `tests/tools/pep-credential.js --subject "CN=xacml-user-1,…"` produces a
-  // certificate that lands here with nothing else configured.
+  // `tests/tools/pep-credential.js --subject="CN=xacml-user-1,…"` produces a
+  // certificate that lands here with nothing else configured. The `=` is
+  // load-bearing: that tool splits each argument on the first one and reports
+  // a space-separated value as an unknown option.
   //
   // **A PERSON GOES IN THE GROUP, NOT IN A ROLE ENTRY.** `XACML_USER` is
   // computed rather than stored, so granting it to `alice` is adding
@@ -3424,8 +3619,8 @@ function applyAuthenticationFactors(stored, info) {
 // its registration entry was deleted, or its agent was banned — and a
 // certificate has just been minted for it anyway, the status is wrong and this
 // is the point at which the service knows it. That happens for real: unbanning
-// an agent and re-registering an identity both restore issuance, and
-// `spiffe.authRequired` off makes the whole registry advisory.
+// an agent and re-registering an identity both restore issuance, and a SPIRE
+// Server API that authenticates nobody makes the whole registry advisory.
 // ---------------------------------------------------------------------------
 function applySpiffeCertificate(stored, certificate) {
   log.debug('Entering applySpiffeCertificate(). dn=' + (stored && stored.dn));
@@ -5427,6 +5622,36 @@ if (typeof groupClaims.setDirectory === 'function') {
 }
 
 // ---------------------------------------------------------------------------
+// THE CRL CONTAINER (2026-09-11).
+//
+// `common/pki_revocation.js` offers the slot and this fills it. It is an
+// INVERTED HOOK for rule 3e's test in both directions: that module is a LEAF
+// required by `common/pki.js` and by the certificate authority's own startup,
+// so a require from it to THIS module would drag every `/ldap` route into the
+// router ahead of everything — and a require the other way is exactly what
+// happens, harmlessly, because this module is at 21 and that one registers
+// nothing.
+//
+// It carries TWO functions and is validated whole, for `setLogoutReader()`'s
+// reason: a filler that installed `baseDnFor` and not `publishCrl` would put
+// the right DN in every certificate and write nothing to the directory — so
+// the `ldap://` distribution points would be correct addresses for entries
+// that do not exist, which is the one failure a reader checking three schemes
+// would not think to look for.
+// ---------------------------------------------------------------------------
+if (typeof pkiRevocation.setDirectory === 'function') {
+  pkiRevocation.setDirectory({
+    publishCrl: publishCrl,
+    baseDnFor: function (scopeId) { return realmBaseDn(scopeIdToRealm(scopeId)); }
+  });
+} else {
+  log.warn('ldap: common/pki_revocation.js offers no setDirectory(), so no ' +
+           'CRL is published into this directory and the ldap:// and ldaps:// ' +
+           'distribution points in certificates this service issues will ' +
+           'fetch nothing. They are still served over HTTP.');
+}
+
+// ---------------------------------------------------------------------------
 // XACML: THE POLICY REPOSITORY AND THE PIP.
 //
 // Two slots on two modules, and they are two rather than one because they are
@@ -5854,6 +6079,134 @@ function replaceWebauthnValues(key, values) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// THE AUTHENTICATOR APP'S SHARED SECRET (2026-09-10).
+//
+// **SINGLE-VALUED, WHERE THE SECURITY KEY BESIDE IT IS MULTI-VALUED.** A
+// WebAuthn assertion names the credential that produced it; a TOTP code is six
+// digits and names nothing, so a second secret would mean trying both and would
+// leave RFC 6238 section 5.2's replay guard with no answer to *which counter
+// was spent*. `common/credentials.js` argues it; this function is the half that
+// makes it true of the store — `writeTotp()` ASSIGNS, so enrolling again
+// replaces.
+//
+// **THIS IS THE ONE ATTRIBUTE IN THIS DIRECTORY THAT MAY HOLD A USABLE
+// CREDENTIAL IN THE CLEAR**, and the reason is arithmetic rather than a lapse:
+// verifying a code means COMPUTING it, so the secret cannot be hashed the way
+// `userPassword` and `stsActivationToken` are. In product mode it arrives here
+// already sealed under the key-encryption key — that is `credentials.js`'s
+// doing and not this function's, which is right, because what is sealed is a
+// question about the KEY and this module has none.
+//
+// A `null` value DELETES, which is what an operator's Clear on that person's
+// row under `/admin/users` and
+// a person's own removal on `/portal/mfa` both come down to.
+// ---------------------------------------------------------------------------
+function readTotp(key) {
+  log.debug('Entering readTotp(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readTotp(). No entry.');
+    return '';
+  }
+  const value = (stored.attributes.ststotpcredential || [])[0];
+  log.debug('Leaving readTotp(). ' + (value ? 'Enrolled.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeTotp(key, value) {
+  log.debug('Entering writeTotp(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    // NOT created here, for `writeStoredPassword()`'s reason: enrolling a
+    // credential for somebody who does not exist would create them, and
+    // product mode refuses exactly that.
+    log.warn('ldap: "' + key + '" has no entry in this realm, so no ' +
+             'authenticator enrolment was recorded.');
+    log.debug('Leaving writeTotp(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.ststotpcredential;
+  } else {
+    // ASSIGNED and not appended — see the header. Two values would be two
+    // secrets and a code that names neither.
+    stored.attributes.ststotpcredential = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeTotp(). ' +
+            (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE RECOVERY CODES (2026-09-10).
+//
+// **SINGLE-VALUED, LIKE THE AUTHENTICATOR SECRET ABOVE AND UNLIKE THE SECURITY
+// KEYS.** The value is one JSON object carrying the whole set — a sealed (or
+// plain) list of codes, and the counts beside it in the clear so that a page
+// can say *7 of 10 unused* without opening anything. `writeBackupCodes()`
+// ASSIGNS, so a person holds one set and never two: `common/credentials.js`
+// issues a set exactly once and an operator's Clear is the only way to
+// another, and two values would make *which set am I holding* a question with
+// no answer.
+//
+// **THIS IS THE SECOND ATTRIBUTE IN THIS DIRECTORY THAT MAY HOLD A USABLE
+// CREDENTIAL IN THE CLEAR**, and the reason is different from the first one's.
+// A TOTP secret cannot be hashed because verifying a code means COMPUTING it —
+// that is arithmetic. A recovery code COULD be hashed, and is not, because a
+// person may look at their remaining codes again and a hash cannot be shown.
+// `common/backup_codes.js` argues the trade at length. In product mode it
+// arrives here already sealed, which is that module's doing and not this
+// function's — right, because what is sealed is a question about the KEY and
+// this module has none.
+//
+// A `null` value DELETES, which is what an operator's Clear on that person's
+// row under `/admin/users` comes down to. There is deliberately no
+// self-service removal: a way back that the person themselves can throw away
+// is one they throw away by accident.
+// ---------------------------------------------------------------------------
+function readBackupCodes(key) {
+  log.debug('Entering readBackupCodes(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readBackupCodes(). No entry.');
+    return '';
+  }
+  const value = (stored.attributes.stsbackupcodes || [])[0];
+  log.debug('Leaving readBackupCodes(). ' + (value ? 'Issued.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeBackupCodes(key, value) {
+  log.debug('Entering writeBackupCodes(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    // NOT created here, for `writeTotp()`'s reason: writing a credential for
+    // somebody who does not exist would create them, and product mode refuses
+    // exactly that.
+    log.warn('ldap: "' + key + '" has no entry in this realm, so no recovery ' +
+             'codes were recorded.');
+    log.debug('Leaving writeBackupCodes(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsbackupcodes;
+  } else {
+    // ASSIGNED and not appended — see the header. Two values would be two
+    // sets and no way to say which one a person is holding.
+    stored.attributes.stsbackupcodes = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeBackupCodes(). ' +
+            (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -5897,6 +6250,32 @@ if (typeof credentials.setDirectory === 'function') {
     replaceWebauthn: replaceWebauthnValues,
     readActivation: readActivation,
     writeActivation: writeActivation,
+    // The authenticator app (2026-09-10). Checked WHERE THEY ARE USED rather
+    // than in `setDirectory()`'s required list, exactly as the security-key
+    // and activation functions are: an older `common/credentials.js` that
+    // knows nothing about them still gets a working password sign-in.
+    readTotp: readTotp,
+    writeTotp: writeTotp,
+    // The recovery codes (2026-09-10). Checked WHERE THEY ARE USED for the
+    // reason the pair above is: an older `common/credentials.js` that knows
+    // nothing about them still gets a working password sign-in, and
+    // `ensureBackupCodes()` reports `no-store` rather than throwing.
+    readBackupCodes: readBackupCodes,
+    writeBackupCodes: writeBackupCodes,
+    // WHO IS IN THIS REALM, for `secondFactorHolders()` — the operator's view
+    // on `/admin/users`. It hands over NAMES and not entries, deliberately: what
+    // the credential store needs is a list to ask itself about, and handing it
+    // whole entries would let a caller start reading attributes off them, which
+    // is how a second implementation of *what an enrolment is* gets written.
+    //
+    // It is the AMBIENT realm's, unlike the nine functions `admin_rbac.js`
+    // takes: those decide who may administer the service and are pinned to the
+    // default realm on purpose, and this one is a page LOOKING AT a realm.
+    persons: function () {
+      return allPersons().map(function (entry) {
+        return usernameOfEntry(entry);
+      }).filter(function (name) { return !!name; });
+    },
     // **THE ONE EXCEPTION TO "PRODUCT MODE CREATES NOTHING", AND IT IS NARROW
     // ON PURPOSE.** `createUser()` is this module's ordinary door and is not
     // mode-gated — it is what the console and /admin-api call, and an operator
@@ -5913,6 +6292,167 @@ if (typeof credentials.setDirectory === 'function') {
     // no way through any of them.
     createPerson: function (name) { return createUser(name, {}); }
   });
+
+// ---------------------------------------------------------------------------
+// THE USER PORTAL'S OWN SLOT (2026-09-11), and it is the FIRST one that
+// application has ever offered.
+//
+// `/portal`'s Overview answers *what does this identity provider hold about
+// me*, and it had been answering out of the SESSION — four facts a sign-in
+// happened to carry. It draws the person's real entry now, against the fixed
+// list in `common/inetorgperson.js`.
+//
+// **IT IS A SLOT FOR THE ORDINARY REASON AND THE DIRECTION IS THE INTERESTING
+// HALF.** `portal/portal.js` sits at 8b and this module at 21, so a require
+// from there to here would register every `/ldap` route and the eight
+// `/admin/ldap/*` pages ahead of the authorization server and the console
+// (rule 1); a require from here to there would move every `/portal` route
+// behind the management API. Rule 3e's test answers yes both ways round, which
+// is what a slot is for.
+//
+// **IT HANDS OVER THE WHOLE ENTRY, WHERE `credentials.persons()` ABOVE
+// DELIBERATELY HANDS OVER ONLY NAMES**, and the difference is worth reading
+// beside it. That one is handing a list to a module which must not start
+// reading attributes off entries, because that is how a second implementation
+// of *what an enrolment is* gets written. This one's whole purpose IS the
+// attributes — and what stops the portal reading something it should not is
+// not the shape of this hook but the FIXED LIST at the other end, which has no
+// `sts`-prefixed credential on it and cannot grow one by accident.
+//
+// Guarded like the rest: an older `portal/portal.js` without the slot costs a
+// warning rather than a service that will not start, and the warning says what
+// is lost.
+// ---------------------------------------------------------------------------
+if (typeof portal.setDirectory === 'function') {
+  portal.setDirectory({
+    // **THE AMBIENT REALM'S**, like `credentials.persons()` above and unlike
+    // the RBAC functions: a person reading their own account page is reading
+    // it in the realm they signed in to, and a realm is a logical copy of this
+    // service with its own people.
+    personEntry: function (username) {
+      log.debug('Entering personEntry(). username=' + username);
+      const located = locateEntry(String(username || ''));
+      if (!located.stored) {
+        log.debug('Leaving personEntry(). Nothing at ' + located.dn + '.');
+        return null;
+      }
+      log.debug('Leaving personEntry(). ' +
+                Object.keys(located.stored.attributes).length +
+                ' attribute(s) at ' + located.stored.dn + '.');
+      // The stored map itself is not handed over — a caller holding it could
+      // write through it, and this module's whole contract is that the store
+      // changes through `touchDirectory()`. A shallow copy is enough: the
+      // value arrays are read, never mutated, by anything that draws them.
+      return { dn: located.stored.dn,
+               attributes: Object.assign({}, located.stored.attributes) };
+    }
+  });
+} else {
+  log.warn('ldap: the user portal offers no setDirectory(), so its Overview ' +
+           'will draw the four facts a session carries rather than the ' +
+           'person\'s directory entry. That is the older portal and is not an ' +
+           'error; the page says which it is showing.');
+}
+
+// ---------------------------------------------------------------------------
+// THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
+// in `ou=users` be an RFC 7523 issuer.
+//
+// `common/person_assertions.js` owns what a person's assertion key pair IS —
+// the seven attributes, the sealing, the refusal that a person may only assert
+// about themselves — and this module owns the store it lives in. That is the
+// same division `applications.js`, `federation.js` and the two XACML registers
+// already have with this file.
+//
+// **RULE 3e's TEST ANSWERS YES BOTH WAYS ROUND.** That module is required by
+// `oauth-oidc/assertion_grant.js`, which `oauth2.js` requires at 9, so a
+// require from there to this module would register every `/ldap` route and all
+// eight `/admin/ldap/*` console pages ahead of the authorization server (rule
+// 1); and a require from this module to `assertion_grant.js` would be a second
+// path to it through a module at 21, which is where a cycle starts.
+//
+// **THREE FUNCTIONS AND THEY ARE THE THREE SHAPES THIS FILE ALREADY HANDS
+// OVER.** `read()` answers ONE PERSON'S assertion attributes in their canonical
+// spelling — not the whole entry, which is what the portal's slot takes,
+// because this register has no business with the other fifty; `write()` is one
+// attribute at a time so that the caller can report WHICH one failed, which
+// matters here more than anywhere else in this file (`common/pki.js` hands a
+// private key over once and keeps no copy); and `persons()` is the list of
+// NAMES, exactly as `credentials.persons()` takes it and for that comment's
+// reason.
+//
+// Guarded like the rest: an older `common/person_assertions.js` costs a
+// warning rather than a service that will not start, and the warning says what
+// is lost.
+// ---------------------------------------------------------------------------
+if (typeof personAssertions.setDirectory === 'function') {
+  personAssertions.setDirectory({
+    // **THE AMBIENT REALM'S**, like the portal's and `credentials.persons()`:
+    // a realm is a logical copy of this service with its own people, and an
+    // assertion presented at `/realm/acme/oauth2/token` is about somebody in
+    // `acme`.
+    read: function (username) {
+      log.debug('Entering read(). username=' + username);
+      const located = locateEntry(String(username || ''));
+      if (!located.stored) {
+        log.debug('Leaving read(). Nothing at ' + located.dn + '.');
+        return null;
+      }
+      // CANONICAL SPELLINGS OUT, lower-cased ones in the store. This is the
+      // one place that translation happens for these attributes, so the
+      // register never has to know that this directory lower-cases an
+      // attribute name — which is the fact that made `ou=roles` report
+      // `0 user(s)` for a role somebody held.
+      const out = {};
+      personAssertions.ATTRIBUTES.forEach(function (name) {
+        const values = located.stored.attributes[name.toLowerCase()];
+        if (values && values.length) {
+          out[name] = values.slice();
+        }
+      });
+      log.debug('Leaving read(). ' + Object.keys(out).length + ' attribute(s).');
+      return out;
+    },
+    write: function (username, name, value) {
+      log.debug('Entering write(). username=' + username + ' name=' + name);
+      const located = locateEntry(String(username || ''));
+      const stored = located.stored;
+      if (!stored) {
+        // NOT created here, for `writeStoredPassword()`'s reason: issuing a
+        // credential to somebody who does not exist would create them, and
+        // product mode refuses exactly that.
+        log.warn('ldap: "' + username + '" has no entry in this realm, so no ' +
+                 'assertion key material was written.');
+        log.debug('Leaving write(). No entry.');
+        return false;
+      }
+      const attribute = String(name).toLowerCase();
+      if (value === null || value === undefined || value === '') {
+        delete stored.attributes[attribute];
+      } else {
+        // ASSIGNED and not appended. Two JWKS values would be two public keys
+        // under one `kid` attribute, and a verifier that read the second would
+        // be checking a signature against a key nobody meant.
+        stored.attributes[attribute] = [String(value)];
+      }
+      touchDirectory();
+      log.debug('Leaving write(). ' + (value ? 'Written to ' : 'Removed from ') +
+                stored.dn + '.');
+      return true;
+    },
+    persons: function () {
+      return allPersons().map(function (entry) {
+        return usernameOfEntry(entry);
+      }).filter(function (name) { return !!name; });
+    }
+  });
+} else {
+  log.warn('ldap: common/person_assertions.js offers no setDirectory(), so ' +
+           'nobody in ou=users can hold an RFC 7523 signing key pair and an ' +
+           'assertion naming a person as its issuer will be refused for want ' +
+           'of a registered issuer. That is the older register and is not an ' +
+           'error; /admin/pki says so on the control.');
+}
 } else {
   log.warn('ldap: common/credentials.js offers no setDirectory(), so no ' +
            'password can be verified or set. Development mode is unaffected ' +
@@ -6041,8 +6581,8 @@ if (typeof adminRbac.setDirectory === 'function') {
   });
 } else {
   log.warn('ldap: admin_rbac.js offers no setDirectory(), so the admin ' +
-           'console cannot read or grant its two roles. With ' +
-           'admin.authRequired on that leaves /admin reachable only while ' +
+           'console cannot read or grant its two roles. The console gate is ' +
+           'unconditional, so that leaves /admin reachable only while ' +
            'admin.openWhenEmpty is on. The directory itself is unaffected.');
 }
 
@@ -10917,6 +11457,44 @@ function listen() {
       resolve({ ldapsPort: null, ldapsListening: false,
                 ldapsError: tlsListenError });
       return;
+    }
+    // -------------------------------------------------------------------
+    // RE-READ THE CERTIFICATE BEFORE BINDING (2026-09-11).
+    //
+    // The record above was taken at REQUIRE time, and this module is required
+    // at 21 — before `pki.start()`, which is what certifies the listener
+    // certificate under this service's own Root and REPLACES it on
+    // `tls_server.js`'s record. So 636 would present the self-signed
+    // certificate this process threw away, while 8443, 9443 and the main port
+    // presented the certified one: "one anchor covers all four" said on this
+    // module's own page, and false on the one socket it is about.
+    //
+    // The chain goes with it for the reason `tls_server.js`'s
+    // `secureContextOptions()` gives — a client holding only the Root cannot
+    // build a path without the two certificates between them, and the failure
+    // is `unable to get local issuer certificate`, which names nothing.
+    //
+    // `setSecureContext()` rather than a second `createServer()`: the handlers
+    // were registered on this server object at require time and a new one
+    // would have none of them.
+    // -------------------------------------------------------------------
+    try {
+      const current = tlsServer.serverCertificate();
+      Object.assign(serverCertificate, current);
+      secureServer.server.setSecureContext({
+        cert: (current.chainPem && current.chainPem.length)
+          ? [current.certPem].concat(current.chainPem).join('')
+          : current.certPem,
+        key: current.privateKeyPem
+      });
+    } catch (e) {
+      // The listener still has the context it was built with, so this is a
+      // certificate that verifies against a different anchor rather than a
+      // directory that does not answer. Named rather than swallowed.
+      log.warn('ldap: LDAPS could not be re-keyed with the certificate this ' +
+               'service ended up with (' + e.message + '); it is serving the ' +
+               'one built at require time, which may not be the one 8443, ' +
+               '9443 and the main port present.');
     }
     secureServer.listen(LDAPS_PORT, '0.0.0.0', function () {
       const address = secureServer.address();

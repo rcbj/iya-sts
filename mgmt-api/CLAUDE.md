@@ -487,9 +487,11 @@ console setting reached an API it never named would be the worst way to find out
 **THAT PARAGRAPH WAS FOLLOWED EXACTLY AND IS WORTH READING AS A PREDICTION THAT
 HELD.** The change did come, and it came as a separate setting with a separate
 argument — `adminApi.authRequired`, in its own group, with two settings beside
-it — and NOT as an extension of `admin.authRequired`. A deployment that turns
-the console's gate off still has an authenticated API, and one that turns this
-API's gate off still has a gated console. The name considered here was
+it — and NOT as an extension of `admin.authRequired`. The two gates are still
+independent, which is the property that paragraph was protecting: turning this
+API's gate off leaves the console gated. The other half of the sentence has
+lapsed for a reason of its own — `admin.authRequired` was itself removed on
+2026-09-06, so the console's gate can no longer be turned off at all. The name considered here was
 `admin.apiAuthRequired` and the one built is `adminApi.*`, which is the same
 decision spelt so that the group has somewhere to live.
 
@@ -1016,3 +1018,138 @@ put one.
 The refusal says the caller PASSED the role check and names the roles they hold,
 because "you hold the role and the policy still says no" is the one state a
 reader would otherwise spend an afternoon on.
+
+## `/admin-api/mfa`: A REPORT AND A RESET, AND DELIBERATELY NO ENROL (2026-09-10)
+
+**THE CONSOLE PAGE THIS MIRRORED IS GONE AND THIS RESOURCE IS NOT.**
+`/admin/mfa` arrived on 2026-09-10 and lasted hours: it edited the `totp.*`
+settings AND drew a roster of who held a second factor, and one page cannot be
+filed by both halves. The settings are `/admin/totp` and `/admin/webauthn` under
+Protocols; the roster is columns on `/admin/users`, and the per-person detail
+and both Clear buttons are on that person's own row.
+
+Rule 7 says a console control owes an operation. **It says nothing about an
+operation whose page moved**, and deleting a working one to tidy a table would
+be a regression dressed as consistency — the same argument `GET
+/admin-api/users/new` is kept on, one section up. So this stays, `mirrors`
+points at the page that absorbed it, and `admin.mfaView()` answers OUT OF THAT
+VIEW rather than scanning the credential store a second time: two scans would be
+two answers to how many people hold a second factor, agreeing until the day they
+did not.
+
+**BOTH ACTIONS ANSWER ON TWO PATHS NOW** — here and as
+`POST /admin-api/users/{clear-totp,clear-key}`, one switch reached two ways,
+because the console control moved and a caller's script did not. Their request
+schemas take BOTH spellings of the person (`username` and `user`) for the same
+reason: a caller that followed the other path's example must not be refused with
+a message about a member of the request rather than about the person.
+
+**THE MISSING OPERATION IS THE INTERESTING ONE.** There is no `enrol`, and it is
+a refusal rather than an omission: enrolling an authenticator means being SHOWN
+a shared secret, so an operation here would be an administrative door that mints
+a working second factor for any account — after which whoever called it holds
+that account's second factor. Enrolment happens where the person is
+(`/portal/mfa`) or where a credential authorises it (`/portal/activate`).
+
+**`clear-totp` ANSWERS 400 FOR AN ENROLMENT NOBODY HOLDS**, where
+`rbac/grant` answers 200 with `changed: false` for a role somebody already has.
+The difference is worth stating because it looks like an inconsistency: a grant
+has an idempotent reading a script wants — *make sure they hold this* — and a
+clear does not. The caller asked to clear a specific thing and it was not there.
+
+**`clear-key` GOES THROUGH `credentials.removeKey()`**, which is what carries
+the refusal that matters: it will not remove the last way in. An operator must
+not be able to do what the owner is stopped from doing.
+
+
+## `/admin-api/pki` — FOUR OPERATIONS, AND A MODULE REQUIRED IN THE ORDINARY DIRECTION (2026-09-10)
+
+`GET /admin-api/pki` and `POST /admin-api/pki/{build,issue,revoke,clear}`,
+mirroring `/admin/pki`. Rule 7 exactly: every control on that page has an
+operation and both go through the SAME functions in `admin-ui/pki_admin.js`, so
+this API decides nothing that console does not.
+
+**THE MODULE IS A PLAIN REQUIRE AND NEEDS NO SLOT**, which is the one thing
+about this resource worth knowing. It sits at **18a** in
+`common/protocol_stack.js` — after `admin-ui/admin` and BEFORE this file — so by
+the time this require runs it is a cache hit and registers nothing; and it
+requires only `admin.js` and `common/pki.js`, which is a LIBRARY (rule 3), so
+there is no route it could move and no cycle it could close.
+`admin-ui/crypto_metadata.js` is the contrast: it is at 20a because it reads an
+algorithm table out of `tls/tls_server.js` at 20, so it needed the seventh slot.
+Rule 3e says a slot is what you pay for a require that would close a cycle or
+move a route, and this one would do neither.
+
+**`pkiAction()` RESOLVES**, so this is the second action handler in this API
+that awaits — `/ssf/:action` is the first, and for a related reason. A rejection
+is turned into a 500 with the message rather than being left as an unhandled
+one.
+
+**NO PRIVATE KEY IS EVER IN THE REPLY.** `common/pki.js`'s `describe()` drops
+every one of them on the way out, so a handler here could not leak the Root's
+key by forgetting. The CERTIFICATES go out whole, because a certificate is the
+half of a key pair meant to be handed around and the Root is the one thing a
+relying party has to be given out of band. An application's own private key is
+on its directory entry, in the clear, which is `oauthClientSecret`'s decision
+and is documented as such rather than hidden.
+
+**`revoke` IS NAMED FOR THE BUTTON AND THE DESCRIPTION KEEPS THE CLAIM
+HONEST.** It takes a key pair OFF an application and puts nothing on any
+revocation list. The word on the console is `revoke`; the sentence that says
+what it does and does not do is in the operation's `description`, which is
+where a caller reads it.
+
+**THAT SENTENCE USED TO REST ON AN ABSENCE AND NOW RESTS ON A DISTINCTION,
+WHICH MAKES IT MORE IMPORTANT RATHER THAN LESS.** It read *this service
+publishes no CRL and answers no OCSP, so the operation does not revoke
+anything* — true until 2026-09-11, when every certificate authority here grew
+a CRL and an OCSP responder. **There are now two operations on this resource
+with the word `revoke` in them and they do completely different things**:
+
+| Operation | What it changes |
+|---|---|
+| `revoke` | an application's DIRECTORY ENTRY — six attributes for `jwt`, five for `saml`. This service stops ACCEPTING what that key signs. The certificate still chains. |
+| `revoke-certificate` | an issuer's REVOCATION LIST. This service's CRL and OCSP responder say `revoked` for that serial. Nobody loses a key and nothing stops chaining for a party that does not check. |
+
+**THE OLDER NAME WAS KEPT AND THE NEW ONE WORKED AROUND IT**, which is the
+decision worth recording: this action list is PUBLISHED — `GET /admin-api/pki`
+carries it and a machine chooses from it — so renaming `revoke` to make room
+would have broken every caller that already had it, in order to fix a confusion
+two descriptions can carry instead. `release-hold` is its pair, and only a
+`certificateHold` can be released.
+
+## RECOVERY CODES: A SETTINGS RESOURCE AND A CLEAR, AND DELIBERATELY NOTHING ELSE (2026-09-10)
+
+Rule 7 again — `/admin/backup-codes` arrived on the console and owes an
+operation in the same change — and the interesting half is what this API does
+NOT get.
+
+| Operation | What it is |
+|---|---|
+| `GET /admin-api/backup-codes` | the four `backupCodes.*` settings, with the MECHANISM in `status`, read from `common/backup_codes.js` |
+| `POST /admin-api/users/clear-backup-codes` | deletes a person's set, which re-arms the automatic issue |
+
+**THERE IS NO OPERATION THAT ISSUES A SET AND THERE WILL NOT BE**, for the same
+reason there is no `enrol` beside `clear-totp` and `clear-key`: a set is created
+by the ACT of enrolling a second factor and by nothing else, and a management
+API that minted one would be an administrative door handing a working second
+factor to any account. `POST /users/clear-backup-codes` is the only route to a
+second set, and what it does is DELETE.
+
+**AND THERE IS NO OPERATION THAT READS A CODE.** `GET /users` reports the counts
+on each row and never the strings; the person reads their own set on
+`/portal/mfa` and nowhere else. That is asserted rather than trusted —
+`tests/vendored/sts_portal_backup_codes.js` walks this API's own OpenAPI
+document for a path that looks like a reader, and then checks that no code it
+holds appears anywhere in a `GET /users` reply.
+
+**The settings resource needs no POST**, like `/totp` and `/webauthn` beside it:
+every form on the page posts `set-many` to `/admin/config`, so a write here
+would be a second way to change one value.
+
+**Unlike `/totp`, its description carries no paragraph about affecting new
+enrolments only.** That one has to, because a TOTP parameter was told to an app
+this service cannot reach. Nothing here is told to anybody — a recovery code is
+a string compared against a stored string — so shortening `backupCodes.length`
+changes what the next set looks like and leaves an existing one matching exactly
+as it did.

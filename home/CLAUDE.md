@@ -21,9 +21,10 @@ answers well over a hundred endpoints across sixteen protocol families and none
 of them was discoverable from `/`.
 
 So the page is a **signpost**: the logo, the name, the version, one sentence
-about what this service is, the warning that it verifies nothing, and four
-links — the repository, its issues, the documentation site, and `/admin` on this
-instance.
+about what this service is, the warning that it verifies nothing, and five
+links — the repository, its issues, the documentation site, and the two
+surfaces on this instance that a person rather than a client goes to, `/admin`
+and `/portal`.
 
 **IT LISTS NO ENDPOINTS AND MUST NOT START.** `GET /admin/sts-metadata` builds
 that list by walking the running Express router, so it cannot go stale by
@@ -37,7 +38,7 @@ The same goes for anything else this service already publishes about itself:
 `GET /oauth2/rfc9700`, `GET /spiffe`, `GET /admin/ldap/service`, `GET /tls`. A summary of one
 of those on the front page is a summary that will disagree with it.
 
-## The four links
+## The five links
 
 Three are written out as constants rather than derived. `package.json` carries no
 `repository` member, and adding one so that this page could compute three URLs
@@ -47,16 +48,54 @@ The documentation URL is GitHub Pages' arrangement of the same repository —
 `baseurl: /mock-sts` — so **changing the repository changes all three and that
 baseurl together**.
 
-The fourth, `/admin`, is **relative on purpose**. This service is reached as
-localhost, as `sts` on a compose network and through a published port;
-`baseUrlOf()` exists because documents carrying absolute URLs have to follow the
-request, and a same-origin link does not have to know any of that.
+The fourth and fifth, `/admin` and `/portal`, are **relative on purpose**. This
+service is reached as localhost, as `sts` on a compose network and through a
+published port; `baseUrlOf()` exists because documents carrying absolute URLs
+have to follow the request, and a same-origin link does not have to know any of
+that.
 
-Its one sentence about signing in is read from `admin.authRequired` **per
-request**, not captured at require time, because a settings form and the
-management API can turn that setting off while the process runs. A front page
-promising a sign-in screen over a console that is open is the kind of small lie
-that costs somebody ten minutes.
+**`/portal` arrived 2026-09-10 and closed a door that had never been opened.**
+The user portal has existed since 2026-09-06, and the only ways to reach it
+were to know the path already or to be handed an activation link — so the one
+surface in this service built for a PERSON rather than for an operator or a
+client was the one surface with nothing on the front door pointing at it. Its
+row lists none of the portal's pages, for the endpoint rule one section up:
+`portal/portal.js`'s `NAV` is the page list and `sts_metadata.js` reports it,
+so a set of highlights here would be a second copy that goes stale the first
+time a page is added there.
+
+**What a sign-in here MEANS is one sentence shared by both rows**, read per
+request, in `signInMeans()`. What a sign-in screen actually CHECKS is a
+property of `global.mode` — `mode.verifiesCredentials()` — rather than of
+either surface, so a copy on each row would disagree the first time somebody
+corrected one of them.
+
+**It replaced a clause that was wrong in two ways at once**, and adding the
+portal link is what put the first of them in front of a reader. The console's
+row read *"it asks you to sign in, and nothing else here does"* — true when it
+was written and false from the day the portal arrived, now stated on the same
+page as a link to the portal — and *"no password checked"*, which is a
+DEVELOPMENT-mode fact that was stated unconditionally.
+
+**Neither row offers an off switch, because there is no longer one to offer.**
+`admin.authRequired` was removed on 2026-09-06 when `common/mode.js` took over
+the four gates that were already on: `mode.gatesConsole()` returns `true` in
+both modes, so the console row's `else` arm is unreachable and its old text —
+*"It is open: admin.authRequired is off on this instance"* — named a setting
+that does not exist.
+
+**FINDING THAT IS WHAT TURNED A LINK INTO A SWEEP, AND THE SWEEP IS THE MORE
+USEFUL HALF.** That name survived in prose across thirty-nine files, along with
+`scim.authRequired`, `spiffe.authRequired` and `ssf.authRequired`, which went
+the same day — including as THREE ROWS IN README's settings table, with
+defaults and environment variables, four days after the settings stopped
+existing. `tests/readme_settings.js` is the check that would have caught it and
+now does; `tests/CLAUDE.md` carries the argument.
+
+**What the two rows are told apart by is the ROLE, and that is a real
+difference rather than a missing setting.** The console asks for one of two;
+the portal asks for none, because every page of it is about the person looking
+at it, so saying who you are is the entire question.
 
 ## The image
 

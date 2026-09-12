@@ -5,7 +5,7 @@ nav_order: 1
 
 # mock-sts
 
-A mock identity service that speaks **seventeen protocol families** in one small
+A mock identity service that speaks **nineteen protocol families** in one small
 Node process. It exists to exercise *clients*: it checks no password, validates
 no access token and attests no workload.
 
@@ -33,9 +33,16 @@ so nothing can have trusted it in advance. Accept it, or fetch it with
 `curl -k https://localhost:8081/tls/server-certificate`; `STS_HTTPS=false` runs
 the plain port this used to be.
 
-Then open <https://localhost:8081/> — a front page with the four things worth
-having on one: this repository, its issues, this site, and the admin console on
-that instance.
+Then open <https://localhost:8081/> — a front page with the five things worth
+having on one: this repository, its issues, this site, and the two surfaces on
+that instance that a person rather than a client goes to — the admin console,
+and the user portal at `/portal`, which is that instance's account page for
+whoever signs in to it. Its Overview draws **every standard inetOrgPerson
+attribute** the signed-in person's directory entry could hold — all fifty,
+grouped by the three object classes a person here is filed under, with the LDAP
+attribute name and the RFC printed under each value, because the reason to read
+it on a mock is usually to find out what something is called before writing it
+over LDAP.
 
 The page worth going to next is <https://localhost:8081/admin/sts-metadata> —
 every protocol this service speaks, and every endpoint it registers, read off
@@ -60,7 +67,12 @@ what to do when 389 or 88 will not bind.
 | SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}`, `/saml11/rp` |
 | SAML 2.0 and SAML 1.1 assertions | inside all four above |
 | **Federation** — this service as either end of a relationship with a foreign identity service, in five of those protocols | `/federation`, `/admin/federation` |
-| WebAuthn Level 3, the relying party's half | the login screen |
+| **JWT assertions (RFC 7521, RFC 7523)** — both halves: an assertion instead of a client secret, and an assertion instead of an authorization code | the token endpoint |
+| **SAML 2.0 assertions (RFC 7521, RFC 7522)** — the same framework's other profile: a signed `<saml:Assertion>` instead of a client secret, and instead of an authorization code. A **separate key pair per application** from the JWT one, and neither can sign for the other | the token endpoint |
+| **A certificate authority** — ONE Root for the service, an Intermediate per trust realm and per the process, an Issuing CA per use case, and **every key pair this service generates as a leaf of it** | `/admin/pki`, `/admin-api/pki` |
+| WebAuthn Level 3 over FIDO CTAP2, the relying party's half — a second factor or the only credential on an account | the login screen, `/portal/keys`, `/admin/webauthn` |
+| **TOTP (RFC 6238)** — an authenticator app as a second factor, enrolled as a QR code and **genuinely verified** | `/portal/mfa`, `/authn/totp`, `/admin/totp` |
+| **Recovery codes** — the way back in when the second factor is not to hand, issued **automatically and once** by the act of enrolling one, and the only mechanism here that no specification defines | `/portal/mfa`, `/authn/backup-code`, `/admin/backup-codes` |
 | Kerberos v5 — a KDC, a protected service, and MS-KKDCP | TCP/UDP 88, `/KdcProxy` |
 | SPNEGO (RFC 4559/4178) | `/spnego` |
 | LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 |
@@ -85,8 +97,9 @@ the six of forty-two SPIRE methods that are unimplemented and why each one is.
 `GET /admin/ldap/service` says the directory is schemaless. A mock that quietly pretended
 would teach you something false about every real server you will ever meet.
 
-**The admin console at `/admin` asks for a sign-in and a role** — `admin.authRequired`,
-on by default — and the roles are two ordinary groups in the embedded directory.
+**The admin console at `/admin` asks for a sign-in and a role** — unconditionally,
+with no setting that opens it — and the roles are two ordinary groups in the
+embedded directory.
 It is a turnstile and not a lock: no password is checked at that screen either,
 so anybody who can reach this port can sign in as anybody and — while neither
 role group has a member — hold both roles. The console can revoke tokens, add
@@ -121,6 +134,9 @@ assertion is accepted. See [what is not checked](what-is-not-checked.md).
 - [Signing out](signing-out.md) — `/logout`: one list of everything you are still signed into, across every family, and what cannot be ended
 - [Sessions](sessions.md) — what a session IS here: the browser sign-on session every protocol shares, the Kerberos TGT, the LDAP connection, the five things that are not sessions, and the six places one is visible
 - [CAEP events](caep-events.md) — the eight Continuous Access Evaluation Profile events: which activities in this service emit each one, which five nobody here can cause and how to send those by hand, and the three gates every event passes on its way to a receiver
+- [Signals received](signals-received.md) — the admin console and the user portal are registered Shared Signals receivers of this service's own transmitter: why the delivery is a real HTTP push rather than a function call, the five reasons an inbox is empty, and what a person is shown about themselves and never about anybody else
 - [Persistence](persistence.md) — what survives a restart and what never can: three modes, and the reason nothing this service mints is ever written down
+- [Encryption at rest](encryption-at-rest.md) — the two different questions behind that phrase: what this service seals before a value reaches a store (and why there is ONE key for every trust realm rather than one each), and what encrypts everything else — LUKS, ZFS, cloud disks, the forks that have TDE, and why column-level encryption leaves plaintext in the WAL
+- [Remote PEP](remote-pep.md) — the second container: a remote XACML Policy Enforcement Point that pulls this service's policy repository and decides in its own process, with a worked authorization decision for an application
 - [What is not checked](what-is-not-checked.md) — the permissive posture, its three exceptions, and the one feature that inverts it
 - [Repository layout](layout.md) — where the code is, for contributors

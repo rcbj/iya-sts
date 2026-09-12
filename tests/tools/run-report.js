@@ -425,6 +425,79 @@ function haveDocker() {
 }
 
 // ---------------------------------------------------------------------------
+// RE-ESTABLISH THE ANCHOR, IF THE SERVICE HAS ROTATED IT (2026-09-12).
+//
+// Called before every protocol job. It re-fetches `/tls/server-certificate`
+// and, when the bundle differs from the one on disk, writes the new one to the
+// SAME path and recomputes the SPKI pin — so the two variables a job is handed
+// keep naming the certificate the service is actually serving.
+//
+// **THE PATH DOES NOT CHANGE AND THAT IS DELIBERATE.** `NODE_EXTRA_CA_CERTS`
+// is read by node once per child, so a rewritten file is picked up by the next
+// job and by nothing already running; a second path would leave the report
+// directory holding several certificates with nothing saying which was live.
+// What IS kept is the record: every rotation is announced at `warn` naming the
+// job boundary it happened at, because "the certificate changed between job 40
+// and job 41" is the sentence that makes a batch of handshake failures
+// readable.
+//
+// It answers `null` when nothing changed and when the fetch failed, which are
+// the same instruction to the caller: go on using what you have.
+// ---------------------------------------------------------------------------
+async function refreshTrust(url, current) {
+  log.debug('Entering refreshTrust().');
+  let pem = '';
+  try {
+    pem = await trust.fetchCertificate(url);
+  } catch (e) {
+    // NOT fatal and named rather than swallowed: the service may be mid-restart
+    // or simply gone, and the job about to run will say so far more usefully
+    // than a runner that stopped here.
+    log.warn('could not re-read the mock STS\'s certificate from ' + url +
+             trust.CERTIFICATE_PATH + ' (' + e.message + '); the next job ' +
+             'runs with the anchor this run already had.');
+    log.debug('Leaving refreshTrust(). Not fetched.');
+    return null;
+  }
+  let was = '';
+  try {
+    was = fs.readFileSync(current.pemPath, 'utf8');
+  } catch (e) {
+    // The file is ours and was written moments ago; an unreadable one is worth
+    // hearing about, and rewriting it is the right answer either way.
+    log.warn('the anchor this run wrote could not be read back (' + e.message +
+             '); rewriting it.');
+  }
+  if (was === pem) {
+    log.debug('Leaving refreshTrust(). Unchanged.');
+    return null;
+  }
+  const pin = trust.spkiPin(pem);
+  fs.writeFileSync(current.pemPath, pem);
+  // **THE PIN IS USUALLY UNCHANGED AND THE BUNDLE IS NOT, WHICH IS THE WHOLE
+  // POINT OF SAYING BOTH.** A rebuild re-certifies the listener over the key
+  // it already had, so the SPKI pin the browser job uses survives it and the
+  // node jobs' anchor does not — the Root above the leaf is a different
+  // certificate and OpenSSL has nothing to terminate a path at. A message
+  // reporting only the pin would say "nothing changed" about the one event
+  // that breaks every node-driven job in the run.
+  log.warn('THE SERVICE HAS ROTATED ITS TLS CERTIFICATE since the last job — ' +
+           'most likely a PKI action on /admin/pki or /admin-api/pki, which ' +
+           'rebuilds the Root and re-issues this listener\'s leaf. The ' +
+           'anchor at ' + current.pemPath + ' has been replaced; every job ' +
+           'from here on is handed the new one. SPKI pin ' + pin +
+           (pin === current.pin
+             ? ' (UNCHANGED — the re-issue was over the same key, so it is ' +
+               'the anchor above it that moved)'
+             : ' (was ' + current.pin + ')') + '.');
+  log.debug('Leaving refreshTrust(). Rotated.');
+  return Object.assign({}, current, {
+    pin: pin,
+    variables: Object.assign({}, current.variables, { STS_SPKI_PIN: pin })
+  });
+}
+
+// ---------------------------------------------------------------------------
 // One job, in a process of its own. Its output is TEED — written to the log
 // file as it arrives and echoed to the console unless --quiet — so a long job
 // is watchable and a finished one is readable.
@@ -1436,6 +1509,42 @@ async function main() {
         job.env.NODE_V8_COVERAGE = rawUnit;
       }
     } else {
+      // -------------------------------------------------------------------
+      // **THE ANCHOR IS RE-READ BEFORE EVERY PROTOCOL JOB (2026-09-12), AND
+      // IT IS NOT A PRECAUTION — IT IS THE FIX FOR A WHOLE RUN.**
+      //
+      // The certificate was fetched ONCE above, at the last moment before the
+      // first job, which was right for as long as this service's certificate
+      // could only change when the service restarted. It stopped being right
+      // on 2026-09-11, when `/admin/pki` gave an operator a Root CA to
+      // rebuild: `POST /admin-api/pki/build-root` replaces the Root, every
+      // Intermediate and Issuing CA under it, AND the leaf this listener is
+      // already serving — so a truststore pinned before that request is stale
+      // the moment it returns.
+      //
+      // `sts_admin_api_operations.js` drives every declared operation of that
+      // API, `build-root` among them. On 2026-09-12 that made the twenty-nine
+      // jobs after it in the `memory` and `postgres` modes fail at the TLS
+      // handshake with `unable to get local issuer certificate` — an error
+      // that names a certificate and says nothing about the cause, on a
+      // service that was answering perfectly the whole time.
+      //
+      // **RE-READING RATHER THAN ACCUMULATING.** The bundle is REPLACED, not
+      // appended to: a truststore that kept every anchor this run has ever
+      // seen would go on trusting a hierarchy the service has thrown away,
+      // and this suite contains assertions about certificates being REFUSED.
+      // One live certificate, exactly as trust.js's header argues.
+      //
+      // A failure here is not fatal for the reason the first fetch is not:
+      // the job then runs and fails on the certificate, which is a worse
+      // message than this one but is not a worse outcome than not running.
+      // -------------------------------------------------------------------
+      if (trusted.tls) {
+        const fresh = await refreshTrust(instance.url, trusted);
+        if (fresh) {
+          trusted = fresh;
+        }
+      }
       job.cwd = job.dir;
       job.cmd = [process.execPath, path.join(job.dir, job.file)];
       job.env = Object.assign({}, process.env, {

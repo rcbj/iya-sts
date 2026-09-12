@@ -288,6 +288,12 @@ function pemToDer(pem) {
 var rawToPem = derToPem;
 var pemToRaw = pemToDer;
 
+// Both readers take ONE block. base64 padding is only valid at the end of a
+// string, so two padded bodies concatenated are not one base64 value and atob
+// refuses them — a file holding a public and a private block (which is what
+// the raw-key downloads write) has to be split on its BEGIN lines first.
+// Every caller in this tree passes a single block.
+
 // The label of the first PEM block in a text, or null when there is none.
 // Used to tell a caller what it actually pasted — "that is a CERTIFICATE, not
 // a private key" is a better message than a Web Crypto DataError.

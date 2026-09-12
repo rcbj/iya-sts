@@ -1616,14 +1616,77 @@ const JWE_ENCS = {
 // other people's clients. ECDH-ES and its three key-wrapping variants are here
 // because a recipient with an EC key has no RSA one to offer.
 const JWE_ALG = 'RSA-OAEP-256';
-const JWE_ALGS = ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES', 'ECDH-ES+A128KW',
-                  'ECDH-ES+A192KW', 'ECDH-ES+A256KW'];
-// The one this service can DECRYPT with, which is a shorter list on purpose:
-// what it receives is encrypted to the RSA key it publishes, and it holds no EC
-// private key to agree with.
-const JWE_DECRYPT_ALGS = ['RSA-OAEP-256'];
+// ---------------------------------------------------------------------------
+// **THE SYMMETRIC FAMILIES JOINED THIS LIST ON 2026-09-10 AND THE DECRYPT LIST
+// STOPPED BEING SHORTER THAN IT.** Both changes are for RFC 7521 / RFC 7523:
+// an assertion may arrive ENCRYPTED, and the two families it can plausibly be
+// encrypted to are the ones this service holds a key for — its own RSA and EC
+// keys, and a CLIENT SECRET, which is a shared symmetric key and is the only
+// key material a `client_secret_jwt` client has.
+//
+// So the table is now RFC 7518 section 4 entire, with one deliberate absence
+// argued at the foot of it:
+//
+//   RSA-OAEP-256 / RSA-OAEP        to this service's RSA key
+//   ECDH-ES and its three KW forms to an EC key
+//   A128KW / A192KW / A256KW       AES Key Wrap under a shared secret
+//   A128GCMKW / A192GCMKW / A256GCMKW  the same, AES-GCM, with `iv` and `tag`
+//                                  in the header (section 4.7.1)
+//   dir                            the shared secret IS the content key
+//   PBES2-HS256+A128KW and friends the shared secret is a PASSWORD, stretched
+//                                  by PBKDF2 with `p2s` and `p2c` (section 4.8)
+//
+// **RSA1_5 IS NOT HERE AND IS NOT AN OVERSIGHT.** RFC 8017 deprecated PKCS#1
+// v1.5 encryption and every JOSE implementation that still offers it has a
+// Bleichenbacher oracle behind it in principle — the failure of an unwrap has
+// to be indistinguishable from the failure of everything after it, which is a
+// property of a whole code path rather than of one function. This service is a
+// mock and it will not carry that path. A caller that sends one is told the
+// name and the reason, which is more useful than a list it has to diff.
+// ---------------------------------------------------------------------------
+const JWE_RSA_ALGS = ['RSA-OAEP-256', 'RSA-OAEP'];
+const JWE_ECDH_ALGS = ['ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW',
+                       'ECDH-ES+A256KW'];
+const JWE_AESKW_ALGS = ['A128KW', 'A192KW', 'A256KW'];
+const JWE_AESGCMKW_ALGS = ['A128GCMKW', 'A192GCMKW', 'A256GCMKW'];
+const JWE_PBES2_ALGS = ['PBES2-HS256+A128KW', 'PBES2-HS384+A192KW',
+                        'PBES2-HS512+A256KW'];
+const JWE_SYMMETRIC_ALGS = JWE_AESKW_ALGS.concat(JWE_AESGCMKW_ALGS,
+                                                 JWE_PBES2_ALGS, ['dir']);
+// The families that encrypt to a RECIPIENT'S PUBLIC KEY. Kept as a name of
+// its own because it is what the three surfaces that encrypt OUTWARD may offer
+// — a signed UserInfo response, an OID4VCI Credential Response, an encrypted
+// assertion this service mints — and every one of them holds the recipient's
+// JWKS and no shared secret. Advertising the symmetric families there would be
+// a metadata member a client could register and this service would then try to
+// satisfy by deriving a key from the JSON of a public key.
+const JWE_ASYMMETRIC_ALGS = JWE_RSA_ALGS.concat(JWE_ECDH_ALGS);
+const JWE_ALGS = JWE_ASYMMETRIC_ALGS.concat(JWE_SYMMETRIC_ALGS);
+// **THE SAME LIST, AND THAT IS THE CHANGE.** It was `['RSA-OAEP-256']` on the
+// argument that what arrives here is encrypted to the RSA key this service
+// publishes — true of the one caller that existed then (OID4VCI's encrypted
+// Credential Request) and false the moment a client could encrypt an assertion
+// to a key of its own choosing. A caller now picks by what it HOLDS rather
+// than by what this table permits, and `decryptJweCompact()` refuses by name
+// when it was handed no key of the right kind.
+const JWE_DECRYPT_ALGS = JWE_ALGS.slice();
 const ECDH_KW_BYTES = { 'ECDH-ES+A128KW': 16, 'ECDH-ES+A192KW': 24,
                         'ECDH-ES+A256KW': 32 };
+// The AES key size each symmetric family wraps with. `dir` has none — the
+// secret IS the content encryption key, so its length is decided by `enc`.
+const AESKW_BYTES = { A128KW: 16, A192KW: 24, A256KW: 32,
+                      A128GCMKW: 16, A192GCMKW: 24, A256GCMKW: 32,
+                      'PBES2-HS256+A128KW': 16, 'PBES2-HS384+A192KW': 24,
+                      'PBES2-HS512+A256KW': 32 };
+const PBES2_HASH = { 'PBES2-HS256+A128KW': 'sha256',
+                     'PBES2-HS384+A192KW': 'sha384',
+                     'PBES2-HS512+A256KW': 'sha512' };
+// RFC 7518 section 4.8.1.2 gives no ceiling and says a recipient SHOULD pick
+// one. A `p2c` a caller chose is a caller choosing how long this process
+// blocks: PBKDF2 is synchronous here, and 2^31 iterations on the token
+// endpoint is a denial of service with a specification citation attached.
+const PBES2_MAX_ITERATIONS = 1000000;
+const PBES2_DEFAULT_ITERATIONS = 8192;
 // JWK curve name -> the name node's OpenSSL knows it by.
 const EC_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
                     'P-521': 'secp521r1' };
@@ -1751,6 +1814,106 @@ function aesKeyWrap(kek, plaintextKey) {
   return out;
 }
 
+function aesKeyUnwrap(kek, wrapped) {
+  log.debug('Entering aesKeyUnwrap().');
+  const decipher = nodeCrypto.createDecipheriv('id-aes' + (kek.length * 8) +
+      '-wrap', kek, AES_KW_IV);
+  const out = Buffer.concat([decipher.update(wrapped), decipher.final()]);
+  log.debug('Leaving aesKeyUnwrap().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SHARED SECRET, AS BYTES. A caller hands one of three things and they are
+// three different things on purpose:
+//
+//   a Buffer      raw key bytes, used as they are
+//   an oct JWK    RFC 7517's symmetric key — base64url, decoded
+//   a string      **the UTF-8 bytes of it**, which is what a client_secret is
+//
+// That last row is the one worth stating. RFC 7518 section 4.8 is explicit
+// that a PBES2 password is the UTF-8 octets, and OpenID Connect Core section
+// 16.19 says the same about deriving a symmetric key from `client_secret` —
+// so a secret is never base64-decoded on the way in, however much it looks
+// like base64. Guessing there produces a key that is wrong and plausible, and
+// the failure is an authentication tag that does not verify.
+// ---------------------------------------------------------------------------
+function secretBytes(secret) {
+  if (Buffer.isBuffer(secret)) {
+    return secret;
+  }
+  if (secret && typeof secret === 'object' && secret.kty === 'oct') {
+    return Buffer.from(String(secret.k || ''), 'base64url');
+  }
+  return Buffer.from(String(secret == null ? '' : secret), 'utf8');
+}
+
+// RFC 7518 section 4.8.1.1: the salt input is `alg || 0x00 || p2s`, and
+// leaving the algorithm name out of it is the classic mistake — it makes one
+// password produce the same key for three different key sizes.
+function pbes2Key(alg, password, saltInput, iterations) {
+  log.debug('Entering pbes2Key(). alg=' + alg);
+  const salt = Buffer.concat([Buffer.from(alg, 'utf8'), Buffer.alloc(1),
+                              saltInput]);
+  const out = nodeCrypto.pbkdf2Sync(secretBytes(password), salt, iterations,
+                                    AESKW_BYTES[alg], PBES2_HASH[alg]);
+  log.debug('Leaving pbes2Key(). ' + iterations + ' iteration(s).');
+  return out;
+}
+
+// The symmetric half of both directions, so that the key a wrap derives and
+// the key an unwrap derives are derived by ONE function. Two copies of the
+// PBES2 salt construction is one copy that will eventually leave out the alg.
+function symmetricKek(alg, secret, header, forEncrypt) {
+  log.debug('Entering symmetricKek(). alg=' + alg);
+  if (JWE_PBES2_ALGS.indexOf(alg) >= 0) {
+    let salt;
+    let iterations;
+    if (forEncrypt) {
+      salt = nodeCrypto.randomBytes(16);
+      iterations = PBES2_DEFAULT_ITERATIONS;
+      header.p2s = b64u(salt);
+      header.p2c = iterations;
+    } else {
+      if (!header.p2s) {
+        throw new Error('a ' + alg + ' JWE carries its PBKDF2 salt in the ' +
+          'header as `p2s` (RFC 7518 section 4.8.1.1) and this one has none.');
+      }
+      salt = Buffer.from(String(header.p2s), 'base64url');
+      iterations = Math.floor(Number(header.p2c));
+      if (!isFinite(iterations) || iterations < 1) {
+        throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration count ' +
+          'in the header as `p2c` and this one says "' + header.p2c + '".');
+      }
+      if (iterations > PBES2_MAX_ITERATIONS) {
+        // Refused rather than performed: see PBES2_MAX_ITERATIONS.
+        throw new Error('this JWE asks for ' + iterations + ' PBKDF2 ' +
+          'iterations and this service performs at most ' +
+          PBES2_MAX_ITERATIONS + '. RFC 7518 section 4.8.1.2 leaves the ' +
+          'ceiling to the recipient, and a caller choosing this number is a ' +
+          'caller choosing how long this process blocks.');
+      }
+    }
+    const key = pbes2Key(alg, secret, salt, iterations);
+    log.debug('Leaving symmetricKek(). PBES2.');
+    return key;
+  }
+  const bytes = secretBytes(secret);
+  if (alg === 'dir') {
+    log.debug('Leaving symmetricKek(). Direct.');
+    return bytes;
+  }
+  const need = AESKW_BYTES[alg];
+  if (bytes.length !== need) {
+    throw new Error(alg + ' wraps with a ' + (need * 8) + '-bit key and the ' +
+      'key given is ' + (bytes.length * 8) + ' bits. RFC 7518 section 4.4 ' +
+      'has no key derivation in it — the key must be exactly that size, or ' +
+      'use a PBES2 algorithm, which stretches a password on purpose.');
+  }
+  log.debug('Leaving symmetricKek(). AES.');
+  return bytes;
+}
+
 function wrapCek(alg, recipientJwk, cek, header) {
   log.debug('Entering wrapCek(). alg=' + alg);
   if (JWE_ALGS.indexOf(alg) === -1) {
@@ -1758,6 +1921,45 @@ function wrapCek(alg, recipientJwk, cek, header) {
     throw new Error('encryptJweCompact: unsupported alg "' + alg +
       '"; this service encrypts with ' + JWE_ALGS.join(', ') + '.');
   }
+
+  // ---------------------------------------------------------------------
+  // THE SYMMETRIC FAMILIES FIRST, because they take a SECRET rather than a
+  // recipient's public key and `createPublicKey()` below would throw on one
+  // with a message about key data.
+  // ---------------------------------------------------------------------
+  if (JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
+    const kek = symmetricKek(alg, recipientJwk, header, true);
+    if (alg === 'dir') {
+      // RFC 7518 section 4.5: the shared key IS the content encryption key and
+      // encrypted_key is empty. The LENGTH is therefore decided by `enc`, and
+      // a mismatch is refused here rather than by the cipher, which reports it
+      // as a buffer size.
+      const spec = JWE_ENCS[header.enc];
+      if (spec && kek.length !== spec.cekBytes) {
+        throw new Error('encryptJweCompact: alg "dir" uses the shared key AS ' +
+          'the content encryption key, so it must be exactly ' +
+          spec.cekBytes + ' bytes for ' + header.enc + '; this one is ' +
+          kek.length + '.');
+      }
+      log.debug('Leaving wrapCek(). Direct.');
+      return { cek: kek, encryptedKey: Buffer.alloc(0) };
+    }
+    if (JWE_AESGCMKW_ALGS.indexOf(alg) >= 0) {
+      // Section 4.7: AES-GCM over the CEK, with the IV and the tag carried in
+      // the header rather than in the encrypted_key segment.
+      const iv = nodeCrypto.randomBytes(12);
+      const cipher = nodeCrypto.createCipheriv('aes-' + (kek.length * 8) +
+                                               '-gcm', kek, iv);
+      const wrapped = Buffer.concat([cipher.update(cek), cipher.final()]);
+      header.iv = b64u(iv);
+      header.tag = b64u(cipher.getAuthTag());
+      log.debug('Leaving wrapCek(). AES-GCM key wrap.');
+      return { cek: cek, encryptedKey: wrapped };
+    }
+    log.debug('Leaving wrapCek(). AES key wrap.');
+    return { cek: cek, encryptedKey: aesKeyWrap(kek, cek) };
+  }
+
   const publicKey = nodeCrypto.createPublicKey({ key: recipientJwk, format: 'jwk' });
 
   if (alg === 'RSA-OAEP' || alg === 'RSA-OAEP-256') {
@@ -1819,11 +2021,19 @@ function encryptJweCompact(plaintext, opts) {
   if (options.jwk && options.jwk.kid) {
     header.kid = options.jwk.kid;
   }
+  // A SECRET is the other way of naming the key, and it is the only way for
+  // the symmetric families: `jwk` means "the recipient's public key" and a
+  // shared secret is neither public nor the recipient's alone. One member per
+  // kind rather than one member holding either, so a caller cannot pass a
+  // public JWK to `dir` and get a key derived from its JSON.
+  const keyMaterial = JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0
+    ? options.secret
+    : options.jwk;
   // wrapCek() may WRITE to the header (the ECDH-ES variants add `epk`), so the
   // header is serialised after it and not before — the AAD has to be the bytes
   // that actually go out, and an epk added after the AAD was taken would make
   // every tag fail at the far end.
-  const wrapped = wrapCek(alg, options.jwk, random, header);
+  const wrapped = wrapCek(alg, keyMaterial, random, header);
   const headerB64 = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
 
   const sealed = sealContent(spec, wrapped.cek, iv,
@@ -1836,9 +2046,119 @@ function encryptJweCompact(plaintext, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// THE KEY MANAGEMENT HALF OF A DECRYPT — `wrapCek()` read backwards.
+//
+// It is a function of its own rather than a branch inside `decryptJweCompact()`
+// for the reason `wrapCek()` is: the two halves of one algorithm have to be
+// able to be read against each other, and an ECDH-ES agreement that derived a
+// key one way at one end and another way at the other is the failure that is
+// hardest to see — everything parses, and the authentication tag does not
+// verify.
+//
+// It THROWS a sentence rather than a code. Every caller wraps it and says what
+// could not be unwrapped.
+// ---------------------------------------------------------------------------
+function unwrapCek(header, encryptedKey, options, spec) {
+  log.debug('Entering unwrapCek(). alg=' + header.alg);
+  const alg = String(header.alg);
+
+  if (JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
+    if (options.secret === undefined || options.secret === null ||
+        options.secret === '') {
+      throw new Error('alg "' + alg + '" is encrypted to a SHARED SECRET and ' +
+        'this caller holds none for the sender. A client that encrypts to ' +
+        'this service should use RSA-OAEP-256 against the key in its JWKS, ' +
+        'or one of the symmetric algorithms with the client_secret as the key.');
+    }
+    const kek = symmetricKek(alg, options.secret, header, false);
+    if (alg === 'dir') {
+      log.debug('Leaving unwrapCek(). Direct.');
+      return kek;
+    }
+    if (JWE_AESGCMKW_ALGS.indexOf(alg) >= 0) {
+      if (!header.iv || !header.tag) {
+        throw new Error('a ' + alg + ' JWE carries the key wrapping\'s IV and ' +
+          'authentication tag in the header as `iv` and `tag` (RFC 7518 ' +
+          'section 4.7.1); this one has ' +
+          (header.iv ? 'no tag' : (header.tag ? 'no iv' : 'neither')) + '.');
+      }
+      const decipher = nodeCrypto.createDecipheriv(
+        'aes-' + (kek.length * 8) + '-gcm', kek,
+        Buffer.from(String(header.iv), 'base64url'));
+      decipher.setAuthTag(Buffer.from(String(header.tag), 'base64url'));
+      const out = Buffer.concat([decipher.update(encryptedKey),
+                                 decipher.final()]);
+      log.debug('Leaving unwrapCek(). AES-GCM key wrap.');
+      return out;
+    }
+    const out = aesKeyUnwrap(kek, encryptedKey);
+    log.debug('Leaving unwrapCek(). AES key wrap.');
+    return out;
+  }
+
+  if (!options.privateKey) {
+    throw new Error('alg "' + alg + '" is encrypted to a PRIVATE KEY and this ' +
+      'caller was given none.');
+  }
+
+  if (JWE_RSA_ALGS.indexOf(alg) >= 0) {
+    // The OAEP digest is what the `alg` says and NOT node's default, which is
+    // SHA-1 — an unwrap under the wrong digest fails, and it fails in the way
+    // an unwrap under the wrong KEY fails, so the two are indistinguishable
+    // from the message. See wrapCek().
+    const out = nodeCrypto.privateDecrypt({
+      key: options.privateKey,
+      padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: alg === 'RSA-OAEP' ? 'sha1' : 'sha256'
+    }, encryptedKey);
+    log.debug('Leaving unwrapCek(). RSA.');
+    return out;
+  }
+
+  // ECDH-ES, direct or with AES key wrapping. The sender's EPHEMERAL public
+  // key is in the header and there is no agreement without it.
+  if (!header.epk || !header.epk.crv) {
+    throw new Error('an ECDH-ES JWE carries the sender\'s ephemeral public key ' +
+      'in the header as `epk` (RFC 7518 section 4.6.1.1) and this one has none.');
+  }
+  if (!EC_CURVES[header.epk.crv]) {
+    throw new Error('the ephemeral key names curve "' + header.epk.crv +
+      '", and this service agrees over ' + Object.keys(EC_CURVES).join(', ') + '.');
+  }
+  const senderKey = nodeCrypto.createPublicKey({ key: header.epk, format: 'jwk' });
+  const z = nodeCrypto.diffieHellman({ privateKey: options.privateKey,
+                                       publicKey: senderKey });
+  if (alg === 'ECDH-ES') {
+    // The AlgorithmID is the content encryption `enc` and the length is the
+    // WHOLE CEK — both halves for a CBC-HMAC enc, which is why this needs the
+    // spec and the RSA branch does not.
+    if (!spec) {
+      throw new Error('alg "ECDH-ES" derives the content encryption key at the ' +
+        'length `enc` names, and "' + header.enc + '" is not one this service ' +
+        'knows.');
+    }
+    const out = concatKdf(z, spec.cekBytes, header.enc);
+    log.debug('Leaving unwrapCek(). ECDH-ES direct.');
+    return out;
+  }
+  const kek = concatKdf(z, ECDH_KW_BYTES[alg], alg);
+  const out = aesKeyUnwrap(kek, encryptedKey);
+  log.debug('Leaving unwrapCek(). ' + alg + '.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // DECRYPT A COMPACT JWE. `opts`:
 //
-//   privateKey    a node KeyObject.
+//   privateKey    a node KeyObject — RSA for the two RSA-OAEP algorithms, EC
+//                 for the four ECDH-ES ones.
+//   secret        the shared key for the symmetric families: a Buffer, an oct
+//                 JWK, or a string whose UTF-8 bytes are the key (which is
+//                 what a `client_secret` is). See secretBytes().
+//   allowedAlg    the `alg` values this caller accepts. OPTIONAL, and narrower
+//                 than the table: a caller that holds only one kind of key
+//                 should say so, because "this service can do PBES2" and "this
+//                 endpoint will accept a PBES2 assertion" are different claims.
 //   allowedEnc    the `enc` values this endpoint accepts. Required.
 //   expectedKid   when set, the header's kid must equal it. Checking it is
 //                 what makes key rotation DETECTABLE: this service regenerates
@@ -1866,12 +2186,28 @@ function decryptJweCompact(compact, opts) {
     log.debug('Leaving decryptJweCompact(). The header is not JSON.');
     throw new Error('the JWE protected header is not valid base64url JSON: ' + e.message);
   }
+  if (String(header.alg) === 'RSA1_5') {
+    // Named rather than left to fall off the end of the list, because a caller
+    // that sent one has an implementation that offers it and needs to know
+    // this is a refusal rather than an omission. See the table above.
+    log.debug('Leaving decryptJweCompact(). RSA1_5.');
+    throw new Error('this service does not decrypt RSA1_5, deliberately: ' +
+      'RFC 8017 deprecated PKCS#1 v1.5 encryption, and implementing it ' +
+      'safely means making an unwrap failure indistinguishable from every ' +
+      'later failure, which is a property of a whole code path rather than ' +
+      'of one function. Use RSA-OAEP-256.');
+  }
   if (JWE_DECRYPT_ALGS.indexOf(header.alg) === -1) {
-    // Shorter than the list this service ENCRYPTS with, and deliberately so:
-    // what arrives here is encrypted to the RSA key this service publishes, and
-    // there is no EC private key here to agree an ECDH-ES secret with.
     log.debug('Leaving decryptJweCompact(). Wrong alg.');
-    throw new Error('this service decrypts with alg ' + JWE_DECRYPT_ALGS.join(' or ') +
+    throw new Error('this service decrypts with alg ' + JWE_DECRYPT_ALGS.join(', ') +
+      '; the request used "' + header.alg + '".');
+  }
+  // The CALLER's own narrowing, checked after the table's. Two messages
+  // because they are two different refusals: one says this service cannot,
+  // the other says this endpoint will not.
+  if (options.allowedAlg && options.allowedAlg.indexOf(header.alg) === -1) {
+    log.debug('Leaving decryptJweCompact(). The caller does not accept that alg.');
+    throw new Error('this endpoint accepts alg ' + options.allowedAlg.join(', ') +
       '; the request used "' + header.alg + '".');
   }
   const allowed = options.allowedEnc || Object.keys(JWE_ENCS);
@@ -1894,19 +2230,15 @@ function decryptJweCompact(compact, opts) {
       'is regenerated when the service restarts.');
   }
 
+  const spec = JWE_ENCS[header.enc];
   let cek;
   try {
-    cek = nodeCrypto.privateDecrypt({
-      key: options.privateKey,
-      padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: 'sha256'
-    }, Buffer.from(parts[1], 'base64url'));
+    cek = unwrapCek(header, Buffer.from(parts[1], 'base64url'), options, spec);
   } catch (e) {
     log.debug('Leaving decryptJweCompact(). The key would not unwrap.');
-    throw new Error('the content encryption key could not be unwrapped with this service\'s ' +
-      'private key: ' + e.message);
+    throw new Error('the content encryption key could not be unwrapped: ' +
+      e.message);
   }
-  const spec = JWE_ENCS[header.enc];
   if (cek.length !== spec.cekBytes) {
     // The wrong-key case, and it is checked rather than left to the cipher for
     // the reason the XML decryption above checks the same thing: an unwrap that
@@ -2506,6 +2838,110 @@ function constantTimeEquals(a, b) {
 }
 
 // ---------------------------------------------------------------------------
+// THE ONE-TIME PASSWORD PRIMITIVE: RFC 4226 SECTION 5.3 (2026-09-10).
+//
+// **IT IS HERE FOR THE REASON EVERYTHING ELSE IN THIS FILE IS HERE.** An HOTP
+// value is an HMAC truncated to N digits, and an HMAC is a keyed signature —
+// so this is the fourth thing this service signs with, and the rule this
+// module was written to enforce is that there is one place it happens. A
+// `createHmac` in `common/totp.js` would be the fifth call site of a
+// cryptographic primitive outside the one module that is supposed to hold
+// them all, and the argument against that is the same argument the six XML
+// signers lost in 2026-08-27.
+//
+// **WHAT IS NOT HERE IS THE POLICY**, and the split is exactly the one every
+// other pair in this file makes: this function is handed a key, a counter and
+// a shape, and it answers with digits. It does not know what a time step is,
+// how wide a skew window an operator allows, whether a code has been spent
+// before, or what base32 is. `common/totp.js` owns all four, because all four
+// are decisions about a deployment rather than about an algorithm — which is
+// why that module can be read for the mechanism's behaviour and this one for
+// its arithmetic.
+//
+// THE TRUNCATION IS RFC 4226's AND IT IS FIDDLY ENOUGH TO BE WORTH NAMING.
+// The low four bits of the LAST byte of the digest are an offset; four bytes
+// are read from there; the top bit of the first of them is masked off, because
+// the RFC's reference implementation is Java and Java has no unsigned int; and
+// the result is taken modulo 10^digits. Every one of those four steps has been
+// got wrong by somebody, which is why the RFC publishes test vectors and why
+// `tests/totp.js` asserts this function against them rather than against
+// itself.
+//
+// **THE COUNTER IS EIGHT BYTES, BIG-ENDIAN, AND IT IS WRITTEN AS A BigInt.**
+// A TOTP counter is the Unix time divided by the step, which fits in 53 bits
+// for the next several million years — so `Number` would do — but the RFC
+// says the HMAC input is a 64-bit counter and a 64-bit counter is what this
+// writes. `writeBigUInt64BE` is the only way to say that without arithmetic
+// that would be wrong at the boundary nobody will ever reach.
+// ---------------------------------------------------------------------------
+
+// The digest algorithms an authenticator app may be asked for. SHA-1 is FIRST
+// and is the default, which is the one place in this service where the oldest
+// algorithm is the recommended one — and it is not a lapse. RFC 6238 section
+// 1.2 names HMAC-SHA-1 as the default, the `otpauth://` URI convention that
+// every authenticator app reads treats it as the default, and **Google
+// Authenticator, the app most people will point at the QR code this service
+// draws, ignores the `algorithm` parameter entirely and always computes
+// SHA-1**. A deployment that chose SHA-256 here would produce a QR code that
+// scans perfectly and then generates codes this service rejects, with nothing
+// anywhere saying why.
+//
+// The other two are offered because the specification defines them and a
+// client author may be testing exactly that, and `/admin/totp` says the above
+// beside the setting rather than leaving somebody to discover it.
+const HOTP_ALGS = {
+  SHA1: { hash: 'sha1', bytes: 20,
+          note: 'RFC 6238 section 1.2\'s default, and what every authenticator ' +
+                'app assumes. HMAC-SHA-1 here is a 30-second keyed MAC over a ' +
+                'counter and not a collision-resistant digest, which is why ' +
+                'SHA-1\'s weaknesses do not reach it.' },
+  SHA256: { hash: 'sha256', bytes: 32,
+            note: 'RFC 6238 section 1.2. Interoperable with authenticators ' +
+                  'that read the otpauth `algorithm` parameter and broken ' +
+                  'with the several that ignore it.' },
+  SHA512: { hash: 'sha512', bytes: 64,
+            note: 'RFC 6238 section 1.2, same caveat as SHA-256.' }
+};
+
+function hotpSpec(algorithm) {
+  const name = String(algorithm || 'SHA1').toUpperCase();
+  const spec = HOTP_ALGS[name];
+  if (!spec) {
+    throw new Error('hotp: "' + algorithm + '" is not one of ' +
+                    Object.keys(HOTP_ALGS).join(', ') + '.');
+  }
+  return { name: name, hash: spec.hash };
+}
+
+// RFC 4226 section 5.3. `key` is the shared secret as BYTES — the base32 an
+// authenticator app is given is an encoding of it and is `totp.js`'s business,
+// not this function's.
+function hotpCode(key, counter, opts) {
+  log.debug('Entering hotpCode(). counter=' + String(counter));
+  const options = opts || {};
+  const spec = hotpSpec(options.algorithm);
+  const digits = Math.max(6, Math.min(10, Number(options.digits || 6)));
+  const material = Buffer.isBuffer(key) ? key : Buffer.from(String(key), 'utf8');
+  if (!material.length) {
+    throw new Error('hotp: the shared secret is empty, so no code can be ' +
+                    'derived from it.');
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = nodeCrypto.createHmac(spec.hash, material).update(message).digest();
+  // The dynamic truncation, step by step and named, because a one-liner here
+  // is the version nobody can check against the RFC.
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24) |
+                 ((digest[offset + 1] & 0xff) << 16) |
+                 ((digest[offset + 2] & 0xff) << 8) |
+                 (digest[offset + 3] & 0xff);
+  const code = String(binary % Math.pow(10, digits)).padStart(digits, '0');
+  log.debug('Leaving hotpCode(). ' + digits + ' digits, ' + spec.name + '.');
+  return code;
+}
+
+// ---------------------------------------------------------------------------
 // PASSWORD AND CLIENT-SECRET HASHING (2026-09-06).
 //
 // **THIS SERVICE STORED NO SECRET IT COULD VERIFY UNTIL PRODUCT MODE ARRIVED,
@@ -2657,7 +3093,134 @@ function kekBytes(value) {
   return raw;
 }
 
-function encryptWithKek(kek, plaintext) {
+// ---------------------------------------------------------------------------
+// THE ACCOUNTING (2026-09-11), AND WHY IT IS IN THIS FILE AND NOT IN
+// `admin_stats.js` WHERE EVERY OTHER COUNTER IN THIS SERVICE LIVES.
+//
+// `/admin/encryption` answers *how much has this service encrypted and
+// decrypted*, and the only honest place to count that is the funnel the
+// operation actually goes through. **This module may not require
+// `admin_stats.js`** — rule 3r: `crypto.js` is a LEAF, it sits UNDER
+// `helpers.js`, and `admin_stats.js` requires `helpers.js`, so a require in
+// that direction closes a cycle and the symptom arrives somewhere else
+// entirely as `recordJwt is not a function`. `setJwtRecorder()` is the shape
+// that exists for exactly this problem and it was deliberately NOT used here:
+// a slot is what you pay for a require that would close a cycle (rule 3e), and
+// the thing being carried is four integers rather than a behaviour, so a
+// PLAIN TALLY with a reader is strictly less machinery than an inverted hook.
+//
+// **THE LABEL IS OPTIONAL AND A CALLER THAT OMITS IT IS COUNTED ANYWAY**, in
+// `(unlabelled)`. That is the whole reason the count is taken here rather than
+// at the eight call sites: a total assembled from call sites is a total that
+// is wrong the first time somebody adds a ninth, and it is wrong SILENTLY —
+// the page goes on looking complete. So the funnel owns the total and the
+// label owns the breakdown, and a missing label costs a row rather than a
+// number.
+//
+// **IT IS PROCESS-WIDE AND NOT PER REALM**, which the page says in as many
+// words. A key-encryption key belongs to the PROCESS — `secrets.js` reads one,
+// not one per realm — so a realm-partitioned tally would be counting the
+// realm a request happened to be in rather than anything about the key. It is
+// also why this survives no restart: these are in-memory integers like every
+// other counter here, and `audit.js`'s argument about restarting to clear
+// applies unchanged.
+// ---------------------------------------------------------------------------
+const UNLABELLED = '(unlabelled)';
+
+const kekTally = {
+  encryptions: 0,
+  decryptions: 0,
+  // A decrypt that THREW. Almost always the wrong key-encryption key — a
+  // rotated secret, a store carried between deployments — which is why it is
+  // its own figure rather than being folded into `decryptions`: a page
+  // reporting nine hundred decryptions is reporting something different from
+  // one reporting nine hundred decryptions and four hundred failures.
+  failures: 0,
+  plaintextBytes: 0,
+  ciphertextBytes: 0,
+  startedAt: Date.now(),
+  firstAt: 0,
+  lastAt: 0,
+  byLabel: Object.create(null)
+};
+
+function kekRow(label) {
+  const id = String(label || UNLABELLED);
+  if (!kekTally.byLabel[id]) {
+    kekTally.byLabel[id] = { label: id, encryptions: 0, decryptions: 0,
+                             failures: 0, plaintextBytes: 0,
+                             ciphertextBytes: 0, firstAt: 0, lastAt: 0 };
+  }
+  return kekTally.byLabel[id];
+}
+
+function countKek(label, what, plainBytes, cipherBytes) {
+  const now = Date.now();
+  const row = kekRow(label);
+  kekTally[what] += 1;
+  row[what] += 1;
+  kekTally.plaintextBytes += plainBytes || 0;
+  kekTally.ciphertextBytes += cipherBytes || 0;
+  row.plaintextBytes += plainBytes || 0;
+  row.ciphertextBytes += cipherBytes || 0;
+  if (!kekTally.firstAt) {
+    kekTally.firstAt = now;
+  }
+  if (!row.firstAt) {
+    row.firstAt = now;
+  }
+  kekTally.lastAt = now;
+  row.lastAt = now;
+}
+
+// What has been encrypted and decrypted under the key-encryption key, and how
+// much of it. A DEEP COPY, because a caller that could mutate the tally could
+// make this service under-report its own cryptography — and the one caller is
+// a console page, which has no business holding a reference to a counter.
+function kekAccounting() {
+  const labels = Object.keys(kekTally.byLabel).map(function (id) {
+    const row = kekTally.byLabel[id];
+    return { label: row.label, encryptions: row.encryptions,
+             decryptions: row.decryptions, failures: row.failures,
+             plaintextBytes: row.plaintextBytes,
+             ciphertextBytes: row.ciphertextBytes,
+             firstAt: row.firstAt, lastAt: row.lastAt };
+  }).sort(function (a, b) {
+    return (b.encryptions + b.decryptions) - (a.encryptions + a.decryptions) ||
+           a.label.localeCompare(b.label);
+  });
+  return {
+    encryptions: kekTally.encryptions,
+    decryptions: kekTally.decryptions,
+    failures: kekTally.failures,
+    operations: kekTally.encryptions + kekTally.decryptions,
+    plaintextBytes: kekTally.plaintextBytes,
+    ciphertextBytes: kekTally.ciphertextBytes,
+    startedAt: kekTally.startedAt,
+    firstAt: kekTally.firstAt,
+    lastAt: kekTally.lastAt,
+    labels: labels
+  };
+}
+
+// The parameters themselves, READ OUT OF THIS MODULE rather than written down
+// on the page. `/admin/crypto-metadata`'s rule one layer along: an algorithm
+// this service performs must be in a table here, so that a page describing it
+// cannot go on looking complete while being wrong.
+const KEK_PARAMETERS = {
+  envelope: '$aesgcm$1$salt$iv$tag$ciphertext, each field base64',
+  version: '1',
+  cipher: 'aes-256-gcm',
+  keyBits: KEK_KEY_BYTES * 8,
+  ivBits: KEK_IV_BYTES * 8,
+  tagBits: 128,
+  kdf: 'HKDF-SHA256',
+  kdfSaltBits: KEK_SALT_BYTES * 8,
+  kdfInfo: KEK_INFO,
+  perRecordSubkey: true
+};
+
+function encryptWithKek(kek, plaintext, label) {
   log.debug('Entering encryptWithKek().');
   const master = kekBytes(kek);
   const salt = nodeCrypto.randomBytes(KEK_SALT_BYTES);
@@ -2672,6 +3235,8 @@ function encryptWithKek(kek, plaintext) {
   const out = '$aesgcm$1$' + salt.toString('base64') + '$' +
               iv.toString('base64') + '$' + tag.toString('base64') + '$' +
               body.toString('base64');
+  countKek(label, 'encryptions', Buffer.byteLength(String(plaintext), 'utf8'),
+           body.length);
   log.debug('Leaving encryptWithKek(). ' + body.length + ' byte(s) of ciphertext.');
   return out;
 }
@@ -2680,14 +3245,23 @@ function isEncryptedWithKek(stored) {
   return /^\$aesgcm\$/.test(String(stored || ''));
 }
 
-function decryptWithKek(kek, stored) {
+function decryptWithKek(kek, stored, label) {
   log.debug('Entering decryptWithKek().');
   const parts = String(stored || '').split('$');
   // `$aesgcm$1$salt$iv$tag$body` splits to ['', 'aesgcm', '1', s, i, t, b].
+  //
+  // **THE TWO REFUSALS BELOW COUNT AS FAILURES AND THE ONE AT THE BOTTOM DOES
+  // TOO, which is a deliberate flattening.** A caller cannot tell them apart
+  // and neither should the figure: what a reader of that number wants to know
+  // is *how often did this service fail to read something it had written*, and
+  // splitting it into wrong-shape, wrong-version and wrong-key would be three
+  // columns of which two are always zero.
   if (parts.length !== 7 || parts[1] !== 'aesgcm') {
+    countKek(label, 'failures', 0, 0);
     throw new Error('this is not a record encrypted by this service');
   }
   if (parts[2] !== '1') {
+    countKek(label, 'failures', 0, 0);
     throw new Error('the record names encryption version "' + parts[2] +
                     '", which this build does not know how to read');
   }
@@ -2707,7 +3281,22 @@ function decryptWithKek(kek, stored) {
   // fatal at startup, because a service that cannot read its own signing key
   // must not come up generating a new one and silently invalidating every token
   // it ever issued.
-  const out = Buffer.concat([decipher.update(body), decipher.final()]);
+  // **THE `final()` IS WRAPPED SO THAT A BAD TAG IS COUNTED AND STILL
+  // THROWS.** The throw is the whole point of GCM here and must not be
+  // softened into a return: `keystore.js` turns it into a fatal at startup,
+  // because a service that cannot read its own signing key must not come up
+  // generating a new one and silently invalidating every token it ever issued.
+  // Counting it costs nothing and is the figure an operator who has just
+  // rotated a key-encryption key actually wants.
+  let out = null;
+  try {
+    out = Buffer.concat([decipher.update(body), decipher.final()]);
+  } catch (e) {
+    countKek(label, 'failures', 0, 0);
+    log.debug('Leaving decryptWithKek(). It would not open.');
+    throw e;
+  }
+  countKek(label, 'decryptions', out.length, body.length);
   log.debug('Leaving decryptWithKek(). ' + out.length + ' byte(s).');
   return out.toString('utf8');
 }
@@ -2735,6 +3324,47 @@ function decryptWithKek(kek, stored) {
 // wrong. Both doors produce the same stored form, because there is one
 // definition of it.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// A CREDENTIAL SEVERAL PROCESSES OF THIS SERVICE HAVE TO ARRIVE AT
+// INDEPENDENTLY (2026-09-11).
+//
+// HMAC-SHA256 over a label and the parts that name the thing, under a secret
+// the processes share. It is here rather than beside its one caller because
+// this file is the one place this service does cryptography, and because the
+// property being bought is a cryptographic one: a caller that holds one derived
+// credential must not be able to work out another.
+//
+// **IT IS A DERIVATION AND NOT A SECRET OF ITS OWN**, which is the whole point.
+// `ssf_receivers.js` mints a bearer token for each of this service's own two
+// SSF receivers, per realm, at startup — and in a dispatched service startup
+// happens in the front process and in every request worker, so a random token
+// gave four processes four different answers for one stream. The transmitter
+// ran in one of them and the receive endpoint in another, and EVERY push this
+// service made to itself was refused: 132,546 of them in half an hour on
+// 2026-09-11, each one retried, while nothing anywhere was broken enough to
+// fail. Derived from a secret that travels in the fork's environment, every
+// process computes the same token and none of them has to be told it.
+//
+// The label is not decoration: it is what keeps a credential derived for one
+// purpose from being the credential for another if a second caller ever
+// appears.
+// ---------------------------------------------------------------------------
+function deriveSharedCredential(secret, label) {
+  log.debug('Entering deriveSharedCredential(). label=' + label);
+  const mac = nodeCrypto.createHmac('sha256', Buffer.from(String(secret || ''),
+                                                          'utf8'));
+  mac.update(String(label || ''), 'utf8');
+  for (let i = 2; i < arguments.length; i++) {
+    // A SEPARATOR THAT CANNOT APPEAR IN A PART. Without one, ('ab', 'c') and
+    // ('a', 'bc') derive the same credential, which is the ordinary way a
+    // concatenated MAC input goes wrong.
+    mac.update('\u0000', 'utf8');
+    mac.update(String(arguments[i] == null ? '' : arguments[i]), 'utf8');
+  }
+  log.debug('Leaving deriveSharedCredential().');
+  return b64u(mac.digest());
+}
 
 // The stored form. `$scrypt$N$r$p$salt$hash`, self-describing so that raising
 // the cost later does not invalidate what is already stored — see the block
@@ -2908,6 +3538,8 @@ function verifySecretAsync(plaintext, stored, opts) {
 }
 
 module.exports = {
+  // --- a credential several processes have to derive alike ---
+  deriveSharedCredential: deriveSharedCredential,
   // --- XML digital signature ---
   PLACEMENT: PLACEMENT,
   signXml: signXml,
@@ -2945,6 +3577,25 @@ module.exports = {
   JWE_ALG: JWE_ALG,
   JWE_ALGS: JWE_ALGS,
   JWE_DECRYPT_ALGS: JWE_DECRYPT_ALGS,
+  // The families, for a caller that holds ONE kind of key and has to say which
+  // algorithms it will therefore accept. `client_auth.js` narrows to the
+  // symmetric list for a client_secret_jwt client and to the asymmetric one
+  // for private_key_jwt, which is the alg-confusion refusal one layer up.
+  JWE_RSA_ALGS: JWE_RSA_ALGS,
+  JWE_ECDH_ALGS: JWE_ECDH_ALGS,
+  JWE_ASYMMETRIC_ALGS: JWE_ASYMMETRIC_ALGS,
+  // EXPORTED FOR ONE CALLER AND IT IS A TEST, which is worth the line rather
+  // than hiding: RFC 7517 Appendix C publishes a PBES2 vector — a password, a
+  // salt, an iteration count and the sixteen bytes that come out — and there
+  // is no other way to check the derivation against an EXTERNAL answer. A
+  // round trip through this file's own wrap and unwrap agrees with itself
+  // whatever the salt construction is, which is how a mutant that dropped the
+  // algorithm name from the salt survived the first mutation round on
+  // `tests/assertion_grant.js`. Dropping it makes one password produce the
+  // same key for three different key sizes, and nothing about a round trip can
+  // see that.
+  pbes2Key: pbes2Key,
+  JWE_SYMMETRIC_ALGS: JWE_SYMMETRIC_ALGS,
   JWE_ENCS: JWE_ENCS,
   encryptJweCompact: encryptJweCompact,
   decryptJweCompact: decryptJweCompact,
@@ -2961,10 +3612,18 @@ module.exports = {
   jwkThumbprint: jwkThumbprint,
   certificateThumbprint: certificateThumbprint,
   constantTimeEquals: constantTimeEquals,
+  // --- one-time passwords (RFC 4226 section 5.3) ---
+  // The primitive only. The time step, the skew window, the replay guard and
+  // base32 are `common/totp.js`'s, for the reason written above hotpCode().
+  HOTP_ALGS: HOTP_ALGS,
+  hotpSpec: hotpSpec,
+  hotpCode: hotpCode,
   hashSecret: hashSecret,
   hashSecretAsync: hashSecretAsync,
   encryptWithKek: encryptWithKek,
   decryptWithKek: decryptWithKek,
+  kekAccounting: kekAccounting,
+  KEK_PARAMETERS: KEK_PARAMETERS,
   isEncryptedWithKek: isEncryptedWithKek,
   kekBytes: kekBytes,
   verifySecret: verifySecret,

@@ -10,6 +10,75 @@
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
 | **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
 
+## THE METRICS SURFACE, AND THE PROCESS EXIT IT EXPOSED (2026-09-11)
+
+`/admin/database` reports everything PostgreSQL will say about itself, and the
+state of the schema this service owns in it. **`persistence_postgres.js` owns
+the statements and the console owns none of them**, which is the whole
+layering: `admin-ui/` must never hold a connection string — it is a credential
+— and must never require `pg`, which is a dependency only this mode needs and
+which this directory takes care to require lazily. The console asks
+`persistence.databaseMetrics()`, that routes to the active driver, and only a
+driver that HAS a database answers.
+
+**`METRIC_PROBES` IS A TABLE AND EVERY ENTRY IS A `SELECT`.** There is no query
+box on that page and there must never be one: the role this service dials with
+holds INSERT, UPDATE and DELETE on six tables, so a console that could hand it
+a statement would be a console that could empty the directory. Nothing in any
+probe is composed from anything a request carries, and
+`tests/database_metrics.js` asserts that against the SQL rather than trusting
+it — no write verb, no statement separator, no parameter.
+
+**THE STATISTICS VIEWS ARE ASKED FOR ALL THEIR COLUMNS**, which is
+`crypto_metadata.js`'s rule one layer out: the shape is the SERVER's and it
+moves between major versions. Measured on the two this repository has met —
+`pg_stat_bgwriter` has ELEVEN columns on PostgreSQL 16 and FOUR on 18, when the
+checkpoint counters moved to `pg_stat_checkpointer`, a view that does not exist
+before 17; `pg_stat_wal` nine and five; `pg_stat_database` twenty-eight and
+thirty. A probe naming its columns would be wrong on every server but the one
+somebody tested, and wrong in the way that reads as a blank cell.
+
+**EVERY PROBE IS RUN, TIMED AND CAUGHT SEPARATELY.** The role is `sts_app` and
+not `pg_monitor`; which views that narrows depends on the server version and on
+the operator's grants, so one rejection must cost one row on the page rather
+than the page. The SQLSTATE is reported beside the message because `42P01` (no
+such relation — an older server) and `42501` (insufficient privilege) are
+completely different things to do about. **One answer is narrowed WITHOUT
+failing**, which is worse and is called out on the page: `pg_stat_activity`
+shows another role's backend as a ROW with `state` null and `query` set to the
+literal string `<insufficient privilege>` — a value, not an error, which
+anything that did not know would draw as somebody's SQL.
+
+### A CHECKED-OUT CLIENT HAD NO ERROR LISTENER, AND THAT WAS A PROCESS EXIT
+
+**This is the defect the metrics work found and it was in the WRITE PATH, not
+in the new code.** `pool.on('error')` in this driver covers a client that dies
+while IDLE IN THE POOL and its comment is right about why that matters — a mock
+identity service must not exit because a database restarted. It does not cover
+a client that is CHECKED OUT, and that is not an oversight in this file: it is
+what `pg-pool` does. `_acquireClient()` calls
+`client.removeListener('error', idleListener)` as it hands the client over,
+because from that moment the borrower owns it.
+
+So a connection that died while somebody held it emitted `'error'` on an
+EventEmitter with no listener, and node's rule for that is to throw. Measured:
+`docker stop` on the database while a page was reading from it exited the
+process with `Unhandled 'error' event ... 57P01 terminating connection due to
+administrator command`.
+
+**`withTransaction()` has borrowed a client for every flush since this driver
+was written**, so a database restarted during one took the service with it —
+the failure was simply far rarer than a page somebody opens. `guardClient()`
+wraps both call sites and removes its listener before release; leaving it
+attached would leak one per checkout onto a client the pool reuses (node warns
+at eleven) and would sit beside the idle listener pg puts back, reporting one
+dead connection twice.
+
+**The rule it leaves**: in this driver, anything that calls `pool.connect()`
+owns that client's errors until it releases it. There are two such call sites
+and a third would need this guard too.
+
+
 ## The sentence this directory reverses
 
 Every document in this repository said, in one wording or another, that this
@@ -732,3 +801,23 @@ of the three files that spell it. Without it, a column added here and not there
 gives a database one column short and a service that is not allowed to add it —
 arriving at a person as a permission error naming neither the column nor the
 file.
+## ENCRYPTION BELOW THIS DRIVER IS THE OPERATOR'S LAYER (2026-09-12)
+
+**This directory encrypts nothing.** What arrives sealed arrives sealed —
+`keystore.seal()` is applied by the modules that own the values, above the
+driver — and everything else is written as it was handed over. So the directory
+entries, the realms, the settings and (in development mode) the lot are
+plaintext in whatever store is configured, and the answer to *encrypt the rest*
+is underneath: LUKS or an encrypted ZFS dataset under `PGDATA`, a cloud disk
+with a customer-managed key, or one of the forks that has TDE — community
+PostgreSQL has none.
+
+`docs/encryption-at-rest.md` is the whole argument, including what column-level
+encryption misses that block-level does not (the WAL, spilled sorts, `pg_dump`
+output, replicas, query logs) and why the compose stack's `sts-secrets` volume
+must not sit on the same unencrypted disk as the database. **One fact from it
+belongs in a reader's head before they get there**: there is ONE
+key-encryption key for the service, not one per trust realm, so a realm is not a
+cryptographic boundary at rest — `common/CLAUDE.md` carries that argument beside
+`keystore.js`.
+

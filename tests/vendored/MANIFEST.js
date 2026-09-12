@@ -137,6 +137,8 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // `sts_metadata.js`, `admin_api.js`, `sts_admin_api_operations.js`,
 // `sts_admin_console.js`, `sts_delegated_permissions_example.js`,
 // `sts_consent.js`, `sts_global_logout.js`, `sts_portal_sessions.js`,
+// `sts_portal_totp.js`, `sts_second_factor_pages.js`,
+// `sts_webauthn_second_factor.js`, `sts_portal_backup_keys.js`,
 // `sts_roles.js`, `sts_roles_builtin.js`, `sts_route_inputs.js`,
 // `sts_metadata_anonymous.js`,
 // `sts_xacml_endpoints.js`, `sts_xacml_editor.js` and
@@ -225,6 +227,159 @@ const JOBS = [
   // check reads this working tree's own PROTOCOLS table.
   { file: 'sts_metadata_anonymous.js',   browser: false, local: true },
   { file: 'sts_portal_sessions.js',      browser: false, local: true },
+  { file: 'sts_portal_backup_codes.js',  browser: false, local: true },
+  { file: 'sts_portal_directory_attributes.js', browser: false, local: true },
+  // RFC 6238, over HTTP. `local: true` on sts_portal_sessions.js's argument —
+  // it drives this service's own /portal, /admin and /admin-api. It is NOT
+  // covered by tests/totp.js beside it and the split is worth knowing: that
+  // file checks the ARITHMETIC against both RFCs' published vectors and sends
+  // no request, and this one computes a code with an implementation of its own
+  // and asserts that the DOORS are wired up. Neither implies the other.
+  { file: 'sts_portal_totp.js',          browser: false, local: true },
+  // THE PERSON'S OWN RFC 7523 SIGNING KEY (2026-09-12). `local: true` on the
+  // job above's argument: it drives this repository's own /portal and
+  // /admin-api. It is the SEAM between four modules that are each asserted
+  // apart in process — the page renders and writes, common/pki.js issues,
+  // common/person_assertions.js seals and resolves, and
+  // oauth-oidc/assertion_grant.js verifies — and the one claim none of them
+  // can make alone: the PEM this page shows once obtains a token as its holder
+  // and obtains nothing as anybody else.
+  { file: 'sts_portal_signing_key.js',   browser: false, local: true },
+  // THE TWO SECOND-FACTOR MECHANISM PAGES AND THE ROSTER THAT ABSORBED
+  // /admin/mfa (2026-09-10). `local: true` on sts_portal_totp.js's argument
+  // one step further along: every assertion in it is about this service's own
+  // console or its /admin-api, and the tree that MOVES a control is the tree
+  // that should go red when the control lands nowhere.
+  //
+  // It is NOT covered by tests/webauthn_policy.js beside it and the split is
+  // the usual one: that file asserts what the settings module DECIDES — none
+  // of which is reachable over HTTP — and this one asserts that any of it
+  // reaches a page, an operation and a button. A settings group whose page was
+  // renamed and now has none is invisible in process and obvious in a request.
+  //
+  // AFTER sts_portal_totp.js on purpose: that job enrols an authenticator and
+  // clears it, and this one asserts a clear REFUSES for somebody holding
+  // nothing. Running before it would be asserting against a person this job
+  // created, which is what it does; running after leaves that unchanged and
+  // keeps the two clears in the order a reader of the report expects.
+  // RFC 7521 / RFC 7523 (2026-09-10). `local: true` on the THIRD argument
+  // `tests/CLAUDE.md` gives and at its plainest: every assertion spans an
+  // AUTHORING door and a PROTOCOL door. A signing key pair does not exist
+  // until `/admin-api/pki` issues one and an assertion issuer is not trusted
+  // until `oauthAssertionIssuer` is written through
+  // `/admin-api/applications` — so there is no question worth asking
+  // `/oauth2/token` until both have been used, which is the shape
+  // `sts_xacml_endpoints.js` has with a repository that starts empty.
+  //
+  // It is NOT covered by `tests/pki.js` or `tests/assertion_grant.js` beside
+  // it, and the split is the usual one: those two assert what the MODULES
+  // decide — the path check, the ninety-six encryption combinations, the
+  // twelve claims that may never reach a token — and send no request, so
+  // neither can see a grant that is registered and unreachable or a key pair
+  // written to the wrong six attributes.
+  // SECTION 13 SINCE 2026-09-11 IS A PERSON AS THE ISSUER, and it is in this
+  // job rather than one of its own because it is the same grant at the same
+  // endpoint with one field different on the issue — a second job would be a
+  // second place to keep the realm, the CA and the signer in step.
+  { file: 'sts_jwt_bearer_grant.js',     browser: false, local: true },
+  // RFC 7521 / RFC 7522 (2026-09-11), the SAML 2.0 profile of the same
+  // framework. `local: true` on the job above's argument word for word — the
+  // key pair comes from `/admin-api/pki` and the trust decision from
+  // `/admin-api/applications`, so there is no question worth asking
+  // `/oauth2/token` until both of this repository's own doors have been used.
+  //
+  // AFTER `sts_jwt_bearer_grant.js` on purpose, and it is the ONE ordering
+  // here that is about an assertion rather than about state: section 6 of this
+  // job presents each profile's key pair at the OTHER profile's grant, which
+  // is the claim the whole feature rests on. Reading the JWT job's result
+  // first is what tells a reader of the report that the RFC 7523 half was
+  // already green when the crossing was refused.
+  //
+  // It is NOT covered by `tests/saml_assertion_grant.js` beside it, on the
+  // usual split: that file asserts what the MODULE decides — the eleven items
+  // of section 3 as a table, the two attribute sets read out of the source —
+  // and sends no request, so it cannot see a grant that is registered and
+  // unreachable, a metadata member that promises what the endpoint refuses, or
+  // a console control that issues for the wrong profile.
+  { file: 'sts_saml2_bearer_grant.js',   browser: false, local: true },
+  // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
+  // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
+  // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the
+  // tree that adds a control to that console is the tree that should go red
+  // when the control loses its operation.
+  //
+  // AFTER the two assertion-grant jobs on purpose, and it is an ordering about
+  // STATE: both of those issue key pairs from this hierarchy, so by the time
+  // this job runs each authority has leaves to revoke. Running first would
+  // leave it asserting against whatever the startup happened to certify, which
+  // is fewer certificates and a narrower test for no reason.
+  //
+  // It is NOT covered by `tests/pki_revocation.js` beside it, on the usual
+  // split — that file holds the REGISTER and the two documents, in process,
+  // with an OpenSSL-built request and an OpenSSL verification of the CRL, and
+  // sends no request. Four things only a socket can show: that the four
+  // endpoints answer with NO CREDENTIAL while the console page stays gated
+  // (a revocation list behind an admin gate is a revocation nobody acts on,
+  // and that is one line of middleware away from being true); that the media
+  // types are what a revocation client dispatches on; that the DER survives
+  // the transport rather than arriving stringified, which every in-process
+  // assertion about its structure would still pass; and that the console's
+  // two controls reach the register at all.
+  { file: 'sts_pki_revocation.js',       browser: false, local: true },
+  // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
+  // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
+  // `/admin-api/database`, and the tree that adds a page to that console is
+  // the tree that should go red when the page stops answering.
+  //
+  // **IT IS THE ONLY JOB IN EITHER SUITE THAT ASSERTS ANYTHING ABOUT THE
+  // DATABASE'S OWN CATALOG**, and the only one whose subject is a surface
+  // whose SHAPE this repository does not decide: the page draws the columns
+  // PostgreSQL hands back, so what a test can hold is that they arrive and
+  // never which ones. `tests/database_metrics.js` beside it holds everything
+  // that needs no server — every statement a read, the probe table against
+  // the page's sections — and can assert none of this.
+  //
+  // **IT SKIPS RATHER THAN FAILS WHEN `persistence.mode` IS NOT `postgres`,
+  // AND THAT IS A NARROW EXCEPTION THIS SUITE OTHERWISE REFUSES.** The
+  // standing rule is that a job which cannot run FAILS naming what it needed,
+  // because a skip is how a suite comes to report green having driven
+  // nothing. What earns the exception is that this one cannot arrange its own
+  // precondition at all: `persistence.mode` is RESTART-ONLY — the store is
+  // opened before the listener binds — so unlike a job that needs a realm or
+  // a setting, there is no door it could knock on. It says so in the log and
+  // still asserts the no-database sentence on the way past, which is the half
+  // that IS true of a memory-mode service.
+  { file: 'sts_database_metrics.js',     browser: false, local: true },
+  { file: 'sts_second_factor_pages.js',  browser: false, local: true },
+  // A REAL WEBAUTHN CEREMONY AGAINST THE SIGN-IN SCREEN (2026-09-10), and the
+  // job that proves the two credential stores became one. `local: true` for
+  // sts_consent.js's third reason: the ceremony is a protocol surface and
+  // would sit happily in the parent suite, and what makes the claim worth
+  // anything is reading the credential back out of `GET /admin-api/users` —
+  // this repository's own API, and the register the sign-in screen consults.
+  //
+  // It carries an AUTHENTICATOR of its own — a real P-256 key, real CBOR, a
+  // real signature — rather than importing `authn/webauthn.js`, on
+  // sts_dpop.js's rule: two ends of one exchange from one implementation would
+  // make a shared misunderstanding pass.
+  //
+  // AFTER the pages job because that one asserts a clear REFUSES for somebody
+  // holding nothing, and this one enrols a key and clears it. Reversed, the
+  // pages job would be asserting against this job's person.
+  { file: 'sts_webauthn_second_factor.js', browser: false, local: true },
+  // BACKUP KEYS (2026-09-10): two enrolled from /portal/keys, the first taken
+  // away, the second still signing them in. `local: true` on the job above's
+  // argument — the ceremony is driven at this repository's own portal and the
+  // credential is read back out of its own API — and it carries its own
+  // AUTHENTICATOR for `sts_dpop.js`'s reason, three of them in fact: the
+  // original, the backup, and one that is never enrolled.
+  //
+  // AFTER `sts_webauthn_second_factor.js`, which asserts the SIGN-IN door's
+  // enrol-on-first-use path. This one needs `/portal/keys` to be the door and
+  // would otherwise be asserting against a store the other job is still
+  // filling.
+  { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
+  { file: 'sts_pki_workbench.js',        browser: false, local: true },
   { file: 'sts_roles.js',                browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
   { file: 'sts_saml11.js',               browser: false },
@@ -341,7 +496,15 @@ const HELPERS = [
 const LOCAL_HELPERS = [
   // What the three sts_directory_bulk_load_*.js jobs share, which is
   // everything except the door.
-  'bulk_load.js'
+  'bulk_load.js',
+  // A SAML 2.0 assertion and an XML Signature, built by this suite's own code
+  // — `sts_saml2_bearer_grant.js` signs with it, and so does the in-process
+  // `tests/saml_assertion_grant.js`, which is the only require from `tests/`
+  // into this directory and is argued at the top of that file. There is ONE
+  // independent XML Signature implementation here on purpose: a second copy
+  // would be a second place for exclusive canonicalization to be wrong, which
+  // is the one thing a wrong copy would hide.
+  'saml_xmldsig.js'
 ];
 
 const CLIENT_MODULES = [

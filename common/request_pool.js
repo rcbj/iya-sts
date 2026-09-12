@@ -121,6 +121,11 @@ let issuedTickets = 0;
 let outstanding = new Set();
 // Tickets whose response has finished — see blockedBelow().
 let finishedTickets = new Set();
+// WHEN each of those finished, which is what reapStuckTickets() needs and
+// nothing else reads. Kept beside the set rather than on the worker entry
+// because the reaper walks `outstanding`, and a ticket's owner is exactly what
+// a lost announcement makes unreliable.
+const finishedAt = new Map();
 let ticketWaiters = [];
 
 // The highest ticket for which EVERY earlier ticket is confirmed too. A reader
@@ -214,6 +219,140 @@ function ticketFinished(entry, ticket) {
     return;
   }
   finishedTickets.add(ticket);
+  finishedAt.set(ticket, Date.now());
+}
+
+// ---------------------------------------------------------------------------
+// A TICKET THE WORKER NEVER ANSWERED, DROPPED RATHER THAN MARKED FINISHED
+// (2026-09-11).
+//
+// **THIS IS THE BUG THAT WEDGED `dispatch` MODE, AND IT WEDGED IT FOR GOOD.**
+// `proxy()` calls `finish()` from `upstream.on('error')` — the path where the
+// request never got an answer out of the worker at all — and `finish()` marked
+// the ticket FINISHED, which is what makes a ticket block readers. The worker,
+// which in that case never ran the handler, never announces it. So the ticket
+// sat in `outstanding` and in `finishedTickets` for the life of the process,
+// and EVERY subsequent read waited the full 2000ms bound and then gave up.
+//
+// It is not a slow degradation; it is a cliff, and it is permanent. Measured on
+// the run that found it: a service 41 minutes idle, 5,521 stuck tickets, and a
+// `GET /admin-api/ldap/directory?per=1` taking 2.6s — with the four bulk-load
+// jobs failing outright because a 10s connect timeout is shorter than the queue
+// those waits build. The SCIM job got through 536 of 5,000 creates in 405
+// seconds, against 93 in the same suite's single-process mode.
+//
+// **A 502 IS NOT AN ACKNOWLEDGEMENT**, which is the whole argument for
+// dropping rather than keeping. The barrier's contract is "everything ANSWERED
+// before this reader arrived must have committed", and the comment above
+// blockedBelow() already draws the line where it belongs: a request that has
+// not been acknowledged to anybody is one nothing can be depending on. A
+// request the client was handed a 502 for is exactly that — the client knows
+// its write did not happen, and no reader is owed it.
+//
+// The worker MAY still announce the ticket later, in the case where it did run
+// the handler and the failure was on the way back. That is harmless:
+// receiveCommitted() skips a ticket the entry no longer owns.
+// ---------------------------------------------------------------------------
+function ticketAbandoned(entry, ticket) {
+  if (!ticket) {
+    return;
+  }
+  outstanding.delete(ticket);
+  finishedTickets.delete(ticket);
+  finishedAt.delete(ticket);
+  if (entry && entry.tickets) {
+    entry.tickets.delete(ticket);
+  }
+  releaseTicketWaiters();
+}
+
+// ---------------------------------------------------------------------------
+// THE SAFETY NET, AND WHY IT COSTS NOTHING TO BE WRONG ABOUT (2026-09-11).
+//
+// The drop above closes the one leak this run actually found. It cannot be the
+// last one: any path where a worker finishes a response in this process's
+// bookkeeping and never announces it in its own leaves a ticket that blocks
+// every reader for ever, and the symptom — a service that answers correctly
+// and 2,000ms slower than it should, with a warning nobody reads — is the
+// hardest shape of failure to notice there is.
+//
+// So a ticket that has ALREADY been given up on is reaped. The argument is one
+// sentence: **a wait that timed out was served without that ticket, and so
+// will every wait after it** — the set only grows, and each reader pays the
+// full bound to reach the same answer. Reaping changes no read's OUTCOME; it
+// changes how long the next one waits to get it.
+//
+// `REAP_AFTER_MS` is deliberately far above the bound rather than equal to it.
+// A flush during a bulk load genuinely can run for seconds — `persistence.
+// flush()` diffs the whole directory — and a ticket reaped while its flush is
+// merely slow WOULD release a reader early. At thirty seconds that is not a
+// slow flush, it is a lost announcement, and the log line says which one so
+// that the next leak is reported rather than inferred from the latency.
+// ---------------------------------------------------------------------------
+const REAP_AFTER_MS = 30000;
+let reaped = 0;
+
+// `at` is the clock, and it is a parameter for one reason: the threshold is
+// thirty seconds and a test that waited thirty seconds to assert one `if` is a
+// test nobody runs. Every caller in this file passes nothing.
+function reapStuckTickets(need, clock) {
+  log.debug('Entering reapStuckTickets(). need=' + need);
+  const now = clock || Date.now();
+  const gone = [];
+  outstanding.forEach(function (t) {
+    if (t > need || !finishedTickets.has(t)) {
+      return;
+    }
+    const armedAt = finishedAt.get(t);
+    // NO TIMESTAMP AT ALL MEANS REAP IT. A ticket in `finishedTickets` always
+    // gets one; a ticket in there without one is bookkeeping this process can
+    // no longer explain, which is exactly the state this function is for.
+    if (armedAt && (now - armedAt) < REAP_AFTER_MS) {
+      return;
+    }
+    gone.push(t);
+  });
+  if (!gone.length) {
+    log.debug('Leaving reapStuckTickets(). Nothing old enough.');
+    return;
+  }
+  gone.forEach(function (t) {
+    outstanding.delete(t);
+    finishedTickets.delete(t);
+    finishedAt.delete(t);
+    workers.forEach(function (entry) {
+      if (entry.tickets) {
+        entry.tickets.delete(t);
+      }
+    });
+  });
+  reaped += gone.length;
+  // AND EVERY OTHER WAITER IS RECONSIDERED, not just the one whose timeout ran
+  // this. They are blocked on the same tickets; leaving them to reach their own
+  // bounds would pay the 2,000ms again for something that is already gone.
+  releaseTicketWaiters();
+  // WARN AND NOT ERROR, to match the timeout line this always follows: by the
+  // time a ticket is reaped, every reader that met it has already been served
+  // without it, so nothing here is a new loss.
+  //
+  // **TWO CAUSES REACH THIS AND THEY ARE NOT THE SAME THING**, and nothing in
+  // this process can tell them apart — which is why the line names both rather
+  // than guessing. One is a LOST announcement: a ticket no worker will ever
+  // report, which is what ticketAbandoned() exists to stop being created. The
+  // other is a flush that has simply been running longer than the threshold —
+  // `persistence.flush()` diffs the whole directory, and under a five-thousand
+  // entry bulk load it does take tens of seconds. In that second case the
+  // barrier has degraded, and it had already degraded at the 2,000ms bound:
+  // this only stops the backlog making every OTHER read pay for it too.
+  log.warn('request_pool: ' + gone.length + ' ticket(s) had been answered ' +
+           'for more than ' + (REAP_AFTER_MS / 1000) + 's without any ' +
+           'worker reporting them committed, and were dropped (' + reaped +
+           ' so far). Every read since has been served without them anyway, ' +
+           'after waiting the full barrier bound for each — so this changes ' +
+           'no answer and removes that wait. Either a worker lost an ' +
+           'announcement (see ticketAbandoned()) or its flush has been ' +
+           'running longer than that, which a bulk load can do.');
+  log.debug('Leaving reapStuckTickets(). ' + gone.length + ' dropped.');
 }
 
 function awaitCommitConfirmations(servedBy) {
@@ -239,6 +378,10 @@ function awaitCommitConfirmations(servedBy) {
                  need + '; ' + outstanding.size + ' outstanding, ' +
                  finishedTickets.size + ' of them finished); serving ' +
                  'without it.');
+        // WHAT THIS READER WAS JUST SERVED WITHOUT, taken out so that the next
+        // one does not wait the bound to be served without it too. See
+        // reapStuckTickets(); it only reaps what is long past explaining.
+        reapStuckTickets(need);
       }
       waiter.resolve();
     }, 2000);
@@ -264,7 +407,15 @@ function setServerCertificate(material) {
       'keyPem. Every process in this service must present and pin the SAME ' +
       'certificate, or the console and the portal fail TLS against themselves.');
   }
-  tlsMaterial = { certPem: material.certPem, keyPem: material.keyPem };
+  // **THE CHAIN AND THE ANCHOR ARE CARRIED TOO**, and they are not optional
+  // extras: a worker with the leaf alone presents no chain and, having no
+  // anchor handed to it, asks its OWN `common/pki.js` for one — which answers
+  // a Root that worker built. See server.js's call site. They are PUBLIC
+  // material, unlike the key beside them, which is why they can go through
+  // `process.env` at the other end while the key deliberately does not.
+  tlsMaterial = { certPem: material.certPem, keyPem: material.keyPem,
+                  chainPem: (material.chainPem || []).slice(0),
+                  trustAnchorPem: material.trustAnchorPem || '' };
 }
 
 // ---------------------------------------------------------------------------
@@ -720,6 +871,7 @@ function receiveCommitted(entry, committed) {
       }
       outstanding.delete(ticket);
       finishedTickets.delete(ticket);
+      finishedAt.delete(ticket);
       entry.tickets.delete(ticket);
     });
   }
@@ -858,6 +1010,124 @@ function broadcastKeys(realmId, blob, except) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE AUTHORITY BUILT SOMEWHERE ELSE IN THIS SERVICE.
+//
+// **NO ARBITRATION, WHICH IS THE ONE WAY THIS DIFFERS FROM THE KEY CHANNEL
+// ABOVE.** `receivePublishedKeys()` decides a RACE — several processes
+// generating one realm's signing keys at once, because each one's realm
+// watcher reached the realm independently — and first-generator-wins is what
+// keeps them agreeing. Nothing races here: a hierarchy exists because an
+// operator pressed a button, on one worker, once. So the last write wins and
+// every other process adopts it, which is also what makes REBUILDING one work
+// — under arbitration the rebuild would lose to the hierarchy it replaced.
+//
+// `chain` is null for a removal and is forwarded as such: a worker still
+// holding a CA that was thrown away would go on issuing certificates that
+// chain to nothing anybody here will accept.
+// ---------------------------------------------------------------------------
+function receivePublishedPki(entry, published) {
+  if (!published || published.realm === undefined) {
+    return;
+  }
+  const realmId = String(published.realm);
+  keystore.adoptPki(realmId, published.chain || null);
+  log.info('request_pool: the "' + realmId + '" realm\'s certificate ' +
+           'authority was ' + (published.chain ? 'built' : 'removed') +
+           ' by worker ' + (entry && entry.pid) + '; every process here now ' +
+           'agrees.');
+  broadcastPki(realmId, published.chain || null, entry);
+  // -------------------------------------------------------------------------
+  // **AND THE SOCKET (2026-09-12). AGREEING ABOUT THE HIERARCHY IS NOT THE
+  // SAME AS SERVING A CERTIFICATE THAT CHAINS TO IT.**
+  //
+  // The line above shares the CA material, which is a row and travels the way
+  // every other row does. The TLS listener is not a row — it is a socket this
+  // process holds and no worker can reach — so a `build-root` that landed on a
+  // worker left the front process presenting a leaf under a Root that no
+  // longer exists anywhere in the service. `GET /tls/server-certificate` then
+  // publishes no anchor (tls_server.js's trustAnchorPems() refuses to, and is
+  // right to), and every client that had fetched one fails with `unable to get
+  // local issuer certificate`: on 2026-09-12 that was six jobs of the suite's
+  // dispatch mode, none of which names a certificate.
+  //
+  // This is the same rule the LDAP connection list established and it is the
+  // SECOND thing to need it, which the root CLAUDE.md said would take the
+  // argument being made again rather than the mechanism being copied. The
+  // shapes differ accordingly: the directory needed a MIRROR pushed out and an
+  // instruction sent back, because the decision is a worker's; here the
+  // decision is this process's alone — it owns the certificate — so nothing
+  // comes back and what goes out is the result.
+  //
+  // `reconcileWithHierarchy()` does nothing when the certificate still chains,
+  // which is every publish but the rare one.
+  // -------------------------------------------------------------------------
+  reconcileTheListener();
+}
+
+// The asynchronous half of the block above, kept out of it so that
+// receivePublishedPki() stays a message handler. Nothing waits for this: the
+// hierarchy is already shared, and what this adds is a certificate — a worker
+// that is handed the new one a few milliseconds late pins the old one for those
+// milliseconds, which is the state it was in before this existed.
+function reconcileTheListener() {
+  // **LAZILY, AND THAT IS RULE 1 RATHER THAN TASTE.** `server.js` requires this
+  // module at 122 and the protocol stack — `tls/tls_server.js` with it — at
+  // 176, so a require at the top of this file would register `/tls`'s three
+  // views from HERE, ahead of every protocol module. Inside a function that
+  // cannot run until a worker has published something, it is a cache hit.
+  const tls = require('../tls/tls_server');
+  Promise.resolve()
+    .then(function () { return tls.reconcileWithHierarchy(); })
+    .then(function (changed) {
+      if (!changed) {
+        return;
+      }
+      const bundle = tls.serverCertificateBundle();
+      let told = 0;
+      workers.forEach(function (other) {
+        if (!other.child || !other.child.connected) {
+          return;
+        }
+        try {
+          other.child.send({ adoptServerCertificate: bundle });
+          told += 1;
+        } catch (e) {
+          log.warn('request_pool: could not hand worker ' + other.pid +
+                   ' the re-issued server certificate: ' + e.message +
+                   '. It goes on pinning the previous one, so its own ' +
+                   'OpenID Connect back channel will fail until it is ' +
+                   'replaced.');
+        }
+      });
+      log.info('request_pool: the listener certificate was re-issued under ' +
+               'the rebuilt hierarchy and handed to ' + told + ' worker(s), ' +
+               'so every process pins what the socket presents.');
+    })
+    .catch(function (e) {
+      // Reported rather than thrown: this runs off a message handler, where an
+      // unhandled rejection would take the front process down and with it
+      // every worker — for a certificate that is still being served.
+      log.error('request_pool: the listener certificate could not be ' +
+                'reconciled with the rebuilt hierarchy: ' + e.message);
+    });
+}
+
+function broadcastPki(realmId, chain, except) {
+  workers.forEach(function (other) {
+    if (other === except || !other.child || !other.child.connected) {
+      return;
+    }
+    try {
+      other.child.send({ adoptPki: { realm: realmId, chain: chain } });
+    } catch (e) {
+      log.warn('request_pool: could not hand the "' + realmId + '" realm\'s ' +
+               'certificate authority to worker ' + other.pid + ': ' +
+               e.message);
+    }
+  });
+}
+
 function sendKeys(entry, realmId) {
   const all = keystore.sharedAll();
   for (let i = 0; i < all.length; i++) {
@@ -902,6 +1172,11 @@ function fork() {
     // published the other way and rebroadcast below.
     child.send({ begin: true, socket: socket, tls: tlsMaterial,
                  keys: keystore.sharedAll(),
+                 // AND EVERY CERTIFICATE AUTHORITY, on the same channel and
+                 // for the same reason: a worker forked after a hierarchy was
+                 // built would otherwise have none, and would refuse the
+                 // assertions its siblings accept.
+                 pki: keystore.pkiAll(),
                  kek: keystore.ephemeralKek(),
                  vciRequestEncKeyPem: vciRequestEncKeyPem,
                  bbsKeyPair: bbsKeyPairB64,
@@ -939,6 +1214,10 @@ function fork() {
       }
       if (message && message.publishKeys) {
         receivePublishedKeys(entry, message.publishKeys);
+        return;
+      }
+      if (message && message.publishPki) {
+        receivePublishedPki(entry, message.publishPki);
         return;
       }
       if (message && message.sync) {
@@ -1002,6 +1281,7 @@ function reap(entry, code, signal) {
       }
       outstanding.delete(t);
       finishedTickets.delete(t);
+      finishedAt.delete(t);
     });
     entry.tickets.clear();
     if (answered) {
@@ -1554,6 +1834,15 @@ function start() {
     broadcastKeys(realmId, blob, null);
   });
 
+  // AND THE PARENT'S OWN CERTIFICATE AUTHORITY WORK, for the same reason and
+  // installed at the same point. `/admin` holds affinity, so the console's
+  // build normally lands on one worker — but `/admin-api` FANS OUT and the
+  // front process itself restores hierarchies from the store at startup, so
+  // both directions have to be covered.
+  keystore.setPkiPublisher(function (realmId, chain) {
+    broadcastPki(realmId, chain || null, null);
+  });
+
   // AND THE DIRECTORY'S CONNECTION LIST, for the same reason and installed at
   // the same point: a client can be bound on 389 before the first worker is
   // ready — the listeners start from `listen()` in server.js and nothing waits
@@ -1954,7 +2243,11 @@ function proxy(entry, req, res, atGeneration, ticket) {
   const wrote = mayWrite(req.method);
   entry.inFlight++;
   let done = false;
-  const finish = function () {
+  // WHETHER THE WORKER EVER GOT AS FAR AS AN ANSWER. It decides which of the
+  // two ticket endings this request has — see ticketAbandoned(), which is the
+  // one for a request the client was handed a 502 for.
+  let answered = false;
+  const finish = function (lost) {
     if (!done) {
       done = true;
       entry.inFlight--;
@@ -1969,7 +2262,16 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // overwritten by the stale reader; put four seconds between them and it
       // survives.
       if (ticket) {
-        ticketFinished(entry, ticket);
+        // A REQUEST THE WORKER NEVER ANSWERED RELEASES ITS TICKET INSTEAD OF
+        // ARMING IT. `ticketFinished()` is what makes a ticket block readers,
+        // and the worker only announces tickets for responses IT completed —
+        // so arming one the worker never saw is a ticket nothing will ever
+        // clear. That is the wedge ticketAbandoned() documents.
+        if (lost) {
+          ticketAbandoned(entry, ticket);
+        } else {
+          ticketFinished(entry, ticket);
+        }
       }
       // ----------------------------------------------------------------
       // NEITHER A SECOND TICKET NOR A GENERATION BUMP IS TAKEN HERE, and both
@@ -2157,6 +2459,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // already gone. See LDAP_DROP_HEADER.
     // ------------------------------------------------------------------
     closeDirectoryConnections(answer.headers[LDAP_DROP_HEADER]);
+    // FROM HERE THE WORKER HAS ANSWERED: it ran the handler, so it will
+    // announce this ticket on its own `finish` or `close` whatever happens to
+    // the pipe from now on. See ticketAbandoned().
+    answered = true;
     res.status(answer.statusCode);
     Object.keys(answer.headers).forEach(function (name) {
       // The worker's instruction to this process, and no business of the
@@ -2185,7 +2491,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
   });
 
   upstream.on('error', function (err) {
-    finish();
+    // `!answered` IS THE WHOLE OF THE ARGUMENT: the worker never ran the
+    // handler (or died before a byte of the answer left it), so there is
+    // nothing for it to announce and nothing a reader is owed.
+    finish(!answered);
     log.error('request_pool: worker ' + entry.pid + ' could not answer ' +
               req.method + ' ' + req.url + ': ' + err.message);
     if (res.headersSent) {
@@ -2204,7 +2513,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
   req.pipe(upstream);
   req.on('aborted', function () {
     upstream.destroy();
-    finish();
+    // THE CLIENT WENT AWAY. If the worker had already begun answering it will
+    // announce this ticket itself; if it had not, `upstream.destroy()` means it
+    // never will, and holding the ticket would block every reader for ever.
+    finish(!answered);
   });
   log.debug('Leaving proxy().');
 }
@@ -2458,6 +2770,13 @@ function stats() {
     gaveUp: givenUp,
     readYourWrite: readYourWrite(),
     generation: generation,
+    // THE BARRIER'S OWN BOOKKEEPING, reported because the failure it can have
+    // is invisible from outside: a ticket nothing will ever clear makes this
+    // service answer correctly and 2,000ms slower per read, for ever. See
+    // ticketAbandoned(). `reaped` being anything but zero means a worker has
+    // lost an announcement and the safety net caught it.
+    tickets: { outstanding: outstanding.size, finished: finishedTickets.size,
+               reaped: reaped },
     dispatch: dispatchPrefixes(),
     affinities: affinity.size,
     socketDir: socketDir,
@@ -2477,6 +2796,15 @@ function reset() {
   quickExits = 0;
   stopped = false;
   starting = null;
+  // AND THE BARRIER, because it is process-wide module state exactly as the
+  // generation is: a test that armed a ticket and left it would make every
+  // later file in the same run wait the full bound.
+  issuedTickets = 0;
+  outstanding.clear();
+  finishedTickets.clear();
+  finishedAt.clear();
+  ticketWaiters = [];
+  reaped = 0;
 }
 
 module.exports = {
@@ -2514,6 +2842,23 @@ module.exports = {
   // The two halves of the directory mirror, exported for that same test: what
   // this process does with the header a worker sent, without a worker.
   closeDirectoryConnections: closeDirectoryConnections,
+  // ---------------------------------------------------------------------
+  // THE READ BARRIER, EXPORTED FOR tests/request_barrier.js, on
+  // noteLocalWrites()'s argument: the decision is bookkeeping over integers
+  // and is testable with no store, no fork and no socket — and the bookkeeping
+  // is the part that was wrong. A pool started for real would test node's
+  // unix-socket proxying, which is not what wedged.
+  //
+  // `ticketAbandoned` is the one that matters: it is the difference between a
+  // 502 releasing its ticket and a 502 holding every reader for the life of
+  // the process.
+  // ---------------------------------------------------------------------
+  dispatchTicket: dispatchTicket,
+  ticketFinished: ticketFinished,
+  ticketAbandoned: ticketAbandoned,
+  reapStuckTickets: reapStuckTickets,
+  awaitCommitConfirmations: awaitCommitConfirmations,
+  receiveCommitted: receiveCommitted,
   // For tests/request_routing.js — the routing decisions are pure functions and
   // are asserted directly rather than by starting a pool.
   mutationKeyOf: mutationKeyOf,

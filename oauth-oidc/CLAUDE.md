@@ -10,6 +10,8 @@ libraries that decide things on its behalf.
 | `client_auth.js` | All six token-endpoint authentication methods. The mechanics half of section 2.5. |
 | `dpop.js` | RFC 9449, and `presentedAccessToken()` — the Bearer-or-DPoP check four protected endpoints share. |
 | `mtls.js` | RFC 8705 certificate-bound tokens. The other half of section 2.2. |
+| `assertion_grant.js` | **RFC 7521 and RFC 7523, both halves.** The JWT bearer AUTHORIZATION grant (§2.1), and the assertion FORMAT `client_auth.js` takes its JWKS reading and its JWE unwrap from. |
+| `saml_assertion_grant.js` | **RFC 7521 and RFC 7522, both halves.** The SAML 2.0 bearer AUTHORIZATION grant (§2.1) and CLIENT AUTHENTICATION by the same document (§2.2), in ONE `verify()`. A SEPARATE implementation from `assertion_grant.js` and not that one with a format flag — see 3z. |
 | `authorization_servers.js` | Makes one process BE several authorization servers, selected by a path component. |
 
 **Everything but `oauth2.js` registers nothing.** They are libraries in the sense
@@ -333,6 +335,22 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    attached. Holding that position in one file and not the other would be no
    position at all.
 
+   **THREE SOURCES OF KEY SINCE 2026-09-10, AND THEY ARE ORed.** What the client
+   REGISTERED (`oauthJwks`), what this service ISSUED it from its own
+   certificate authority (`oauthAssertionJwks`), and an `x5c` the assertion
+   carries — the last used only after `common/pki.js` has shown it chains to
+   this realm's Root. **Two attributes and not one**: the issue path must not
+   overwrite keys a client registered, and a client holding both was given both
+   deliberately.
+
+   **AND AN ASSERTION MAY ARRIVE ENCRYPTED**, which is RFC 7523 section 3 claim
+   10 and reaches BOTH parameters. It is unwrapped by
+   `assertion_grant.unwrapAssertion()` — one function for both halves of the
+   profile — with the client secret passed for the symmetric algorithms, because
+   a `client_secret_jwt` client's only shared key IS its secret. A plain
+   three-part JWS comes back untouched, so every client that authenticated with
+   one before this existed is on exactly the path it was.
+
 
 3h. **`mtls.js` is a library like `dpop.js`, and it is the OTHER half of RFC
    9700 section 2.2.** `dpop.js` binds a token to a KEY proved per request;
@@ -456,6 +474,203 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
 
 
 ---
+
+3x. **`assertion_grant.js` holds RFC 7521 and RFC 7523 in one file, and the
+   dependency runs ONE WAY.** It is a library like `dpop.js`: it registers no
+   route, so its position in the require order is not a position, and it
+   requires `helpers.js`, `config.js`, `applications.js`, `common/crypto.js`,
+   `common/pki.js` and `common/realms.js` — none of which requires it back.
+
+   **ONE FILE BECAUSE RFC 7521 HAS NO WIRE FORMAT.** It is a framework: two
+   request parameters, an error vocabulary and a list of checks. RFC 7523 is the
+   only profile of it anybody uses, so everything 7521 asks for is implemented
+   THROUGH 7523 and neither is testable without the other. A reader looking for
+   "the RFC 7521 code" finds nothing else, and `tests/CLAUDE.md` says the same
+   thing where it would otherwise look like a coverage gap.
+
+   **TWO USES OF ONE FORMAT, AND THEY ARE NOT THE SAME FEATURE.** Section 2.2 is
+   CLIENT AUTHENTICATION — `client_assertion`, the assertion says who is
+   CALLING, `client_auth.js` has done it since 2026-08-26. Section 2.1 is an
+   AUTHORIZATION GRANT — `assertion`, the assertion says who the token is FOR.
+   They share a format, a claim set and a replay cache and nothing else: in the
+   first the `sub` MUST be the client, and in the second the `sub` is a PERSON
+   and being the client is the degenerate case. **Reading one file and
+   concluding the other is covered is exactly the mistake this service had
+   made**: the metadata named RFC 7523, section 2.2 was complete, and section
+   2.1 did not exist.
+
+   **`client_auth.js` REQUIRES THIS AND NEVER THE REVERSE.** Section 2.2 needs
+   the assertion FORMAT and this file owns it — `keysFrom()`, `unwrapAssertion()`
+   and `keyFromChain()` are all reached from there — and section 2.1 needs
+   nothing at all from client authentication, because an assertion grant may
+   arrive from a public client with no credential. A second copy of the JWKS
+   reader would have been a second answer to *which of this party's keys may
+   sign*, which is the shape of duplication `crypto.js` was written to end one
+   layer down.
+
+   **A SECOND REPLAY CACHE BESIDE `client_auth.js`'s, DELIBERATELY.** A document
+   used to authenticate a client and a document used to authorize an issuance
+   are two different credentials, they are keyed differently (by client, and by
+   issuer), and sharing one cache would mean an assertion presented as a client
+   credential silently spending the jti of an authorization grant from the same
+   party. Two caches cannot do that.
+
+   **`jti` IS REQUIRED WHERE THE RFC SAYS OPTIONAL**, and that is §3's own last
+   paragraph read literally: it says an authorization server MAY reject a reused
+   JWT, and an assertion with no `jti` cannot be REMEMBERED — so accepting one
+   means accepting a bearer credential this service has no way to spend. It is
+   the same decision section 2.2 already made, stated at the refusal rather than
+   left to be discovered.
+
+   **THE ISSUER MUST BE DECLARED, AND THAT IS FEDERATION'S ARGUMENT WORD FOR
+   WORD.** An assertion grant has no browser, no password and no consent step
+   anywhere in it, so the signature is the entire security of the grant and
+   there is **no permissive answer available**: "accept any signed assertion"
+   means anybody who can reach this port getting an access token as anybody.
+   `oauth2.jwtBearerRequireRegisteredIssuer` is therefore ON by default, and
+   federation's refusal and this one are the only two here that are. **What is
+   still permissive is everything around it** — the `sub` need not be anybody
+   this service has heard of, and the scope is checked against nothing — which
+   is the distinction `kerberos/CLAUDE.md` draws about SPNEGO.
+
+   **THERE ARE TWO KINDS OF ISSUER SINCE 2026-09-11, AND THE SECOND HAS A RULE
+   THE FIRST DOES NOT.** An APPLICATION that declares `oauthAssertionIssuer` is
+   an operator saying *this party may speak about people*, so its assertion may
+   name any `sub` and always could. A PERSON may hold a signing key pair now —
+   `common/person_assertions.js` (rule 3ab) is the register, `stsAssertion*` on
+   their own entry — and **a person may only assert about themselves**: `iss`
+   and `sub` must name the same person, and one naming anybody else is refused
+   by name. Without the rule, everybody ever issued a key on `/admin/pki` can
+   obtain a token as anybody in the realm, with the signature verifying and the
+   claims well formed while they do it. **The check is made TWICE**, for the key
+   on the entry and for a certificate presented in an `x5c` that this service
+   can see it issued to a person — that second path does not consult the
+   registry at all, which is the point of it, so `common/pki.js` puts the answer
+   in the certificate as a `urn:sts-mock:person:<name>` subjectAltName. That
+   file argues the whole thing; what belongs here is that `keysForParty()` is
+   told which KIND of party it is reading rather than trying every attribute
+   name it knows, because the store is schemaless and a function that read both
+   lists off whatever it was handed would accept an `oauthAssertionJwks`
+   somebody had put on a person.
+
+   **THE SIGNATURE IS VERIFIED BEFORE ANY CLAIM IS BELIEVED**, which is not the
+   order RFC 7521 section 5.2 lists its checks in and is the order they have to
+   run in. The unverified `iss` is used ONLY to find candidate keys and decides
+   nothing; every check below it runs on claims a signature has already vouched
+   for. Do not read anything else out of an unverified assertion — the same rule
+   `client_auth.js` states about the unverified `sub`.
+
+   **AN `x5c` IS CHECKED RATHER THAN READ.** Taking a public key out of one and
+   verifying with it would be verifying a signature against a key the signature
+   came with, which proves nothing at all — so it is used only after
+   `common/pki.js` has shown the chain reaches this realm's own Root. That is
+   what makes the certificate authority worth having: a party issued a key pair
+   can present its certificate instead of registering a JWKS.
+
+   **THE SCOPE IS NARROWED AND NEVER WIDENED** (RFC 7521 section 4.1). An
+   assertion naming a `scope` is the issuer saying what this grant is for; where
+   it names none, the request decides. A `cnf` is CARRIED AND REPORTED and never
+   enforced, which is the position this service already takes on OIDC Core
+   5.5's `essential`: enforcing it means demanding a proof this grant has no
+   parameter to carry.
+
+   **`PROTOCOL_CLAIMS` IS TWELVE NAMES AND IT IS A LIST RATHER THAN A
+   BEHAVIOUR.** What an assertion carries beyond the profile's own claims is
+   copied onto the issued token (§3 claim 8) and the twelve are stripped first —
+   an `exp` copied off an assertion would be a token lifetime chosen by whoever
+   signed it. `accessToken()` puts them UNDER the protocol's own claims and OVER
+   the console's configured ones: the protocol always wins, and an assertion is
+   a statement about THIS issuance where the console's is a service-wide
+   default.
+
+3z. **`saml_assertion_grant.js` IS RFC 7522, AND IT IS A SECOND IMPLEMENTATION
+   RATHER THAN A FORMAT FLAG ON 3x.** A library like that one: it registers no
+   route, requires `helpers.js`, `config.js`, `applications.js`,
+   `common/crypto.js` and `common/realms.js`, and none of them requires it back.
+   **It does NOT require `assertion_grant.js` and must not** — a require between
+   the two would be the first step towards the flag this rule refuses, and
+   `tests/saml_assertion_grant.js` asserts its absence out of the source.
+
+   **THE ARGUMENT IS `saml/CLAUDE.md`'s ABOUT SAML 2.0 AND SAML 1.1, MADE AGAIN
+   FOR A DIFFERENT PAIR.** RFC 7521 is a framework and RFC 7522 and RFC 7523 are
+   two profiles of it: the framework is shared and nothing else is. RFC 7523's
+   assertion is three base64url parts and a claim set; RFC 7522's is an XML
+   document with an enveloped XML Signature, a `<Conditions>` element, a
+   `<SubjectConfirmation>` and a `Recipient` attribute that has **no JWT
+   equivalent at all** — and there is no element in RFC 7522 corresponding to
+   `jti`. A shared implementation would be a `switch` in every check.
+
+   **WHAT IS CITED RATHER THAN REPEATED.** The replay rule, the scope
+   narrowing, the signature-before-any-element ordering and the claim-8
+   treatment of extra statements are 3x's arguments and that file cites them.
+   **One thing is repeated in full and deliberately**: the registered-issuer
+   refusal, because it is the one thing there that refuses by default and a
+   reader arriving at that file first must not have to go and find it.
+
+   **ITS TWO SECTIONS ARE ONE `verify()` WHERE 3x's ARE TWO FILES**, which is
+   the opposite arrangement and is not an inconsistency. In RFC 7523 the halves
+   diverge at the KEY — a client secret may verify a client assertion and
+   nothing may verify a grant that way — and in RFC 7522 there is no symmetric
+   option at all, because XML Signature over a shared secret is not something
+   any SAML implementation emits. So the only difference between the two
+   sections here is what the `<Subject>` has to be (item 3B), and that is one
+   `if`.
+
+   **THE KEY PAIRS ARE SEPARATE FROM RFC 7523's, PER APPLICATION, AND THAT IS
+   THE DESIGN THIS FILE EXISTS TO ENFORCE.** `common/applications.js` declares
+   two attribute sets that SHARE NO NAME — `oauthAssertion*` and
+   `oauthSamlAssertion*` — and no code path crosses them. `common/pki.js`
+   issues into one or the other by `purpose`, and `/admin/pki` writes six
+   attributes for the JWT profile and five for the SAML one (no JWKS: SAML has
+   none, and what a party registers for that profile IS a certificate).
+
+   **SO A BARE CERTIFICATE PATH IS NOT ENOUGH HERE, AND THIS IS THE ONE PLACE
+   THIS SERVICE IS STRICTER FOR RFC 7522 THAN FOR RFC 7523.** 3x accepts a key
+   out of an `x5c` once the chain reaches this realm's Root, and that is sound
+   for a JWT: the chain is evidence this service issued the key. It would not be
+   sound here, because it is evidence about the REALM and not about the
+   APPLICATION — an application's RFC 7523 leaf, pasted into a SAML assertion's
+   `<ds:KeyInfo>`, would chain perfectly and sign. That is exactly the crossing
+   the two attribute sets exist to prevent. So **a SAML assertion is verified
+   ONLY against a certificate registered against the asserting party under the
+   RFC 7522 attributes**; a `<ds:KeyInfo>` certificate narrows that set and is
+   never a key in its own right, and one matching none of it is refused by name.
+   Nothing is lost: 3x's chain path exists because a JWKS is the thing a client
+   registers and a certificate is the awkward case, and here the thing
+   registered IS a certificate.
+
+   **THE THREE ITEMS OF SECTION 3 WHOSE LENIENT READING IS THE USUAL BUG**, all
+   three asserted in `tests/saml_assertion_grant.js` because each of them looks
+   like a refusal that is simply missing:
+
+   * **item 4** — the expiry may be on the `<Conditions>` OR on a
+     `<SubjectConfirmationData>`, and EITHER satisfies it. Half the
+     implementations in the world require the first.
+   * **item 6** — an expired `<SubjectConfirmation>` is DISCARDED and the others
+     still considered ("MUST reject the `<SubjectConfirmation>` (but MAY still
+     use the rest of the Assertion)"), where an expired `<Conditions>` makes the
+     whole assertion invalid. Nearly every implementation collapses the two.
+   * **item 11** — an unrecognised `<Condition>` makes the assertion **Invalid**
+     per SAML core section 2.5.1 rather than being ignored, which is the
+     opposite of what every other XML reader does with an element it does not
+     know.
+
+   **`saml2_bearer` IS THIS SERVICE'S OWN NAME AND NOT A REGISTERED ONE.** The
+   IANA "OAuth Token Endpoint Authentication Methods" registry holds seven
+   values and RFC 7522 registers none: it defines a `client_assertion_type` and
+   stops. So a deployment offering the feature has no registered word for it.
+   The invention is PUBLISHED rather than documented — it is in
+   `token_endpoint_auth_methods_supported` like every other method — and
+   nothing on the wire is invented: the `client_assertion_type` is RFC 7522's
+   URN exactly.
+
+   **`PROTOCOL_ATTRIBUTES` IS ONE NAME WHERE 3x's LIST IS TWELVE**, and the
+   difference is a fact about the two formats rather than an omission: a SAML
+   assertion keeps its protocol furniture in ELEMENTS, so there is nothing in
+   the `<AttributeStatement>` to strip but the `scope` this service reads as a
+   constraint. A single-valued SAML attribute becomes a string on the token and
+   a multi-valued one stays a list — `"department": ["engineering"]` in a token
+   reads as a bug to every relying party that meets it.
 
 ## `signed_metadata` is signed once a minute, not once a request
 

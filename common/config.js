@@ -154,12 +154,14 @@
 // one that says what they are.
 //
 // Where they are published now needs one distinction. `/admin/config` is behind
-// the console gate (`admin.authRequired`, on by default), but `GET
-// /admin-api/config` is NOT, because nothing under `/admin-api` is — so the
-// settings, passwords included, are still readable by anybody who can reach
-// this port. The gate is a turnstile for exercising a client and not a lock,
-// and no password anywhere in this service is checked. Do not put this port on
-// a public address.
+// the console gate, which is unconditional, and `GET /admin-api/config` is
+// behind a credential of its own — an OAuth 2.0 access token carrying
+// `admin:read` (`adminApi.authRequired`, on by default since 2026-09-09). Both
+// of those are turnstiles for exercising a client rather than locks: in the
+// default `development` mode no password anywhere in this service is checked,
+// so what either gate proves is that somebody typed a name. The settings,
+// passwords included, are readable by anybody who gets through one. Do not put
+// this port on a public address.
 // ---------------------------------------------------------------------------
 
 // CONFIG_FILE is made ABSOLUTE before it is read. This module lives in a
@@ -682,6 +684,484 @@ const SETTINGS = [
                  'link is delivered by hand here (there is no mail channel), ' +
                  'and an hour would strand most of them.' },
 
+  // ---------------------------------------------------------------------
+  // TOTP MFA (2026-09-10). RFC 6238's eight parameters.
+  //
+  // The digest, the number of digits, the length of a step and how much clock
+  // skew is forgiven are all parameters the specification leaves open, they
+  // all have to be told to the authenticator app when it scans the QR code,
+  // and a client author testing an integration will want to move every one of
+  // them.
+  //
+  // They are `totp.` and not `authn.` because the group is what decides the
+  // console page (`SETTING_HOMES` in `admin-ui/admin.js`), and what they
+  // configure is a MECHANISM rather than the sign-in screen that offers it.
+  // `authn.unauthenticatedSessions` is in the `Roles` group for the mirror
+  // image of the same reason.
+  //
+  // **THE GROUP WAS CALLED `Multi-factor authentication` UNTIL 2026-09-10 AND
+  // THE RENAME IS THE WHOLE OF WHAT CHANGED HERE.** It named a CATEGORY where
+  // every other group in this table names a mechanism or a family, and the
+  // page it sent a reader to was filed under Identities and mixed these eight
+  // rows in with a roster of people. There are two mechanisms and each has its
+  // own group and its own page now — this one and `WebAuthn` below — so a
+  // reader looking for the skew window and a reader looking for the resident
+  // key policy no longer land on the same screen and read past each other.
+  // ---------------------------------------------------------------------
+  { key: 'totp.enabled', group: 'TOTP MFA',
+    label: 'Offer authenticator apps (TOTP)',
+    path: 'totp.enabled', env: 'STS_TOTP_ENABLED',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether a person may enrol an RFC 6238 authenticator app ' +
+                 'as a second factor, on `/portal/mfa` or while spending an ' +
+                 'activation link. **Turning it off does NOT disable a ' +
+                 'secret somebody already enrolled** — that account is still ' +
+                 'configured for two factors and the sign-in screen still ' +
+                 'asks for the code. A setting that silently downgraded ' +
+                 'every enrolled account to a password alone would be a ' +
+                 'security control whose off switch does something other ' +
+                 'than what it says. What it stops is new enrolments; an ' +
+                 'existing one is removed on that person\'s own row under ' +
+                 '`/admin/users`.' },
+
+  { key: 'totp.issuer', group: 'TOTP MFA',
+    label: 'Authenticator app label',
+    path: 'totp.issuer', env: 'STS_TOTP_ISSUER',
+    type: 'string', dflt: '', runtime: true,
+    description: 'The name an authenticator app shows beside the account — ' +
+                 'the `issuer` of the otpauth Key Uri Format, written both ' +
+                 'as a prefix on the label and as a parameter because older ' +
+                 'apps read one and newer ones the other. **Empty means this ' +
+                 'realm\'s own host**, with the realm id after it where there ' +
+                 'is one, which is deliberate: two realms of one process are ' +
+                 'two identity providers, and a phone showing two accounts ' +
+                 'with the same name beside them is a list nobody can use.' },
+
+  { key: 'totp.algorithm', group: 'TOTP MFA',
+    label: 'HMAC digest', path: 'totp.algorithm',
+    env: 'STS_TOTP_ALGORITHM', type: 'enum',
+    enumValues: ['SHA1', 'SHA256', 'SHA512'],
+    dflt: 'SHA1', runtime: true,
+    description: 'RFC 6238 section 1.2 defines all three and names ' +
+                 'HMAC-SHA-1 as the default. **LEAVE IT AT SHA1 UNLESS YOU ' +
+                 'ARE TESTING EXACTLY THIS.** Several widely used ' +
+                 'authenticator apps — Google Authenticator among them — ' +
+                 'IGNORE the `algorithm` parameter in the QR code and always ' +
+                 'compute SHA-1, so any other value produces a code that ' +
+                 'scans perfectly and then generates codes this service ' +
+                 'refuses, with nothing anywhere saying why. SHA-1 is not a ' +
+                 'weakness here: this is a keyed MAC over a counter, not a ' +
+                 'collision-resistant digest. Changing it affects NEW ' +
+                 'enrolments only — an existing secret is verified with the ' +
+                 'algorithm it was enrolled under, which is the one the app ' +
+                 'was told.' },
+
+  { key: 'totp.digits', group: 'TOTP MFA',
+    label: 'Digits in a code', path: 'totp.digits',
+    env: 'STS_TOTP_DIGITS', type: 'int', dflt: 6, runtime: true,
+    min: 6, max: 8,
+    description: 'Six is what every authenticator app shows and what RFC ' +
+                 '4226 section 5.3 recommends; eight is defined and is worth ' +
+                 'setting only to find out what a client does with it. NEW ' +
+                 'enrolments only, for the reason the digest gives.' },
+
+  { key: 'totp.period', group: 'TOTP MFA',
+    label: 'Seconds in a step', path: 'totp.period',
+    env: 'STS_TOTP_PERIOD', type: 'int', dflt: 30, runtime: true,
+    min: 15, max: 300,
+    description: 'RFC 6238 section 4.1\'s time step X. Thirty seconds is the ' +
+                 'default and what every app assumes. NEW enrolments only.' },
+
+  { key: 'totp.window', group: 'TOTP MFA',
+    label: 'Steps of clock skew forgiven', path: 'totp.window',
+    env: 'STS_TOTP_WINDOW', type: 'int', dflt: 1, runtime: true,
+    min: 0, max: 10,
+    description: 'How many steps either side of now are accepted. RFC 6238 ' +
+                 'section 5.2 recommends at most one, which is the default ' +
+                 'and makes a code good for about ninety seconds. **This one ' +
+                 'IS live** and applies to every existing enrolment — how ' +
+                 'much a deployment forgives a phone with a drifting clock ' +
+                 'is a policy rather than something the QR code told the ' +
+                 'app. Zero demands a perfectly synchronised clock and is ' +
+                 'the setting to reach for when demonstrating what happens ' +
+                 'without one.' },
+
+  { key: 'totp.secretBytes', group: 'TOTP MFA',
+    label: 'Shared secret length (bytes)', path: 'totp.secretBytes',
+    env: 'STS_TOTP_SECRET_BYTES', type: 'int', dflt: 20, runtime: true,
+    min: 16, max: 64,
+    description: 'RFC 4226 section 4 requirement R6 says at least 128 bits ' +
+                 'and recommends 160, which is the 20 bytes here and the ' +
+                 'length of an HMAC-SHA-1 key. Longer is allowed and is ' +
+                 'transcribed by hand by anybody who cannot scan the QR ' +
+                 'code — 20 bytes is already 32 base32 characters.' },
+
+  { key: 'totp.enrolmentTtlMinutes', group: 'TOTP MFA',
+    label: 'Unconfirmed enrolment lifetime (minutes)',
+    path: 'totp.enrolmentTtlMinutes', env: 'STS_TOTP_ENROLMENT_TTL_MINUTES',
+    type: 'int', dflt: 10, runtime: true, min: 1, max: 1440,
+    description: 'How long a secret that has been SHOWN but not yet ' +
+                 'confirmed with a code stays available. It is held in ' +
+                 'memory and never written to the directory until a code ' +
+                 'proves the app really has it — an unconfirmed secret on ' +
+                 'somebody\'s entry would be a second factor they cannot ' +
+                 'produce, which is a lockout rather than a control. Ten ' +
+                 'minutes is long enough to find a phone and short enough ' +
+                 'that an abandoned enrolment does not sit in memory.' },
+
+  // ---------------------------------------------------------------------
+  // RECOVERY CODES (2026-09-10). THE THIRD SECOND FACTOR, AND THE ONLY
+  // MECHANISM IN THIS SERVICE THAT NO SPECIFICATION DEFINES.
+  //
+  // A short list of single-use strings that stands in for whichever second
+  // factor a person is configured for when they cannot produce it — the phone
+  // is lost or flat, the security key is in a drawer at home. There is no RFC
+  // for it; `common/backup_codes.js` makes every decision that is left and
+  // argues each one.
+  //
+  // **THERE ARE ONLY FOUR ROWS AND THREE OF THEM ARE THE SHAPE OF A CODE**,
+  // which is the whole difference from the eight `totp.*` rows above. A TOTP
+  // parameter has to be TOLD TO AN APP this service cannot reach, so every one
+  // of those rows carries a paragraph about affecting NEW enrolments only.
+  // Nothing here is told to anybody: a recovery code is a string compared
+  // against a stored string, so shortening `backupCodes.length` changes what
+  // the next set looks like and leaves an existing set matching exactly as it
+  // did.
+  //
+  // **THERE IS DELIBERATELY NO "ISSUE THEM AUTOMATICALLY" SETTING.** Issuing
+  // is not a policy an operator chooses: a second factor with no way back is
+  // an account that a lost phone ends, so the set is created by the act of
+  // enrolling a second factor and by nothing else. `backupCodes.enabled` off
+  // is the one way to have none, and it is the whole switch.
+  // ---------------------------------------------------------------------
+  { key: 'backupCodes.enabled', group: 'Backup codes',
+    label: 'Issue recovery codes with a second factor',
+    path: 'backupCodes.enabled', env: 'STS_BACKUP_CODES_ENABLED',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether a set of single-use recovery codes is issued the ' +
+                 'first time a person enrols a second factor — a confirmed ' +
+                 'authenticator app, or a security key in the `mfa` role. ' +
+                 '**Turning it off does NOT invalidate a set somebody ' +
+                 'already holds**, and that is the contract `totp.enabled` ' +
+                 'and `webauthn.enabled` both keep: a person issued ten codes ' +
+                 'still holds ten and the sign-in door still accepts one. A ' +
+                 'setting that silently took away the only way back into an ' +
+                 'account whose phone is lost would be the worst knob in this ' +
+                 'service. What it stops is a new set being issued.' },
+
+  { key: 'backupCodes.count', group: 'Backup codes',
+    label: 'Codes in a set', path: 'backupCodes.count',
+    env: 'STS_BACKUP_CODES_COUNT', type: 'int', dflt: 10, runtime: true,
+    min: 1, max: 50,
+    description: 'How many codes are issued. Ten is what almost every ' +
+                 'identity provider settles on and is enough that losing a ' +
+                 'printed copy of one does not end the account, while being ' +
+                 'few enough to fit on a card in a wallet. **A set is issued ' +
+                 'ONCE and is never topped up**, so this is also the number ' +
+                 'of times the mechanism can be used before an operator has ' +
+                 'to clear it and the next enrolment issues a new set.' },
+
+  { key: 'backupCodes.length', group: 'Backup codes',
+    label: 'Characters in a code', path: 'backupCodes.length',
+    env: 'STS_BACKUP_CODES_LENGTH', type: 'int', dflt: 10, runtime: true,
+    min: 8, max: 32,
+    description: 'Out of an alphabet of thirty-two, so ten characters is ' +
+                 'fifty bits — which is the number that matters rather than ' +
+                 'the length. The alphabet is the thirty-two characters RFC ' +
+                 '4648 base32 uses and it is NOT shared with `totp.*`: this ' +
+                 'one is chosen because it contains no confusable pair (no ' +
+                 '`0` beside `O`, no `1` beside `I`), because a recovery code ' +
+                 'is the one credential here that somebody writes on paper ' +
+                 'and types back months later.' },
+
+  // ---------------------------------------------------------------------
+  // HOW LONG A GENERATED-BUT-UNCONFIRMED SET WAITS (2026-09-11).
+  //
+  // A set is shown, and stored only when the person says they have kept it.
+  // Between those two presses it lives in this process's memory and nowhere
+  // else — a live credential that is not yet a credential — so it expires,
+  // for an authorization code's reason: the window in which it can be
+  // confirmed should be the window in which somebody is actually looking at
+  // the page.
+  //
+  // **EXPIRING ONE CHANGES NOTHING ABOUT A SET ALREADY CONFIRMED.** Somebody
+  // who walked away mid-flow comes back to whatever they had, which is the
+  // property that makes a short default safe.
+  // ---------------------------------------------------------------------
+  { key: 'backupCodes.pendingTtlS', group: 'Backup codes',
+    label: 'How long an unconfirmed set of recovery codes waits (seconds)',
+    env: 'STS_BACKUP_CODES_PENDING_TTL_S', type: 'int',
+    dflt: 900, min: 60, max: 3600, runtime: true,
+    description: 'A set of recovery codes is generated when somebody asks to ' +
+                 'see one and is stored only when they confirm they have ' +
+                 'kept it. This is how long the generated set waits in ' +
+                 'memory for that confirmation. It is never written down, so ' +
+                 'an expired one leaves no trace and leaves any set the ' +
+                 'person already had exactly as it was — they simply have to ' +
+                 'ask again.' },
+  { key: 'backupCodes.groupSize', group: 'Backup codes',
+    label: 'Characters between the dashes', path: 'backupCodes.groupSize',
+    env: 'STS_BACKUP_CODES_GROUP_SIZE', type: 'int', dflt: 5, runtime: true,
+    min: 0, max: 16,
+    description: 'Purely presentational: `A2CDE-FGH3J` rather than ' +
+                 '`A2CDEFGH3J`, so that a person transcribing one does not ' +
+                 'lose their place. Every door strips the dashes and the ' +
+                 'spaces back out before comparing, so a code typed either ' +
+                 'way is the same code. Zero prints it unbroken.' },
+
+  // ---------------------------------------------------------------------
+  // WEBAUTHN AND CTAP (2026-09-10). THE OTHER MECHANISM, WHICH HAD NO
+  // SETTINGS AT ALL UNTIL THIS DAY.
+  //
+  // **THE SENTENCE THIS BLOCK REPLACES WAS "WHAT IT DOES IS DECIDED BY THE
+  // SPECIFICATION AND BY THE BROWSER, AND THERE IS NOTHING AN OPERATOR COULD
+  // USEFULLY TURN."** It was written above the TOTP rows to explain why
+  // WebAuthn had no group beside them, and it was wrong in the way that is
+  // hardest to notice: it is true of the CRYPTOGRAPHY and false of the
+  // CEREMONY. What a browser does with `navigator.credentials.create()` is
+  // decided almost entirely by the `PublicKeyCredentialCreationOptions` the
+  // relying party hands it, and every one of those was a literal in a string
+  // in `authn/authn.js` — the RP name, the algorithms offered, the user
+  // verification requirement, the attestation conveyance, the timeout. An
+  // operator could not move any of them, and a client author trying to find
+  // out what their client does with `attestation: "none"` or with a resident
+  // key had no way to ask this service for one.
+  //
+  // ---------------------------------------------------------------------
+  // THREE KINDS OF ROW, AND KNOWING WHICH IS WHICH IS HOW TO READ THE PAGE.
+  //
+  //   * **THE CEREMONY** — `rpName`, `rpId`, `algorithms`, `timeoutMs`,
+  //     `attestation`, `userVerification`. These go to the BROWSER, in the
+  //     options this service hands it, and what happens to them after that is
+  //     the browser's and the authenticator's business.
+  //   * **CTAP2** — `authenticatorAttachment`, `residentKey`, `credProps`.
+  //     These are the ones a browser translates into what it asks the
+  //     AUTHENTICATOR for: which kind of authenticator may answer, whether the
+  //     credential is discoverable (a CTAP2 resident key, which is what makes
+  //     usernameless sign-in possible), and whether the browser is asked to
+  //     report back which it made.
+  //   * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`,
+  //     `maxKeysPerPerson`. These are not WebAuthn at all: they are what THIS
+  //     service will do with a key once the ceremony is over, and they are
+  //     decided here rather than by any specification.
+  //
+  // **TWO OF THEM ARE ENFORCED IN THIS SERVICE AND NOT ONLY REQUESTED**, and
+  // that distinction is the one to keep: `userVerification` is sent to the
+  // browser AND checked in `authn/webauthn.js` when the ceremony comes back,
+  // so `required` really does refuse an authenticator that did not verify the
+  // person. `attestation`, `residentKey` and `authenticatorAttachment` are
+  // REQUESTS — this service records what came back and refuses nothing on
+  // them, which is the position the row below states rather than implying a
+  // check that is not there.
+  // ---------------------------------------------------------------------
+  { key: 'webauthn.enabled', group: 'WebAuthn',
+    label: 'Offer security keys (WebAuthn)',
+    path: 'webauthn.enabled', env: 'STS_WEBAUTHN_ENABLED',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether this service offers a WebAuthn ceremony at all — ' +
+                 'the two boxes on the sign-in screen, the enrolment on ' +
+                 '`/portal/keys`, and the `/authn/webauthn` screen itself. ' +
+                 '**Turning it off does NOT remove a key somebody already ' +
+                 'enrolled**, exactly as `totp.enabled` does not remove a ' +
+                 'shared secret: an account configured for two factors is ' +
+                 'still configured for two, and a setting that silently ' +
+                 'downgraded it would be a security control whose off switch ' +
+                 'does something other than what it says. What it stops is ' +
+                 'new ceremonies. An enrolled key is removed on that ' +
+                 'person\'s row under Users, or by them on `/portal/keys`.' },
+
+  { key: 'webauthn.rpName', group: 'WebAuthn',
+    label: 'Relying party name', path: 'webauthn.rpName',
+    env: 'STS_WEBAUTHN_RP_NAME', type: 'string',
+    dflt: 'Mock authorization server', runtime: true,
+    description: 'The `rp.name` handed to `navigator.credentials.create()`. ' +
+                 'It is what a browser and a password manager show the person ' +
+                 'while they decide whether to create a credential, and it is ' +
+                 'stored with the credential on a platform authenticator — so ' +
+                 'this is the string somebody sees in their key list a month ' +
+                 'later. It has NO security meaning: WebAuthn binds a ' +
+                 'credential to the RP ID below and to nothing else, and two ' +
+                 'services sharing an RP ID share credentials however ' +
+                 'differently they name themselves.' },
+
+  { key: 'webauthn.rpId', group: 'WebAuthn',
+    label: 'RP ID override', path: 'webauthn.rpId',
+    env: 'STS_WEBAUTHN_RP_ID', type: 'string', dflt: '', runtime: true,
+    description: '**EMPTY MEANS THE HOST THIS SERVICE WAS REACHED ON**, which ' +
+                 'is almost always the right answer and is what it did before ' +
+                 'this setting existed. A value here overrides it, and ' +
+                 'WebAuthn allows exactly one useful kind of override: a ' +
+                 'REGISTRABLE DOMAIN SUFFIX of the origin — `example.com` ' +
+                 'when reached at `sts.example.com`, so one credential works ' +
+                 'across the sibling hosts of a deployment. **Anything else ' +
+                 'is refused by the browser, not by this service**, with a ' +
+                 '`SecurityError` the ceremony reports as one of its several ' +
+                 'indistinguishable failures — so a wrong value here looks ' +
+                 'like a broken authenticator. Set it only to widen the scope ' +
+                 'deliberately, and note that widening it means every host ' +
+                 'under that suffix can assert these credentials.' },
+
+  { key: 'webauthn.algorithms', group: 'WebAuthn',
+    label: 'Algorithms offered', path: 'webauthn.algorithms',
+    env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv', dflt: 'ES256,RS256',
+    runtime: true,
+    description: '`pubKeyCredParams`, in preference order — the COSE ' +
+                 'algorithms this service will accept a credential in. The ' +
+                 'names are JOSE spellings and are mapped to COSE identifiers ' +
+                 'by `authn/webauthn.js`\'s own table, which is the module ' +
+                 'that verifies the signature: `ES256` (-7), `ES384` (-35), ' +
+                 '`ES512` (-36), `EdDSA` (-8), `RS256` (-257), `RS384` ' +
+                 '(-258), `RS512` (-259). A name outside that table is ' +
+                 'dropped with a warning rather than sent, because offering ' +
+                 'an algorithm this service cannot verify produces a ' +
+                 'credential that enrols and then never works. **ES256 and ' +
+                 'RS256 are the two every authenticator implements** and are ' +
+                 'the default; the rest are here to find out what a client ' +
+                 'does when the list is unusual.' },
+
+  { key: 'webauthn.userVerification', group: 'WebAuthn',
+    label: 'User verification', path: 'webauthn.userVerification',
+    env: 'STS_WEBAUTHN_USER_VERIFICATION', type: 'enum',
+    enumValues: ['discouraged', 'preferred', 'required'],
+    dflt: 'preferred', runtime: true,
+    description: 'Whether the authenticator must verify the PERSON — a PIN, ' +
+                 'a fingerprint, a face — as well as prove possession of the ' +
+                 'key. **THIS IS THE ONE CEREMONY SETTING THIS SERVICE ALSO ' +
+                 'ENFORCES**: `required` is sent to the browser and the UV ' +
+                 'flag in the authenticator data is then CHECKED when the ' +
+                 'ceremony comes back, so an authenticator that did not ' +
+                 'verify is refused rather than quietly accepted. ' +
+                 '**Raising it does not change what a session CLAIMS.** A ' +
+                 'passwordless sign-in still records `amr ["hwk"]` and `acr ' +
+                 '"1"` — one factor — even with `required`, because RFC 8176 ' +
+                 'has no value for *the authenticator verified the user* that ' +
+                 'this service could honestly assert, and inventing the ' +
+                 'stronger claim is the exact fake this profile refuses ' +
+                 'everywhere else. `/admin/webauthn` says so on the page.' },
+
+  { key: 'webauthn.attestation', group: 'WebAuthn',
+    label: 'Attestation conveyance', path: 'webauthn.attestation',
+    env: 'STS_WEBAUTHN_ATTESTATION', type: 'enum',
+    enumValues: ['none', 'indirect', 'direct', 'enterprise'],
+    dflt: 'direct', runtime: true,
+    description: 'How much the browser is asked to tell this service about ' +
+                 'the authenticator that made the credential. `direct` is the ' +
+                 'default here because this is a DEBUGGING service and the ' +
+                 'attestation object is one of the things worth looking at; ' +
+                 'a real deployment with no attestation policy should send ' +
+                 '`none`, which is what the specification recommends and what ' +
+                 'avoids a browser consent prompt about the authenticator ' +
+                 'model. **THIS SERVICE VERIFIES NO ATTESTATION STATEMENT ' +
+                 'WHATEVER IT ASKS FOR** — there is no metadata service here, ' +
+                 'no trust anchor for an authenticator vendor, and no model ' +
+                 'allow-list — so the statement is parsed, reported and ' +
+                 'believed. Asking for `enterprise` and getting nothing back ' +
+                 'is the browser refusing, not this service.' },
+
+  { key: 'webauthn.timeoutMs', group: 'WebAuthn',
+    label: 'Ceremony timeout (ms)', path: 'webauthn.timeoutMs',
+    env: 'STS_WEBAUTHN_TIMEOUT_MS', type: 'int', dflt: 60000, runtime: true,
+    min: 10000, max: 600000,
+    description: 'The `timeout` in the options handed to the browser. It is ' +
+                 'a HINT — the specification says a client MAY clamp it, and ' +
+                 'browsers do — so a value here is what this service asks ' +
+                 'for rather than what will happen. Note that the pending ' +
+                 'step this service holds expires on its own five-minute ' +
+                 'clock, so a timeout longer than that buys a ceremony that ' +
+                 'succeeds in the browser and is then refused here.' },
+
+  { key: 'webauthn.authenticatorAttachment', group: 'WebAuthn',
+    label: 'Authenticator attachment (CTAP)',
+    path: 'webauthn.authenticatorAttachment',
+    env: 'STS_WEBAUTHN_ATTACHMENT', type: 'enum',
+    enumValues: ['any', 'platform', 'cross-platform'],
+    dflt: 'any', runtime: true,
+    description: 'Which kind of authenticator may answer. `platform` is the ' +
+                 'one built into the machine — Touch ID, Windows Hello, an ' +
+                 'Android screen lock; `cross-platform` is a roaming CTAP2 ' +
+                 'authenticator reached over USB, NFC or BLE. `any` sends no ' +
+                 'preference at all, which is the default and is what leaves ' +
+                 'the choice to the person. **It is a FILTER IN THE BROWSER ' +
+                 'AND NOT A CHECK HERE**: the browser offers only what ' +
+                 'matches, and this service does not refuse a credential ' +
+                 'whose attachment turned out to be the other one. What it ' +
+                 'does do is RECORD what came back, where the browser said.' },
+
+  { key: 'webauthn.residentKey', group: 'WebAuthn',
+    label: 'Discoverable credential (CTAP resident key)',
+    path: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
+    type: 'enum', enumValues: ['discouraged', 'preferred', 'required'],
+    dflt: 'discouraged', runtime: true,
+    description: 'Whether the credential is stored ON the authenticator — a ' +
+                 'CTAP2 *resident key* — so that it can be found without ' +
+                 'this service naming it first. That is what makes a ' +
+                 'usernameless sign-in possible, and it is what a passkey ' +
+                 'is. `discouraged` is the default because a resident key ' +
+                 'consumes one of the small number of slots a roaming ' +
+                 'authenticator has and CANNOT ALWAYS BE DELETED FROM IT — a ' +
+                 'debugging service should not fill somebody\'s security key ' +
+                 'without being asked. **This service does not offer a ' +
+                 'usernameless flow**, so `required` buys a slot on the key ' +
+                 'and nothing else here; it is worth setting to find out what ' +
+                 'a client does when the browser prompts differently.' },
+
+  { key: 'webauthn.credProps', group: 'WebAuthn',
+    label: 'Ask for the credProps extension',
+    path: 'webauthn.credProps', env: 'STS_WEBAUTHN_CRED_PROPS',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Sends `extensions: { credProps: true }` on registration, ' +
+                 'which asks the browser to report whether the credential it ' +
+                 'made is actually discoverable. It is the only way to find ' +
+                 'out: `residentKey: "preferred"` may or may not produce one ' +
+                 'and nothing in the attestation says which. This service ' +
+                 'RECORDS the answer beside the key and decides nothing on ' +
+                 'it. Off is the way to see what a client does with no ' +
+                 'extension results at all.' },
+
+  // -------------------------------------------------------------------
+  // THE POLICY ROWS. Not WebAuthn — what THIS service does with a key.
+  // -------------------------------------------------------------------
+  { key: 'webauthn.primaryAllowed', group: 'WebAuthn',
+    label: 'Allow a key as a PRIMARY credential',
+    path: 'webauthn.primaryAllowed', env: 'STS_WEBAUTHN_PRIMARY_ALLOWED',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether a security key may be the ONLY credential on an ' +
+                 'account — a passwordless sign-in, `amr ["hwk"]`. Turning ' +
+                 'it off leaves keys working as a SECOND factor and refuses ' +
+                 'the passwordless path at the sign-in screen and the ' +
+                 '`primary` choice in the portal. **It does not disable a ' +
+                 'primary key somebody already holds**, for `webauthn.enabled` ' +
+                 '’s reason — and there is a sharper edge here: somebody ' +
+                 'whose only credential is a primary key would be locked out ' +
+                 'of their own account by an operator flipping a switch, ' +
+                 'which is not a thing a setting should be able to do.' },
+
+  { key: 'webauthn.mfaAllowed', group: 'WebAuthn',
+    label: 'Allow a key as a SECOND factor',
+    path: 'webauthn.mfaAllowed', env: 'STS_WEBAUTHN_MFA_ALLOWED',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether a security key may be enrolled as a second factor ' +
+                 'beside a password. Off, the remaining second factor is the ' +
+                 'authenticator app (`totp.enabled`), and a deployment with ' +
+                 'both off offers no second factor at all — which is a ' +
+                 'supported configuration and is what this service did before ' +
+                 'either existed. **An enrolled `mfa` key goes on being ' +
+                 'demanded at the sign-in screen**, because that account is ' +
+                 'still configured for two factors; see `webauthn.enabled`.' },
+
+  { key: 'webauthn.maxKeysPerPerson', group: 'WebAuthn',
+    label: 'Keys per person', path: 'webauthn.maxKeysPerPerson',
+    env: 'STS_WEBAUTHN_MAX_KEYS', type: 'int', dflt: 10, runtime: true,
+    min: 1, max: 50,
+    description: 'How many security keys one person may hold. Several is the ' +
+                 'ordinary case and the specification expects it — a key at ' +
+                 'the desk and one on the keyring — and unlike a shared ' +
+                 'secret there is no ambiguity in having more than one, ' +
+                 'because an assertion NAMES the credential that produced it. ' +
+                 'The limit is here so that an enrolment loop cannot grow an ' +
+                 'unbounded attribute on a directory entry; it refuses the ' +
+                 'ENROLMENT and never an authentication.' },
+
   { key: 'keys.source', group: 'Key material', label: 'Where signing keys come from',
     path: 'keys.source', env: 'STS_KEYS_SOURCE', type: 'enum',
     enumValues: ['auto', 'generated', 'persisted'],
@@ -933,6 +1413,49 @@ const SETTINGS = [
   // said `runtime: true` and meant "on restart" is the lie this file refuses
   // to tell about a bound port.
   // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // HOW LONG A POST-QUANTUM JOB MAY TAKE BEFORE THE POOL GIVES UP ON IT
+  // (2026-09-11).
+  //
+  // **`worker_pool.js` HAD NO BOUND AT ALL, AND ITS OWN HEADER SAYS WHY THAT
+  // IS THE WORST AVAILABLE FAILURE.** It rejects every job on a worker that
+  // DIES — "a promise nobody settles is a request that hangs" — and covers
+  // nothing for a worker that stays alive and simply never answers. One was
+  // observed doing exactly that: five idle children, no CPU anywhere, the
+  // service answering everything else in eleven milliseconds, and one HTTP
+  // request parked for ever. The suite's own 300s watchdog was the only thing
+  // that ended it, which is five minutes per occurrence and says nothing about
+  // what happened.
+  //
+  // **IT IS A BACKSTOP AND NOT A DIAGNOSIS.** Why a reply goes missing is not
+  // known; what this does is turn an unbounded hang into a named failure the
+  // caller can report, which is the same trade `reap()` already makes for the
+  // death case.
+  //
+  // **THE DEFAULT IS GENEROUS ON PURPOSE.** The stalls this pool was built to
+  // move off the event loop were measured at 15 to 23 seconds — a composite
+  // verify, an SLH-DSA-SHAKE-128s signature — and a machine running the whole
+  // suite under docker is slower than the one they were measured on. Two
+  // minutes is far beyond any of them and far short of a watchdog. Zero turns
+  // the bound off and restores the old behaviour exactly.
+  { key: 'workers.jobTimeoutS', group: 'Global',
+    label: 'Worker job timeout (seconds)',
+    path: 'workers.jobTimeoutS', env: 'STS_WORKERS_JOB_TIMEOUT_S',
+    type: 'int', dflt: 120, runtime: true, min: 0, max: 3600,
+    description: 'How long the post-quantum worker pool waits for a job it ' +
+                 'has sent to a child before failing it. **It exists because ' +
+                 'there was no bound**: a worker that dies has its jobs ' +
+                 'rejected, and a worker that stays alive and never answers ' +
+                 'left the request hanging for ever — observed, with an idle ' +
+                 'pool and a service answering everything else normally. A ' +
+                 'failed job is reported to the caller and the request fails ' +
+                 'with a reason; nothing is retried, because a worker holds ' +
+                 'no state and the caller can simply ask again.\n\n' +
+                 '**Generous on purpose.** The stalls this pool exists to ' +
+                 'move off the event loop were 15 to 23 seconds, so two ' +
+                 'minutes is far beyond any real job and far short of a test ' +
+                 'runner\'s watchdog. `0` turns the bound off.' },
+
   { key: 'workers.requestCount', group: 'Global',
     label: 'Request worker processes',
     env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
@@ -1431,6 +1954,114 @@ const SETTINGS = [
                  'so a verifier follows the kid in the header and needs to ' +
                  'know nothing about this setting; changing it would ' +
                  'otherwise strand every client holding a cached JWKS.' },
+  // -------------------------------------------------------------------
+  // RFC 7521 / RFC 7523's AUTHORIZATION GRANT (2026-09-10). Three rows, and
+  // the middle one is the only refusal in this service that is on by default
+  // besides federation's — `oauth-oidc/assertion_grant.js` argues why there is
+  // no permissive answer available for this grant.
+  // -------------------------------------------------------------------
+  { key: 'oauth2.jwtBearerGrant', group: 'OAuth 2.0 / OIDC',
+    label: 'JWT bearer authorization grant (RFC 7523 section 2.1)',
+    env: 'STS_OAUTH2_JWT_BEARER_GRANT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the token endpoint performs ' +
+                 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer — a ' +
+                 'trusted party signs an assertion naming a person, and this ' +
+                 'authorization server issues an access token for them. It is ' +
+                 'ON, and the metadata advertises the grant only while it is: ' +
+                 'a grant_types_supported member is a promise. Turning it off ' +
+                 'is how a client author tests what their code does against a ' +
+                 'server that does not offer it. It does NOT affect RFC 7523 ' +
+                 'section 2.2 — client authentication by assertion — which is ' +
+                 'a different feature sharing a document format.' },
+  { key: 'oauth2.jwtBearerRequireRegisteredIssuer', group: 'OAuth 2.0 / OIDC',
+    label: 'Require a registered assertion issuer',
+    env: 'STS_OAUTH2_JWT_BEARER_REQUIRE_REGISTERED_ISSUER', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Whether an RFC 7523 authorization grant is refused when no ' +
+                 'application in the realm declares its `iss` on ' +
+                 'oauthAssertionIssuer. ON, and it is one of only two ' +
+                 'refusals in this service that default to on — federation is ' +
+                 'the other, for the same reason. An assertion IS the whole ' +
+                 'authorization for that grant: there is no browser, no ' +
+                 'password and no consent step in it, so accepting one from ' +
+                 'anybody means anybody who can reach this port getting an ' +
+                 'access token as anybody. Turning it off does NOT make the ' +
+                 'grant accept unsigned assertions — the signature still has ' +
+                 'to verify against a key registered for the issuer, or ' +
+                 'against a certificate this service issued — it removes the ' +
+                 'requirement that somebody declared the issuer first.' },
+  { key: 'oauth2.jwtBearerMaxLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Longest assertion lifetime accepted (s)',
+    env: 'STS_OAUTH2_JWT_BEARER_MAX_LIFETIME_S', type: 'int', dflt: 300,
+    min: 0, max: 86400, runtime: true,
+    description: 'The most seconds between an assertion\'s `iat` and its ' +
+                 '`exp` that this authorization server will accept in an RFC ' +
+                 '7523 grant. RFC 7521 section 5.2 invites a server to refuse ' +
+                 'an assertion whose lifetime is unreasonable and leaves ' +
+                 '"unreasonable" to it; a short life is the whole difference ' +
+                 'between an assertion and a long-lived credential somebody ' +
+                 'has to be able to revoke. ZERO switches the check off, ' +
+                 'which is the way to exercise a client that mints ' +
+                 'day-long assertions. An assertion with no `iat` is not ' +
+                 'checked against it at all — the claim is optional and this ' +
+                 'is arithmetic on two of them.' },
+
+  // -------------------------------------------------------------------
+  // RFC 7522's SAML 2.0 PROFILE OF THE SAME FRAMEWORK. Three rows that
+  // MIRROR the three above and are deliberately not shared with them: RFC
+  // 7522 and RFC 7523 are two profiles of RFC 7521 and a deployment
+  // legitimately offers one and not the other — a single switch would make
+  // "turn the JWT grant off" also turn off a grant a SAML deployment
+  // depends on. The SKEW is shared, because it answers "how far out may
+  // somebody else's clock be" and that question has one answer whatever
+  // the document format is.
+  // -------------------------------------------------------------------
+  { key: 'oauth2.saml2BearerGrant', group: 'OAuth 2.0 / OIDC',
+    label: 'SAML 2.0 bearer authorization grant (RFC 7522 section 2.1)',
+    env: 'STS_OAUTH2_SAML2_BEARER_GRANT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the token endpoint performs ' +
+                 'grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer — ' +
+                 'a trusted party signs a SAML 2.0 assertion naming a person, ' +
+                 'and this authorization server issues an access token for ' +
+                 'them. It is ON, and the metadata advertises the grant only ' +
+                 'while it is: a grant_types_supported member is a promise. ' +
+                 'It does NOT affect RFC 7522 section 2.2 — client ' +
+                 'authentication by SAML assertion — which is a different ' +
+                 'feature sharing a document format, exactly as the JWT row ' +
+                 'above does not affect private_key_jwt.' },
+  { key: 'oauth2.saml2BearerRequireRegisteredIssuer', group: 'OAuth 2.0 / OIDC',
+    label: 'Require a registered SAML assertion issuer',
+    env: 'STS_OAUTH2_SAML2_BEARER_REQUIRE_REGISTERED_ISSUER', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Whether an RFC 7522 authorization grant is refused when no ' +
+                 'application in the realm declares its <Issuer> on ' +
+                 'oauthSamlAssertionIssuer. ON, for the reason the JWT row ' +
+                 'above is on and federation is: an assertion IS the whole ' +
+                 'authorization for that grant — no browser, no password, no ' +
+                 'consent step — so accepting one from anybody means anybody ' +
+                 'who can reach this port getting an access token as ' +
+                 'anybody. Turning it off does NOT make the grant accept ' +
+                 'unsigned assertions, and it does NOT make it accept a ' +
+                 'certificate it holds no registration for: a SAML assertion ' +
+                 'is only ever verified against a certificate registered ' +
+                 'against the asserting party under the RFC 7522 attributes, ' +
+                 'and there is no setting that changes that.' },
+  { key: 'oauth2.saml2BearerMaxLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Longest SAML assertion lifetime accepted (s)',
+    env: 'STS_OAUTH2_SAML2_BEARER_MAX_LIFETIME_S', type: 'int', dflt: 300,
+    min: 0, max: 86400, runtime: true,
+    description: 'The most seconds between a SAML assertion\'s IssueInstant ' +
+                 'and its expiry that this authorization server will accept ' +
+                 'in an RFC 7522 grant. Item 6 of section 3 says a server may ' +
+                 'reject an assertion whose NotOnOrAfter is "unreasonably far ' +
+                 'in the future" and leaves "unreasonable" to it. ZERO ' +
+                 'switches the check off. The expiry it measures to is the ' +
+                 '<Conditions> NotOnOrAfter where there is one and the ' +
+                 '<SubjectConfirmationData> NotOnOrAfter otherwise, which is ' +
+                 'item 4\'s own ordering.' },
+
   { key: 'oauth2.clientAssertionSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'Client assertion clock skew (s)',
     env: 'STS_OAUTH2_CLIENT_ASSERTION_SKEW_S', type: 'int', dflt: 60,
@@ -1442,6 +2073,183 @@ const SETTINGS = [
                  'is also how long past its expiry an assertion\'s jti is ' +
                  'remembered, so the replay cache and the expiry check cover ' +
                  'exactly the same span with no gap between them.' },
+
+  // ---------------------------------------------------------------------
+  // THE CERTIFICATE AUTHORITY (2026-09-10). Four rows, and every one of them
+  // is a DEFAULT for a form rather than a policy: `/admin/pki` takes each as a
+  // field, and what is stored on a hierarchy is what was chosen when it was
+  // built. A change here therefore reaches the NEXT build and never a
+  // certificate that exists — which is the same rule /admin/claims follows
+  // about tokens already issued, and for the same reason: a certificate is a
+  // signed document and no setting can reach inside one.
+  // ---------------------------------------------------------------------
+  { key: 'pki.crlLifetimeMinutes', group: 'PKI',
+    label: 'How long a CRL claims to be fresh',
+    env: 'PKI_CRL_LIFETIME_MINUTES', type: 'int', dflt: 60,
+    min: 1, max: 10080, runtime: true,
+    description: 'The gap between `thisUpdate` and `nextUpdate` on every CRL ' +
+                 'this service publishes, and the `nextUpdate` on every OCSP ' +
+                 'answer.\n\n**SHORT ON PURPOSE.** The interesting thing to ' +
+                 'do with a revocation list here is revoke something and ' +
+                 'watch a client notice — and a client that cached a ' +
+                 'twenty-four hour list will not notice for twenty-four ' +
+                 'hours. An hour is long enough to be realistic and short ' +
+                 'enough to be testable; raise it to find out what your stack ' +
+                 'does with a stale list.' },
+  { key: 'pki.distributionBaseUrl', group: 'PKI',
+    label: 'Base URL published in CRL and OCSP addresses',
+    env: 'PKI_DISTRIBUTION_BASE_URL', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The HTTPS base that goes INSIDE certificates, in their ' +
+                 'cRLDistributionPoints and authorityInfoAccess ' +
+                 'extensions.\n\n**IT CANNOT BE DERIVED FROM A REQUEST AND ' +
+                 'THAT IS WHY IT IS A SETTING.** A certificate is minted at ' +
+                 'startup, before any request exists, and it is a durable ' +
+                 'document — an address in it must not depend on which Host ' +
+                 'header happened to be on the request that triggered the ' +
+                 'issue. Empty means one built from `tls.hostnames`, ' +
+                 '`global.port` and `global.https`, which is right for every ' +
+                 'stack in this repository and wrong the moment this service ' +
+                 'is behind a name it does not know about.' },
+  { key: 'pki.distributionLdapHost', group: 'PKI',
+    label: 'Host published in LDAP and LDAPS CRL addresses',
+    env: 'PKI_DISTRIBUTION_LDAP_HOST', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The host in the `ldap://` and `ldaps://` CRL distribution ' +
+                 'points. The ports come from `ldap.port` and ' +
+                 '`ldap.tlsPort`. Empty means the first of `tls.hostnames`, ' +
+                 'for `pki.distributionBaseUrl`\'s reason.' },
+  { key: 'pki.publishCrlToDirectory', group: 'PKI',
+    label: 'Publish every CRL into the embedded directory',
+    env: 'PKI_PUBLISH_CRL_TO_DIRECTORY', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Write each authority\'s CRL into the embedded directory as ' +
+                 '`certificateRevocationList;binary` on a ' +
+                 '`cRLDistributionPoint` entry under `ou=crl`, so the ' +
+                 '`ldap://` and `ldaps://` addresses in every certificate ' +
+                 'this service issues actually resolve (RFC 4523 section ' +
+                 '4).\n\nOff, those two addresses are still WRITTEN into ' +
+                 'certificates and fetch nothing — which is a legitimate ' +
+                 'thing to test a client against and is why it is a switch ' +
+                 'rather than a consequence of the directory being there.' },
+  { key: 'pki.autoBuild', group: 'PKI',
+    label: 'Build the certificate authority at startup',
+    env: 'PKI_AUTO_BUILD', type: 'bool', dflt: true,
+    runtime: false,
+    restartReason: 'The hierarchy is built before the listener binds, because ' +
+                   'a key pair can only be issued by an authority that exists ' +
+                   'when the key is made — and the keys are made at startup. ' +
+                   'Turning it off while the service runs would leave the ' +
+                   'authority that has already certified them standing.',
+    description: 'ON by default, and turning it off is how this service ' +
+                 'behaves as it did before 2026-09-11.\n\nWith it on, a Root ' +
+                 'CA is built for the SERVICE at startup, an Intermediate CA ' +
+                 'for the process and one per trust realm, and an Issuing CA ' +
+                 'under each for every use case — and every key pair this ' +
+                 'service generates is certified under it. The key generation ' +
+                 'itself is untouched: the same RSA key, the same six curve ' +
+                 'keys, the same eleven post-quantum keys made lazily, in the ' +
+                 'same order and at the same moment. What is added happens ' +
+                 'afterwards and only ever adds a certificate.\n\nWith it ' +
+                 'off, nothing is built until somebody presses Build on ' +
+                 '/admin/pki, and this service\'s own keys carry the ' +
+                 'self-signed certificates they were born with.' },
+  { key: 'pki.keyAlgorithm', group: 'PKI',
+    label: 'Default CA key algorithm',
+    env: 'STS_PKI_KEY_ALGORITHM', type: 'string', dflt: 'rsa-2048',
+    runtime: true,
+    description: 'Which key algorithm a new certificate authority is built ' +
+                 'with when the form names none: rsa-2048, rsa-3072, ' +
+                 'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519. RSA 2048 is ' +
+                 'the default because the LEAF this hierarchy exists to issue ' +
+                 'signs a client assertion that somebody else\'s OAuth ' +
+                 'library has to verify, and RS256 is the one algorithm every ' +
+                 'such library has. The list is read from ' +
+                 'common/vendored/key_material.js — the module that generates ' +
+                 'the key — so a value it does not know is refused at the ' +
+                 'build with the list beside it.' },
+  { key: 'pki.signatureAlgorithm', group: 'PKI',
+    label: 'Default CA signature algorithm',
+    env: 'STS_PKI_SIGNATURE_ALGORITHM', type: 'string', dflt: '',
+    runtime: true,
+    description: 'Which signature algorithm the tiers sign each other with. ' +
+                 'EMPTY means "the right one for the key algorithm", which is ' +
+                 'what almost every deployment wants and is why it is the ' +
+                 'default: an EC key\'s digest is decided by its CURVE (a ' +
+                 'P-384 key wants SHA-384), and a fixed value here would hand ' +
+                 'a P-521 key SHA-256 — legal, verifying, and nobody\'s ' +
+                 'intention. Set it to name one of sha256-rsa, sha384-rsa, ' +
+                 'sha512-rsa, sha256-rsapss, sha384-rsapss, sha512-rsapss, ' +
+                 'sha256-ecdsa, sha384-ecdsa, sha512-ecdsa or ed25519 — and ' +
+                 'the two deliberately weak ones, sha1-rsa and sha1-ecdsa, ' +
+                 'which are here because "does my stack refuse a SHA-1 ' +
+                 'certificate?" is a question a debugger should be able to ' +
+                 'ask.' },
+  { key: 'pki.organisation', group: 'PKI',
+    label: 'Default organisation name (O=)',
+    env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'mock-sts',
+    runtime: true,
+    description: 'The O= every tier of a new hierarchy carries, and the O= of ' +
+                 'every leaf issued from it. It is also what the tiers are ' +
+                 'NAMED after when the form gives no common names — ' +
+                 '"<O> Root CA (<realm>)" and so on — so that a certificate ' +
+                 'read out of context says which service and which trust ' +
+                 'realm it belongs to.' },
+  // ---------------------------------------------------------------------
+  // SELF-SERVICE (2026-09-12). A person may issue THEMSELVES an RFC 7523
+  // signing key pair from `/portal/signing-key`, which is the same act
+  // `/admin/pki` performs for an operator and writes the same seven
+  // attributes.
+  //
+  // **IT HAS A SWITCH BECAUSE EVERY OTHER SELF-SERVICE MECHANISM IN THE
+  // PORTAL HAS ONE** — `totp.enabled` and `backupCodes.enabled` are the two
+  // beside it — and for their reason rather than by analogy: what a person may
+  // hand themselves is a deployment's decision, and an operator who wants keys
+  // issued only by an administrator has nowhere else to say so.
+  //
+  // **ON BY DEFAULT**, which is what every self-service door here defaults to.
+  // The key it issues can only assert about the person who holds it
+  // (`common/person_assertions.js`), so what it hands out is a credential for
+  // an account that person is already signed in to — the same bar the password
+  // form and the security-key enrolment clear.
+  //
+  // **TURNING IT OFF DOES NOT TAKE ANYBODY'S KEY PAIR AWAY**, which is
+  // `totp.enabled`'s contract word for word: a key already on an entry goes on
+  // verifying, because a setting that silently stopped honouring credentials
+  // it had issued would be an off switch that does something other than what
+  // it says. What it stops is new ones, from the portal only — `/admin/pki`
+  // and `POST /admin-api/pki/issue` are an operator's door and are unaffected.
+  // ---------------------------------------------------------------------
+  { key: 'pki.personSelfService', group: 'PKI',
+    label: 'Let a person issue their own signing key pair',
+    env: 'STS_PKI_PERSON_SELF_SERVICE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the Signing key page in the user portal offers to ' +
+                 'issue an RFC 7523 key pair to the person looking at it. ' +
+                 'The key may only assert about its own holder, so it is a ' +
+                 'credential for an account they are already signed in to — ' +
+                 'the same bar the password form and the security-key ' +
+                 'enrolment clear. **Turning it off does NOT take away a key ' +
+                 'pair somebody already holds**: one on an entry goes on ' +
+                 'verifying, exactly as `totp.enabled` leaves an enrolled ' +
+                 'authenticator working. It stops new ones FROM THE PORTAL ' +
+                 'only — an operator issuing from /admin/pki or POST ' +
+                 '/admin-api/pki/issue is unaffected, which is the point of ' +
+                 'having the switch.' },
+
+  { key: 'pki.leafLifetimeDays', group: 'PKI',
+    label: 'Default lifetime of an issued key pair (days)',
+    env: 'STS_PKI_LEAF_LIFETIME_DAYS', type: 'int', dflt: 365,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a signing certificate issued to an application is ' +
+                 'good for when the form names no lifetime. It is CLAMPED to ' +
+                 'the Issuing CA\'s own expiry rather than refused where it ' +
+                 'would overshoot: the ordinary cause is a five-year Issuing ' +
+                 'CA in its fifth year, and an operator who asked for a year ' +
+                 'should get eleven months rather than an error about ' +
+                 'arithmetic. The tiers\' own lifetimes come from the ' +
+                 'certificate profiles in common/vendored/x509.js — twenty ' +
+                 'years, ten and five — and are overridable on the form.' },
 
   // ---------------------------------------------------------------------
   // HOW LONG WHAT THIS SERVICE ISSUES IS GOOD FOR, and how far out a clock may
@@ -1712,15 +2520,18 @@ const SETTINGS = [
                  'ON, anybody who signs in holds both roles and the console ' +
                  'says so in a banner on every page; OFF, nobody can get in ' +
                  'at all. ON by default because the roster lives in memory ' +
-                 'and dies with the process, so a service that started with ' +
-                 'admin.authRequired on and this off would have a console no ' +
-                 'browser could ever reach — there is no bootstrap admin and ' +
+                 'and dies with the process, so a service with this off ' +
+                 'would have a console no ' +
+                 'browser could ever reach — the gate is unconditional, ' +
+                 'there is no bootstrap admin and ' +
                  'no password anywhere in this service to be one. The moment ' +
                  'the FIRST grant is made the roster is enforced, so turning ' +
                  'this off is a thing to do after granting yourself a role ' +
                  'and not before. If it is off and you are locked out, ' +
-                 '/admin-api is not gated: POST /admin-api/rbac/grant, or ' +
-                 'POST /admin-api/config/set with admin.authRequired=false.' },
+                 '/admin-api is the way back in: POST /admin-api/rbac/grant ' +
+                 'with an access token carrying admin:write, or — if nobody ' +
+                 'can get one of those either — adminApi.authRequired=false ' +
+                 'and then that same call.' },
 
   // --- Applications --------------------------------------------------------
   { key: 'applications.max', group: 'Applications',
@@ -3387,6 +4198,37 @@ const SETTINGS = [
                  'would otherwise hold a socket and a queued event ' +
                  'indefinitely.' },
 
+  // -------------------------------------------------------------------------
+  // THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS (2026-09-10).
+  //
+  // It is RESTART-ONLY and that is a fact about where the seeding runs rather
+  // than a decision: the two streams are created as `ssf/ssf.js` is required
+  // and again as each realm is built, so turning this off at runtime would
+  // leave the streams that already exist and turning it on would create none.
+  // What it does answer at runtime is `accept()`, which refuses a push at
+  // either receive endpoint while it is off — so a service started with it off
+  // has no streams AND no endpoints that take anything, which is the state the
+  // setting names.
+  // -------------------------------------------------------------------------
+  { key: 'ssf.internalReceivers', group: 'SSF',
+    label: 'Register the console and the portal as receivers',
+    env: 'STS_SSF_INTERNAL_RECEIVERS', type: 'bool', dflt: true,
+    runtime: false,
+    restartReason: 'the two streams are seeded as ssf/ssf.js is required and ' +
+                   'again as each realm is built, so turning this off in ' +
+                   'place would leave the streams that already exist and ' +
+                   'turning it on would create none',
+    description: 'Whether this service seeds a Shared Signals stream for its ' +
+                 'OWN admin console and user portal, so that each takes ' +
+                 'delivery of every CAEP and RISC event over RFC 8935 push ' +
+                 'at an endpoint of its own and draws what arrived at ' +
+                 '/admin/signals and /portal/signals. They are ORDINARY ' +
+                 'streams — pause one, narrow it or delete it at /admin/ssf ' +
+                 'and it stays that way until a restart. Note that ' +
+                 'ssf.pushDelivery governs this delivery like any other: ' +
+                 'with it off the events queue on the two streams and reach ' +
+                 'neither page.' },
+
   { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per realm',
     env: 'STS_SSF_MAX_STREAMS', type: 'int', dflt: 25, min: 1, max: 1000,
     runtime: true,
@@ -4501,9 +5343,9 @@ const SETTINGS = [
                  'here rather than elsewhere: the SPIRE Server API can create ' +
                  'registration entries granting any identity in this trust ' +
                  'domain. Its TCP port demands an X509-SVID and authorizes ' +
-                 'every method while spiffe.authRequired is on, which is the ' +
-                 'default; with it off, or on the Workload API port either ' +
-                 'way, anybody who can reach these addresses is answered.' },
+                 'every method, unconditionally; on the Workload API port ' +
+                 'anybody who can reach the address is answered, which that ' +
+                 'specification requires.' },
 
   // -------------------------------------------------------------------------
   // PERSISTENCE. The newest group, 2026-08-27, and the one that reverses the
@@ -4545,6 +5387,35 @@ const SETTINGS = [
                  'either mode and says so at startup, because it writes ' +
                  'whole files per flush.' },
 
+  // ---------------------------------------------------------------------
+  // HOW LONG A METRICS PROBE MAY RUN (2026-09-11), for `/admin/database`.
+  //
+  // It becomes `statement_timeout` on the ONE connection that page borrows.
+  // Every statement behind it is a catalog read and they measured 107ms for
+  // all twenty together on a local PostgreSQL 18 — but `pg_stat_activity` on
+  // a server with thousands of backends and `pg_total_relation_size` over a
+  // large schema are not free, and the pool this borrows from has a `max` of
+  // 4 and is the same one every protocol endpoint here writes through.
+  //
+  // **SO THE BOUND IS ON THE DATABASE'S SIDE AND NOT ON A TIMER HERE.** A
+  // `setTimeout` in this process would abandon the promise and leave the
+  // statement running and the connection held, which is the opposite of what
+  // is wanted: `statement_timeout` makes the SERVER stop and hand the
+  // connection back. Runtime, because it is read per render.
+  // ---------------------------------------------------------------------
+  { key: 'persistence.metricsTimeoutMs', group: 'Persistence',
+    label: 'Database metrics statement timeout (ms)',
+    env: 'STS_PERSISTENCE_METRICS_TIMEOUT_MS', type: 'int',
+    dflt: 5000, min: 250, max: 60000, runtime: true,
+    description: 'How long any one statement behind /admin/database may run, ' +
+                 'as PostgreSQL\'s own statement_timeout on the single ' +
+                 'connection that page borrows. Every one of them is a read ' +
+                 'of a catalog view; the bound is there so that opening a ' +
+                 'console page can never pin a connection out of a pool this ' +
+                 'service answers protocol traffic from. It is set on the ' +
+                 'server rather than as a timer here, because a timer would ' +
+                 'abandon the promise and leave both the statement and the ' +
+                 'connection exactly where they were.' },
   { key: 'persistence.dataDir', group: 'Persistence', label: 'Data directory',
     env: 'STS_PERSISTENCE_DATA_DIR', type: 'string', dflt: './data',
     runtime: false,

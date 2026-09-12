@@ -56,6 +56,43 @@ const { log } = require('./helpers');
 const config = require('./config');
 const crypto = require('./crypto');
 const mode = require('./mode');
+// The three the authenticator-app section below needs, and none of them can
+// require this file back: `realms` holds the pending enrolment (per realm, like
+// every other pending record here), `keystore` seals the shared secret where
+// the key-encryption key outlives the process, and `totp` is the mechanism
+// itself. `keystore` requires `config`, `crypto`, `mode`, `realms` and
+// `secrets`; `totp` requires `config`, `crypto`, `helpers` and `realms`. So
+// this file stays a LEAF of the same shape it was.
+const realms = require('./realms');
+const keystore = require('./keystore');
+const totp = require('./totp');
+// THE THIRD SECOND FACTOR (2026-09-10), and it is on this list for the same
+// reason `totp` is: it owns what a recovery code IS and this file owns where
+// the set lives. It requires `config`, `crypto` and `helpers` and nothing
+// else, so it cannot reach back here and this file stays the leaf it was.
+const backupCodes = require('./backup_codes');
+// THE SECURITY KEY'S POLICY, AND IT IS THE ONE REQUIRE IN THIS FILE THAT
+// POINTS OUT OF `common/` (2026-09-10).
+//
+// It is a LIBRARY (rule 3): it registers no route, so requiring it moves
+// nothing in the route order, and it requires only `config`, `helpers` and
+// `authn/webauthn.js` — none of which can reach back here — so it cannot join
+// a cycle. What it carries is the answer to *may a key be enrolled in this
+// role, and how many may one person hold*, which is a question about the
+// MECHANISM and belongs beside the mechanism. The alternative was a second
+// copy of `webauthn.*` in this file, and a second copy of a policy is a second
+// answer: `/portal/keys` would have refused an eleventh key while
+// `/admin-api` allowed it, or the other way round, with nothing failing.
+const webauthnPolicy = require('../authn/webauthn_policy');
+// THE VERIFIER, for the two-step key enrolment below. A LEAF on the same terms
+// as the policy module beside it — it registers nothing and requires only npm
+// packages, `common/crypto` and `common/helpers`, so it can neither move a
+// route nor close a cycle. It is required HERE for the reason the RFC 6238
+// pair is here: **a two-step enrolment is a credential-store question**, and
+// this file is the credential store. It already verifies a password and a
+// one-time code; verifying the registration ceremony that produces a key is
+// the same act on the third mechanism.
+const webauthnVerifier = require('../authn/webauthn');
 
 // The attribute. RFC 4519 section 2.41 — the standard name, so an entry this
 // service writes is one an ordinary LDAP client recognises, and one written by
@@ -74,6 +111,35 @@ const PASSWORD_ATTRIBUTE = 'userPassword';
 //
 // So it lives beside `userPassword`, on the entry, in the same store — one
 // object per person carrying everything about how they authenticate.
+//
+// ---------------------------------------------------------------------------
+// **AND FOR FOUR DAYS NOTHING WROTE TO IT (2026-09-06 to 2026-09-10).**
+//
+// The paragraph above describes the design and the design was right. What was
+// missing is that `addKey()` below — the ONLY writer — **had no caller
+// anywhere in this service.** `authn.js` went on setting its own map, so:
+//
+//   * `keysOf()` answered `[]` for everybody, so `mechanismsFor()` reported
+//     `mfaKeys: 0, primaryKeys: 0` for everybody, for ever;
+//   * `mfaRequired` could never become true from a key, so one enrolled at the
+//     sign-in screen was **never demanded again** — the next sign-in had the
+//     checkbox unticked and a password alone was accepted;
+//   * `GET /authn/webauthn`'s gate (*does this person hold an `mfa` key?*)
+//     refused everybody;
+//   * `/portal/keys` could list and remove keys that could not exist, and
+//     `/portal/activate`'s *a security key instead of a password* spent the
+//     activation link, said "your account is ready" and enrolled nothing.
+//
+// **THE WHOLE ROLE MODEL BELOW WAS THEREFORE UNREACHABLE**, which is worth
+// saying at the top of the thing it describes: `ROLES`, the last-way-in
+// refusal, the per-person cap and `webauthn.primaryAllowed` were all correct
+// and all decided nothing, because the state they decide about could not be
+// created. A store with no writer looks exactly like a store nobody uses.
+//
+// `authn/authn.js` writes here now — its own header carries the argument —
+// and `tests/vendored/sts_webauthn_second_factor.js` drives a real ceremony
+// and reads the key back out of `GET /admin-api/users`, which is the assertion
+// that would have caught it.
 //
 // **THE VALUE IS JSON AND THE ATTRIBUTE IS MULTI-VALUED**, because a person may
 // hold several keys (a laptop and a phone, which is the ordinary case and the
@@ -110,6 +176,11 @@ function setDirectory(hooks) {
   // `ldap_server.js` that offers only the password pair still gives a working
   // password sign-in instead of refusing the whole slot — which is the
   // difference between a version skew and an outage.
+  // `readTotp` and `writeTotp` are NOT on this list, for the reason the
+  // comment above gives about the security-key functions: they are checked
+  // where they are used, so an older `ldap_server.js` that knows nothing about
+  // authenticator apps still gives a working password sign-in rather than
+  // having the whole slot refused.
   const needed = ['readPassword', 'writePassword'];
   const missing = needed.filter(function (name) {
     return !hooks || typeof hooks[name] !== 'function';
@@ -559,6 +630,45 @@ function addKey(username, credential, role) {
                                  'is a second factor beside a password). ' +
                                  '"' + role + '" is neither.'] };
   }
+  // ---------------------------------------------------------------------
+  // THE `webauthn.*` POLICY, CHECKED AT THE ONE PLACE A KEY IS WRITTEN
+  // (2026-09-10).
+  //
+  // HERE AND NOT AT EACH DOOR, which is the same argument `setPassword()`
+  // makes about hashing: there are three ways to enrol a key — the portal's
+  // setup form, the portal's key page and an activation link — and a check at
+  // each is three chances for one of them to be added without it. This is the
+  // only function that puts a key on an entry, so a policy enforced here is a
+  // policy enforced everywhere.
+  //
+  // **IT REFUSES AN ENROLMENT AND NEVER AN AUTHENTICATION.** A key already on
+  // the entry goes on working when the role that produced it is switched off,
+  // for `webauthn.enabled`'s reason — an operator moving a knob must not lock
+  // somebody out of their own account, which for a `primary` key would be the
+  // whole account.
+  const allowed = webauthnPolicy.roleAllowed(role);
+  if (!allowed.ok) {
+    log.info('credentials: a "' + role + '" security key was NOT enrolled for ' +
+             name + '. ' + allowed.why);
+    return { ok: false, errors: [allowed.why] };
+  }
+  // HOW MANY. Several keys is the ordinary case and the specification expects
+  // it — an assertion NAMES the credential that produced it, so there is none
+  // of the ambiguity two shared secrets would have. The cap is here so that an
+  // enrolment loop cannot grow an unbounded attribute on a directory entry,
+  // which is a page that stops rendering and a flush that gets slower rather
+  // than anything security-shaped.
+  const held = keysOf(name);
+  const cap = webauthnPolicy.settings().maxKeysPerPerson;
+  if (held.length >= cap) {
+    log.info('credentials: ' + name + ' already holds ' + held.length +
+             ' security key(s) and webauthn.maxKeysPerPerson is ' + cap +
+             ', so another was not enrolled.');
+    return { ok: false,
+             errors: [name + ' already holds ' + held.length + ' security ' +
+                      'key(s), which is the most this realm allows ' +
+                      '(webauthn.maxKeysPerPerson). Remove one first.'] };
+  }
   const record = {
     credentialId: String(credential.credentialId),
     publicKeyJwk: credential.publicKeyJwk,
@@ -584,8 +694,38 @@ function addKey(username, credential, role) {
   }
   log.info('credentials: a security key was enrolled for ' + name +
            ' as a ' + role + ' credential.');
+  // ---------------------------------------------------------------------
+  // THE RECOVERY CODES, AND **ONLY FOR AN `mfa` KEY** (2026-09-10).
+  //
+  // The other call site is `confirmTotpEnrolment()`, and the condition here
+  // is the whole difference between them: a `primary` key is a way IN rather
+  // than a second factor, and issuing recovery codes for one would hand
+  // somebody a list of strings that no screen in this service ever asks for.
+  // The recovery screen stands in for a SECOND factor; an account whose only
+  // credential is a passwordless key has no second-factor step to stand in
+  // for, and its lost-key story is an operator and an activation link.
+  //
+  // It cannot fail the enrolment — see the TOTP call site — and it does
+  // nothing when a set already exists, so enrolling a fourth key leaves the
+  // list issued with the first one working.
+  // **NO SET IS ISSUED HERE ANY MORE (2026-09-11)**, and what replaces it is
+  // an ADVICE flag rather than silence. The header on the recovery-codes
+  // section carries the argument and what it costs; the short version is that
+  // a set is hashed now, and a hash can only be made while the code is in the
+  // clear — so issuing one here would store a credential the person never
+  // saw. `recoveryAdvised` is what `/portal/mfa` draws its standing prompt
+  // from.
+  const advised = role === 'mfa' && backupCodes.offered() &&
+                  !backupCodesOf(name);
   return { ok: true, username: name, role: role,
-           credentialId: record.credentialId };
+           credentialId: record.credentialId,
+           recoveryAdvised: advised,
+           recoveryNote: advised
+             ? 'This key is a SECOND factor, and you hold no recovery codes. ' +
+               'Generate a set from your account page before you need it — ' +
+               'this service will not issue one for you, and a set is shown ' +
+               'once.'
+             : '' };
 }
 
 // Update the signature counter after a successful assertion. WebAuthn's replay
@@ -629,12 +769,43 @@ function removeKey(username, credentialId) {
     return { ok: false, errors: ['No security key of that id is enrolled for ' +
                                  name + '.'] };
   }
-  // **REFUSE TO REMOVE THE LAST WAY IN.** A person whose only credential is
-  // this key would be locked out by their own click, and an identity provider
-  // that lets somebody do that has a support queue rather than a security
-  // control.
+  // ---------------------------------------------------------------------
+  // **REFUSE TO REMOVE THE LAST WAY IN — AND AN `mfa` KEY IS NOT ONE.**
+  //
+  // A person whose only credential is a PRIMARY key would be locked out by
+  // their own click, and an identity provider that lets somebody do that has a
+  // support queue rather than a security control. That much is unchanged.
+  //
+  // **THE ROLE OF THE KEY BEING REMOVED WAS NOT LOOKED AT, AND THAT WAS A REAL
+  // REFUSAL IN THE ONE CASE THE BUTTON EXISTS FOR (2026-09-10).** The guard
+  // asked only *will they have a way in afterwards*, which is the right
+  // question — and then answered it about a key that was never a way in.
+  // Removing a SECOND FACTOR cannot reduce the number of ways in, because it
+  // was not one: `mechanismsFor().usable` counts a password and `primary` keys
+  // and nothing else, which is the same table this function is reasoning
+  // about. So somebody with an `mfa` key and no password — the ordinary state
+  // in development mode, where no password is ever CHECKED and most people
+  // therefore have none SET — could not have that key cleared, and the
+  // refusal said *that is the only way they can sign in* about a credential
+  // that could not sign them in at all.
+  //
+  // It surfaced through the door it costs most at: `POST
+  // /admin-api/users/clear-key`, which `admin-ui/CLAUDE.md` calls the way back
+  // for somebody who lost their key. `tests/vendored/sts_webauthn_second_factor.js`
+  // found it in its first run, in the section after the one that made keys
+  // reachable at all.
+  //
+  // **THE PERSON MAY STILL BE UNABLE TO SIGN IN AFTERWARDS**, and that is not
+  // this function's to fix: an account holding only a second factor is one
+  // nobody can sign in to before the removal and after it. `usable: false` is
+  // what reports that, and an activation link is what ends it.
+  // ---------------------------------------------------------------------
+  const removed = keys.filter(function (one) {
+    return one.credentialId === String(credentialId);
+  })[0];
   const stillHasPrimary = kept.some(function (one) { return one.role === 'primary'; });
-  if (!hasPassword(name) && !stillHasPrimary) {
+  if (removed && removed.role === 'primary' &&
+      !hasPassword(name) && !stillHasPrimary) {
     return { ok: false, errors: ['That is the only way ' + name + ' can sign ' +
                                  'in — there is no password and no other ' +
                                  'primary security key. Set a password first, ' +
@@ -652,6 +823,1384 @@ function removeKey(username, credentialId) {
   return { ok: true, remaining: kept.length };
 }
 
+// ===========================================================================
+// THE AUTHENTICATOR APP (RFC 6238), ON THE SAME ENTRY AS EVERYTHING ELSE
+// (2026-09-10).
+//
+// The second second factor. `common/totp.js` owns the arithmetic and the
+// policy; this section owns WHERE THE SECRET LIVES and the two-step enrolment
+// that gets it there, because those are credential-store questions and this
+// file is the credential store.
+//
+// ---------------------------------------------------------------------------
+// SINGLE-VALUED, WHERE THE SECURITY KEY IS MULTI-VALUED, AND THE REASON IS IN
+// THE PROTOCOL RATHER THAN IN A POLICY.
+//
+// A WebAuthn assertion NAMES THE CREDENTIAL that produced it, so several keys
+// are one lookup. A TOTP code is six digits and names nothing. Two secrets
+// would mean trying both — which doubles what a guess can hit, makes RFC 6238
+// section 5.2's "accept a code once" ambiguous about which counter was spent,
+// and leaves a person who has lost one of two apps with no way to say which.
+//
+// So enrolling replaces, and every surface that draws the enrolment says so
+// before it draws the QR code. Somebody who scans a second one and leaves the
+// first app configured has an authenticator that silently stopped working.
+//
+// ---------------------------------------------------------------------------
+// THE SECRET CANNOT BE HASHED, WHICH MAKES IT THE ONLY CREDENTIAL HERE THAT IS
+// STORED IN A FORM THIS SERVICE CAN READ BACK.
+//
+// A password is verified by hashing what was presented and comparing — so
+// `userPassword` holds scrypt output and a directory dump is no use to
+// anybody. **Verifying a TOTP code means COMPUTING it**, so the shared secret
+// has to be recoverable. That is not a weakness in RFC 6238; it is what
+// "shared secret" means, and it is exactly why this mechanism is a SECOND
+// factor here and can never be made a first one.
+//
+// It changes what a directory dump is worth, though, and `/admin/ldap/directory`
+// prints every attribute of every entry by design. So:
+//
+//   * **IN PRODUCT MODE THE SECRET IS SEALED**, with `keystore.seal()` — the
+//     same AES-256-GCM under the same operator-supplied key-encryption key
+//     that protects the signing keys and every minted row. A dump then prints
+//     ciphertext, and an operator holding Admin Read cannot walk away able to
+//     generate somebody's codes.
+//   * **IN DEVELOPMENT MODE IT IS STORED AS THE BASE32 IT WAS SHOWN AS**, and
+//     that is deliberate rather than an omission. Development mode has an
+//     EPHEMERAL key-encryption key where it has one at all — generated per run
+//     and never written down — so sealing here would mean an authenticator
+//     that stops working at the next restart, silently, which is precisely
+//     the defect that moved the WebAuthn credentials out of an in-memory map
+//     and onto the entry. `keystore.persists()` is therefore the test, and not
+//     `keystore.sealed()`: the question is whether the KEY outlives the
+//     process, not whether there is one.
+//
+// **A RECORD SAYS WHICH IT IS** (`sealed`), so a store carried from one mode to
+// another is read correctly rather than being decoded as base32 and producing
+// codes that are wrong. A sealed secret that will not open is reported as an
+// unusable enrolment and never as a wrong code — see `totpOf()`.
+//
+// ---------------------------------------------------------------------------
+// ENROLMENT IS TWO STEPS AND THE FIRST ONE WRITES NOTHING.
+//
+// `beginEnrolment()` mints a secret and holds it IN MEMORY;
+// `confirmEnrolment()` takes a code, checks it against that secret, and only
+// then writes the attribute. **An unconfirmed secret on somebody's entry would
+// be a second factor they cannot produce** — a person who opens the page,
+// never scans the code and comes back tomorrow would be locked out of their
+// own account by a form they abandoned. The pending record expires
+// (`totp.enrolmentTtlMinutes`) and is per realm, like every other pending
+// record in this service.
+// ===========================================================================
+
+// RFC 4519 has no attribute for this and neither does any other schema worth
+// borrowing, so it is `sts`-prefixed like the security key beside it. The value
+// is one JSON object; `ldap/ldap_server.js` writes it single-valued.
+const TOTP_ATTRIBUTE = 'stsTotpCredential';
+
+// The secret that has been SHOWN and not yet proved. Per realm, for the reason
+// every other pending record here is: a realm is a logical copy of this
+// service, and an enrolment begun in one is not an enrolment in another.
+//
+// **IT CARRIES NO `persist:` NAME, WHERE `authn.js`'s THREE PENDING MAPS ALL
+// DO, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.** A `persist` handle
+// journals the store, so in product mode on postgres these rows would be
+// written down and replicated to every other process — and what is in them is
+// an UNCONFIRMED SHARED SECRET, a credential nobody has yet proved they hold,
+// for an enrolment that will most often be abandoned. A pending
+// authentication record is a `returnTo` and a few flags; this is the second
+// factor itself.
+//
+// What it costs is that an enrolment does not survive a restart and does not
+// cross to another request worker. Neither matters: it lives ten minutes
+// (`totp.enrolmentTtlMinutes`), the only surfaces that read it hold worker
+// affinity (`/portal` is session-bearing, and the pool pins a cookie-less
+// browser on its first answer), and the failure mode is a person pressing
+// *Set up* again — against a restart that would otherwise have left a live
+// secret on disk for a setup nobody finished.
+const pendingTotp = realms.map();
+
+function pendingKeyOf(username) {
+  return String(username || '').trim().toLowerCase();
+}
+
+function sweepPendingTotp() {
+  const now = Date.now();
+  pendingTotp.forEach(function (value, key) {
+    if (!value || Number(value.expires || 0) < now) {
+      pendingTotp.delete(key);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// READ THE ENROLMENT. Null where there is none, and null WITH A LOG LINE where
+// there is one this process cannot use — a secret sealed under a
+// key-encryption key that has since been rotated, most likely.
+//
+// **AN UNREADABLE ENROLMENT IS NOT "NO ENROLMENT"**, and the difference
+// reaches the sign-in screen: `mechanismsFor()` reports it separately so that
+// somebody is told their authenticator cannot be checked rather than being
+// signed in with one factor as though they had never enrolled one. That is the
+// same distinction `keystore.open()`'s comment draws about a session row, with
+// the opposite conclusion, because the consequences are opposite: dropping an
+// unreadable SESSION costs somebody a sign-in, and dropping an unreadable
+// SECOND FACTOR silently removes a security control.
+// ---------------------------------------------------------------------------
+function totpOf(username) {
+  const name = String(username || '').trim();
+  log.debug('Entering totpOf(). username=' + name);
+  if (!directory || typeof directory.readTotp !== 'function') {
+    log.debug('Leaving totpOf(). No store.');
+    return null;
+  }
+  let raw = '';
+  try {
+    raw = directory.readTotp(name) || '';
+  } catch (e) {
+    log.error('credentials: reading the authenticator enrolment for ' + name +
+              ' threw: ' + e.message);
+    return null;
+  }
+  if (!raw) {
+    log.debug('Leaving totpOf(). None enrolled.');
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    log.warn('credentials: the ' + TOTP_ATTRIBUTE + ' value on ' + name +
+             ' is not JSON this service wrote and is being reported as an ' +
+             'unusable enrolment rather than ignored: ' + e.message);
+    return { unusable: true, why: 'the stored value is not readable' };
+  }
+  if (parsed && parsed.sealed) {
+    const opened = keystore.open(parsed.secret, 'totp-secret');
+    if (!opened) {
+      log.warn('credentials: the authenticator secret for ' + name + ' is ' +
+               'sealed and will not open under this process\'s ' +
+               'key-encryption key. It is reported as UNUSABLE rather than ' +
+               'as absent, because absent would sign them in with one ' +
+               'factor.');
+      return { unusable: true,
+               why: 'the stored secret is sealed under a different ' +
+                    'key-encryption key' };
+    }
+    parsed.secret = opened;
+  }
+  log.debug('Leaving totpOf(). An authenticator is enrolled.');
+  return parsed;
+}
+
+function hasTotp(username) {
+  const record = totpOf(username);
+  return !!record;
+}
+
+// Write it, sealing where the key outlives the process. One place, so that the
+// two callers — a confirmation and a counter advance — cannot disagree about
+// what is on the entry.
+function writeTotpRecord(username, record) {
+  log.debug('Entering writeTotpRecord().');
+  const name = String(username || '').trim();
+  const out = Object.assign({}, record);
+  // `keystore.persists()` and not `keystore.sealed()`. See the header: the
+  // question is whether the KEY survives a restart, and in development it does
+  // not even when there is one.
+  if (keystore.persists()) {
+    const sealedSecret = keystore.seal(out.secret, 'totp-secret');
+    if (!sealedSecret) {
+      log.error('credentials: the authenticator secret for ' + name + ' could ' +
+                'not be sealed, so it was NOT written. Storing it in the ' +
+                'clear in product mode would put a working second factor in ' +
+                'every directory dump.');
+      return { ok: false, errors: ['The shared secret could not be encrypted, ' +
+                                   'so it was not stored.'] };
+    }
+    out.secret = sealedSecret;
+    out.sealed = true;
+  } else {
+    out.sealed = false;
+  }
+  let written = false;
+  try {
+    written = directory.writeTotp(name, JSON.stringify(out));
+  } catch (e) {
+    log.error('credentials: writing the authenticator enrolment for ' + name +
+              ' threw: ' + e.message);
+    return { ok: false, errors: ['The credential store refused the write: ' +
+                                 e.message] };
+  }
+  if (!written) {
+    return { ok: false, errors: ['There is nobody called "' + name + '" in ' +
+                                 'this realm\'s directory.'] };
+  }
+  log.debug('Leaving writeTotpRecord(). Written.');
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// STEP ONE: MINT A SECRET AND SHOW IT. Nothing is written to the directory.
+//
+// **IT REFUSES FOR SOMEBODY WHO DOES NOT EXIST IN PRODUCT MODE**, which is
+// requirement two applied where it belongs — the same refusal the WebAuthn
+// enrolment makes, for the same reason: a credential enrolled for an unknown
+// name would create that name, and creating objects because something
+// referenced them is what product mode removes.
+// ---------------------------------------------------------------------------
+function beginTotpEnrolment(username, opts) {
+  const name = String(username || '').trim();
+  log.debug('Entering beginTotpEnrolment(). username=' + name);
+  const options = opts || {};
+  if (!directory || typeof directory.writeTotp !== 'function') {
+    return { ok: false, errors: ['No credential store is installed, so an ' +
+                                 'authenticator app cannot be enrolled.'] };
+  }
+  if (!totp.offered()) {
+    return { ok: false, errors: ['Authenticator apps are turned off on this ' +
+                                 'service (totp.enabled).'] };
+  }
+  if (!name) {
+    return { ok: false, errors: ['There is no name to enrol an authenticator ' +
+                                 'for.'] };
+  }
+  if (!mode.autoCreates() && !hasEntry(name)) {
+    log.info('credentials: product mode, so an authenticator was NOT enrolled ' +
+             'for "' + name + '" — there is no entry for them.');
+    return { ok: false, errors: ['There is nobody called "' + name + '" in ' +
+                                 'this realm\'s directory. In product mode ' +
+                                 'every referenced object must exist first.'] };
+  }
+  const live = totp.settings();
+  const secret = totp.generateSecret();
+  sweepPendingTotp();
+  pendingTotp.set(pendingKeyOf(name), {
+    secret: secret,
+    algorithm: live.algorithm,
+    digits: live.digits,
+    period: live.period,
+    expires: Date.now() + live.enrolmentTtlMs
+  });
+  const issuer = totp.issuerFor(options.base);
+  log.info('credentials: an authenticator enrolment was started for ' + name +
+           '. Nothing is stored until a code confirms it.');
+  log.debug('Leaving beginTotpEnrolment(). Secret minted and held.');
+  return {
+    ok: true, username: name, secret: secret, issuer: issuer,
+    grouped: totp.grouped(secret),
+    algorithm: live.algorithm, digits: live.digits, period: live.period,
+    uri: totp.otpauthUri({ issuer: issuer, account: name, secret: secret,
+                           algorithm: live.algorithm, digits: live.digits,
+                           period: live.period }),
+    expiresAt: Date.now() + live.enrolmentTtlMs
+  };
+}
+
+// What is waiting, if anything. Read by the page that redraws the QR code
+// after a wrong code was typed — regenerating the secret there would mean a
+// person who mistypes once has to scan again.
+function pendingTotpFor(username) {
+  sweepPendingTotp();
+  const held = pendingTotp.get(pendingKeyOf(username));
+  return held || null;
+}
+
+function abandonTotpEnrolment(username) {
+  pendingTotp.delete(pendingKeyOf(username));
+}
+
+// ---------------------------------------------------------------------------
+// STEP TWO: A CODE PROVES THE APP HAS IT, AND ONLY THEN IS IT STORED.
+//
+// The counter that was accepted is stored with it, so that the very code used
+// to confirm the enrolment cannot also be used to sign in — RFC 6238 section
+// 5.2 applied from the first moment rather than from the second.
+// ---------------------------------------------------------------------------
+function confirmTotpEnrolment(username, code) {
+  const name = String(username || '').trim();
+  log.debug('Entering confirmTotpEnrolment(). username=' + name);
+  const held = pendingTotpFor(name);
+  if (!held) {
+    log.debug('Leaving confirmTotpEnrolment(). Nothing pending.');
+    return { ok: false, reason: 'expired',
+             errors: ['That enrolment has expired. Start again and scan the ' +
+                      'new code.'] };
+  }
+  const verdict = totp.verify(held, code);
+  if (!verdict.ok) {
+    log.info('credentials: an authenticator enrolment for ' + name +
+             ' was not confirmed (' + verdict.reason + ').');
+    log.debug('Leaving confirmTotpEnrolment(). The code did not verify.');
+    return { ok: false, reason: verdict.reason, errors: [verdict.detail] };
+  }
+  const written = writeTotpRecord(name, {
+    secret: held.secret,
+    algorithm: held.algorithm, digits: held.digits, period: held.period,
+    enrolledAt: Date.now(),
+    // SPENT ALREADY. The confirmation code is a code, and a code is accepted
+    // once.
+    lastCounter: verdict.counter,
+    lastUsedAt: Date.now(),
+    label: 'authenticator app'
+  });
+  if (!written.ok) {
+    return written;
+  }
+  abandonTotpEnrolment(name);
+  log.info('credentials: ' + name + ' enrolled an authenticator app as a ' +
+           'second factor.');
+  // ---------------------------------------------------------------------
+  // THE RECOVERY CODES ARE NOT ISSUED HERE ANY MORE (2026-09-11), AND THAT IS
+  // THE REVERSAL THE SECTION HEADER ARGUES.
+  //
+  // This was one of exactly two places a set was created, as a side effect of
+  // an enrolment succeeding. It cannot be, now that a set is HASHED: the hash
+  // has to be made while the code is in the clear, so an automatic issue would
+  // write a credential at a moment nobody was looking at it — and the person
+  // would hold ten strings they had never seen.
+  //
+  // **WHAT REPLACES IT IS AN ADVICE FLAG AND NOT SILENCE.** The old
+  // arrangement protected a real population — the people who never think to
+  // ask are the ones who need it — and dropping that protection outright would
+  // be a worse service. `recoveryAdvised` is reported on this result and by
+  // `mechanismsFor()`, and `/portal/mfa` draws a standing prompt from it.
+  const advised = backupCodes.offered() && !backupCodesOf(name);
+  log.debug('Leaving confirmTotpEnrolment(). Enrolled.');
+  return { ok: true, username: name,
+           recoveryAdvised: advised,
+           recoveryNote: advised
+             ? 'You now have a second factor and no recovery codes. Generate ' +
+               'a set from your account page before you need it — this ' +
+               'service will not issue one for you, and a set is shown once.'
+             : '' };
+}
+
+// ---------------------------------------------------------------------------
+// VERIFY A CODE AT A SIGN-IN, AND SPEND IT.
+//
+// **THE COUNTER IS ADVANCED HERE AND NOWHERE ELSE**, which is the same
+// arrangement `noteKeyUsed()` has with the WebAuthn signature counter — one
+// place records what was spent, so a second call site cannot forget to. A
+// failure to record it is LOGGED and does not undo the sign-in, for
+// `noteKeyUsed()`'s reason: the authentication has already succeeded, and the
+// cost is that one code could be replayed within its window rather than that
+// somebody is refused.
+//
+// **IT IS REAL IN BOTH MODES.** See `common/totp.js`'s header — this is the
+// SPNEGO exception read a second time, and the only other place in this
+// service where a credential presented by an end user is actually checked.
+// ---------------------------------------------------------------------------
+function verifyTotp(username, code, opts) {
+  const name = String(username || '').trim();
+  log.debug('Entering verifyTotp(). username=' + name);
+  const options = opts || {};
+  const record = totpOf(name);
+  if (!record) {
+    log.debug('Leaving verifyTotp(). Nothing enrolled.');
+    return { ok: false, reason: 'none',
+             detail: 'No authenticator app is enrolled for ' + name + '.' };
+  }
+  if (record.unusable) {
+    log.error('credentials: ' + name + ' holds an authenticator enrolment ' +
+              'this process cannot read (' + record.why + '), so the second ' +
+              'factor cannot be checked. They are refused rather than let ' +
+              'through on one factor.');
+    log.debug('Leaving verifyTotp(). The enrolment is unusable.');
+    return { ok: false, reason: 'unusable',
+             detail: 'Your authenticator enrolment cannot be read by this ' +
+                     'service, so it cannot be checked. An administrator ' +
+                     'has to clear it on your row under /admin/users and ' +
+                     'you can enrol again.' };
+  }
+  const verdict = totp.verify(record, code, options);
+  if (!verdict.ok) {
+    log.info('credentials: a code for ' + name + ' was refused (' +
+             verdict.reason + ').');
+    log.debug('Leaving verifyTotp(). Refused.');
+    return { ok: false, reason: verdict.reason, detail: verdict.detail };
+  }
+  record.lastCounter = verdict.counter;
+  record.lastUsedAt = Date.now();
+  const written = writeTotpRecord(name, record);
+  if (!written.ok) {
+    // NOT a refusal. See the header: the code verified, and failing to write
+    // the counter is a defect in the store rather than a fact about the person
+    // standing at the screen.
+    log.error('credentials: the accepted step for ' + name + ' could not be ' +
+              'recorded, so that code could be replayed inside its window: ' +
+              (written.errors || []).join(' '));
+  }
+  log.debug('Leaving verifyTotp(). Accepted at step ' + verdict.counter + '.');
+  return { ok: true, counter: verdict.counter, drift: verdict.drift };
+}
+
+// ---------------------------------------------------------------------------
+// REMOVE IT. **THIS ONE CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which
+// is the whole difference from `removeKey()` beside it: a TOTP secret is never
+// the only way in, because it can never be a primary credential. What removing
+// it does is drop the account to one factor, which is a real change and is
+// therefore audited by every caller.
+//
+// It is used by the person themselves on `/portal/mfa` and by an operator on
+// the operator's Clear on their row under `/admin/users` — the second being
+// what somebody who has lost their phone
+// needs, since there is no other way back: the secret is on a device this
+// service cannot reach.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WHO HOLDS WHAT, ACROSS THE WHOLE REALM (2026-09-10).
+//
+// **THE ONE FUNCTION HERE THAT ANSWERS ABOUT SOMEBODY OTHER THAN A NAMED
+// PERSON**, written for the roster on `/admin/users` — the operator's view —
+// and for the
+// management API resource beside it. Everything else in this file is asked
+// about one name because every other caller has one.
+//
+// It is HERE and not in `admin-ui/admin.js` for the reason this file exists at
+// all: *who holds a credential* is a credential-store question, and the console
+// answering it by reading `stsTotpCredential` off entries itself would be a
+// second implementation of what an enrolment IS — including the sealed/clear
+// distinction, which the console has no business knowing about.
+//
+// **IT IS THE UNION OF TWO POPULATIONS AND NEITHER ALONE WOULD DO.** The
+// directory's own people are the authoritative list; but a service whose
+// directory hook is missing still has people it has SEEN, and — the case that
+// forced this — somebody provisioned through SCIM who spent an activation link,
+// enrolled an authenticator and has never signed in is in the directory and in
+// no other register. The caller passes the names it knows and this adds the
+// rest.
+//
+// **IT IS CAPPED**, for `/portal/applications`'s reason: this walks the realm
+// and reads an attribute per person on the one thread that answers every socket
+// this service holds, and a directory with fifty thousand entries in it is a
+// state this repository's own bulk-load jobs create deliberately.
+// ---------------------------------------------------------------------------
+const FACTOR_SCAN_LIMIT = 5000;
+
+function secondFactorHolders(alsoKnown, opts) {
+  log.debug('Entering secondFactorHolders().');
+  const options = opts || {};
+  const limit = Math.max(1, Number(options.limit || FACTOR_SCAN_LIMIT));
+  const seen = new Map();
+  const add = function (name, source) {
+    const value = String(name == null ? '' : name).trim();
+    if (!value) return;
+    const key = value.toLowerCase();
+    if (!seen.has(key)) {
+      seen.set(key, { username: value, inDirectory: false, known: false });
+    }
+    seen.get(key)[source] = true;
+  };
+  let scanned = 0;
+  let capped = false;
+  if (directory && typeof directory.persons === 'function') {
+    let people = [];
+    try {
+      people = directory.persons() || [];
+    } catch (e) {
+      log.error('credentials: listing this realm\'s people threw: ' + e.message);
+    }
+    scanned = people.length;
+    if (people.length > limit) {
+      capped = true;
+      people = people.slice(0, limit);
+    }
+    people.forEach(function (name) { add(name, 'inDirectory'); });
+  }
+  (alsoKnown || []).forEach(function (name) { add(name, 'known'); });
+
+  const rows = [];
+  seen.forEach(function (row) {
+    const mechanisms = mechanismsFor(row.username);
+    rows.push({
+      username: row.username,
+      inDirectory: row.inDirectory,
+      known: row.known,
+      password: mechanisms.password,
+      primaryKeys: mechanisms.primaryKeys,
+      mfaKeys: mechanisms.mfaKeys,
+      totp: mechanisms.totp,
+      totpUsable: mechanisms.totpUsable,
+      totpDetail: mechanisms.totpDetail,
+      // THE RECOVERY CODES AS A COUNT AND NEVER AS CODES. This roster is the
+      // operator's view and is drawn on `/admin/users`, which must never show
+      // a working second factor — `backupCodeStatus()` is what the whole row
+      // is built from and it carries none.
+      backupCodes: mechanisms.backupCodes,
+      // Whether this person should be told to generate a set — the flag that
+      // replaced the automatic issue on 2026-09-11, on the roster so that an
+      // operator can see the population it is true of rather than one row at
+      // a time.
+      recoveryAdvised: mechanisms.recoveryAdvised,
+      mfaRequired: mechanisms.mfaRequired,
+      secondFactor: mechanisms.secondFactor,
+      usable: mechanisms.usable
+    });
+  });
+  rows.sort(function (a, b) {
+    return a.username.toLowerCase() < b.username.toLowerCase() ? -1 : 1;
+  });
+  log.debug('Leaving secondFactorHolders(). ' + rows.length + ' person/people.');
+  return { rows: rows, scanned: scanned, capped: capped, limit: limit,
+           store: !!directory };
+}
+
+function removeTotp(username) {
+  const name = String(username || '').trim();
+  log.debug('Entering removeTotp(). username=' + name);
+  if (!directory || typeof directory.writeTotp !== 'function') {
+    return { ok: false, errors: ['No credential store is installed.'] };
+  }
+  abandonTotpEnrolment(name);
+  if (!totpOf(name)) {
+    log.debug('Leaving removeTotp(). There was none.');
+    return { ok: false, errors: ['No authenticator app is enrolled for ' +
+                                 name + '.'] };
+  }
+  try {
+    directory.writeTotp(name, null);
+  } catch (e) {
+    return { ok: false, errors: ['The credential store refused the write: ' +
+                                 e.message] };
+  }
+  log.info('credentials: the authenticator enrolment for ' + name +
+           ' was removed. That account is down to one factor.');
+  log.debug('Leaving removeTotp(). Removed.');
+  return { ok: true, username: name };
+}
+
+// ===========================================================================
+// RECOVERY CODES, ON THE SAME ENTRY AS EVERYTHING ELSE (2026-09-10).
+//
+// The THIRD second factor, and the one nobody has to choose: a set is issued
+// automatically the first time a person comes to hold either of the other two.
+// `common/backup_codes.js` owns what a code IS — the alphabet, the length, the
+// comparison; this section owns WHERE THE SET LIVES, WHEN IT IS ISSUED and
+// what spending one does, because those are credential-store questions and
+// this file is the credential store.
+//
+// ---------------------------------------------------------------------------
+// IT IS ISSUED WHEN THE PERSON ASKS TO SEE ONE, IN TWO STEPS, AND NOTHING IS
+// STORED UNTIL THEY SAY THEY HAVE KEPT IT (2026-09-11).
+//
+// **THIS SECTION SAID THE OPPOSITE FOR AS LONG AS IT EXISTED AND THE OLD
+// ARGUMENT IS KEPT HERE BECAUSE IT IS STILL TRUE.** It read:
+//
+// > IT IS ISSUED BY AN ACT AND NOT BY A REQUEST, AND THAT IS THE WHOLE
+// > FEATURE. `ensureBackupCodes()` is called from exactly two places — the end
+// > of `confirmTotpEnrolment()`, and `addKey()` when the role is `mfa`. There
+// > is no "generate my codes" door anywhere. THE DEFECT THAT ARRANGEMENT
+// > CLOSES IS A CATEGORY OF ACCOUNT, NOT A BUG: making recovery a thing a
+// > person has to remember to ask for produces exactly the population it
+// > exists to protect, one person at a time — the ones who did not ask are
+// > precisely the ones who will need it.
+//
+// **THAT COST IS REAL AND IT HAS BEEN PAID RATHER THAN ARGUED AWAY.** What
+// replaces the automatic issue is not silence: enrolling a second factor now
+// leaves `/portal/mfa` carrying a standing, unmissable prompt to generate a
+// set, and `mechanismsFor()` reports `recoveryAdvised` so any surface can
+// draw it. A nudge somebody can ignore is weaker than a set they were handed,
+// and that is the trade this change makes deliberately.
+//
+// **WHY IT HAD TO CHANGE**: a set is HASHED now (below), and a hash can only
+// be made from a code at the moment it exists in the clear. An automatic
+// issue would have to hash and store a list at a moment nobody was looking at
+// it — which is a credential the person never saw, and the one thing worse
+// than a way back nobody asked for.
+//
+// ---------------------------------------------------------------------------
+// TWO STEPS, AND THE FIRST WRITES NOTHING.
+//
+// `beginBackupCodes()` generates a set and puts it in a PENDING map; nothing
+// reaches the directory. `confirmBackupCodes()` takes that pending set, hashes
+// every code and writes the record. **This is `beginTotpEnrolment()` /
+// `confirmTotpEnrolment()` beside it, shape for shape, and for its reason**: a
+// set written before the person said they had kept it is a second factor they
+// cannot produce — somebody who opens the page, sees ten strings and closes
+// the tab would otherwise have replaced a working list with one they never
+// read.
+//
+// So the honest states are three and the page draws all of them: no set, a set
+// SHOWN AND NOT YET CONFIRMED (which is not a credential and works nowhere),
+// and a set confirmed.
+//
+// **A PENDING SET EXPIRES**, on `backupCodes.pendingTtlS`, and expiring it
+// changes nothing about a set already confirmed. A person who walked away
+// mid-flow comes back to the set they had.
+//
+// **AND CONFIRMING REPLACES.** A second set confirmed over a first is the only
+// way a person reaches one, so the page says — before it generates anything —
+// that the list they are holding stops working. That is the sharp edge of this
+// design and it is stated where the button is, not here.
+//
+// ---------------------------------------------------------------------------
+// HASHED AND NOT ENCRYPTED, WHICH IS `userPassword`'s RULE AND THE OPPOSITE OF
+// THE TOTP SECRET BESIDE IT.
+//
+// `common/crypto.js` states it: a secret this service VERIFIES is hashed, a
+// secret it must PRESENT cannot be. A recovery code used to be both, because
+// `/portal/mfa` let a person read their remaining codes back. **It does not
+// any more** — the set is shown ONCE, at the moment it is generated — so the
+// code is verify-only and the rule points the other way.
+//
+// `backupCodes.hash()` is `crypto.hashSecret()`, which is scrypt at N=2^15 and
+// is the same function `userPassword` goes through (rule 3r: one place). The
+// consequence that had to be designed around is the COST: one hash is 72ms on
+// this machine and a WRONG code must be compared against every code in the
+// set, which measured **906ms of blocked event loop** for a default set of
+// ten. So `verifyBackupCodeAsync()` exists and the sign-in door uses it — the
+// candidates go to the WORKER POOL, in parallel.
+//
+// **A SET WRITTEN BY AN OLDER BUILD STILL WORKS**, and that is not
+// compatibility for its own sake: somebody is holding it on paper, and the one
+// thing this mechanism may never do is stop working with nothing having said
+// so. `backupCodes.isHash()` tells the two forms apart PER ENTRY, a legacy
+// entry is compared as a string exactly as it was, and the record is reported
+// as `legacy` so `/portal/mfa` can invite the person to generate a hashed set
+// — an invitation rather than a migration, because migrating would mean
+// writing hashes of codes at a moment nobody is looking, which is the thing
+// the paragraph above refuses.
+//
+// **A SET THAT WILL NOT OPEN IS REPORTED AS UNUSABLE AND NEVER AS ABSENT**,
+// for `totpOf()`'s reason. It matters less than it did — a hashed vault is not
+// sealed, so there is nothing to fail to open — and it is kept for the legacy
+// sealed sets, which are exactly the ones somebody is holding on paper.
+//
+// ---------------------------------------------------------------------------
+// THE WHOLE SET IS ONE SEALED BLOB AND THE COUNTS ARE OUTSIDE IT.
+//
+// `vault` is a JSON array of `{ code, usedAt }` — sealed as one string — and
+// `total`, `remaining`, `generatedAt` and `lastUsedAt` sit beside it in the
+// clear. Two reasons, and the second is the one that decided it:
+//
+//   * A per-code seal would be N ciphertexts whose LENGTHS are a list of the
+//     code lengths, and whose count is the number of codes. Nothing secret,
+//     but nothing gained either.
+//   * **Every page that reports on this needs the counts and almost none of
+//     them needs the codes.** `/admin/users` says "7 of 10 unused" for an
+//     operator who must never be shown the codes themselves; the sign-in
+//     screen decides whether to offer the *use a recovery code* link at all.
+//     Making those readable without opening the vault means the console can
+//     be honest about an account whose codes this process cannot decrypt.
+//
+// **THE VAULT IS AUTHORITATIVE AND THE COUNTS ARE A RENDERING OF IT**, rewritten
+// from the array on every write. A reader that needs to be right about how many
+// are left opens the vault; a reader that needs to draw a page reads the count.
+// ===========================================================================
+
+// Invented, like the three beside it — nothing in RFC 4519 or any other schema
+// worth borrowing has an attribute for a recovery code, because the notion
+// postdates every LDAP schema document by decades. Single-valued: the value is
+// one JSON object and `ldap/ldap_server.js` assigns rather than appends, for
+// `stsTotpCredential`'s reason — a second value would be a second set, and a
+// code names neither.
+const BACKUP_CODES_ATTRIBUTE = 'stsBackupCodes';
+
+// ---------------------------------------------------------------------------
+// READ THE SET. Null where there is none, and `{ unusable: true }` where there
+// is one this process cannot open — see the header: absent would let a second
+// set be issued over a list somebody is holding on paper.
+// ---------------------------------------------------------------------------
+function backupCodesOf(username) {
+  const name = String(username || '').trim();
+  log.debug('Entering backupCodesOf(). username=' + name);
+  if (!directory || typeof directory.readBackupCodes !== 'function') {
+    log.debug('Leaving backupCodesOf(). No store.');
+    return null;
+  }
+  let raw = '';
+  try {
+    raw = directory.readBackupCodes(name) || '';
+  } catch (e) {
+    log.error('credentials: reading the recovery codes for ' + name +
+              ' threw: ' + e.message);
+    log.debug('Leaving backupCodesOf(). It threw.');
+    return null;
+  }
+  if (!raw) {
+    log.debug('Leaving backupCodesOf(). None issued.');
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    log.warn('credentials: the ' + BACKUP_CODES_ATTRIBUTE + ' value on ' +
+             name + ' is not JSON this service wrote and is being reported ' +
+             'as an unusable set rather than ignored: ' + e.message);
+    log.debug('Leaving backupCodesOf(). Not JSON.');
+    return { unusable: true, why: 'the stored value is not readable' };
+  }
+  let vault = parsed.vault;
+  if (parsed && parsed.sealed) {
+    const opened = keystore.open(parsed.vault, 'recovery-codes');
+    if (!opened) {
+      log.warn('credentials: the recovery codes for ' + name + ' are sealed ' +
+               'and will not open under this process\'s key-encryption key. ' +
+               'They are reported as UNUSABLE rather than as absent, because ' +
+               'absent would let a second set be issued over the one that ' +
+               'person is holding.');
+      log.debug('Leaving backupCodesOf(). Sealed under another key.');
+      return { unusable: true, sealed: true,
+               total: Number(parsed.total || 0),
+               remaining: Number(parsed.remaining || 0),
+               generatedAt: Number(parsed.generatedAt || 0),
+               lastUsedAt: Number(parsed.lastUsedAt || 0),
+               why: 'the stored set is sealed under a different ' +
+                    'key-encryption key' };
+    }
+    vault = opened;
+  }
+  let codes;
+  try {
+    codes = JSON.parse(vault);
+  } catch (e) {
+    log.warn('credentials: the recovery code list for ' + name + ' opened ' +
+             'and is not the array this service writes: ' + e.message);
+    log.debug('Leaving backupCodesOf(). The vault is not an array.');
+    return { unusable: true, why: 'the stored code list is not readable' };
+  }
+  if (!Array.isArray(codes)) {
+    log.debug('Leaving backupCodesOf(). The vault is not an array.');
+    return { unusable: true, why: 'the stored code list is not a list' };
+  }
+  // **NORMALISED TO ONE SHAPE HERE, WHICH IS WHY NOTHING ABOVE THIS LINE
+  // BRANCHES ON THE VERSION.** A version 2 entry is `{ hash, usedAt }` and a
+  // version 1 entry — written before 2026-09-11, and possibly printed and
+  // filed by its owner — is `{ code, usedAt }`. Both become `{ hash, usedAt }`
+  // with `hashed` saying which the stored value really is, so every reader
+  // below gets one field and the ONE place that has to care is the comparison
+  // in `verifyBackupCode()`.
+  //
+  // The legacy form is not rewritten. Migrating it would mean hashing the
+  // codes — which this service can still read — and that is a set of hashes
+  // made at a moment nobody was looking at the codes, which is the thing the
+  // header refuses. The portal invites the person to generate a new set
+  // instead.
+  const normalised = codes.map(function (one) {
+    const stored = one && one.hash !== undefined ? one.hash : (one || {}).code;
+    return { hash: String(stored || ''), usedAt: Number((one || {}).usedAt || 0) };
+  });
+  const legacy = normalised.some(function (one) {
+    return one.hash && !backupCodes.isHash(one.hash);
+  });
+  log.debug('Leaving backupCodesOf(). ' + normalised.length + ' code(s), ' +
+            normalised.filter(function (one) { return !one.usedAt; }).length +
+            ' unused, hashed=' + !legacy + '.');
+  return {
+    codes: normalised,
+    hashed: !legacy,
+    legacy: legacy,
+    sealed: !!parsed.sealed,
+    generatedAt: Number(parsed.generatedAt || 0),
+    lastUsedAt: Number(parsed.lastUsedAt || 0)
+  };
+}
+
+// ---------------------------------------------------------------------------
+// WRITE THE SET, sealing where the key outlives the process. ONE place, so
+// that an issue and a spend cannot disagree about what is on the entry — the
+// same arrangement `writeTotpRecord()` has with its two callers.
+//
+// The counts are computed HERE from the array rather than taken from the
+// caller, which is what makes the header's "the vault is authoritative and the
+// counts are a rendering of it" true by construction rather than by everybody
+// remembering.
+// ---------------------------------------------------------------------------
+function writeBackupCodesRecord(username, codes, meta) {
+  log.debug('Entering writeBackupCodesRecord().');
+  const name = String(username || '').trim();
+  const info = meta || {};
+  // **EVERY ENTRY IS A HASH AND THE CALLER HAS ALREADY MADE IT.** Hashing
+  // here would put scrypt inside the one function every spend goes through,
+  // so marking a code used would re-hash the nine beside it — 650ms to record
+  // something the caller already knew. `confirmBackupCodes()` hashes once, at
+  // the only moment the codes exist in the clear.
+  //
+  // `hash` is carried verbatim, including a LEGACY entry that is a code
+  // rather than a hash: a spend rewrites the whole array, and re-writing a
+  // legacy set as anything but itself would silently break the list its owner
+  // is holding on paper.
+  const list = (codes || []).map(function (one) {
+    return { hash: String(one.hash || ''), usedAt: Number(one.usedAt || 0) };
+  });
+  const plain = JSON.stringify(list);
+  const out = {
+    version: 2,
+    total: list.length,
+    remaining: list.filter(function (one) { return !one.usedAt; }).length,
+    generatedAt: Number(info.generatedAt || Date.now()),
+    lastUsedAt: Number(info.lastUsedAt || 0),
+    // **NOT SEALED, AND THAT IS THE POINT OF THE CHANGE RATHER THAN AN
+    // OMISSION.** The vault used to be encrypted under the key-encryption key
+    // so that `/portal/mfa` could show the codes back; it holds scrypt hashes
+    // now, which are not secret — `userPassword` sits in the clear beside
+    // them for exactly the same reason. It also removes the failure mode the
+    // old code had to refuse on: a set that could not be sealed was not
+    // written at all, and a set that would not OPEN was a live credential
+    // nobody could check.
+    sealed: false,
+    hashed: true,
+    vault: plain
+  };
+  let written = false;
+  try {
+    written = directory.writeBackupCodes(name, JSON.stringify(out));
+  } catch (e) {
+    log.error('credentials: writing the recovery codes for ' + name +
+              ' threw: ' + e.message);
+    log.debug('Leaving writeBackupCodesRecord(). It threw.');
+    return { ok: false, errors: ['The credential store refused the write: ' +
+                                 e.message] };
+  }
+  if (!written) {
+    log.debug('Leaving writeBackupCodesRecord(). No entry.');
+    return { ok: false, errors: ['There is nobody called "' + name + '" in ' +
+                                 'this realm\'s directory.'] };
+  }
+  log.debug('Leaving writeBackupCodesRecord(). ' + out.remaining + ' of ' +
+            out.total + ' unused, sealed=' + out.sealed + '.');
+  return { ok: true, total: out.total, remaining: out.remaining };
+}
+
+// ===========================================================================
+// GENERATING A SET: TWO STEPS, AND THE FIRST WRITES NOTHING (2026-09-11).
+//
+// This replaces `ensureBackupCodes()`, which issued a set as a SIDE EFFECT of
+// enrolling a second factor and is gone. The header above carries the old
+// argument and what dropping it costs; what follows is the shape that replaced
+// it.
+//
+// **IT IS `beginTotpEnrolment()` / `confirmTotpEnrolment()` AGAIN.** That pair
+// is two doors away in this same file and the reasoning is identical: an
+// unconfirmed secret written to somebody's entry is a second factor they
+// cannot produce. Here it is sharper still, because confirming REPLACES — so a
+// set written before the person said they had kept it would replace a working
+// list with one they never read.
+// ===========================================================================
+
+// THE PENDING SETS. `realms.map()` for the reason every store in this service
+// is: a set begun in one realm must not be confirmable in another, and the
+// partition is a property of the declaration rather than of anybody
+// remembering. Keyed by a handle rather than by username, so that two tabs
+// cannot confirm each other's set — the handle is what the form carries back.
+const pendingBackupCodes = realms.map();
+
+// A pending set is a live credential in this process's memory and nowhere
+// else. It expires for the same reason an authorization code does: the window
+// in which it can be confirmed should be the window in which somebody is
+// actually looking at the page.
+function pendingTtlMs() {
+  return Math.max(60, Math.min(3600,
+    Number(config.value('backupCodes.pendingTtlS') || 900))) * 1000;
+}
+
+function forgetExpiredPending() {
+  const now = Date.now();
+  pendingBackupCodes.forEach(function (record, handle) {
+    if (record.expires < now) {
+      pendingBackupCodes.delete(handle);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// STEP ONE: generate a set, show it, store NOTHING.
+//
+// **IT ANSWERS THE CODES IN THE CLEAR AND THIS IS THE ONLY MOMENT THEY
+// EXIST.** After `confirmBackupCodes()` has hashed them there is no function
+// anywhere — on the portal, the console or `/admin-api` — that can produce
+// them again, which is the whole consequence of hashing and is said on every
+// surface that draws them.
+//
+// It never throws and it never touches an existing set: a person who begins
+// this and walks away still holds whatever they held before.
+// ---------------------------------------------------------------------------
+function beginBackupCodes(username, opts) {
+  const name = String(username || '').trim();
+  log.debug('Entering beginBackupCodes(). username=' + name);
+  const options = opts || {};
+  if (!directory || typeof directory.writeBackupCodes !== 'function') {
+    // NOT an error, and the same version-skew contract every function here
+    // keeps: an older `ldap/ldap_server.js` leaves a service whose second
+    // factors work exactly as they did.
+    log.debug('Leaving beginBackupCodes(). No store for them.');
+    return { ok: false, reason: 'no-store',
+             errors: ['This credential store does not hold recovery codes.'] };
+  }
+  if (!backupCodes.offered()) {
+    log.debug('Leaving beginBackupCodes(). Turned off.');
+    return { ok: false, reason: 'disabled',
+             errors: ['Recovery codes are turned off on this service ' +
+                      '(backupCodes.enabled).'] };
+  }
+  if (!name) {
+    log.debug('Leaving beginBackupCodes(). No name.');
+    return { ok: false, reason: 'name',
+             errors: ['A set of recovery codes belongs to somebody.'] };
+  }
+  const live = backupCodes.settings();
+  const minted = backupCodes.generate({ count: options.count || live.count,
+                                        length: options.length || live.length });
+  if (!minted) {
+    log.error('credentials: no recovery codes could be generated for ' + name +
+              '.');
+    log.debug('Leaving beginBackupCodes(). Generation failed.');
+    return { ok: false, reason: 'generate',
+             errors: ['A set of recovery codes could not be generated.'] };
+  }
+  forgetExpiredPending();
+  // ONE PENDING SET PER PERSON. Beginning again replaces the previous pending
+  // set rather than adding to it — otherwise a person who pressed the button
+  // twice would be holding two lists and could confirm the one they were no
+  // longer looking at.
+  pendingBackupCodes.forEach(function (record, handle) {
+    if (record.username === name) {
+      pendingBackupCodes.delete(handle);
+    }
+  });
+  // A handle and not the username: two tabs must not be able to confirm each
+  // other's set, and the form carries this back. `require('crypto')` inline is
+  // how `generatePassword()` above does it in this same file — the module
+  // name `crypto` is taken here by THIS service's crypto module, and shadowing
+  // that at the top of the file to save a require is how somebody later
+  // reaches for `crypto.hashSecret()` and gets node's.
+  const handle = require('crypto').randomBytes(24).toString('base64url');
+  pendingBackupCodes.set(handle, {
+    username: name,
+    codes: minted,
+    begunAt: Date.now(),
+    expires: Date.now() + pendingTtlMs()
+  });
+  log.info('credentials: a set of ' + minted.length + ' recovery codes was ' +
+           'generated for ' + name + ' and is being SHOWN. Nothing is stored ' +
+           'until they confirm they have kept it.');
+  log.debug('Leaving beginBackupCodes(). ' + minted.length + ' pending.');
+  return { ok: true, handle: handle, codes: minted.slice(),
+           total: minted.length,
+           expiresAt: Date.now() + pendingTtlMs(),
+           replacing: !!backupCodesOf(name) };
+}
+
+// What is pending for this person, for a page that has to redraw itself.
+function pendingBackupCodesFor(username, handle) {
+  forgetExpiredPending();
+  const record = pendingBackupCodes.get(String(handle || ''));
+  if (!record || record.username !== String(username || '').trim()) {
+    return null;
+  }
+  return record;
+}
+
+// ---------------------------------------------------------------------------
+// STEP TWO: the person says they have kept it, and NOW it is hashed and
+// stored.
+//
+// **THE HASHING IS HERE AND NOWHERE ELSE**, which is what keeps a spend cheap:
+// `writeBackupCodesRecord()` carries hashes verbatim, so marking one code used
+// does not re-hash the nine beside it.
+//
+// **IT IS THE ONLY WRITER THAT CREATES A SET**, and it REPLACES: a set
+// confirmed over an existing one is how a person reaches a second list, and
+// the page says so before it generates anything. That is the reversal of the
+// old ONCE rule, and the old rule's reason — a printed list that stops working
+// with nothing having said so — is answered by saying so, loudly, at the one
+// moment somebody is choosing.
+// ---------------------------------------------------------------------------
+function confirmBackupCodes(username, handle) {
+  const name = String(username || '').trim();
+  log.debug('Entering confirmBackupCodes(). username=' + name);
+  const record = pendingBackupCodesFor(name, handle);
+  if (!record) {
+    // The two causes are not told apart on purpose: a handle that expired and
+    // a handle that was never this person's are the same thing to do about —
+    // generate again — and distinguishing them would let a caller learn that
+    // a handle it guessed belonged to somebody.
+    log.debug('Leaving confirmBackupCodes(). No pending set.');
+    return { ok: false, reason: 'pending',
+             errors: ['There is no set of recovery codes waiting to be ' +
+                      'confirmed, or it has expired. Nothing was stored, so ' +
+                      'the set you were shown does not work — generate ' +
+                      'another one.'] };
+  }
+  const hashed = record.codes.map(function (code) {
+    return { hash: backupCodes.hash(code), usedAt: 0 };
+  });
+  const written = writeBackupCodesRecord(name, hashed,
+    { generatedAt: record.begunAt, lastUsedAt: 0 });
+  if (!written.ok) {
+    // **THE PENDING SET IS KEPT ON A FAILED WRITE**, which is the opposite of
+    // what a tidy implementation does and is the point: the person is looking
+    // at the codes right now, so leaving the handle live means pressing the
+    // button again is the whole recovery. Dropping it would send somebody
+    // holding a freshly printed list back to the beginning.
+    log.error('credentials: the recovery codes for ' + name + ' could not be ' +
+              'stored (' + (written.errors || []).join(' ') + '). The set is ' +
+              'still pending, so confirming again will retry.');
+    log.debug('Leaving confirmBackupCodes(). The write failed.');
+    return { ok: false, reason: 'store', retryable: true,
+             errors: written.errors };
+  }
+  pendingBackupCodes.delete(handle);
+  log.info('credentials: ' + name + ' confirmed a set of ' + written.total +
+           ' recovery codes. Only the hashes are stored — this service can ' +
+           'never show them again.');
+  log.debug('Leaving confirmBackupCodes(). Stored ' + written.total + '.');
+  return { ok: true, total: written.total, remaining: written.remaining };
+}
+
+// Throw away a pending set without storing it. The Cancel beside the Confirm:
+// a person who decides they are not ready should not leave a live list in this
+// process's memory for the rest of the TTL.
+function discardBackupCodes(username, handle) {
+  const record = pendingBackupCodesFor(username, handle);
+  if (!record) {
+    return { ok: true, discarded: false };
+  }
+  pendingBackupCodes.delete(handle);
+  log.info('credentials: a pending set of recovery codes for ' +
+           String(username) + ' was discarded without being stored.');
+  return { ok: true, discarded: true };
+}
+
+
+// ---------------------------------------------------------------------------
+// WHAT A PERSON HOLDS, WITHOUT THE CODES. What every page that reports on this
+// asks — the console's per-person row, the portal's status card, the sign-in
+// screen deciding whether to offer the link at all.
+//
+// **THE CODES ARE NOT IN IT AND THAT IS THE POINT.** One function answers *how
+// many are left* and a different one answers *what are they*, so a page that
+// wanted the first cannot accidentally render the second. `/admin/users` calls
+// this one and there is no call site anywhere in the console for the other.
+// ---------------------------------------------------------------------------
+function backupCodeStatus(username) {
+  const name = String(username || '').trim();
+  log.debug('Entering backupCodeStatus(). username=' + name);
+  const held = backupCodesOf(name);
+  if (!held) {
+    log.debug('Leaving backupCodeStatus(). None issued.');
+    return { present: false, usable: false, total: 0, remaining: 0,
+             used: 0, generatedAt: 0, lastUsedAt: 0, sealed: false, why: '' };
+  }
+  if (held.unusable) {
+    log.debug('Leaving backupCodeStatus(). Present and unreadable.');
+    // The counts come off the record's CLEAR half, which is exactly what the
+    // header says that half is for: a console can be honest about a set this
+    // process cannot decrypt rather than reporting it as nothing.
+    return { present: true, usable: false,
+             total: Number(held.total || 0),
+             remaining: Number(held.remaining || 0),
+             used: Math.max(0, Number(held.total || 0) - Number(held.remaining || 0)),
+             generatedAt: Number(held.generatedAt || 0),
+             lastUsedAt: Number(held.lastUsedAt || 0),
+             sealed: !!held.sealed, why: held.why || '' };
+  }
+  const remaining = held.codes.filter(function (one) { return !one.usedAt; });
+  log.debug('Leaving backupCodeStatus(). ' + remaining.length + ' of ' +
+            held.codes.length + ' unused, hashed=' + !!held.hashed + '.');
+  return { present: true, usable: true,
+           total: held.codes.length, remaining: remaining.length,
+           used: held.codes.length - remaining.length,
+           generatedAt: held.generatedAt, lastUsedAt: held.lastUsedAt,
+           sealed: held.sealed,
+           // **HOW THE SET IS STORED, REPORTED (2026-09-11).** A set written
+           // before that date holds the CODES and still verifies; one written
+           // since holds scrypt hashes. It is on the STATUS rather than
+           // available only by opening the set, for the reason the counts are:
+           // every page that reports on this needs to know, and none of them
+           // should be reading the entries to find out.
+           hashed: !!held.hashed,
+           legacy: !!held.legacy,
+           why: '' };
+}
+
+// ---------------------------------------------------------------------------
+// SHOWING A SET BACK IS NOT POSSIBLE ANY MORE, AND THIS FUNCTION IS THE PLACE
+// THAT SAYS SO (2026-09-11).
+//
+// It used to open the sealed vault and hand the codes to `/portal/mfa`, which
+// was the whole reason a set was ENCRYPTED rather than hashed. A set is hashed
+// now, so there is nothing to show: `$scrypt$32768$8$1$…` is not a recovery
+// code and no function anywhere can turn it back into one.
+//
+// **IT IS KEPT AS A REFUSAL RATHER THAN DELETED**, which is the same call
+// `credentials.js` makes about an endpoint an error message names: the portal,
+// the console and `/admin-api` all had a door here, and a door that vanishes
+// answers 404 while a door that refuses explains. It also means a caller left
+// over from an older build gets a sentence rather than `is not a function`.
+// ---------------------------------------------------------------------------
+function revealBackupCodes(username) {
+  const name = String(username || '').trim();
+  log.debug('Entering revealBackupCodes(). username=' + name);
+  const held = backupCodesOf(name);
+  log.debug('Leaving revealBackupCodes(). Refused: they are hashed.');
+  return {
+    ok: false,
+    impossible: true,
+    present: !!held,
+    errors: ['Recovery codes cannot be shown again. Since 2026-09-11 this ' +
+             'service stores only a HASH of each code — the same scrypt hash ' +
+             'it stores for a password — so there is nothing here to show ' +
+             'and no function anywhere that could produce one. A set is ' +
+             'displayed once, at the moment it is generated, and generating ' +
+             'a new set replaces the one you have.']
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SPEND ONE. The verification half, and it is REAL IN BOTH MODES for the
+// reason `verifyTotp()` is: there is nothing left of a single-use recovery
+// credential once the comparison goes, and a client author would have no
+// artifact to test against.
+//
+// **THE CODE IS MARKED SPENT BEFORE THE CALLER IS TOLD IT WORKED**, which is
+// the opposite of `verifyTotp()`'s arrangement with its counter and is the one
+// place these two mechanisms differ on purpose. A TOTP code that verifies and
+// whose counter fails to write can at worst be replayed inside a ninety-second
+// window. **A recovery code whose spend fails to write is a permanent
+// credential** — it would go on working for ever, which is the single property
+// a single-use credential may not have. So a failed write REFUSES the
+// authentication, and the person is told to use a different code.
+//
+// **EVERY CODE IN THE SET IS COMPARED EVEN AFTER A MATCH**, for the reason
+// `totp.verify()` walks its whole window: returning early makes the time taken
+// depend on WHICH code matched, which is a better oracle than the string
+// comparison this bothers to make constant-time.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// COMPARING A PRESENTED CODE AGAINST A STORED SET.
+//
+// **ONE ENTRY MAY BE A HASH AND ANOTHER MAY BE A CODE**, which is the whole
+// reason this is a function rather than a loop written twice: a set stored by
+// a build older than 2026-09-11 holds the codes themselves, somebody is
+// holding it on paper, and refusing it would be this mechanism breaking in
+// exactly the way it exists to prevent. `backupCodes.isHash()` decides PER
+// ENTRY, so a set is never half-refused.
+//
+// **EVERY ENTRY IS COMPARED EVEN AFTER A MATCH**, which the synchronous door
+// below already did and which is kept: stopping early would make the time this
+// takes a function of WHERE in the list the code sits, and the set is stored
+// in generation order.
+// ---------------------------------------------------------------------------
+function compareOne(presented, entry) {
+  const stored = String((entry || {}).hash || '');
+  if (!stored) {
+    return false;
+  }
+  return backupCodes.isHash(stored)
+    ? backupCodes.matchesHash(presented, stored)
+    : backupCodes.matches(presented, stored);
+}
+
+function matchAgainstSet(presented, entries, hits) {
+  let matchedIndex = -1;
+  let spentIndex = -1;
+  for (let i = 0; i < entries.length; i++) {
+    const hit = hits ? hits[i] : compareOne(presented, entries[i]);
+    if (hit) {
+      if (entries[i].usedAt) {
+        if (spentIndex < 0) {
+          spentIndex = i;
+        }
+      } else if (matchedIndex < 0) {
+        matchedIndex = i;
+      }
+    }
+  }
+  return { matchedIndex: matchedIndex, spentIndex: spentIndex };
+}
+
+// **PREPARE / COMPARE / FINISH, WHICH IS THIS FILE'S OWN SHAPE.**
+// `verify()` above is already split this way (`verifyPrepare()` /
+// `verifyFinish()`) and the reason is stated there: everything decidable
+// WITHOUT the expensive comparison is decided in the first half, so the
+// synchronous and asynchronous doors refuse in the same ORDER and cannot come
+// to disagree about when to say no. Here the expensive half is scrypt over up
+// to ten codes, and every refusal below costs none of it.
+function backupPrepare(name, presented) {
+  const held = backupCodesOf(name);
+  if (!held) {
+    log.debug('backupPrepare(): none issued.');
+    return { done: { ok: false, reason: 'none',
+                     detail: 'No recovery codes have been issued for ' + name +
+                             '.' } };
+  }
+  if (held.unusable) {
+    log.error('credentials: ' + name + ' holds a set of recovery codes this ' +
+              'process cannot read (' + held.why + '), so they cannot be ' +
+              'checked. They are refused rather than let through.');
+    return { done: { ok: false, reason: 'unusable',
+                     detail: 'Your recovery codes cannot be read by this ' +
+                             'service, so they cannot be checked. An ' +
+                             'administrator has to clear them on your row ' +
+                             'under /admin/users.' } };
+  }
+  // THE SHAPE FIRST, and it matters far more than it did. A password typed
+  // into this box used to cost ten constant-time string comparisons; it would
+  // now cost ten scrypt hashes — most of a second of blocked event loop, or
+  // ten worker jobs — for something that cannot possibly be a code.
+  if (!backupCodes.wellFormed(presented)) {
+    log.debug('backupPrepare(): not the shape of a code.');
+    return { done: { ok: false, reason: 'shape',
+                     detail: 'A recovery code is letters and digits only — ' +
+                             'the ones this service printed for you, in ' +
+                             'groups. Dashes and spaces are ignored.' } };
+  }
+  return { held: held };
+}
+
+function backupFinish(name, held, found) {
+  const matchedIndex = found.matchedIndex;
+  const spentIndex = found.spentIndex;
+  if (matchedIndex < 0 && spentIndex >= 0) {
+    // NAMED rather than answered as "wrong". Somebody working down a printed
+    // list and re-typing the one they crossed out has done nothing suspicious
+    // and needs to be told to use the next one, not that their list is
+    // broken — which is exactly the distinction `totp.verify()` draws about a
+    // replayed step.
+    log.info('credentials: a recovery code for ' + name + ' was refused as ' +
+             'already spent.');
+    return { ok: false, reason: 'spent',
+             detail: 'That recovery code has already been used. Each one ' +
+                     'works once — use the next unused code on your list.' };
+  }
+  if (matchedIndex < 0) {
+    log.info('credentials: a recovery code for ' + name + ' did not match.');
+    return { ok: false, reason: 'mismatch',
+             detail: 'That is not one of your recovery codes.' };
+  }
+  // THE HASHES ARE CARRIED VERBATIM. A spend rewrites the array to mark one
+  // entry used and must not re-hash anything: the codes are not here to hash,
+  // and re-hashing what IS here would hash a hash.
+  const list = held.codes.map(function (one, i) {
+    return { hash: one.hash,
+             usedAt: i === matchedIndex ? Date.now() : Number(one.usedAt || 0) };
+  });
+  const written = writeBackupCodesRecord(name, list,
+    { generatedAt: held.generatedAt, lastUsedAt: Date.now() });
+  if (!written.ok) {
+    // A REFUSAL, and see the header: this is the one place in this file where
+    // a failed write undoes a successful verification. A single-use credential
+    // that could not be marked spent is a permanent one.
+    log.error('credentials: a recovery code for ' + name + ' verified and ' +
+              'could NOT be marked as spent (' +
+              (written.errors || []).join(' ') + '), so it was REFUSED. A ' +
+              'code that cannot be spent is a code that works for ever.');
+    return { ok: false, reason: 'store',
+             detail: 'That code is right and this service could not record ' +
+                     'that it has been used, so it was not accepted. Try ' +
+                     'another one, and tell an administrator.' };
+  }
+  log.info('credentials: ' + name + ' signed in with a recovery code. ' +
+           written.remaining + ' of ' + written.total + ' remain.');
+  return { ok: true, remaining: written.remaining, total: written.total };
+}
+
+function verifyBackupCode(username, presented) {
+  const name = String(username || '').trim();
+  log.debug('Entering verifyBackupCode(). username=' + name);
+  const ready = backupPrepare(name, presented);
+  if (ready.done) {
+    log.debug('Leaving verifyBackupCode(). Refused before comparing.');
+    return ready.done;
+  }
+  const out = backupFinish(name, ready.held,
+                           matchAgainstSet(presented, ready.held.codes));
+  log.debug('Leaving verifyBackupCode(). ok=' + out.ok);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE ASYNCHRONOUS DOOR, AND IT IS THE ONE THE SIGN-IN SCREEN USES.
+//
+// **BECAUSE A WRONG CODE COSTS TEN SCRYPT HASHES.** Measured on this machine:
+// 72ms each, 906ms for a default set of ten — and node runs this service's six
+// listener families on ONE THREAD, so that is not a slow request, it is a
+// service that answers nobody for most of a second. `common/CLAUDE.md` has the
+// whole argument beside the `scrypt.derive` job, which exists for exactly
+// this.
+//
+// **THE CANDIDATES GO IN PARALLEL**, which the password door does not do and
+// does not need to: it has one hash to check and this has ten. Five workers
+// turn 906ms of blocked loop into about 150ms of wall time during which this
+// service keeps answering.
+//
+// The synchronous door above is KEPT and is not deprecated: `workers.count = 0`
+// is a supported configuration that computes the same jobs in this process,
+// `npm test` drives the sync door, and a caller that cannot be made
+// asynchronous is better off blocking than wrong.
+// ---------------------------------------------------------------------------
+function verifyBackupCodeAsync(username, presented) {
+  const name = String(username || '').trim();
+  log.debug('Entering verifyBackupCodeAsync(). username=' + name);
+  let ready;
+  try {
+    ready = backupPrepare(name, presented);
+  } catch (e) {
+    return Promise.reject(e);
+  }
+  if (ready.done) {
+    log.debug('Leaving verifyBackupCodeAsync(). Refused before comparing.');
+    return Promise.resolve(ready.done);
+  }
+  const entries = ready.held.codes;
+  return Promise.all(entries.map(function (entry) {
+    const stored = String((entry || {}).hash || '');
+    if (!stored) {
+      return Promise.resolve(false);
+    }
+    // A LEGACY entry is a string comparison and costs nothing, so it is done
+    // here rather than dispatched — sending a `constantTimeEquals` to a worker
+    // would be an IPC round trip to save nothing, which is the same judgement
+    // `crypto.js` makes about RS256.
+    if (!backupCodes.isHash(stored)) {
+      return Promise.resolve(backupCodes.matches(presented, stored));
+    }
+    return backupCodes.matchesHashAsync(presented, stored);
+  })).then(function (hits) {
+    const out = backupFinish(name, ready.held,
+                             matchAgainstSet(presented, entries, hits));
+    log.debug('Leaving verifyBackupCodeAsync(). ok=' + out.ok);
+    return out;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CLEAR THE SET. An operator's act on that person's row under `/admin/users`,
+// and the ONLY way to a second set — the next second factor they enrol issues
+// one.
+//
+// **IT CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which is `removeTotp()`'s
+// position exactly: a recovery code is never a way in on its own, so clearing
+// the set drops the account to whatever it already had. What it removes is the
+// way BACK, which is a real change and is why every caller audits it.
+// ---------------------------------------------------------------------------
+function removeBackupCodes(username) {
+  const name = String(username || '').trim();
+  log.debug('Entering removeBackupCodes(). username=' + name);
+  if (!directory || typeof directory.writeBackupCodes !== 'function') {
+    log.debug('Leaving removeBackupCodes(). No store.');
+    return { ok: false, errors: ['No credential store is installed.'] };
+  }
+  if (!backupCodesOf(name)) {
+    log.debug('Leaving removeBackupCodes(). There was none.');
+    return { ok: false, errors: ['No recovery codes have been issued for ' +
+                                 name + '.'] };
+  }
+  try {
+    directory.writeBackupCodes(name, null);
+  } catch (e) {
+    log.debug('Leaving removeBackupCodes(). The write threw.');
+    return { ok: false, errors: ['The credential store refused the write: ' +
+                                 e.message] };
+  }
+  log.info('credentials: the recovery codes for ' + name + ' were cleared. ' +
+           'The next second factor they enrol issues a new set.');
+  log.debug('Leaving removeBackupCodes(). Cleared.');
+  return { ok: true, username: name };
+}
 // ---------------------------------------------------------------------------
 // HOW CAN THIS PERSON SIGN IN? The question the sign-in screen, the activation
 // flow and the portal all ask, answered once.
@@ -660,6 +2209,17 @@ function removeKey(username, credentialId) {
 // cannot authenticate, however many `mfa` keys they hold. That combination is
 // reachable — enrol a key as a second factor, then remove the password — and it
 // is exactly the lockout `removeKey()` above refuses to create.
+//
+// **THERE ARE TWO SECOND FACTORS SINCE 2026-09-10 AND `usable` DID NOT CHANGE**,
+// which is the property to check first if this is ever reworked: an
+// authenticator app can never be a primary credential (see the TOTP section
+// above), so it cannot make an unusable account usable and it cannot be the
+// thing whose removal locks somebody out.
+//
+// **WHAT DID CHANGE IS `mfaRequired`**, which is now "does this person hold
+// EITHER kind of second factor". The sign-in screen reads it, so enrolling an
+// authenticator is what makes a password alone stop being enough — the whole
+// meaning of *a user configured to use it*.
 // ---------------------------------------------------------------------------
 function mechanismsFor(username) {
   const name = String(username || '').trim();
@@ -667,22 +2227,94 @@ function mechanismsFor(username) {
   const password = hasPassword(name);
   const primaryKeys = keys.filter(function (one) { return one.role === 'primary'; });
   const mfaKeys = keys.filter(function (one) { return one.role === 'mfa'; });
+  const authenticator = totpOf(name);
+  // An enrolment this process cannot READ is not an enrolment it can ignore:
+  // it still means this person configured two factors, and reporting it as
+  // absent would sign them in with one. `verifyTotp()` refuses it by name.
+  const totpEnrolled = !!authenticator;
   return {
     username: name,
     password: password,
     primaryKeys: primaryKeys.length,
     mfaKeys: mfaKeys.length,
     keys: keys,
-    // Can they get in at all?
+    // The authenticator app, reported as three separate facts because they
+    // lead to three different sentences on a page: enrolled, when, and whether
+    // this process can actually check it.
+    totp: totpEnrolled,
+    totpUsable: totpEnrolled && !authenticator.unusable,
+    totpDetail: totpEnrolled
+      ? { enrolledAt: authenticator.enrolledAt || 0,
+          lastUsedAt: authenticator.lastUsedAt || 0,
+          algorithm: authenticator.algorithm || '',
+          digits: authenticator.digits || 0,
+          period: authenticator.period || 0,
+          sealed: !!authenticator.sealed,
+          unusable: !!authenticator.unusable,
+          why: authenticator.why || '' }
+      : null,
+    // Can they get in at all? UNCHANGED, and see the header: a second factor
+    // has never been a way in on its own and an authenticator app is not one
+    // either.
     usable: password || primaryKeys.length > 0,
-    // Is a second factor required of them? A person holding an `mfa` key is
-    // saying their password alone is not enough, so the sign-in screen demands
-    // the key as well — which is what makes the flag mean anything.
-    mfaRequired: mfaKeys.length > 0,
+    // THE RECOVERY CODES (2026-09-10), reported as a STATUS OBJECT and never
+    // as the codes themselves. `backupCodeStatus()` is what fills it and its
+    // header argues the split: one function answers *how many are left* and a
+    // different one answers *what are they*, so a page that wanted the first
+    // cannot render the second by accident.
+    //
+    // **IT IS NOT PART OF `mfaRequired` AND MUST NEVER BECOME SO.** A
+    // recovery code is what somebody falls back to when they cannot produce
+    // the factor they are configured for; a person holding nothing but a set
+    // of codes is not a person configured for two factors, and treating them
+    // as one would ask for a second factor at a sign-in they have no way to
+    // complete.
+    //
+    // **THE SET IS NO LONGER ISSUED BY AN ENROLMENT EITHER (2026-09-11).** It
+    // is generated when the person asks to see one and stored — hashed — only
+    // once they confirm they have kept it. `recoveryAdvised` below is what
+    // replaced the automatic issue.
+    backupCodes: backupCodeStatus(name),
+    // Is a second factor required of them? A person holding an `mfa` key or an
+    // enrolled authenticator is saying their password alone is not enough, so
+    // the sign-in screen demands it as well — which is what makes the flag mean
+    // anything. **The recovery codes are deliberately not on this line** — see
+    // the field above.
+    mfaRequired: mfaKeys.length > 0 || totpEnrolled,
+    // WHICH ONE, since there are two and the screen has to ask for the right
+    // thing. A person holding both is asked for the SECURITY KEY, because it is
+    // the stronger of the two and the ceremony is the one that is bound to this
+    // origin; the code is what they fall back to when they are at a machine
+    // with no authenticator attached, and `authn.js` draws that link.
+    secondFactor: mfaKeys.length > 0 ? 'webauthn' : (totpEnrolled ? 'totp' : ''),
     // Has this person finished setting themselves up? What product mode asks
     // before it will let an activation link be spent, and what the sign-in
-    // screen asks before it refuses somebody with nothing.
-    activated: password || keys.length > 0
+    // screen asks before it refuses somebody with nothing. **An authenticator
+    // app is deliberately NOT enough to count as activated**, for `usable`'s
+    // reason: an account whose only credential is a second factor is an account
+    // nobody can sign in to.
+    activated: password || keys.length > 0,
+    // ---------------------------------------------------------------------
+    // SHOULD THIS PERSON BE TOLD TO GENERATE A SET? (2026-09-11)
+    //
+    // **THIS IS WHAT REPLACED THE AUTOMATIC ISSUE, AND IT IS WEAKER ON
+    // PURPOSE-IN-THE-KNOWLEDGE-THAT-IT-IS.** A set used to be created as a
+    // side effect of enrolling a second factor, which protected exactly the
+    // population that never thinks to ask. Hashing made that impossible — a
+    // hash can only be made while the code is in the clear — so what is left
+    // is to ASK, everywhere it is true, and to keep asking.
+    //
+    // It is true of somebody who HAS a second factor and holds no usable set.
+    // Not of somebody with no second factor at all: recovery codes stand in
+    // for a factor, so prompting a password-only account would be offering a
+    // way back from a door they have not walked through.
+    //
+    // **A LEGACY SET COUNTS AS HAVING ONE.** It still works, its owner may be
+    // holding it on paper, and telling them to replace it would be this
+    // service inventing urgency about a credential that is fine.
+    recoveryAdvised: backupCodes.offered() &&
+                     (mfaKeys.length > 0 || totpEnrolled) &&
+                     !backupCodesOf(name)
   };
 }
 
@@ -723,6 +2355,288 @@ function mechanismsFor(username) {
 // and granted a session would be a permanent bypass of every mechanism the
 // person is in the middle of configuring.
 // ---------------------------------------------------------------------------
+
+// ===========================================================================
+// ENROLLING A SECURITY KEY, IN TWO STEPS (2026-09-10).
+//
+// **THIS IS THE DOOR THAT DID NOT EXIST, AND ITS ABSENCE IS WHY NOBODY COULD
+// HOLD A BACKUP KEY.** Until today the only WebAuthn enrolment in this service
+// was the sign-in screen's checkbox, which is enrol-on-first-use and is
+// deliberately reserved for people who hold NO second factor yet — because
+// enrolment there for somebody who already holds one is the bypass
+// `authn/CLAUDE.md` argues at length: register your own authenticator, be
+// signed in claiming two factors, never meet the one the account is configured
+// for.
+//
+// So there was exactly one key per person and no way to add another. A lost
+// YubiKey meant an operator clearing the enrolment, which is a support queue —
+// and the whole reason WebAuthn has a credential id, a multi-valued attribute
+// here and a `maxKeysPerPerson` setting is that **several keys per person is
+// the ordinary case**: one at the desk, one in a drawer.
+//
+// ---------------------------------------------------------------------------
+// TWO STEPS, AND THE FIRST WRITES NOTHING — the shape the RFC 6238 pair above
+// already has, for the same reason.
+//
+// `beginKeyEnrolment()` mints a CHALLENGE and holds it in memory;
+// `confirmKeyEnrolment()` takes what the browser produced, verifies it against
+// that challenge, and only then writes the key. A challenge on somebody's
+// entry would be nothing at all — it is the ceremony that produces the
+// credential — so unlike the TOTP secret there is no half-state to be locked
+// out by. What the two steps buy here is the CHALLENGE BINDING itself: a
+// registration is only worth anything if the challenge it signed over is one
+// this service minted, for this person, recently.
+//
+// ---------------------------------------------------------------------------
+// `excludeCredentials` IS THE PART THAT MAKES A BACKUP KEY MEAN SOMETHING.
+//
+// WebAuthn's own mechanism for *do not enrol this authenticator twice*: the
+// keys the person already holds go out with the options, and a conforming
+// authenticator that recognises one of them REFUSES rather than creating a
+// second credential. Without it the commonest mistake — pressing Add and
+// touching the key already plugged in — produces a second credential on the
+// same device, which is a backup that is lost with the original.
+//
+// **IT IS THE BROWSER THAT ENFORCES IT AND THIS SERVICE CHECKS ANYWAY.** The
+// list is a request like every other ceremony option, so `confirmKeyEnrolment()`
+// refuses a credential id already on the entry — one authenticator, one row,
+// however the ceremony was driven.
+//
+// ---------------------------------------------------------------------------
+// THE ROLE IS CHOSEN AT THE START AND CARRIED, never read back off the answer.
+//
+// Same rule the sign-in screen's ceremony follows: the POST at the other end
+// is the browser's RESULT and nothing in it says what was asked for. A role
+// taken from the returned body would be a caller deciding whether their own
+// credential is a way IN or a second factor.
+// ===========================================================================
+
+// The attribute is the same one `addKey()` writes; this register holds only
+// what has been ASKED FOR and not yet proved. Per realm, like every other
+// pending record here, and carrying no `persist:` name for `pendingTotp`'s
+// reason read one step weaker: a challenge is not a credential, so journalling
+// it would leak nothing — but it is worthless a minute later and would be
+// replicated to every process for no reader.
+const pendingKeys = realms.map();
+
+// Long enough to find the key in a drawer, short enough that an abandoned
+// ceremony is not sitting in memory. It rides the SAME setting the authenticator
+// app's unconfirmed enrolment does, because they are the same question asked
+// about two mechanisms and two settings would be two answers to it.
+function keyEnrolmentTtlMs() {
+  return Math.max(1, Number(config.value('totp.enrolmentTtlMinutes') || 10)) *
+         60 * 1000;
+}
+
+function sweepPendingKeys() {
+  const now = Date.now();
+  pendingKeys.forEach(function (value, key) {
+    if (!value || value.expires < now) {
+      pendingKeys.delete(key);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// STEP ONE: MINT A CHALLENGE AND SAY WHAT THE CEREMONY WILL BE.
+//
+// It REFUSES here rather than at the end wherever it can — the mechanism being
+// off, the role not allowed, the cap reached, the person not existing in
+// product mode — because a person who has touched their key and then been told
+// the realm does not allow it has spent a ceremony on a refusal that was
+// knowable before it started. `addKey()` makes the same checks at the end and
+// that is not duplication: this one is a COURTESY and that one is the
+// enforcement, and the enforcement has to be at the write.
+// ---------------------------------------------------------------------------
+function beginKeyEnrolment(username, opts) {
+  const name = String(username || '').trim();
+  log.debug('Entering beginKeyEnrolment(). username=' + name);
+  const options = opts || {};
+  const role = String(options.role || 'mfa');
+  if (ROLES.indexOf(role) < 0) {
+    log.debug('Leaving beginKeyEnrolment(). Not a role.');
+    return { ok: false, errors: ['A security key is either "primary" or ' +
+                                 '"mfa". "' + role + '" is neither.'] };
+  }
+  const allowed = webauthnPolicy.roleAllowed(role);
+  if (!allowed.ok) {
+    log.debug('Leaving beginKeyEnrolment(). The role is not allowed here.');
+    return { ok: false, errors: [allowed.why] };
+  }
+  if (!directory || typeof directory.writeWebauthn !== 'function') {
+    return { ok: false, errors: ['No credential store is installed, so a ' +
+                                 'security key cannot be enrolled.'] };
+  }
+  // PRODUCT MODE REFUSES TO ENROL FOR SOMEBODY WHO DOES NOT EXIST, which is
+  // `addKey()`'s own refusal made early — see the header.
+  if (!mode.autoCreates() && !hasAnyEntry(name)) {
+    return { ok: false, errors: ['This service is in product mode, where a ' +
+                                 'security key can only be enrolled for ' +
+                                 'somebody who already exists.'] };
+  }
+  const held = keysOf(name);
+  const cap = webauthnPolicy.settings().maxKeysPerPerson;
+  if (held.length >= cap) {
+    return { ok: false,
+             errors: ['You already hold ' + held.length + ' security key(s), ' +
+                      'which is the most this service allows. Remove one ' +
+                      'first.'] };
+  }
+  sweepPendingKeys();
+  const record = {
+    // `require('crypto')` inline, which is what `issueActivation()` above
+    // already does: the module-level `crypto` here is this service's OWN
+    // crypto module, and node's is wanted for nothing but random bytes.
+    id: require('crypto').randomBytes(24).toString('base64url'),
+    username: name,
+    challenge: require('crypto').randomBytes(32).toString('base64url'),
+    role: role,
+    label: String(options.label || '').trim(),
+    // EVERY key they hold and not only the ones of this role: the point is
+    // *this authenticator is already registered here*, which is a fact about
+    // the device rather than about what the credential is for.
+    exclude: held.map(function (one) { return one.credentialId; }),
+    expires: Date.now() + keyEnrolmentTtlMs()
+  };
+  pendingKeys.set(name.toLowerCase(), record);
+  log.info('credentials: ' + name + ' started enrolling a "' + role +
+           '" security key. ' + record.exclude.length +
+           ' authenticator(s) already enrolled are excluded.');
+  log.debug('Leaving beginKeyEnrolment(). Challenge minted and held.');
+  return { ok: true, enrolmentId: record.id, challenge: record.challenge,
+           role: role, exclude: record.exclude.slice(),
+           expiresAt: new Date(record.expires).toISOString() };
+}
+
+// Is there an entry at all? `hasEntry()` above answers false always and says so
+// — it is the bootstrap's, and `readPassword()` cannot tell an absent entry
+// from one with no password. This asks the question the key store can answer:
+// `readWebauthn()` returns an array for an entry and throws or answers nothing
+// for a name that is not there.
+function hasAnyEntry(username) {
+  if (!directory || typeof directory.readWebauthn !== 'function') return false;
+  try {
+    return Array.isArray(directory.readWebauthn(String(username || '').trim()));
+  } catch (e) {
+    // Not there, or the store refused. Either way this is not somebody a key
+    // may be enrolled for in product mode.
+    return false;
+  }
+}
+
+function pendingKeyEnrolmentFor(username) {
+  sweepPendingKeys();
+  const held = pendingKeys.get(String(username || '').trim().toLowerCase());
+  return held || null;
+}
+
+function abandonKeyEnrolment(username) {
+  pendingKeys.delete(String(username || '').trim().toLowerCase());
+}
+
+// ---------------------------------------------------------------------------
+// STEP TWO: VERIFY WHAT THE BROWSER PRODUCED, AND ONLY THEN WRITE IT.
+//
+// The caller passes the ORIGIN and the RP ID because only it knows what the
+// browser was talking to — a realm's base URL carries a path and an origin
+// never does, which is the mistake `authn/authn.js`'s `originOf()` exists to
+// stop being made twice.
+// ---------------------------------------------------------------------------
+function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
+  const name = String(username || '').trim();
+  log.debug('Entering confirmKeyEnrolment(). username=' + name);
+  const options = opts || {};
+  const held = pendingKeyEnrolmentFor(name);
+  if (!held) {
+    log.debug('Leaving confirmKeyEnrolment(). Nothing pending.');
+    return { ok: false, reason: 'expired',
+             errors: ['That enrolment has expired. Start again.'] };
+  }
+  // THE ID IS CHECKED, so that a ceremony begun in one tab cannot be finished
+  // with the challenge of another. It is the same rule the sign-in screen's
+  // `mfa_id` follows.
+  if (String(enrolmentId || '') !== held.id) {
+    log.debug('Leaving confirmKeyEnrolment(). A different enrolment.');
+    return { ok: false, reason: 'mismatch',
+             errors: ['That enrolment is not the one in progress. Start ' +
+                      'again.'] };
+  }
+  if (!credential || !credential.response ||
+      !credential.response.attestationObject) {
+    // The browser reports one error for a declined prompt, a missing
+    // authenticator and a timeout, so what arrives is given back as given
+    // rather than guessed at.
+    const said = credential && credential.error
+      ? credential.error + ': ' + (credential.message || '')
+      : 'the browser sent no credential';
+    log.debug('Leaving confirmKeyEnrolment(). No credential.');
+    return { ok: false, reason: 'browser', errors: [said] };
+  }
+
+  let verdict;
+  try {
+    verdict = webauthnVerifier.verifyRegistration({
+      attestationObject: credential.response.attestationObject,
+      clientDataJSON: credential.response.clientDataJSON,
+      expectedChallenge: held.challenge,
+      expectedOrigin: String(options.origin || ''),
+      expectedRpId: String(options.rpId || ''),
+      requireUserVerification: webauthnPolicy.requireUserVerification()
+    });
+  } catch (e) {
+    log.debug('Leaving confirmKeyEnrolment(). Verification threw.');
+    return { ok: false, reason: 'invalid',
+             errors: ['The registration could not be checked: ' + e.message] };
+  }
+  if (!verdict.ok) {
+    log.info('credentials: a security key enrolment for ' + name +
+             ' did not verify — ' + (verdict.failed || []).join('; '));
+    log.debug('Leaving confirmKeyEnrolment(). It did not verify.');
+    return { ok: false, reason: 'invalid',
+             errors: ['The registration did not verify — ' +
+                      (verdict.failed || []).join('; ') + '.'] };
+  }
+
+  // **THE EXCLUSION, CHECKED HERE AS WELL AS REQUESTED.** `excludeCredentials`
+  // is a request to the browser like every other ceremony option; this is what
+  // makes one authenticator one row whatever drove the ceremony. It is refused
+  // as a DUPLICATE rather than written as a second key, because two rows for
+  // one device is a backup that is lost with the original.
+  if (held.exclude.indexOf(String(verdict.credentialId)) >= 0) {
+    log.info('credentials: ' + name + ' presented an authenticator that is ' +
+             'already enrolled. Refused as a duplicate.');
+    log.debug('Leaving confirmKeyEnrolment(). Already enrolled.');
+    return { ok: false, reason: 'duplicate',
+             errors: ['That authenticator is already enrolled. Use a ' +
+                      'DIFFERENT one — a backup on the same device is lost ' +
+                      'with the original.'] };
+  }
+
+  const stored = addKey(name, {
+    credentialId: verdict.credentialId,
+    publicKeyJwk: verdict.publicKeyJwk,
+    signCount: verdict.signCount,
+    label: held.label || undefined,
+    attachment: credential.authenticatorAttachment || null,
+    userVerified: !!(verdict.flags && verdict.flags.uv),
+    aaguid: verdict.aaguid || null,
+    algorithm: verdict.algorithm || null
+  }, held.role);
+  if (!stored.ok) {
+    // NOT ABANDONED. The ceremony was good and the write was refused — the cap
+    // reached in another tab, the role turned off while they were touching the
+    // key — so the pending record stays and the page can say what happened
+    // without making them start over for a reason that may have gone away.
+    log.debug('Leaving confirmKeyEnrolment(). The store refused it.');
+    return { ok: false, reason: 'refused', errors: stored.errors };
+  }
+  abandonKeyEnrolment(name);
+  log.info('credentials: ' + name + ' enrolled a "' + held.role +
+           '" security key. They now hold ' + keysOf(name).length + '.');
+  log.debug('Leaving confirmKeyEnrolment(). Enrolled.');
+  return { ok: true, username: name, role: held.role,
+           credentialId: stored.credentialId, held: keysOf(name).length };
+}
 
 function activationTtlMs() {
   return Math.max(1, Number(config.value('security.activationTtlMinutes') || 1440)) *
@@ -837,6 +2751,37 @@ function activationPending(username) {
 }
 
 module.exports = {
+  // --- the authenticator app (RFC 6238) ---
+  TOTP_ATTRIBUTE: TOTP_ATTRIBUTE,
+  totpOf: totpOf,
+  // THE RECOVERY CODES (2026-09-10). `revealBackupCodes()` is the one export
+  // here that hands back a live credential, and its own header says who may
+  // call it: `/portal/mfa`, behind that person's own session, and nothing on
+  // the console or the management API.
+  BACKUP_CODES_ATTRIBUTE: BACKUP_CODES_ATTRIBUTE,
+  // THE TWO-STEP ISSUE (2026-09-11). `ensureBackupCodes()` is gone: it issued
+  // a set as a side effect of enrolling a second factor, which cannot survive
+  // hashing — a hash can only be made while the code is in the clear, and an
+  // automatic issue would hash a list nobody was looking at.
+  beginBackupCodes: beginBackupCodes,
+  confirmBackupCodes: confirmBackupCodes,
+  discardBackupCodes: discardBackupCodes,
+  pendingBackupCodesFor: pendingBackupCodesFor,
+  backupCodeStatus: backupCodeStatus,
+  revealBackupCodes: revealBackupCodes,
+  verifyBackupCode: verifyBackupCode,
+  // The door the sign-in screen uses. See its header: a wrong code is ten
+  // scrypt hashes, which is 906ms of blocked event loop on one thread.
+  verifyBackupCodeAsync: verifyBackupCodeAsync,
+  removeBackupCodes: removeBackupCodes,
+  hasTotp: hasTotp,
+  beginTotpEnrolment: beginTotpEnrolment,
+  pendingTotpFor: pendingTotpFor,
+  abandonTotpEnrolment: abandonTotpEnrolment,
+  confirmTotpEnrolment: confirmTotpEnrolment,
+  verifyTotp: verifyTotp,
+  removeTotp: removeTotp,
+  secondFactorHolders: secondFactorHolders,
   issueActivation: issueActivation,
   checkActivation: checkActivation,
   consumeActivation: consumeActivation,
@@ -846,6 +2791,14 @@ module.exports = {
   keysOf: keysOf,
   addKey: addKey,
   removeKey: removeKey,
+  // THE TWO-STEP ENROLMENT (2026-09-10), which is what lets somebody hold a
+  // BACKUP key. `/portal/keys` drives all four; the sign-in screen's
+  // enrol-on-first-use path does not, because there the ceremony is part of a
+  // sign-in and the pending record it binds to is `authn.js`'s.
+  beginKeyEnrolment: beginKeyEnrolment,
+  pendingKeyEnrolmentFor: pendingKeyEnrolmentFor,
+  abandonKeyEnrolment: abandonKeyEnrolment,
+  confirmKeyEnrolment: confirmKeyEnrolment,
   noteKeyUsed: noteKeyUsed,
   mechanismsFor: mechanismsFor,
   bootstrap: bootstrap,

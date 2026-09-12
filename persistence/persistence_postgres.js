@@ -284,6 +284,325 @@ const SCHEMA_OBJECTS = [
 // come apart.
 const SCHEMA = SCHEMA_OBJECTS.map(function (object) { return object.statement; });
 
+
+// ===========================================================================
+// THE METRICS PROBES (2026-09-11), FOR `/admin/database`.
+//
+// **EVERY ONE OF THEM IS A `SELECT` AGAINST A CATALOG VIEW AND NOTHING HERE
+// TOUCHES A ROW THIS SERVICE WROTE.** That is the whole safety argument for
+// running arbitrary-looking SQL from a console page: the statements are
+// DECLARED here, in a table, and none of them is composed from anything a
+// request carries. There is no query box on that page and there must never be
+// one — this service's database role can write, so a console that could send
+// it a statement would be a console that could empty the directory.
+//
+// ---------------------------------------------------------------------------
+// `SELECT *` IS DELIBERATE, AND IT IS THIS REPOSITORY'S OWN RULE ONE LAYER
+// OUT.
+//
+// `crypto_metadata.js` reads an algorithm table from the module that PERFORMS
+// the algorithm rather than writing it down, so a page cannot go on looking
+// complete while being wrong. The same argument applies to a statistics view:
+// **the columns of `pg_stat_*` are the SERVER's and they move between major
+// versions**, sharply. Measured on the two this repository has met:
+//
+//   * `pg_stat_bgwriter` has ELEVEN columns on PostgreSQL 16 and FOUR on 17
+//     and later, because the checkpoint counters moved to
+//     `pg_stat_checkpointer` — a view that does not exist before 17;
+//   * `pg_stat_wal` arrived in 14, `pg_stat_database.session_time` in 14,
+//     `pg_stat_user_tables.total_vacuum_time` in 18.
+//
+// A page naming its columns would therefore be a page that is wrong on every
+// server but the one it was written against, and wrong SILENTLY — a missing
+// column reads as a blank cell. So each probe takes the whole row and the
+// renderer draws the keys it was given. **"Pull everything available" is a
+// property of the query rather than a list somebody maintains.**
+//
+// ---------------------------------------------------------------------------
+// EVERY PROBE FAILS ON ITS OWN, AND THAT IS THE DESIGN RATHER THAN CAUTION.
+//
+// The role this service dials with is `sts_app`, which holds SELECT, INSERT,
+// UPDATE and DELETE on six tables and USAGE — not CREATE — on one schema. It
+// is NOT `pg_monitor`. Most of these views are readable by anybody and a few
+// are not, and which few depends on the server's version and on how the
+// operator set it up. A page that ran all of this as one statement, or that
+// let one rejection throw, would show NOTHING because of one view — so each
+// probe is run, timed and caught separately, and a probe that failed is drawn
+// as a row saying which one and why.
+//
+// **THE VERSION-GATED PROBES ARE NOT GUARDED BY A VERSION TEST.** Asking the
+// server whether it is at least 17 and then asking for `pg_stat_checkpointer`
+// is two round trips and a second thing to get wrong; asking for the view and
+// reporting `relation does not exist` is one round trip and says the same
+// thing more honestly. `expected` marks the ones whose absence is ORDINARY, so
+// the page can draw them differently from a probe that failed for a reason
+// somebody should look at.
+// ===========================================================================
+const METRIC_PROBES = [
+  // -------------------------------------------------------------------------
+  // WHAT THIS SERVER IS.
+  // -------------------------------------------------------------------------
+  { id: 'server', group: 'Server', shape: 'row',
+    what: 'Which PostgreSQL this is, who this service is connected AS, and ' +
+          'how long the server has been up.',
+    sql: 'SELECT version() AS version, ' +
+         '       current_setting(\'server_version_num\') AS version_num, ' +
+         '       current_database() AS database, ' +
+         '       current_user AS connected_as, ' +
+         '       session_user AS session_user, ' +
+         '       current_schema() AS search_schema, ' +
+         '       pg_backend_pid() AS backend_pid, ' +
+         '       pg_postmaster_start_time() AS started_at, ' +
+         '       date_trunc(\'second\', now() - pg_postmaster_start_time())::text AS uptime, ' +
+         '       pg_conf_load_time() AS config_loaded_at, ' +
+         '       pg_is_in_recovery() AS in_recovery, ' +
+         '       current_setting(\'server_encoding\') AS server_encoding, ' +
+         '       current_setting(\'TimeZone\') AS timezone' },
+
+  // THE SIZE, as a number AND as a string. `pg_size_pretty` is what a person
+  // reads and the raw byte count is what anything comparing two of these
+  // needs; computing the pretty form here rather than in the renderer means
+  // one answer to "how big is this" rather than this service's own rounding
+  // beside postgres's.
+  { id: 'size', group: 'Server', shape: 'row',
+    what: 'How much disk this database occupies.',
+    sql: 'SELECT pg_database_size(current_database()) AS bytes, ' +
+         '       pg_size_pretty(pg_database_size(current_database())) AS pretty' },
+
+  // -------------------------------------------------------------------------
+  // WHAT IT HAS DONE. `pg_stat_database` is the densest view here — thirty
+  // columns on PostgreSQL 18 — and every one of them is drawn.
+  // -------------------------------------------------------------------------
+  { id: 'database', group: 'Activity', shape: 'row',
+    what: 'Every counter PostgreSQL keeps for this database: commits and ' +
+          'rollbacks, blocks read against blocks found in cache, tuples in ' +
+          'every direction, deadlocks, temp files, and the I/O and session ' +
+          'timings where the server collects them.',
+    sql: 'SELECT * FROM pg_stat_database WHERE datname = current_database()' },
+
+  { id: 'conflicts', group: 'Activity', shape: 'row',
+    what: 'Queries cancelled by recovery conflicts. All zero on a server ' +
+          'that is not a standby, which is the ordinary case here.',
+    sql: 'SELECT * FROM pg_stat_database_conflicts ' +
+         'WHERE datname = current_database()' },
+
+  // -------------------------------------------------------------------------
+  // WHO IS CONNECTED.
+  //
+  // **THIS IS THE ONE PROBE WHOSE ANSWER IS NARROWED BY THE ROLE, AND THE
+  // PAGE SAYS SO RATHER THAN UNDER-REPORTING QUIETLY.** A backend belonging
+  // to another role is VISIBLE — it is a row — but `state`, `query`,
+  // `client_addr` and `wait_event` are withheld: `state` comes back NULL and
+  // `query` comes back as the literal string `<insufficient privilege>`,
+  // which is a value and not an error and would be drawn as somebody's SQL by
+  // anything that did not know. Granting `pg_monitor` to the application role
+  // is what fills them in, and this service does not ask for it.
+  //
+  // So the counts are taken in SQL with that in mind: `visible` is every row,
+  // `readable` is the ones this role may actually see the state of.
+  // -------------------------------------------------------------------------
+  { id: 'connections', group: 'Activity', shape: 'row',
+    what: 'How many backends this database has, against the server\'s limit.',
+    sql: 'SELECT count(*) AS visible, ' +
+         '       count(state) AS readable, ' +
+         '       count(*) FILTER (WHERE state = \'active\') AS active, ' +
+         '       count(*) FILTER (WHERE state = \'idle\') AS idle, ' +
+         '       count(*) FILTER (WHERE state = \'idle in transaction\') ' +
+         '         AS idle_in_transaction, ' +
+         '       count(*) FILTER (WHERE wait_event IS NOT NULL) AS waiting, ' +
+         '       current_setting(\'max_connections\')::int AS max_connections, ' +
+         '       (SELECT count(*) FROM pg_stat_activity) AS server_wide ' +
+         'FROM pg_stat_activity WHERE datname = current_database()' },
+
+  { id: 'backends', group: 'Activity', shape: 'rows',
+    what: 'One row per backend on this database. A backend belonging to ' +
+          'another role shows as a row with its state and its query ' +
+          'withheld, which is what a non-monitoring role is shown.',
+    sql: 'SELECT pid, usename, application_name, client_addr, backend_type, ' +
+         '       state, wait_event_type, wait_event, ' +
+         '       date_trunc(\'second\', now() - backend_start)::text AS connected_for, ' +
+         '       date_trunc(\'second\', now() - state_change)::text AS in_state_for, ' +
+         '       CASE WHEN xact_start IS NULL THEN NULL ' +
+         '            ELSE date_trunc(\'second\', now() - xact_start)::text END ' +
+         '         AS transaction_age ' +
+         'FROM pg_stat_activity WHERE datname = current_database() ' +
+         'ORDER BY backend_start' },
+
+  { id: 'locks', group: 'Activity', shape: 'rows',
+    what: 'Locks held and waited for, by mode. A waiting lock on a mock is ' +
+          'almost always this service contending with itself across the ' +
+          'request-worker pool.',
+    sql: 'SELECT mode, granted, count(*) AS count FROM pg_locks ' +
+         'WHERE database IS NULL OR database = ' +
+         '      (SELECT oid FROM pg_database WHERE datname = current_database()) ' +
+         'GROUP BY mode, granted ORDER BY granted, mode' },
+
+  // -------------------------------------------------------------------------
+  // THE BACKGROUND MACHINERY. Four views, three of them version-dependent,
+  // and every one of them `SELECT *`.
+  // -------------------------------------------------------------------------
+  { id: 'bgwriter', group: 'Background', shape: 'row',
+    what: 'The background writer. ELEVEN columns before PostgreSQL 17 and ' +
+          'FOUR from 17, when the checkpoint counters moved out of it — ' +
+          'which is why this asks for all of them rather than naming any.',
+    sql: 'SELECT * FROM pg_stat_bgwriter' },
+
+  { id: 'checkpointer', group: 'Background', shape: 'row', expected: 17,
+    what: 'The checkpointer. A view of its own since PostgreSQL 17; before ' +
+          'that these counters are the tail of pg_stat_bgwriter above.',
+    sql: 'SELECT * FROM pg_stat_checkpointer' },
+
+  { id: 'wal', group: 'Background', shape: 'row', expected: 14,
+    what: 'Write-ahead log generation. PostgreSQL 14 and later.',
+    sql: 'SELECT * FROM pg_stat_wal' },
+
+  { id: 'archiver', group: 'Background', shape: 'row',
+    what: 'WAL archiving. All zero unless archive_mode is on, which it is ' +
+          'not in any stack this repository ships.',
+    sql: 'SELECT * FROM pg_stat_archiver' },
+
+  { id: 'replication', group: 'Background', shape: 'rows',
+    what: 'Standbys streaming from this server. EMPTY is the ordinary ' +
+          'answer, and it is also what a role without pg_monitor is shown ' +
+          'when there ARE standbys — so an empty table here is two different ' +
+          'facts and the page says which one it cannot tell apart.',
+    // `SELECT *` like every other view whose SHAPE is the server's. The
+    // first version of this named seven columns and `tests/database_metrics.js`
+    // caught it: `pg_stat_replication` gains columns between major versions
+    // like the rest of them, so a named list here would have been the one
+    // place on this page where "everything available" quietly meant "the
+    // seven somebody thought of".
+    sql: 'SELECT * FROM pg_stat_replication' },
+
+  // -------------------------------------------------------------------------
+  // THE SCHEMA THIS SERVICE OWNS.
+  //
+  // **EVERY ONE OF THESE IS SCOPED TO `current_schema()` AND NOT TO A NAME
+  // WRITTEN DOWN HERE.** There is no setting for the schema: it is chosen by
+  // the `search_path` in the connection string — `postgres/schema.sql` takes
+  // it as a psql variable and `docker-compose.yml` puts it in the URL — or by
+  // the database's own default. So a probe naming `sts` would answer about
+  // somebody else's tables, or about nothing, for any operator who moved it,
+  // and `current_schema()` is the only reading that is right by construction:
+  // it is the same resolution every other statement in this driver uses.
+  // -------------------------------------------------------------------------
+  { id: 'tables', group: 'Schema', shape: 'rows',
+    what: 'Every counter PostgreSQL keeps per table: sequential and index ' +
+          'scans, tuples in every direction, live and dead rows, and when ' +
+          'each was last vacuumed and analysed.',
+    sql: 'SELECT * FROM pg_stat_user_tables ' +
+         'WHERE schemaname = current_schema() ORDER BY relname' },
+
+  { id: 'tableIo', group: 'Schema', shape: 'rows',
+    what: 'Per-table block I/O: how much came out of the buffer cache and ' +
+          'how much off disk, for the heap, its indexes and its TOAST.',
+    sql: 'SELECT * FROM pg_statio_user_tables ' +
+         'WHERE schemaname = current_schema() ORDER BY relname' },
+
+  // THE SIZES, WITH THE PLANNER'S ROW ESTIMATE BESIDE THEM.
+  //
+  // **`reltuples` IS `-1` FOR A TABLE THAT HAS NEVER BEEN ANALYSED**, which is
+  // the state of every table in a database this service has just built — and
+  // a page that printed it would report minus one row. It is normalised to
+  // NULL here, in SQL, so that one answer reaches every reader rather than
+  // each renderer remembering.
+  { id: 'sizes', group: 'Schema', shape: 'rows',
+    what: 'How much disk each table occupies, split into the heap, its ' +
+          'indexes and its TOAST, with the planner\'s row estimate.',
+    sql: 'SELECT c.relname AS relname, ' +
+         '       pg_total_relation_size(c.oid) AS total_bytes, ' +
+         '       pg_size_pretty(pg_total_relation_size(c.oid)) AS total, ' +
+         '       pg_size_pretty(pg_relation_size(c.oid)) AS heap, ' +
+         '       pg_size_pretty(pg_indexes_size(c.oid)) AS indexes, ' +
+         '       CASE WHEN c.reltoastrelid = 0 THEN NULL ' +
+         '            ELSE pg_size_pretty(pg_total_relation_size(c.reltoastrelid)) ' +
+         '       END AS toast, ' +
+         '       CASE WHEN c.reltuples < 0 THEN NULL ' +
+         '            ELSE c.reltuples::bigint END AS estimated_rows, ' +
+         '       (SELECT count(*) FROM pg_index i WHERE i.indrelid = c.oid) ' +
+         '         AS index_count ' +
+         'FROM pg_class c ' +
+         'WHERE c.relnamespace = current_schema()::regnamespace ' +
+         '  AND c.relkind = \'r\' ORDER BY pg_total_relation_size(c.oid) DESC' },
+
+  // THE INDEXES, AND THE ONES NOTHING HAS EVER USED. `idx_scan = 0` on a
+  // database that has been running is the most actionable number on this
+  // page — an index nothing reads is write cost and disk for nothing — and
+  // on a database that has just started it means only that nothing has
+  // queried yet. The page draws the distinction; the probe just reports.
+  { id: 'indexes', group: 'Schema', shape: 'rows',
+    what: 'Every index, how often it has been scanned, how big it is, and ' +
+          'whether it is a primary key or unique.',
+    sql: 'SELECT s.relname AS table_name, s.indexrelname AS index_name, ' +
+         '       s.idx_scan, s.idx_tup_read, s.idx_tup_fetch, ' +
+         '       pg_relation_size(s.indexrelid) AS bytes, ' +
+         '       pg_size_pretty(pg_relation_size(s.indexrelid)) AS size, ' +
+         '       i.indisprimary AS is_primary, i.indisunique AS is_unique, ' +
+         '       pg_get_indexdef(s.indexrelid) AS definition ' +
+         'FROM pg_stat_user_indexes s ' +
+         'JOIN pg_index i ON i.indexrelid = s.indexrelid ' +
+         'WHERE s.schemaname = current_schema() ' +
+         'ORDER BY s.relname, s.indexrelname' },
+
+  { id: 'columns', group: 'Schema', shape: 'rows',
+    what: 'Every column of every table this service owns, with its type, ' +
+          'whether it may be null, and its default.',
+    sql: 'SELECT table_name, ordinal_position, column_name, ' +
+         '       data_type, is_nullable, column_default ' +
+         'FROM information_schema.columns ' +
+         'WHERE table_schema = current_schema() ' +
+         'ORDER BY table_name, ordinal_position' },
+
+  { id: 'constraints', group: 'Schema', shape: 'rows',
+    what: 'Primary keys, unique constraints, foreign keys and checks.',
+    sql: 'SELECT rel.relname AS table_name, con.conname AS name, ' +
+         '       CASE con.contype WHEN \'p\' THEN \'primary key\' ' +
+         '                        WHEN \'u\' THEN \'unique\' ' +
+         '                        WHEN \'f\' THEN \'foreign key\' ' +
+         '                        WHEN \'c\' THEN \'check\' ' +
+         '                        ELSE con.contype::text END AS kind, ' +
+         '       pg_get_constraintdef(con.oid) AS definition ' +
+         'FROM pg_constraint con ' +
+         'JOIN pg_class rel ON rel.oid = con.conrelid ' +
+         'WHERE con.connamespace = current_schema()::regnamespace ' +
+         'ORDER BY rel.relname, con.conname' },
+
+  // -------------------------------------------------------------------------
+  // HOW IT IS CONFIGURED.
+  //
+  // **THE SETTINGS ARE THE ONES AN OPERATOR CHANGED, plus a named handful.**
+  // There are 375 of them on PostgreSQL 18 and a page that drew all of them
+  // would be a page nobody reads — which is the `audit.js` argument about a
+  // list long enough to scroll. `source NOT IN ('default', 'override')` is
+  // postgres's own answer to "what did somebody set", so the list is the
+  // server's judgement rather than this file's.
+  // -------------------------------------------------------------------------
+  { id: 'settings', group: 'Configuration', shape: 'rows',
+    what: 'Every setting an operator has changed from its built-in default, ' +
+          'and where it was set — plus the handful that matter whether or ' +
+          'not anybody touched them.',
+    sql: 'SELECT name, setting, unit, source, boot_val, pending_restart ' +
+         'FROM pg_settings ' +
+         'WHERE source NOT IN (\'default\', \'override\') ' +
+         '   OR name IN (\'max_connections\', \'shared_buffers\', ' +
+         '               \'work_mem\', \'maintenance_work_mem\', ' +
+         '               \'effective_cache_size\', \'wal_level\', ' +
+         '               \'synchronous_commit\', \'fsync\', ' +
+         '               \'full_page_writes\', \'autovacuum\', ' +
+         '               \'checkpoint_timeout\', \'max_wal_size\', ' +
+         '               \'ssl\', \'data_checksums\', ' +
+         '               \'default_transaction_isolation\', ' +
+         '               \'statement_timeout\', \'idle_in_transaction_session_timeout\') ' +
+         'ORDER BY name' },
+
+  { id: 'extensions', group: 'Configuration', shape: 'rows',
+    what: 'Extensions installed in this database.',
+    sql: 'SELECT extname AS name, extversion AS version, ' +
+         '       n.nspname AS schema ' +
+         'FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace ' +
+         'ORDER BY extname' }
+];
+
 function create(options) {
   const url = options.url;
   const log = options.log;
@@ -500,13 +819,61 @@ function create(options) {
     });
   }
 
+
+  // ---------------------------------------------------------------------------
+  // A CHECKED-OUT CLIENT HAS NO ERROR LISTENER, AND AN UNHANDLED ONE IS A
+  // PROCESS EXIT (2026-09-11).
+  //
+  // `pool.on('error')` above covers a client that dies while IDLE IN THE POOL,
+  // and its comment is right about why that matters. **It does not cover a
+  // client that is checked out**, and that is not an oversight in this file —
+  // it is what `pg-pool` does: `_acquireClient()` calls
+  // `client.removeListener('error', idleListener)` as it hands the client
+  // over, because from that moment the borrower owns it.
+  //
+  // So a connection that dies while somebody is holding it emits `'error'` on
+  // an EventEmitter with no listener, and node's rule for that is to throw —
+  // **taking this service down**. Measured: `docker stop` on the database
+  // while a page was reading from it exited the process with
+  // `Unhandled 'error' event ... 57P01 terminating connection due to
+  // administrator command`. A mock identity service must not exit because a
+  // database restarted, which is exactly what the idle handler above says.
+  //
+  // **IT IS A HAZARD IN THE WRITE PATH TOO AND HAS BEEN SINCE THIS DRIVER WAS
+  // WRITTEN.** `withTransaction()` borrows a client for every flush, so a
+  // database restarted during one took the service with it; the failure was
+  // just far rarer than a page somebody opens. Both call sites are wrapped
+  // now, which is why this is a function rather than two lines.
+  //
+  // The listener is REMOVED before release. Leaving it attached would leak one
+  // per checkout onto a client the pool reuses — node warns at eleven — and
+  // would sit alongside the idle listener pg puts back, so one dead connection
+  // would be reported twice.
+  // ---------------------------------------------------------------------------
+  function guardClient(client, what) {
+    const onError = function (err) {
+      log.error('persistence: the postgres connection held by ' + what +
+                ' errored: ' + err.message + '. It is being discarded; the ' +
+                'pool will make another. This is logged rather than thrown ' +
+                'because an unhandled error on a client is a process exit, ' +
+                'and this service must not die because its database ' +
+                'restarted.');
+    };
+    client.on('error', onError);
+    return function () {
+      client.removeListener('error', onError);
+    };
+  }
+
   function withTransaction(fn) {
     log.debug('Entering withTransaction().');
     return pool.connect().then(function (client) {
+      const unguard = guardClient(client, 'a transaction');
       return client.query('BEGIN').then(function () {
         return fn(client);
       }).then(function (result) {
         return client.query('COMMIT').then(function () {
+          unguard();
           client.release();
           log.debug('Leaving withTransaction(). Committed.');
           return result;
@@ -520,6 +887,7 @@ function create(options) {
           log.warn('persistence: a rollback failed (' + rollbackErr.message +
                    '); the connection is being discarded.');
         }).then(function () {
+          unguard();
           client.release(err);
           log.debug('Leaving withTransaction(). Rolled back.');
           throw err;
@@ -627,6 +995,167 @@ function create(options) {
                  'pointed at this database will not see this one\'s writes ' +
                  'until it restarts.');
         log.debug('Leaving the postgres driver open().');
+      });
+    },
+
+    // =====================================================================
+    // THE METRICS, FOR `/admin/database` (2026-09-11).
+    //
+    // **IT IS HERE AND NOT IN THE CONSOLE BECAUSE THIS MODULE OWNS THE
+    // POOL.** `admin-ui/` must never hold a connection string — it is a
+    // credential — and must never require `pg`, which is a dependency only
+    // this mode needs and which `persistence.js` takes care to require
+    // lazily. So the console asks `persistence.databaseMetrics()`, that
+    // function asks the active driver, and only a driver that HAS a database
+    // answers.
+    //
+    // ---------------------------------------------------------------------
+    // ONE CLIENT, A STATEMENT TIMEOUT, AND EVERY PROBE CAUGHT SEPARATELY.
+    //
+    // Three decisions, and each is about what must not happen to a service
+    // because somebody opened a page:
+    //
+    //   * **ONE CLIENT FOR THE WHOLE RENDER**, checked out once and released
+    //     once. The pool's `max` is 4 and this service answers protocol
+    //     traffic out of the same pool, so nineteen separate `pool.query()`
+    //     calls would be nineteen checkouts racing every other caller.
+    //   * **`statement_timeout` IS SET ON THAT CLIENT**, from
+    //     `persistence.metricsTimeoutMs`. These are catalog reads and they
+    //     are fast, but `pg_stat_activity` on a busy server and
+    //     `pg_total_relation_size` over a large schema are not free, and a
+    //     console page must not be able to pin a connection. It is `SET`
+    //     rather than `SET LOCAL` because there is no transaction — and the
+    //     client is RESET on the way out so the setting cannot escape into
+    //     the next caller that borrows it.
+    //   * **EACH PROBE IS RUN, TIMED AND CAUGHT ON ITS OWN.** The role this
+    //     service dials with is not `pg_monitor`, and which views that
+    //     narrows depends on the server's version and the operator's grants.
+    //     One rejection must cost one row on the page rather than the page.
+    //
+    // **NOTHING HERE IS COMPOSED FROM A REQUEST.** Every statement is a
+    // literal in `METRIC_PROBES`; the only thing that varies is which probes
+    // ran. There is no query box on that page and there must never be one —
+    // this role can write.
+    // =====================================================================
+    metrics: function (options) {
+      log.debug('Entering the postgres driver metrics().');
+      const opts = options || {};
+      const timeoutMs = Math.max(250, Number(opts.timeoutMs) || 5000);
+      const began = Date.now();
+      const out = { ok: true, probes: {}, pool: null, tookMs: 0 };
+
+      // THE POOL'S OWN NUMBERS, which are this PROCESS's and are not in any
+      // catalog view: postgres can say how many backends exist and only `pg`
+      // can say how many of them this process is holding, how many are idle
+      // in its pool, and how many callers are queued for one. A page drawing
+      // only the server's side would answer "how contended is this service's
+      // database handle" with a number about somebody else.
+      //
+      // **SAMPLED BEFORE THIS FUNCTION CHECKS A CLIENT OUT**, so the figures
+      // are what the pool was doing when somebody asked rather than what it
+      // is doing because they asked. A sample taken afterwards would include
+      // this page's own connection and report a pool one busier than it is —
+      // which on a `max` of 4 is a quarter of it, invented by the act of
+      // looking.
+      out.pool = {
+        total: pool.totalCount,
+        idle: pool.idleCount,
+        waiting: pool.waitingCount,
+        max: pool.options && pool.options.max
+      };
+
+      return pool.connect().then(function (client) {
+        const unguard = guardClient(client, 'the metrics page');
+        return client.query('SET statement_timeout = ' + timeoutMs)
+          .catch(function (err) {
+            // Swallowed with a reason: a server that refuses to set a
+            // statement timeout is a server this page can still report on,
+            // and the probes below are bounded by the pool's own
+            // connectionTimeout in any case. It is recorded so the page can
+            // say the bound is not in force.
+            out.timeoutSet = false;
+            out.timeoutError = err.message;
+          })
+          .then(function () {
+            if (out.timeoutSet !== false) {
+              out.timeoutSet = true;
+            }
+            let chain = Promise.resolve();
+            METRIC_PROBES.forEach(function (probe) {
+              chain = chain.then(function () {
+                const started = Date.now();
+                return client.query(probe.sql).then(function (result) {
+                  out.probes[probe.id] = {
+                    ok: true,
+                    group: probe.group,
+                    what: probe.what,
+                    shape: probe.shape,
+                    // A `row` probe that matched nothing answers null rather
+                    // than an empty object, so "no such row" and "a row of
+                    // zeroes" stay different facts.
+                    row: probe.shape === 'row' ? (result.rows[0] || null) : null,
+                    rows: probe.shape === 'rows' ? result.rows : null,
+                    count: result.rows.length,
+                    tookMs: Date.now() - started
+                  };
+                }).catch(function (err) {
+                  out.probes[probe.id] = {
+                    ok: false,
+                    group: probe.group,
+                    what: probe.what,
+                    shape: probe.shape,
+                    // `code` is postgres's SQLSTATE and is worth more than
+                    // the message to anybody diagnosing this: 42P01 is "no
+                    // such relation" (a view this server version does not
+                    // have) and 42501 is "insufficient privilege" (a grant
+                    // this role does not hold), and those are completely
+                    // different things to do something about.
+                    error: err.message,
+                    code: err.code || '',
+                    expected: probe.expected || null,
+                    tookMs: Date.now() - started
+                  };
+                  log.debug('metrics(): the "' + probe.id + '" probe failed: ' +
+                            err.message);
+                });
+              });
+            });
+            return chain;
+          })
+          .then(function () {
+            // RESET rather than setting the timeout back to a value this
+            // function guessed: `RESET ALL` puts the session back to what the
+            // server and the connection string say, which is the only
+            // definition of "as we found it" that stays right when somebody
+            // changes either.
+            return client.query('RESET ALL').catch(function (err) {
+              log.warn('persistence: a metrics connection could not be reset ' +
+                       '(' + err.message + '); it is being discarded rather ' +
+                       'than returned to the pool with a statement timeout on ' +
+                       'it.');
+              out.resetFailed = true;
+            });
+          })
+          .then(function () {
+            unguard();
+            client.release(out.resetFailed ? new Error('not reset') : undefined);
+            out.tookMs = Date.now() - began;
+            log.debug('Leaving the postgres driver metrics(). ' +
+                      Object.keys(out.probes).length + ' probe(s), ' +
+                      out.tookMs + 'ms.');
+            return out;
+          });
+      }).catch(function (err) {
+        // THE WHOLE THING FAILED, which means no connection — the database is
+        // down, or unreachable, or refusing this role. That is one fact and
+        // it is reported as one rather than as nineteen identical probe
+        // failures.
+        out.ok = false;
+        out.error = err.message;
+        out.tookMs = Date.now() - began;
+        log.warn('persistence: the database metrics could not be collected: ' +
+                 err.message);
+        return out;
       });
     },
 
@@ -1397,6 +1926,11 @@ function create(options) {
 
 module.exports = {
   create: create,
+  // For `tests/database_metrics.js`, which checks that every probe is
+  // GROUPED into a section the page actually draws — a probe in a group the
+  // renderer has no heading for is collected on every render and shown to
+  // nobody, and that is an error nowhere.
+  METRIC_PROBES: METRIC_PROBES,
   CHANNEL: CHANNEL,
   SCHEMA: SCHEMA,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,

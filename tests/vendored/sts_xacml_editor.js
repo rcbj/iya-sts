@@ -564,8 +564,8 @@ async function signIn(driver, username) {
       "the browser refusing this service's certificate (its key is " +
       "regenerated on every start), which the launchers answer with " +
       "STS_SPKI_PIN and a hand-run does not.");
-    log.info("The console is OPEN (admin.authRequired is off); no sign-in " +
-             "was needed.");
+    log.info("The console is OPEN; no sign-in was needed. That should not " +
+             "happen any more: the gate became unconditional on 2026-09-06.");
     log.debug("Leaving signIn(). No gate.");
     return false;
   }

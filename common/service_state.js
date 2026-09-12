@@ -26,6 +26,14 @@
 const persistence = require('../persistence/persistence');
 // The keystore, for the product-mode key material. A LEAF (rule 3).
 const keystore = require('./keystore');
+// The certificate authority. A LEAF (rule 3w): it registers no route, so
+// requiring it here moves nothing — and it is required AFTER the keystore
+// because it is built out of what that module opens.
+const pki = require('./pki');
+const realms = require('./realms');
+// For the key sets `pki.start()` certifies. Required here and NOT from
+// `pki.js` — see the `keySetFor` note below.
+const helpers = require('./helpers');
 
 function start() {
   return persistence.start().then(function (started) {
@@ -86,8 +94,44 @@ function start() {
       // starts, says so loudly, and keeps trying on its timer.
       // ---------------------------------------------------------------------
       return persistence.coordinate().then(function (coordinating) {
+      // ---------------------------------------------------------------------
+      // AND THEN THE CERTIFICATE AUTHORITY — A FIFTH STEP, AFTER THE KEYSTORE
+      // AND BEFORE ANYTHING BINDS (2026-09-11).
+      //
+      // **AFTER, because it is built out of key material the keystore has to
+      // have opened first**, and it is written back through that same sealed
+      // row family. **BEFORE the listener, because every key pair this service
+      // generates is a leaf of it** — a request answered before the tree
+      // exists would be answered with a self-signed certificate that a moment
+      // later stops being the published one.
+      //
+      // **A FAILURE HERE IS NOT FATAL, which is the coordination step's
+      // asymmetry and not the keystore's.** A service whose certificate
+      // authority could not be built answers correctly with self-signed keys —
+      // which is exactly what this service did for its whole life until this
+      // date — where a service that cannot read its signing keys is lying
+      // about what it issues. `pki.start()` says so loudly and returns.
+      // ---------------------------------------------------------------------
+      // **THE REALM IDS COME FROM `list()` AND THE DEFAULT ONE IS RENAMED.**
+      // That function reports the default realm as `default` because it is a
+      // LABEL on a page; the realm's actual id is the empty string, and
+      // `pki.start()` is addressing a store. Passing `default` through would
+      // build a branch for a realm nobody is ever in.
+      return pki.start({ realmIds: realms.list().map(function (one) {
+        return one.id === realms.DEFAULT_ID ? '' : one.id;
+      }),
+        // **THE KEY SETS ARE HANDED OVER RATHER THAN FETCHED**, because
+        // `pki.js` must not require `helpers.js` — that file reaches for this
+        // one lazily from inside a property read, and a require the other way
+        // at load time would put a certificate authority in front of every
+        // in-process caller of helpers. This is the one place that knows both,
+        // so this is where they meet.
+        keySetFor: function (realmId) { return helpers.stsKeysFor.of(realmId); }
+      })
+          .then(function (pkiResult) {
         return { started: started, keys: keys, minted: mintedResult,
-                 coordinating: coordinating };
+                 coordinating: coordinating, pki: pkiResult };
+      });
       });
     });
   });

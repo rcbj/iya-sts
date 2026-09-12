@@ -296,11 +296,25 @@ const REQUIREMENTS = [
 //     principals on demand; it does not give the existing ones distinct
 //     long-term keys.
 const NOT_YET = [
+  // **THIS ROW NARROWED ON 2026-09-11 AND DID NOT GO AWAY.** It read *there
+  // is no OCSP responder and no CRL fetch*; the first half stopped being true
+  // that day — every authority in `/admin/pki` signs a CRL and answers OCSP —
+  // and the SECOND half is what this row was always about and is unchanged.
+  // Publishing revocation and consulting it are different pieces of work, and
+  // a row deleted because half of it was done would have quietly removed the
+  // half that is still outstanding.
   { id: 'certificate-revocation',
-    what: 'Revocation is not checked on a client certificate, in either mode. ' +
-          'There is no OCSP responder and no CRL fetch, so a revoked ' +
-          'certificate verifies here and would not verify anywhere that ' +
-          'matters.' },
+    what: 'Revocation is PUBLISHED and never CONSULTED, in either mode. This ' +
+          'service signs a CRL and answers OCSP for every certificate ' +
+          'authority it holds — but when a CLIENT presents a certificate to ' +
+          'it, on 8443, 9443, the main port or the LDAPS socket, no CRL is ' +
+          'fetched and no responder is asked. So a certificate revoked on ' +
+          'this service\'s own /admin/pki still authenticates to this ' +
+          'service, and would not verify anywhere that checks. Checking is ' +
+          'the outstanding half: it needs a fetch with a timeout, a cache, a ' +
+          'soft-fail-or-hard-fail policy, and a decision about what to do ' +
+          'when the responder is unreachable — none of which is a mock ' +
+          'behaviour, which is why it is here rather than done.' },
   { id: 'key-overlap',
     what: 'A rotation has NO OVERLAP. This service publishes one key per realm ' +
           'per algorithm, so everything signed with the old key stops ' +
@@ -308,13 +322,24 @@ const NOT_YET = [
           'wants both keys in JWKS for a window, which needs the old private ' +
           'key kept — the thing rotation is for getting rid of — so it is a ' +
           'design rather than a setting.' },
+  // **THE SPIFFE HALF OF THIS ROW NARROWED ON 2026-09-11.** It said "the TLS
+  // server certificate and the SPIFFE authorities, which belong to their own
+  // modules and are shared across realms" — and the SPIFFE X.509 authority is
+  // `common/pki.js`'s SPIFFE Issuing CA now, per realm, in the same sealed
+  // `pki:` row family as the rest of the hierarchy, so in product mode it
+  // survives a restart. The JWT authority does not: it has no certificate and
+  // no hierarchy to hang from, so there is nothing for the keystore to keep it
+  // beside.
   { id: 'post-quantum-keys',
     what: 'The eleven post-quantum keys per realm are NOT persisted, in either ' +
           'mode: they are generated on the worker pool because generating ' +
           'them is expensive, and cached by pq_jose.js. Nor are the TLS server ' +
-          'certificate and the SPIFFE authorities, which belong to their own ' +
-          'modules and are shared across realms. Only the RSA signing key and ' +
-          'the eight EC/Ed keys beside it survive a restart.' },
+          'certificate and the SPIFFE JWT authority, which belong to their own ' +
+          'modules. The SPIFFE X.509 authority came off this row on ' +
+          '2026-09-11: it is this realm\'s SPIFFE Issuing CA under the ' +
+          'service Root, so it persists in product mode exactly as the rest ' +
+          'of the certificate authority does. Only the RSA signing key and ' +
+          'the eight EC/Ed keys beside it survive a restart otherwise.' },
   { id: 'key-never-in-memory',
     what: 'A private key is DECRYPTED IN THIS PROCESS while it signs. Since ' +
           '2026-09-06 what is resident between signatures is the ciphertext, ' +

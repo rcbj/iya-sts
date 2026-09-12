@@ -114,7 +114,10 @@ const stats = require('../common/admin_stats');
 // ---------------------------------------------------------------------------
 const VC_ATTRIBUTES = [
   { ldap: 'givenName', claim: ['given_name'], label: 'Given name',
-    schema: 'RFC 4519 2.6', from: 'given', ldpTerm: 'given_name', byDefault: true },
+    // RFC 4519 section 2 is alphabetical: 2.6 is `destinationIndicator`.
+    // This said 2.6 until 2026-09-11, when `common/inetorgperson.js` was
+    // checked against the RFC text and the two catalogues were compared.
+    schema: 'RFC 4519 2.12', from: 'given', ldpTerm: 'given_name', byDefault: true },
   { ldap: 'sn', claim: ['family_name'], label: 'Family name',
     schema: 'RFC 4519 2.32', from: 'family', ldpTerm: 'family_name', byDefault: true },
   { ldap: 'mail', claim: ['email'], label: 'Email address',
@@ -171,15 +174,16 @@ const VC_ATTRIBUTES = [
   { ldap: 'ou', claim: ['organizational_unit'], label: 'Organizational unit',
     schema: 'RFC 4519 2.20', from: 'unit', ldpTerm: null, byDefault: false },
   { ldap: 'departmentNumber', claim: ['department'], label: 'Department',
-    schema: 'RFC 2798 2.4', from: 'department', ldpTerm: null, byDefault: false },
+    schema: 'RFC 2798 2.2', from: 'department', ldpTerm: null, byDefault: false },
   { ldap: 'employeeNumber', claim: ['employee_number'], label: 'Employee number',
-    schema: 'RFC 2798 2.6', from: 'employeeNumber', ldpTerm: null, byDefault: false },
+    schema: 'RFC 2798 2.4', from: 'employeeNumber', ldpTerm: null, byDefault: false },
   { ldap: 'employeeType', claim: ['employee_type'], label: 'Employee type',
-    schema: 'RFC 2798 2.7', from: 'employeeType', ldpTerm: null, byDefault: false },
+    schema: 'RFC 2798 2.5', from: 'employeeType', ldpTerm: null, byDefault: false },
   { ldap: 'preferredLanguage', claim: ['locale'], label: 'Locale',
-    schema: 'RFC 2798 2.10', from: 'locale', ldpTerm: null, byDefault: false },
+    schema: 'RFC 2798 2.7', from: 'locale', ldpTerm: null, byDefault: false },
   { ldap: 'labeledURI', claim: ['website'], label: 'Web page',
-    schema: 'RFC 2079 2', from: 'website', ldpTerm: null, byDefault: false },
+    // RFC 2079's sections are unnumbered, so there is no `2` to cite.
+    schema: 'RFC 2079', from: 'website', ldpTerm: null, byDefault: false },
   { ldap: 'description', claim: ['description'], label: 'Description',
     schema: 'RFC 4519 2.5', from: null, ldpTerm: null, byDefault: false },
   { ldap: 'employeeStatus', claim: ['employee_status'], label: 'Employee status',

@@ -137,6 +137,27 @@ function size() {
 }
 
 // ---------------------------------------------------------------------------
+// HOW LONG A JOB MAY TAKE. `workers.jobTimeoutS`, read LIVE on every dispatch
+// for the reason `size()` above is: a value captured at require time is the one
+// thing a runtime override cannot change, and this is a setting somebody turns
+// up precisely because something is taking too long.
+//
+// Zero means no bound, which is what this pool did until 2026-09-11.
+// ---------------------------------------------------------------------------
+function jobTimeoutMs() {
+  let seconds = 0;
+  try {
+    seconds = parseInt(config.value('workers.jobTimeoutS'), 10);
+  } catch (e) {
+    // A module loaded with no configuration — the parent project's in-process
+    // jobs, `env/generate_defaults.js`, this repository's own unit tests. No
+    // bound is the honest answer there and matches what those callers had.
+    return 0;
+  }
+  return (seconds > 0) ? seconds * 1000 : 0;
+}
+
+// ---------------------------------------------------------------------------
 // Forking one worker, and everything that has to be true about it afterwards.
 //
 // THE CHANNEL IS UNREFERENCED WHILE THE WORKER IS IDLE, which is the property
@@ -415,7 +436,67 @@ function run(kind, job, opts) {
   }
   const id = nextJobId++;
   const promise = new Promise(function (resolve, reject) {
-    entry.inFlight.set(id, { resolve: resolve, reject: reject, kind: kind });
+    // ---------------------------------------------------------------------
+    // **THE BOUND, AND THE HEADER ABOVE IS WHAT IT IS FOR** (2026-09-11).
+    //
+    // `reap()` rejects everything on a worker that DIES, because "a promise
+    // nobody settles is a request that hangs". Nothing covered a worker that
+    // stays ALIVE and never answers — and one did: five idle children, no CPU
+    // anywhere in the process tree, the service answering every other request
+    // in eleven milliseconds, and one HTTP request parked until a test
+    // runner's 300-second watchdog killed the job.
+    //
+    // **IT IS A BACKSTOP AND NOT A DIAGNOSIS.** Why the reply went missing is
+    // not known. What this changes is that the caller is told, with a sentence
+    // naming the worker and the job kind, instead of waiting for ever.
+    //
+    // **THE TIMER IS UNREFERENCED.** Every other handle in this file is
+    // unreferenced while idle so that a pool never holds the front process
+    // open; a referenced timer here would undo that for the length of the
+    // bound, which on the default is two minutes per job. `unref()` means it
+    // fires only while something else is keeping the process alive — and if
+    // nothing is, the process was exiting anyway and the request is going with
+    // it.
+    //
+    // The entry is deleted before the rejection for `receive()`'s reason: a
+    // late answer then finds nothing waiting and is dropped, rather than
+    // resolving a promise that has already been settled.
+    // ---------------------------------------------------------------------
+    const limit = jobTimeoutMs();
+    let timer = null;
+    if (limit > 0) {
+      timer = setTimeout(function () {
+        const late = entry.inFlight.get(id);
+        if (!late) {
+          return;
+        }
+        entry.inFlight.delete(id);
+        unrefIfIdle(entry);
+        log.error('worker_pool: worker ' + entry.pid + ' has not answered a ' +
+                  kind + ' job in ' + limit + 'ms, so the request waiting on ' +
+                  'it is being failed rather than left to hang. The worker is ' +
+                  'left alone — it is alive, and it holds no state, so it is ' +
+                  'kept for the next job. If this recurs, workers.jobTimeoutS ' +
+                  'is the bound and 0 removes it.');
+        reject(new Error('the ' + kind + ' job sent to worker ' + entry.pid +
+          ' did not come back within ' + limit + 'ms. A worker holds no ' +
+          'state, so this request can simply be made again.'));
+      }, limit);
+      if (timer.unref) {
+        timer.unref();
+      }
+    }
+    entry.inFlight.set(id, {
+      kind: kind,
+      resolve: function (value) {
+        if (timer) { clearTimeout(timer); }
+        resolve(value);
+      },
+      reject: function (err) {
+        if (timer) { clearTimeout(timer); }
+        reject(err);
+      }
+    });
   });
   refWhileWorking(entry);
   try {

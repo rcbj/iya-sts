@@ -139,6 +139,21 @@ const LOGIN_PATH = '/authn/login';
 // reached only with an `?authn=` id, exactly as the screen is, because what it
 // needs is the pending record and not a partner list somebody could compose.
 const SELECT_IDP_PATH = '/authn/select-idp';
+// THE TWO SECOND-FACTOR SCREENS. `/authn/webauthn` predates this constant and
+// is written out in the markup it belongs to; `/authn/totp` (2026-09-10) is
+// named here because THREE things build a URL out of it — the form's action,
+// the *use a code instead* link on the security-key screen, and the endpoint
+// registration — and a path spelled three times is a path that drifts.
+const TOTP_PATH = '/authn/totp';
+const WEBAUTHN_PATH = '/authn/webauthn';
+// **THE THIRD SECOND-FACTOR SCREEN (2026-09-10), AND IT IS NOT A MECHANISM
+// SOMEBODY IS CONFIGURED FOR.** `/authn/backup-code` is where a person lands
+// who cannot produce the factor their account IS configured for — the phone is
+// lost or flat, the security key is at home — and it is reachable only as a
+// way OUT of one of the other two screens, never as the factor the sign-in
+// asks for first. `credentials.mechanismsFor()` deliberately leaves the
+// recovery codes off `secondFactor` for exactly that reason.
+const BACKUP_CODE_PATH = '/authn/backup-code';
 // ---------------------------------------------------------------------------
 // WHERE A PERSON SIGNS IN WITH A KERBEROS TICKET, and the reason the constant
 // is HERE while the endpoint is in `kerberos/spnego_authn.js`.
@@ -236,12 +251,51 @@ const pending = realms.map({ persist: 'authn.pending' });  // authn id -> { retu
 // because answering "two factors" with one would be exactly the lie wauth and
 // acr_values exist to prevent.
 const webauthnVerifier = require('./webauthn');
+// The ceremony's OPTIONS and this service's policy about what a key may be, in
+// a module of their own beside the verifier. Rule 3: it registers nothing, so
+// its position here is not a position, and it requires only `config`, `helpers`
+// and the verifier — so it cannot join a cycle. It is not IN the verifier
+// because that file is deliberately loadable on its own by the debugger's
+// cross-implementation test, and a `require('../common/config')` in there would
+// end that silently. See `authn/webauthn_policy.js`'s header.
+const webauthnPolicy = require('./webauthn_policy');
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const webauthnCredentials = realms.map({ persist: 'authn.webauthnCredentials' });  // username -> { credentialId, publicKeyJwk, signCount }
+// ---------------------------------------------------------------------------
+// THERE WAS A `webauthnCredentials` MAP HERE AND IT WAS THE WRONG STORE
+// (2026-09-10).
+//
+// `realms.map({ persist: 'authn.webauthnCredentials' })`, keyed by username,
+// holding ONE credential each. It survived a restart and it was still wrong,
+// because **`common/credentials.js` already held the security keys** — on the
+// person's own directory entry, multi-valued, each with the ROLE it was
+// enrolled in (`primary` or `mfa`). That is the store `mechanismsFor()` reads,
+// which is the store `/portal/keys`, `/admin/users`, the sign-in screen's
+// `mfaRequired` check and `removeKey()`'s last-way-in refusal all read.
+//
+// **TWO STORES MEANT THE ROLE MODEL WAS CONNECTED TO NOTHING**, and the
+// symptoms were worse than a disagreement:
+//
+//   * `credentials.addKey()` — the only writer of the directory store — had NO
+//     CALLER anywhere in this service. So `mechanismsFor()` answered
+//     `mfaKeys: 0, primaryKeys: 0` for everybody, for ever.
+//   * `mfaRequired` could therefore never become true from a security key, so
+//     a key enrolled at this screen was **never demanded again**: the next
+//     sign-in had the box unticked and a password alone was accepted.
+//   * `GET /authn/webauthn`'s own gate — *does this person hold an `mfa` key?*
+//     — refused everybody, so the *use your security key instead* link could
+//     never be followed.
+//   * `/portal/keys` could list and remove keys that could not exist, and
+//     `/portal/activate`'s *a security key instead of a password* spent the
+//     activation link, said "your account is ready" and enrolled nothing.
+//
+// So this module keeps NO credential store of its own. It reads and writes
+// `common/credentials.js`, which is rule 3m applied where it was being broken:
+// one answer to *what can this person sign in with*, and the wrong half is no
+// longer whichever surface a reader happened to open.
 // mfa id -> { authn, username, challenge, passwordless, expires }
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -435,7 +489,45 @@ const ARRIVAL_PATHS = [
   '/admin'
 ];
 
+// ---------------------------------------------------------------------------
+// AND THE TWO PATHS UNDER THOSE PREFIXES THAT ARE NOT A BROWSER ARRIVING
+// (2026-09-10).
+//
+// The list above is FRONT DOORS and is matched by prefix, which is right for
+// every path a person can reach. `/admin/signals/receive` and
+// `/portal/signals/receive` are not: they are this service's own two Shared
+// Signals receivers, and what arrives at them is `ssf/ssf_http.js` POSTing a
+// Security Event Token over the loopback interface.
+//
+// **THIS IS THE FAILURE THE PARAGRAPH ABOVE NAMES, ARRIVING FROM A DIRECTION
+// IT DID NOT ANTICIPATE.** It says giving a cookie to a callback or a metadata
+// fetch would "mint a session for a machine that will never send it back — one
+// row per metadata poll, for ever", and it prevents that by listing front
+// doors rather than families. A prefix match cannot prevent it for a machine
+// endpoint registered UNDER a front door, which is what both of these are —
+// deliberately, because a receiver hosts its own endpoint and these belong to
+// the console and the portal. Measured before this list existed: one arrival
+// session per delivered event, so a service telling its own console about
+// every sign-in minted a second session for every session.
+//
+// It is an exclusion HERE rather than two paths moved out of `/admin` and
+// `/portal`, because the path is what says WHICH RECEIVER a SET was delivered
+// to and a receiver's endpoint living somewhere other than the receiver would
+// be the tidier version of a worse design. See `ssf/ssf_receivers.js`.
+//
+// **A THIRD ENTRY NEEDS THE SAME TEST**: is this path reached by a BROWSER
+// that will hold a cookie? If yes it belongs on neither list and is already
+// handled. If no, and it sits under a front door, it belongs here.
+// ---------------------------------------------------------------------------
+const NOT_ARRIVAL_PATHS = [
+  '/admin/signals/receive',
+  '/portal/signals/receive'
+];
+
 function isArrivalPath(pathOnly) {
+  if (NOT_ARRIVAL_PATHS.indexOf(pathOnly) >= 0) {
+    return false;
+  }
   for (let i = 0; i < ARRIVAL_PATHS.length; i++) {
     const entry = ARRIVAL_PATHS[i];
     if (pathOnly === entry || pathOnly.indexOf(entry + '/') === 0) {
@@ -597,15 +689,49 @@ function arrivalSessionOf(req) {
 // cascade below and by nothing else — it is a WALK rather than an index for
 // `startSession()`'s keyed-session reason: an index would be a second map to
 // hold in step with this one, and these maps are already bounded by the sweep.
+//
+// **IT WALKS TWO PARTITIONS SINCE 2026-09-11, AND ONLY EVER TWO.** The admin
+// console AUTHORIZES in the ambient realm — that is what makes single sign-on
+// between `/admin` and `/portal` work inside a realm — and holds its session in
+// the DEFAULT realm's partition, so that one console session is found by the
+// gate from every realm. So a console session reached in `acme` is a child in
+// the default partition whose parent is in acme's, and a cascade that walked
+// only the parent's own partition would find nothing: the sign-on session would
+// end and the console session it issued would go on working.
+//
+// The default realm is the only other partition looked in, because the console
+// is the only surface whose session realm differs from its flow realm — see
+// `common/oidc_rp.js`'s surface table. A THIRD such surface would have to widen
+// this, and the honest way to do that is another named partition here rather
+// than a walk over every realm: `realms.list()` is unbounded and this runs on
+// every sign-out.
+//
+// A child found in the other partition must SAY it belongs to this parent's
+// realm. Without that check a session id that happened to exist in both
+// partitions with the same `derivedFrom` would be ended by a sign-out it has
+// nothing to do with. An absent `derivedFromRealm` means "my own partition",
+// which is what every session made before this field existed meant.
 function derivedFrom(parentId, store) {
   log.debug("Entering derivedFrom(). parentId=" + parentId);
-  const map = store || sessions.realmMap();
+  const here = realms.currentId();
   const found = [];
-  map.forEach(function (held, id) {
-    if (held && held.derivedFrom === parentId) {
-      found.push({ id: id, session: held });
-    }
-  });
+  const seen = {};
+  function scan(realmId, map) {
+    map.forEach(function (held, id) {
+      if (!held || held.derivedFrom !== parentId || seen[id]) {
+        return;
+      }
+      if (String(held.derivedFromRealm || realmId) !== here) {
+        return;
+      }
+      seen[id] = true;
+      found.push({ id: id, session: held, realm: realmId });
+    });
+  }
+  scan(here, store || sessions.realmMap());
+  if (here !== realms.DEFAULT_ID) {
+    scan(realms.DEFAULT_ID, sessions.realmMap(realms.DEFAULT_ID));
+  }
   log.debug("Leaving derivedFrom(). " + found.length + " derived session(s).");
   return found;
 }
@@ -638,17 +764,40 @@ function relyingPartySessionOf(req, cookie, realmId) {
     log.debug("Leaving relyingPartySessionOf(). It had expired.");
     return null;
   }
-  if (session.derivedFrom && !store.get(session.derivedFrom)) {
+  // WHERE THIS SESSION LIVES AND WHERE ITS PARENT LIVES ARE TWO ANSWERS
+  // (2026-09-11). The admin console's session is in the default realm's
+  // partition and its sign-on session is in whichever realm the code flow ran
+  // in — see `common/oidc_rp.js`'s surface table. Looking the parent up in
+  // THIS session's partition would report every console session reached in a
+  // realm as an orphan and end it on sight, which is a sign-in that lasts one
+  // request. An absent `derivedFromRealm` means the same partition, which is
+  // what every session made before this field existed meant.
+  const ownRealm = realmId || realms.currentId();
+  const parentRealm = String(session.derivedFromRealm || ownRealm);
+  const parentStore = parentRealm === ownRealm
+    ? store : sessions.realmMap(parentRealm);
+  if (session.derivedFrom && !parentStore.get(session.derivedFrom)) {
     // The provider session is gone and this one is therefore over. It is ENDED
     // rather than merely refused, so that /admin/sessions stops listing it and
     // the audit log carries the row: a session that keeps being refused and
     // keeps being listed is the worst of both answers.
     log.info('authn: the ' + (session.rpSurface || 'relying party') +
              ' session ' + id + ' is being ended because the sign-on session ' +
-             'it was derived from (' + session.derivedFrom + ') is gone. A ' +
-             'relying party session cannot outlive the provider session it ' +
-             'was issued against.');
-    dropSession(id, 'the sign-on session it came from ended', true, req);
+             'it was derived from (' + session.derivedFrom + ', in realm ' +
+             parentRealm + ') is gone. A relying party session cannot outlive ' +
+             'the provider session it was issued against.');
+    // IN THE REALM THE SESSION IS IN, and not in the ambient one. `dropSession()`
+    // works on the ambient realm's partition, and this function is reached with
+    // an explicit realm — the console reads its default-realm session from
+    // inside whatever realm the request is in. Dropping it ambiently deleted
+    // nothing and left the orphan to be reported again on the next request.
+    if (parentRealm !== ownRealm || (realmId && realmId !== realms.currentId())) {
+      realms.run(realms.get(ownRealm), function () {
+        dropSession(id, 'the sign-on session it came from ended', true, req);
+      });
+    } else {
+      dropSession(id, 'the sign-on session it came from ended', true, req);
+    }
     log.debug("Leaving relyingPartySessionOf(). Its parent is gone.");
     return null;
   }
@@ -675,7 +824,17 @@ function startRelyingPartySession(spec) {
   // that is already dead. Shorter is a legitimate thing for a deployment to
   // want and is not built: one lifetime is what `logout.js`'s
   // SESSION_EXPIRY_RULES can describe honestly.
-  const parent = spec.parent ? store.get(spec.parent) : null;
+  // THE PARENT MAY BE IN ANOTHER PARTITION. `spec.parentRealm` is the realm the
+  // code flow ran in, which for the admin console is the ambient realm while
+  // this session is being created in the default one. Reading the expiry out of
+  // THIS store would find nothing and fall back to a full SESSION_TTL_MS, so a
+  // console session would routinely outlive the sign-on session it descends
+  // from — which the parent check in relyingPartySessionOf() would then end, at
+  // a moment decided by nothing a reader could see.
+  const parentRealm = String(spec.parentRealm || realms.currentId());
+  const parentStore = parentRealm === realms.currentId()
+    ? store : sessions.realmMap(parentRealm);
+  const parent = spec.parent ? parentStore.get(spec.parent) : null;
   const session = {
     id: sessionId,
     user: userFor(username),
@@ -694,6 +853,12 @@ function startRelyingPartySession(spec) {
     // application entry it belongs to, so a row can be followed back to the
     // client that holds it.
     derivedFrom: spec.parent || '',
+    // WHICH REALM'S PARTITION THAT PARENT IS IN. Empty where there is no parent;
+    // otherwise the realm the code flow ran in, which is the ambient realm for
+    // both surfaces and is NOT this session's own realm for the admin console.
+    // Every reader treats an absent value as "this session's own realm", so a
+    // record from a process older than 2026-09-11 behaves as it did.
+    derivedFromRealm: spec.parent ? parentRealm : '',
     rpSurface: String(spec.surface || ''),
     rpLabel: String(spec.label || spec.surface || ''),
     rpClientId: String(spec.clientId || ''),
@@ -745,9 +910,11 @@ function startRelyingPartySession(spec) {
   notifySession('established', session,
                 { via: 'OAuth 2.0 / OIDC', req: (spec.res && spec.res.req) || null });
   log.info('authn: ' + username + ' holds a ' + (spec.label || spec.surface) +
-           ' session (' + sessionId + '), derived from sign-on session ' +
-           (spec.parent || '(none)') + '. No authentication was recorded here ' +
-           '— the authorization endpoint already counted it.');
+           ' session (' + sessionId + ') in realm ' + realms.currentId() +
+           ', derived from sign-on session ' + (spec.parent || '(none)') +
+           (spec.parent ? ' in realm ' + parentRealm : '') +
+           '. No authentication was recorded here — the authorization endpoint ' +
+           'already counted it.');
   log.debug("Leaving startRelyingPartySession(). " + sessionId);
   return session;
 }
@@ -890,15 +1057,35 @@ function consoleSession(req) {
 // ceremony — amr ["hwk"] and no password anywhere — was reported as a password
 // sign-in with a security key beside it, which is the one thing the two roles
 // must not be confused about.
+//
+// **THERE ARE FOUR NOW (2026-09-10)**, because the authenticator app is a
+// second second factor. `otp` is RFC 8176's value and its registry entry names
+// RFC 4226 and RFC 6238 by number, so there was nothing to invent. The reason
+// this function exists at all is the reason it had to grow a branch rather than
+// letting `otp` fall through: the fall-through answers "sign-in screen
+// (password)", which for somebody who typed a password AND a code is a report
+// that quietly loses the second factor — the same defect the passwordless
+// ceremony had before this function replaced the conditional.
 function methodPhraseFor(amr) {
   const factors = amr || [];
   const key = factors.indexOf('hwk') >= 0;
   const password = factors.indexOf('pwd') >= 0;
+  const code = factors.indexOf('otp') >= 0;
   if (key && password) {
     return 'sign-in screen (password and a security key)';
   }
   if (key) {
     return 'sign-in screen (a security key alone, passwordless)';
+  }
+  if (code && password) {
+    return 'sign-in screen (password and a one-time code)';
+  }
+  if (code) {
+    // Unreachable today and deliberately written anyway: a one-time code can
+    // never be a first factor here (see common/totp.js), so this branch says
+    // what would be true if that ever changed rather than reporting it as a
+    // password sign-in.
+    return 'sign-in screen (a one-time code alone)';
   }
   return 'sign-in screen (password)';
 }
@@ -1608,13 +1795,28 @@ function dropSession(id, via, cookiePresented, req) {
   // `false` for `cookiePresented`: the browser presented the PROVIDER's cookie,
   // not this one, so nothing here should try to clear a cookie it was not
   // shown. The reader refuses the orphan anyway, and clears it then.
+  //
+  // **AND A CHILD IS ENDED IN ITS OWN REALM (2026-09-11).** `derivedFrom()`
+  // above now reports which partition each child is in, because the admin
+  // console deliberately holds its session in the default realm's while
+  // authorizing in the ambient one. This function works on the AMBIENT
+  // partition, so recursing without re-entering the child's realm would delete
+  // nothing at all and the console session would survive the sign-out — the
+  // exact defect the cascade exists to prevent, moved one layer along.
   if (id && session) {
     derivedFrom(id).forEach(function (child) {
       log.info('authn: ending the ' + (child.session.rpSurface || 'relying party') +
-               ' session ' + child.id + ' with the sign-on session it was ' +
-               'derived from (' + id + ').');
-      dropSession(child.id, 'the sign-on session it was derived from ended (' +
-                  (via || 'unknown door') + ')', false, req);
+               ' session ' + child.id + ' (realm ' + child.realm + ') with the ' +
+               'sign-on session it was derived from (' + id + ').');
+      const endChild = function () {
+        dropSession(child.id, 'the sign-on session it was derived from ended (' +
+                    (via || 'unknown door') + ')', false, req);
+      };
+      if (child.realm && child.realm !== realms.currentId()) {
+        realms.run(realms.get(child.realm), endChild);
+      } else {
+        endChild();
+      }
     });
   }
   // RFC 9700 section 2.2.2: an authorization server MAY revoke refresh tokens
@@ -2780,6 +2982,11 @@ function integratedOptionHtml(record) {
 function loginPage(base, record, error) {
   log.debug("Entering loginPage(). protocol=" + record.protocol +
             (error ? ", showing an error" : ""));
+  // What this realm will let a security key BE, read once for the two boxes
+  // below. `/admin/webauthn` is where it is set; handleLogin() checks the same
+  // three answers, because markup is what a person sees and the handler is
+  // what decides.
+  const keyPolicy = webauthnPolicy.settings();
   const page = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
     '<title>Sign in — mock authentication service</title><style>' + CARD_CSS +
     '</style></head><body><div class="card">' +
@@ -2814,26 +3021,58 @@ function loginPage(base, record, error) {
     // nothing and a hidden one can be deleted by anybody with the developer
     // tools open, so handleLogin() reads the RECORD as well: see the note
     // there. The markup is what a person sees; the record is what decides.
-    '<label class="chk"><input type="checkbox" id="use_webauthn" name="use_webauthn" value="1"' +
-    (record.forceMfa ? ' checked disabled' : '') +
-    (record.forcePasswordless ? ' disabled' : '') +
-    '> Use a security key (WebAuthn) as a second factor' +
-    (record.forcePasswordless
-       ? ' — not available: this partner is configured for a passwordless key'
-       : '') + '</label>' +
-    (record.forceMfa ? '<input type="hidden" name="use_webauthn" value="1">' : '') +
-    '<label class="chk"><input type="checkbox" id="webauthn_only" name="webauthn_only" value="1"' +
-    (record.forceMfa ? ' disabled' : '') +
-    (record.forcePasswordless ? ' checked disabled' : '') +
-    '> Sign in with the security key alone (passwordless — ' +
-    'no password step, and the tokens will say one factor)' +
-    (record.forceMfa ? ' — not available: this request demands two factors' : '') +
-    (record.forcePasswordless
-       ? ' — required: the federation relationship "' +
-         xmlEscape(record.mechanismVia || '') + '" configures this'
-       : '') + '</label>' +
-    (record.forcePasswordless
-       ? '<input type="hidden" name="webauthn_only" value="1">' : '') +
+    // WHAT THE `webauthn.*` POLICY LEAVES ON THIS SCREEN (2026-09-10). Three
+    // settings can take a box away: `webauthn.enabled` takes both,
+    // `webauthn.mfaAllowed` the first and `webauthn.primaryAllowed` the
+    // second. The box is DISABLED AND LABELLED rather than removed, for the
+    // reason every refusal on this console is said out loud: a control that
+    // vanishes is read as a bug in the page, and a person who was told to use
+    // their key needs to know which setting took it away. THE MARKUP IS NOT
+    // THE ENFORCEMENT — handleLogin() checks the same policy, because a
+    // disabled checkbox is a property of a browser and not of an HTTP request.
+    (keyPolicy.enabled
+      ? ''
+      : '<label class="chk"><input type="checkbox" disabled> ' +
+        'Security keys are switched off in this realm ' +
+        '(<code>webauthn.enabled</code>), so neither WebAuthn option is ' +
+        'offered. An already-enrolled key still works.</label>') +
+    (keyPolicy.enabled && keyPolicy.mfaAllowed
+      ? '<label class="chk"><input type="checkbox" id="use_webauthn" name="use_webauthn" value="1"' +
+        (record.forceMfa ? ' checked disabled' : '') +
+        (record.forcePasswordless ? ' disabled' : '') +
+        '> Use a security key (WebAuthn) as a second factor' +
+        (record.forcePasswordless
+           ? ' — not available: this partner is configured for a passwordless key'
+           : '') + '</label>' +
+        (record.forceMfa ? '<input type="hidden" name="use_webauthn" value="1">' : '')
+      : (keyPolicy.enabled
+          ? '<label class="chk"><input type="checkbox" disabled> ' +
+            'A security key as a second factor is switched off here ' +
+            '(<code>webauthn.mfaAllowed</code>).</label>'
+          : '')) +
+    (keyPolicy.enabled && keyPolicy.primaryAllowed
+      ? '<label class="chk"><input type="checkbox" id="webauthn_only" name="webauthn_only" value="1"' +
+        (record.forceMfa ? ' disabled' : '') +
+        (record.forcePasswordless ? ' checked disabled' : '') +
+        '> Sign in with the security key alone (passwordless — ' +
+        'no password step, and the tokens will say one factor)' +
+        (record.forceMfa ? ' — not available: this request demands two factors' : '') +
+        (record.forcePasswordless
+           ? ' — required: the federation relationship "' +
+             xmlEscape(record.mechanismVia || '') + '" configures this'
+           : '') + '</label>' +
+        (record.forcePasswordless
+           ? '<input type="hidden" name="webauthn_only" value="1">' : '')
+      : (keyPolicy.enabled
+          ? '<label class="chk"><input type="checkbox" disabled> ' +
+            'A passwordless security key is switched off here ' +
+            '(<code>webauthn.primaryAllowed</code>).' +
+            (record.forcePasswordless
+              ? ' <strong>This sign-in cannot complete</strong>: the ' +
+                'federation relationship "' + xmlEscape(record.mechanismVia || '') +
+                '" configures a mechanism this realm has turned off.'
+              : '') + '</label>'
+          : '')) +
     '<div class="row"><button type="submit" id="kc-login" name="action" value="login">Sign In</button>' +
     // THE THIRD BUTTON, AND IT IS NOT CANCEL (2026-09-05).
     //
@@ -3299,6 +3538,32 @@ app.post(LOGIN_PATH, function (req, res) {
                        String(body.webauthn_only || '') === '1';
   const secondFactor = !passwordless && String(body.use_webauthn || '') === '1';
 
+  // ---------------------------------------------------------------------
+  // THE POLICY, CHECKED HERE AND NOT ONLY ON THE SCREEN (2026-09-10).
+  //
+  // `loginPage()` draws the boxes this realm allows; this is what makes that
+  // mean anything. A checkbox that is absent from the markup is absent from a
+  // browser's POST and from nobody else's — a hand-made form carrying
+  // `webauthn_only=1` against a realm with `webauthn.primaryAllowed` off would
+  // otherwise take the passwordless path, which is the same "a hidden input is
+  // a suggestion" argument the comment above `passwordless` makes about
+  // `forcePasswordless`, read the other way round.
+  //
+  // **THE REFUSAL NAMES THE SETTING.** A person who was told to use their key
+  // and is being sent back to a password field needs to know that the answer
+  // is a knob rather than their hardware.
+  if (passwordless || secondFactor) {
+    const allowed = webauthnPolicy.roleAllowed(passwordless ? 'primary' : 'mfa');
+    if (!allowed.ok) {
+      log.info('authn: a security-key sign-in was asked for as a ' +
+               (passwordless ? 'primary' : 'second-factor') + ' credential ' +
+               'and this realm does not allow it. ' + allowed.why);
+      log.debug("Leaving the authentication endpoint. The security-key path " +
+                "is switched off in this realm.");
+      return sendLoginPage(res, loginPage(base, record, allowed.why));
+    }
+  }
+
   // A caller that demanded a second factor does not get the passwordless path.
   // The checkbox is rendered disabled for this reason and THIS is the check that
   // matters: `disabled` is a property of a browser, not of an HTTP request, and
@@ -3436,12 +3701,83 @@ app.post(LOGIN_PATH, function (req, res) {
   // second's. On the passwordless path there is nothing to upgrade FROM, and the
   // rule holds for the same reason: nothing has been authenticated until the
   // ceremony verifies.
-  if (passwordless || secondFactor) {
+  // ---------------------------------------------------------------------
+  // WHICH SECOND FACTOR, AND THE ANSWER IS THE PERSON'S RATHER THAN THE
+  // FORM'S (2026-09-10).
+  //
+  // **THIS IS THE CHANGE THAT MAKES `mfaRequired` MEAN ANYTHING.** That flag
+  // has been on `credentials.mechanismsFor()` since the portal was written,
+  // it is drawn on `/portal/keys` as *a password alone will not sign you in*,
+  // and **nothing read it at this door** — so it was a sentence on a page
+  // rather than a rule. A person who had enrolled a second factor signed in
+  // with a password and an unticked checkbox, exactly as somebody who had
+  // enrolled nothing.
+  //
+  // So the order below is: the passwordless path first (it is a PRIMARY
+  // credential and not a second factor at all), then WHAT THIS PERSON IS
+  // CONFIGURED FOR, and only then the checkbox.
+  //
+  // **THE CHECKBOX CANNOT OVERRIDE AN ENROLMENT**, which is
+  // `record.forcePasswordless`'s argument read a second time: a configured
+  // mechanism a client can opt out of is not a mechanism. It matters more
+  // here than there, because opting out would be a real bypass — the
+  // security-key page ENROLS on first use, so a person who knows a TOTP
+  // user's password could otherwise tick the box, register a brand new
+  // authenticator, and be signed in having never met the second factor the
+  // account is configured for.
+  //
+  // What that costs is worth stating rather than discovering: **somebody who
+  // already holds a second factor cannot enrol a SECURITY KEY at this
+  // screen.** The box is what enrolment goes through, and it is now reserved
+  // for people who hold no second factor yet. The other two doors are
+  // unaffected — an activation link enrols one, and `/portal/mfa` enrols an
+  // authenticator app — and that person's row under `/admin/users` is where
+  // an operator clears a factor
+  // so that somebody can enrol a different one.
+  //
+  // **A PERSON WHO HOLDS BOTH IS ASKED FOR THE SECURITY KEY**, with a link to
+  // use a code instead. `mechanismsFor().secondFactor` decides, and it prefers
+  // the key because the ceremony is bound to this origin and the code is not;
+  // the link exists because the commonest reason to hold both is standing at
+  // a machine the key is not plugged into.
+  const enrolled = credentials.mechanismsFor(username);
+  const configuredFactor = enrolled.mfaRequired ? enrolled.secondFactor : '';
+  const factor = passwordless
+    ? 'webauthn'
+    : (configuredFactor || (secondFactor ? 'webauthn' : ''));
+
+  if (factor) {
     pending.delete(record.id);
     const mfaId = randomId(24);
     pendingMfa.set(mfaId, {
       authn: record, username: username,
       challenge: crypto.randomBytes(32).toString('base64url'),
+      // WHICH MECHANISM IS BEING ASKED FOR. On the record for the reason
+      // `passwordless` is on it: the POST at the other end is an answer and
+      // says nothing about what was asked. It is ONE register for both
+      // mechanisms rather than a second map beside it — rule 3m, read as it is
+      // everywhere else here: a second store would be a second answer to "is
+      // there a sign-in waiting for a second factor".
+      factor: factor,
+      // The OTHER mechanism this person holds, if they hold one. It is what
+      // the *use a code instead* link is drawn from, and it is resolved HERE
+      // rather than at the page so that the link cannot offer a factor the
+      // person does not have.
+      alternate: (factor === 'webauthn' && enrolled.totp) ? 'totp'
+        : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : ''),
+      // THE WAY OUT WHEN NEITHER MECHANISM IS TO HAND (2026-09-10). Resolved
+      // HERE, when the step is minted, for `alternate`'s reason and with a
+      // sharper edge: this link must not be drawn for somebody who holds no
+      // unspent recovery code, because a screen that asks for a credential
+      // that cannot exist looks exactly like a service that has lost it.
+      //
+      // **IT IS NOT ON `alternate`** even though it is drawn beside it. That
+      // field names the OTHER MECHANISM THIS PERSON IS CONFIGURED FOR and the
+      // two screens swap between them; a recovery code is configured for
+      // nobody and stands in for whichever of the two they cannot produce. One
+      // field carrying both would make *what is this person's second factor* a
+      // question with a wrong answer.
+      backup: enrolled.backupCodes ? enrolled.backupCodes.remaining > 0 : false,
       // Which role, carried on the pending record rather than re-read from the
       // POST at the other end: that POST is the browser's ceremony result and
       // nothing in it says what the person chose a screen ago. Everything the
@@ -3453,6 +3789,11 @@ app.post(LOGIN_PATH, function (req, res) {
     pendingMfa.forEach(function (v, k) {
       if (v.expires < Date.now()) pendingMfa.delete(k);
     });
+    if (factor === 'totp') {
+      log.debug("Leaving the authentication endpoint. " + username +
+                " passed the password step; asking for the one-time code.");
+      return sendTotpPage(res, totpPage(base, mfaId, username, '', ''));
+    }
     log.debug("Leaving the authentication endpoint. " + username +
               (passwordless ? " asked for a passwordless sign-in; asking for the security key."
                             : " passed the password step; asking for the security key."));
@@ -3488,15 +3829,143 @@ app.post(LOGIN_PATH, function (req, res) {
 // are the same bytes. It says it anyway, because the difference is what the
 // session ends up claiming and a person reading the tokens afterwards has to be
 // able to tell which one they did.
+// THE CEREMONY SCRIPT'S PATH, NAMED ONCE (2026-09-10). It had one caller and
+// was a literal in two places — the route and the `<script src>` on the page.
+// `/portal/keys` is the third since it runs a registration of its own against
+// the SAME script, and a path written out three times is two chances to move
+// one of them.
+const WEBAUTHN_SCRIPT_PATH = '/authn/webauthn.js';
+
+// ---------------------------------------------------------------------------
+// WHICH ENROLLED KEY AN ASSERTION IS TO BE CHECKED AGAINST (2026-09-10).
+//
+// A FUNCTION rather than four lines in the handler, because it is a RULE and
+// the handler is where it would quietly stop being one. It is also the only
+// shape in which it can be tested: a person holding TWO keys is the state that
+// tells "check the one the browser named" from "check the first one you find",
+// and no door in this service can currently enrol a second key — see
+// `tests/vendored/sts_webauthn_second_factor.js`'s header.
+//
+// **TWO FILTERS AND BOTH MATTER.**
+//
+//   * **THE ROLE.** A `primary` key signs somebody in ON ITS OWN, so it must
+//     not answer a SECOND-FACTOR step — accepting one there would let a person
+//     satisfy *a password AND a second factor* with a credential this service
+//     already considers sufficient by itself. It is the same filter
+//     `webauthnPage()` builds `allowCredentials` from, and that is a HINT to
+//     the browser where this is the enforcement.
+//   * **THE CREDENTIAL ID.** WebAuthn tolerates several credentials per person
+//     precisely because an assertion NAMES the one that produced it. Checking
+//     the signature against whichever key happens to be first is correct only
+//     while there is one — and then silently refuses every assertion from the
+//     others, which reads as a broken authenticator.
+//
+// The refusal is NAMED because the two reasons are different things to fix:
+// no key of this role at all is an account that should not have reached that
+// screen, and a key that is not one of theirs is an assertion from an
+// authenticator this person never enrolled.
+// ---------------------------------------------------------------------------
+function keyForAssertion(username, role, presentedId) {
+  log.debug("Entering keyForAssertion(). role=" + role);
+  const usable = credentials.keysOf(username).filter(function (one) {
+    return one.role === role;
+  });
+  const key = usable.filter(function (one) {
+    return one.credentialId === String(presentedId || '');
+  })[0];
+  if (key) {
+    log.debug("Leaving keyForAssertion(). Matched 1 of " + usable.length + ".");
+    return { key: key, usable: usable.length };
+  }
+  log.debug("Leaving keyForAssertion(). No match among " + usable.length + ".");
+  return {
+    key: null, usable: usable.length,
+    why: usable.length
+      ? 'the assertion names a credential that is not one of the ' +
+        usable.length + ' security key(s) enrolled for ' + username +
+        ' as a ' + role + ' credential'
+      : 'no security key is enrolled for ' + username + ' as a ' + role +
+        ' credential'
+  };
+}
+
+// ---------------------------------------------------------------------------
+// TWO SMALL READERS OF WHAT THE BROWSER SAID (2026-09-10).
+//
+// Both are about `clientExtensionResults` and `authenticatorAttachment`, which
+// are REPORTS: nothing signed carries either, so this service records them and
+// refuses nothing on them. They are functions rather than expressions inline
+// because the enrolment branch is already long and because a person's key list
+// is drawn from what they store — a label computed two ways would be two
+// labels for one key.
+// ---------------------------------------------------------------------------
+
+// Did the ceremony actually produce a DISCOVERABLE credential? `credProps.rk`
+// is the only way to find out — `residentKey: "preferred"` may or may not have
+// done, and nothing in the attestation says which. `null` means the browser did
+// not answer, which older ones and a ceremony run with `webauthn.credProps` off
+// both do; that is a third state and not a `false`.
+function discoverableFrom(credential) {
+  const results = credential && credential.clientExtensionResults;
+  const props = results && results.credProps;
+  return (props && typeof props.rk === 'boolean') ? props.rk : null;
+}
+
+// What a person will see this key called on `/portal/keys` and on their row
+// under `/admin/users`. Theirs to change; this is only the default, and it says
+// the one thing that tells two keys apart at the moment they are enrolled —
+// whether it is built into the machine or something they plugged in.
+//
+// It deliberately does NOT use the AAGUID, which names the MODEL and would be
+// the better label: resolving one to "YubiKey 5 NFC" needs the FIDO metadata
+// service, and this service consults none — see `webauthn.attestation`. A
+// hex string is worse than no label at all.
+function labelForKey(credential, verdict) {
+  const attachment = String((credential && credential.authenticatorAttachment) || '');
+  if (attachment === 'platform') {
+    return 'this device';
+  }
+  if (attachment === 'cross-platform') {
+    return 'security key';
+  }
+  return (verdict && verdict.algorithm)
+    ? 'security key (' + verdict.algorithm + ')' : 'security key';
+}
+
 function webauthnPage(base, mfaId, username, error) {
   log.debug("Entering webauthnPage(). username=" + username);
-  const known = webauthnCredentials.get(username);
-  const mode = known ? 'get' : 'create';
+  // ---------------------------------------------------------------------
+  // WHICH KEYS THIS PERSON HOLDS, FROM THE ONE STORE (2026-09-10).
+  //
+  // It was a single credential out of this module's own map. It is now every
+  // key on their directory entry, which is what makes `allowCredentials` a
+  // LIST — the specification has expected several since Level 1 (a key at the
+  // desk and one on the keyring), an assertion NAMES the credential that
+  // produced it, and `webauthn.maxKeysPerPerson` is the setting that bounds
+  // it.
+  //
+  // **ONLY THE KEYS THAT ANSWER THIS ROLE.** A `primary` key signs somebody
+  // in on its own and an `mfa` key is a second factor beside a password;
+  // offering both in one ceremony would let a person satisfy a second-factor
+  // step with a credential this service considers a way IN, which is the
+  // whole distinction `credentials.js`'s ROLES table exists to keep.
+  // ---------------------------------------------------------------------
   const step = pendingMfa.get(mfaId);
   // Absent where the step has already gone — an expired id reaches this
   // function through one of the error paths — and false is the safe reading:
   // the page then describes the more cautious of the two roles.
   const passwordless = !!(step && step.passwordless);
+  const wantedRole = passwordless ? 'primary' : 'mfa';
+  const known = credentials.keysOf(username).filter(function (one) {
+    return one.role === wantedRole;
+  });
+  const mode = known.length ? 'get' : 'create';
+  // Read ONCE and used by the data attribute, the RP ID line and the line that
+  // says what is being asked for. rpIdOf() logs when it refuses a configured
+  // value, and calling it three times would print that warning three times for
+  // one page.
+  const rpId = rpIdOf(base);
+  const options = webauthnPolicy.settings();
   const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
     '<title>Security key — mock authentication service</title><style>' +
     'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
@@ -3516,7 +3985,7 @@ function webauthnPage(base, mfaId, username, error) {
     (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
     '<button id="wa-go" type="button">' +
     (mode === 'create' ? 'Enrol security key' : 'Authenticate with security key') + '</button>' +
-    '<form method="post" action="/authn/webauthn" id="wa-form">' +
+    '<form method="post" action="' + WEBAUTHN_PATH + '" id="wa-form">' +
     '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
     '<input type="hidden" name="mode" value="' + mode + '">' +
     '<input type="hidden" name="credential" id="wa-credential">' +
@@ -3529,13 +3998,60 @@ function webauthnPage(base, mfaId, username, error) {
     // which is the smallest exception that works.
     '<div id="wa-data"' +
     ' data-challenge="' + xmlEscape(step ? step.challenge : '') + '"' +
-    ' data-rpid="' + xmlEscape(rpIdOf(base)) + '"' +
+    ' data-rpid="' + xmlEscape(rpId) + '"' +
     ' data-user="' + xmlEscape(username) + '"' +
-    ' data-allow="' + xmlEscape(known ? known.credentialId : '') + '"' +
+    // EVERY key of this role, comma-separated, because a person may hold
+    // several and the authenticator picks. Empty on the enrolment path, where
+    // there is nothing to allow.
+    ' data-allow="' + xmlEscape(known.map(function (one) {
+      return one.credentialId;
+    }).join(',')) + '"' +
+    // EVERY key they hold, of EITHER role, so an authenticator already
+    // registered here cannot be registered again on the enrolment path. It is
+    // a fact about the DEVICE rather than about what the credential is for,
+    // which is why it is not the role-filtered list above.
+    ' data-exclude="' + xmlEscape(credentials.keysOf(username).map(function (one) {
+      return one.credentialId;
+    }).join(',')) + '"' +
+    // THE CEREMONY'S OPTIONS, AS ONE JSON OBJECT (2026-09-10). Every one of
+    // these was a literal inside WEBAUTHN_SCRIPT below until this day, which
+    // is why /admin/webauthn did not exist: there was nothing to draw. The
+    // script is a STATIC resource under `script-src 'self'` and cannot be
+    // generated per request, so anything that varies has to travel as data —
+    // and one parsed object is one place to get it wrong rather than eleven
+    // attributes each coerced by hand. Nothing in it is secret and nothing in
+    // it is trusted on the way back: it is a REQUEST to the browser, and every
+    // security property is checked against the pending step and the origin
+    // when the result arrives.
+    ' data-options="' + xmlEscape(JSON.stringify(
+        mode === 'create' ? webauthnPolicy.creationOptions(rpId)
+                          : webauthnPolicy.requestOptions(rpId))) + '"' +
     ' data-mode="' + mode + '"></div>' +
     '<div class="meta">' +
-    '<div>RP ID: <code>' + xmlEscape(rpIdOf(base)) + '</code> — the ceremony is bound to this origin.</div>' +
+    '<div>RP ID: <code>' + xmlEscape(rpId) + '</code> — the ceremony is bound to this origin' +
+    (options.rpId
+      ? ', widened to this suffix by <code>webauthn.rpId</code>'
+      : '') + '.</div>' +
     '<div>challenge: <code>' + xmlEscape(step ? step.challenge : '') + '</code></div>' +
+    // WHAT THIS CEREMONY IS ASKING FOR, said on the page rather than only in
+    // the options attribute. This is a debugging service and these four are
+    // the settings whose effect somebody is most likely to be here to observe;
+    // /admin/webauthn is where they are changed.
+    '<div>' + xmlEscape(
+      (mode === 'create'
+        ? 'attestation ' + options.attestation + ', ' +
+          'algorithms ' + options.algorithms.join('/') + ', '
+        : '') +
+      'user verification ' + options.userVerification +
+      (options.userVerification === 'required'
+        ? ' (CHECKED here — an authenticator that did not verify is refused)'
+        : ' (requested, not required)') +
+      (mode === 'create' && options.residentKey !== 'discouraged'
+        ? ', resident key ' + options.residentKey
+        : '') +
+      (mode === 'create' && options.authenticatorAttachment !== 'any'
+        ? ', ' + options.authenticatorAttachment + ' authenticators only'
+        : '')) + '</div>' +
     '<div>' + (mode === 'create'
       ? 'No key is enrolled for this user yet, so this step registers one.'
       : 'A key is already enrolled for this user, so this step is an assertion.') + '</div>' +
@@ -3546,8 +4062,28 @@ function webauthnPage(base, mfaId, username, error) {
       : 'A password step has already succeeded. On success the session records amr ["pwd","hwk"] ' +
         'and acr "mfa", and the directory entry for ' + xmlEscape(username) + ' is flagged as ' +
         'having authenticated with more than one factor.') + '</div>' +
+    // THE OTHER SECOND FACTOR, WHERE THIS PERSON HOLDS ONE (2026-09-10). The
+    // step's `alternate` is resolved when the step is MINTED and not here, so
+    // this link cannot offer a mechanism the person has not enrolled — see the
+    // branch in the sign-in handler. The commonest reason to hold both is
+    // standing at a machine the key is not plugged into, which is exactly the
+    // moment a page with no way out is useless.
+    (step && step.alternate === 'totp'
+      ? '<div><a href="' + TOTP_PATH + '?mfa=' + encodeURIComponent(mfaId) +
+        '">Use a code from your authenticator app instead</a></div>'
+      : '') +
+    // AND THE WAY OUT WHEN THE KEY IS NOT TO HAND AT ALL (2026-09-10), which
+    // is the commonest reason somebody is stuck at this screen: the key is in
+    // a drawer at home. Drawn only where the step says an unspent recovery
+    // code exists, and after the alternative above, because the codes are
+    // finite and issued once.
+    (step && step.backup
+      ? '<div><a href="' + BACKUP_CODE_PATH + '?mfa=' +
+        encodeURIComponent(mfaId) + '">I do not have my security key — use a ' +
+        'recovery code</a></div>'
+      : '') +
     '</div></div>' +
-    '<script src="/authn/webauthn.js"></script></body></html>\n';
+    '<script src="' + WEBAUTHN_SCRIPT_PATH + '"></script></body></html>\n';
   log.debug("Leaving webauthnPage(). mode=" + mode);
   return html;
 }
@@ -3580,24 +4116,65 @@ const WEBAUTHN_SCRIPT = [
   '    var rpId = d.getAttribute("data-rpid");',
   '    var user = d.getAttribute("data-user");',
   '    var allow = d.getAttribute("data-allow");',
+  '    var exclude = (d.getAttribute("data-exclude") || "").split(",")',
+  '      .filter(function (id) { return id; });',
+  // EVERY CEREMONY PARAMETER ARRIVES AS ONE PARSED OBJECT (2026-09-10). The
+  // RP name, the algorithms, the attestation conveyance, the timeout, the
+  // authenticator selection and the extensions were all literals in the lines
+  // below until this day; they are `webauthn.*` settings now and this script
+  // is served static, so they travel on data-options. The fallback is what
+  // this script used to be, so a page served by an older build of the service
+  // still performs a ceremony rather than throwing on a missing attribute.
+  '    var o = {};',
+  '    try { o = JSON.parse(d.getAttribute("data-options") || "{}") || {}; }',
+  '    catch (e) { o = {}; }',
+  '    var sel = o.authenticatorSelection || { userVerification: "preferred" };',
+  '    var algs = (o.algorithms && o.algorithms.length ? o.algorithms : [-7, -257])',
+  '      .map(function (a) { return { type: "public-key", alg: a }; });',
   '    var p;',
   '    if (d.getAttribute("data-mode") === "create") {',
   '      p = navigator.credentials.create({ publicKey: {',
-  '        rp: { name: "Mock authorization server", id: rpId },',
+  '        rp: o.rp || { name: "Mock authorization server", id: rpId },',
   '        user: { id: new TextEncoder().encode(user), name: user, displayName: user },',
   '        challenge: challenge,',
-  '        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],',
-  '        authenticatorSelection: { userVerification: "preferred" },',
-  '        attestation: "direct", timeout: 60000 } })',
-  '        .then(function (c) { return { id: c.id, rawId: b64u(c.rawId), type: c.type, response: {',
-  '          clientDataJSON: b64u(c.response.clientDataJSON),',
-  '          attestationObject: b64u(c.response.attestationObject) } }; });',
+  '        pubKeyCredParams: algs,',
+  '        authenticatorSelection: sel,',
+  // WEBAUTHN'S OWN "DO NOT ENROL THIS AUTHENTICATOR TWICE" (2026-09-10). A
+  // conforming authenticator that recognises one of these refuses rather than
+  // creating a second credential — which is what stops the commonest mistake
+  // when adding a BACKUP key: pressing Add and touching the one already
+  // plugged in, producing a second credential on the same device and a
+  // backup that is lost with the original. `credentials.js` checks it again
+  // at the write, because this is a request to the browser like every other
+  // option on this page.
+  '        excludeCredentials: exclude.map(function (id) {',
+  '          return { type: "public-key", id: bytes(id) };',
+  '        }),',
+  '        extensions: o.credProps ? { credProps: true } : undefined,',
+  '        attestation: o.attestation || "direct",',
+  '        timeout: o.timeout || 60000 } })',
+  '        .then(function (c) {',
+  '          var ext = {};',
+  '          try { ext = c.getClientExtensionResults ? c.getClientExtensionResults() : {}; }',
+  '          catch (e) { ext = {}; }',
+  '          return { id: c.id, rawId: b64u(c.rawId), type: c.type,',
+  '            authenticatorAttachment: c.authenticatorAttachment || null,',
+  '            clientExtensionResults: ext, response: {',
+  '            clientDataJSON: b64u(c.response.clientDataJSON),',
+  '            attestationObject: b64u(c.response.attestationObject) } }; });',
   '    } else {',
   '      p = navigator.credentials.get({ publicKey: {',
-  '        challenge: challenge, rpId: rpId,',
-  '        allowCredentials: allow ? [{ type: "public-key", id: bytes(allow) }] : undefined,',
-  '        userVerification: "preferred", timeout: 60000 } })',
-  '        .then(function (a) { return { id: a.id, rawId: b64u(a.rawId), type: a.type, response: {',
+  '        challenge: challenge, rpId: o.rpId || rpId,',
+  // A LIST since 2026-09-10: a person may hold several keys of one role and
+  // the authenticator picks whichever it has. It was one id, because this
+  // module held one credential per person in a map of its own.
+  '        allowCredentials: allow ? allow.split(",").map(function (id) {',
+  '          return { type: "public-key", id: bytes(id) };',
+  '        }) : undefined,',
+  '        userVerification: o.userVerification || "preferred",',
+  '        timeout: o.timeout || 60000 } })',
+  '        .then(function (a) { return { id: a.id, rawId: b64u(a.rawId), type: a.type,',
+  '          authenticatorAttachment: a.authenticatorAttachment || null, response: {',
   '          clientDataJSON: b64u(a.response.clientDataJSON),',
   '          authenticatorData: b64u(a.response.authenticatorData),',
   '          signature: b64u(a.response.signature),',
@@ -3621,7 +4198,7 @@ function sendWebauthnPage(res, html) {
   res.status(200).type('text/html').set('Cache-Control', 'no-store').send(html);
 }
 
-app.get('/authn/webauthn.js', function (req, res) {
+app.get(WEBAUTHN_SCRIPT_PATH, function (req, res) {
   log.debug("Serving the WebAuthn ceremony script.");
   // A script resource cannot be clicked through, so framing it is not the
   // clickjacking vector the page it belongs to is — but it goes through the
@@ -3669,21 +4246,117 @@ function originOf(base) {
   }
 }
 
-// The RP ID is the origin's HOST, never anything configurable. A mock that let
-// you set it to something else would be teaching the one lesson WebAuthn exists
-// to prevent.
+// ---------------------------------------------------------------------------
+// THE RP ID.
+//
+// **THIS FUNCTION'S COMMENT READ "never anything configurable" UNTIL
+// 2026-09-10, AND THE ARGUMENT IT MADE IS STILL RIGHT ABOUT EVERYTHING EXCEPT
+// ONE CASE.** It said: *a mock that let you set it to something else would be
+// teaching the one lesson WebAuthn exists to prevent* — which is true of an
+// ARBITRARY value, because a credential is bound to its RP ID and letting a
+// relying party claim somebody else's is the whole of the attack the binding
+// exists to stop.
+//
+// What the sentence missed is that WebAuthn itself defines a legal override and
+// browsers enforce it: the RP ID may be a **REGISTRABLE DOMAIN SUFFIX** of the
+// origin's host — `example.com` when reached at `sts.example.com` — so that one
+// credential works across the sibling hosts of a deployment. That is not a
+// weakening of the binding, it is the binding at a coarser grain, and it is a
+// thing a client author testing a real deployment shape needs to be able to
+// arrange.
+//
+// **SO `webauthn.rpId` IS HONOURED AND IS CHECKED HERE AS WELL AS BY THE
+// BROWSER**, which is the part that earns it. A browser refuses an illegal RP
+// ID with a `SecurityError`, and the ceremony reports that as one of its
+// several indistinguishable failures — so an operator who typed the wrong thing
+// sees what looks like a broken authenticator. Refusing it here, by name, in
+// the log, is the difference between a five-minute fix and an afternoon.
+//
+// **WIDENING IT IS NOT FREE AND THE SETTING SAYS SO**: every host under that
+// suffix can then assert these credentials.
+// ---------------------------------------------------------------------------
 function rpIdOf(base) {
+  log.debug("Entering rpIdOf(). base=" + base);
+  let host;
   try {
-    return new URL(base).hostname;
+    host = new URL(base).hostname;
   } catch (e) {
     // A base that will not parse is a misconfiguration of this service rather
     // than of the ceremony; fall back to the literal so the page still says
     // something true about what it will send.
-    return String(base).replace(/^https?:\/\//, '').split(':')[0];
+    host = String(base).replace(/^https?:\/\//, '').split(':')[0];
   }
+  const wanted = webauthnPolicy.settings().rpId;
+  if (!wanted) {
+    log.debug("Leaving rpIdOf(). " + host + " (the host this was reached on).");
+    return host;
+  }
+  // EQUAL, OR A SUFFIX AT A LABEL BOUNDARY. `mple.com` is a suffix of
+  // `example.com` as a string and is not a domain suffix of it, and a check
+  // written with endsWith() alone accepts it — which is the one mistake this
+  // whole function is here to refuse.
+  const lower = String(host).toLowerCase();
+  const want = String(wanted).toLowerCase();
+  if (lower === want || lower.endsWith('.' + want)) {
+    log.debug("Leaving rpIdOf(). " + want + " (configured, a domain suffix of " +
+              host + ").");
+    return want;
+  }
+  log.warn('authn: webauthn.rpId is "' + wanted + '", which is NOT this ' +
+           'origin\'s host ("' + host + '") nor a registrable domain suffix ' +
+           'of it. WebAuthn forbids that and the browser would refuse the ' +
+           'ceremony with an error indistinguishable from a hardware failure, ' +
+           'so this service is using "' + host + '" instead and telling you ' +
+           'why. Set webauthn.rpId to "" or to a suffix of the host you reach ' +
+           'this service on.');
+  log.debug("Leaving rpIdOf(). " + host + " (the configured value was refused).");
+  return host;
 }
 
-app.post('/authn/webauthn', function (req, res) {
+// ---------------------------------------------------------------------------
+// GET /authn/webauthn — the *use your security key instead* link (2026-09-10).
+//
+// It draws the ceremony for a step that ALREADY EXISTS and creates nothing,
+// exactly as `GET /authn/totp` does in the other direction. There was no GET on
+// this path before, because until there were two second factors nothing ever
+// needed to arrive at this page other than by completing a password step.
+//
+// **IT CHECKS THAT THE PERSON HOLDS A KEY**, which the POST beside it does not
+// have to: this is a link and a link is markup, so a hand-made GET must not
+// draw the ENROLMENT ceremony for somebody whose account is configured for an
+// authenticator app. That would be the bypass the sign-in handler's own comment
+// argues about — register a fresh key, skip the configured factor — reached
+// through a different door.
+// ---------------------------------------------------------------------------
+app.get(WEBAUTHN_PATH, function (req, res) {
+  log.debug("Entering the WebAuthn second-factor screen.");
+  const asked = validation.check(req, 'query', MFA_STEP_QUERY);
+  if (!asked.ok) {
+    return refuseInvalid(res, asked);
+  }
+  const mfaId = String(asked.value.mfa || '');
+  const step = pendingMfa.get(mfaId);
+  if (!step || step.expires < Date.now()) {
+    pendingMfa.delete(mfaId);
+    log.debug("Leaving the WebAuthn second-factor screen. The step had expired.");
+    return oauthError(res, 400, 'invalid_request',
+      'This second-factor step has expired. Start the request again from the ' +
+      'application that sent you here.');
+  }
+  if (credentials.mechanismsFor(step.username).mfaKeys < 1) {
+    log.info('authn: a security-key screen was asked for "' + step.username +
+             '", who holds no key marked as a second factor. Refused.');
+    log.debug("Leaving the WebAuthn second-factor screen. No key is enrolled.");
+    return oauthError(res, 400, 'invalid_request',
+      'No security key is enrolled as a second factor for that account.');
+  }
+  log.debug("Leaving the WebAuthn second-factor screen. Drawn for " +
+            step.username + ".");
+  return sendWebauthnPage(res, webauthnPage(baseUrlOf(req), mfaId,
+                                            step.username, ''));
+});
+
+app.post(WEBAUTHN_PATH, function (req, res) {
   log.debug("Entering the WebAuthn second-factor endpoint.");
   const base = baseUrlOf(req);
   const posted = validation.checkParsed(parseBody(req), 'body', WEBAUTHN_FORM);
@@ -3725,13 +4398,40 @@ app.post('/authn/webauthn', function (req, res) {
   let verdict;
   try {
     if (String(body.mode || '') === 'create') {
+      // ENROLMENT IS WHAT `webauthn.enabled` GATES, AND ONLY ENROLMENT
+      // (2026-09-10). The assertion branch below is deliberately NOT gated:
+      // turning the mechanism off must not lock out somebody who already holds
+      // a key, for the reason the setting itself states — an account configured
+      // for two factors is still configured for two, and a switch that silently
+      // downgraded it would be a security control whose off position does
+      // something other than what it says. What it stops is new ceremonies.
+      if (!webauthnPolicy.offered()) {
+        log.info('authn: a WebAuthn ENROLMENT was refused for "' +
+                 step.username + '" — security keys are switched off in this ' +
+                 'realm (webauthn.enabled). An already-enrolled key is ' +
+                 'unaffected.');
+        log.debug("Leaving the WebAuthn endpoint. Enrolment is switched off.");
+        return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id),
+          step.username,
+          'Security keys are switched off in this realm (webauthn.enabled), ' +
+          'so a new one cannot be enrolled here. A key already enrolled goes ' +
+          'on working.'));
+      }
       verdict = webauthnVerifier.verifyRegistration({
         attestationObject: credential.response.attestationObject,
         clientDataJSON: credential.response.clientDataJSON,
         expectedChallenge: step.challenge,
         expectedOrigin: expectedOrigin,
         expectedRpId: expectedRpId,
-        requireUserVerification: false
+        // FROM THE SETTING, AND IT IS THE ONE CEREMONY OPTION THIS SERVICE
+        // CHECKS AS WELL AS ASKS FOR. The UV flag is inside the bytes the
+        // authenticator signed, so `webauthn.userVerification: required` is a
+        // claim that can be verified rather than a preference that can only be
+        // expressed — unlike attestation, the resident key and the attachment,
+        // which nothing signed says anything about. It was the literal `false`
+        // until 2026-09-10, which made `required` a request a browser could
+        // decline with nothing here noticing.
+        requireUserVerification: webauthnPolicy.requireUserVerification()
       });
       if (verdict.ok) {
         // ---------------------------------------------------------------
@@ -3765,26 +4465,101 @@ app.post('/authn/webauthn', function (req, res) {
                            'key can only be enrolled for somebody who already ' +
                            'exists. Create the person first.' };
         } else {
-          webauthnCredentials.set(step.username, {
+          // THE ENTRY FIRST, AND THE ORDER IS NOW LOAD-BEARING RATHER THAN
+          // TIDY. `credentials.addKey()` writes an ATTRIBUTE ON THE PERSON'S
+          // ENTRY and answers "there is nobody called that in this realm's
+          // directory" when there is none — so in development the entry has to
+          // be seeded before the write, where the old code could set a map key
+          // for anybody and seed the entry afterwards.
+          //
+          // Through the same observer every other identity here reaches —
+          // `admin_stats.js`'s `setUserObserver()`, filled by
+          // `ldap_server.js` — and with the event named, so the directory can
+          // tell an enrolment from an authentication. It is NOT
+          // `recordAuthentication()`: nobody authenticated by enrolling a key,
+          // and counting it would inflate the one number /admin/users is
+          // about.
+          stats.noteWebauthnEnrolled(step.username);
+
+          // ---------------------------------------------------------------
+          // THE ROLE COMES OFF THE PENDING RECORD AND NOWHERE ELSE.
+          //
+          // `step.passwordless` is what the person chose a screen ago, and it
+          // is on the record for the reason the comment beside it gives: the
+          // POST at this end is the browser's ceremony RESULT and nothing in
+          // it says what was asked for. A role read from the body would be a
+          // caller choosing whether their own credential is a way IN or a
+          // second factor — which is the whole of what the two roles mean.
+          //
+          // **AND THIS IS WHERE THE `webauthn.*` POLICY BITES**, because
+          // `addKey()` is where it is enforced: a realm with
+          // `primaryAllowed` off refuses the passwordless enrolment here, by
+          // name, and one at its `maxKeysPerPerson` refuses the next key.
+          // Until 2026-09-10 this branch wrote a map and no policy could
+          // reach it.
+          // ---------------------------------------------------------------
+          const role = step.passwordless ? 'primary' : 'mfa';
+          const stored = credentials.addKey(step.username, {
             credentialId: verdict.credentialId,
             publicKeyJwk: verdict.publicKeyJwk,
-            signCount: verdict.signCount
-          });
-          // THE ENTRY, NOW RATHER THAN AT FIRST USE. Through the same observer
-          // every other identity here reaches — `admin_stats.js`'s
-          // `setUserObserver()`, filled by `ldap_server.js` — and with the
-          // event named, so the directory can tell enrolment from an
-          // authentication. It is NOT `recordAuthentication()`: nobody
-          // authenticated by enrolling a key, and counting it would inflate
-          // the one number /admin/users is about.
-          stats.noteWebauthnEnrolled(step.username);
+            signCount: verdict.signCount,
+            label: labelForKey(credential, verdict),
+            // WHAT THE BROWSER SAID ABOUT THE AUTHENTICATOR (2026-09-10).
+            // Both are REPORTS and neither is checked:
+            // `authenticatorAttachment` is what answered rather than what
+            // `webauthn.authenticatorAttachment` asked for, and
+            // `credProps.rk` is the only way to find out whether a
+            // `residentKey: "preferred"` ceremony actually produced a
+            // discoverable credential — nothing in the attestation says.
+            // `null` means the browser did not say, which older ones do not.
+            attachment: credential.authenticatorAttachment || null,
+            discoverable: discoverableFrom(credential),
+            userVerified: !!(verdict.flags && verdict.flags.uv),
+            aaguid: verdict.aaguid || null,
+            algorithm: verdict.algorithm || null
+          }, role);
+          if (!stored.ok) {
+            // **A REFUSED WRITE IS A REFUSED CEREMONY.** The old code could
+            // not fail here — a map takes anything — so there was no branch
+            // for it, and reporting success on a credential that was not
+            // recorded would sign somebody in with a key that will not work
+            // the next time. The sentence is `addKey()`'s own, which names
+            // the setting or the missing entry.
+            log.info('authn: the security key "' + step.username + '" just ' +
+                     'registered was NOT stored: ' +
+                     (stored.errors || []).join(' '));
+            verdict = { ok: false, why: (stored.errors || []).join(' ') };
+          }
         }
       }
     } else {
-      const known = webauthnCredentials.get(step.username);
-      if (!known) {
-        throw new Error('no key is enrolled for ' + step.username);
+      // ---------------------------------------------------------------
+      // THE ASSERTION IS CHECKED AGAINST THE KEY THAT PRODUCED IT, PICKED BY
+      // THE CREDENTIAL ID THE BROWSER SENT (2026-09-10).
+      //
+      // It was a single credential out of this module's own map, so there was
+      // nothing to pick: whatever was there was what the signature was checked
+      // against. With several keys per person there is a choice, and **the
+      // browser's `rawId` is what makes it** — that is what an assertion NAMES
+      // itself with, and it is the reason WebAuthn tolerates several
+      // credentials where a shared secret cannot.
+      //
+      // **THE ROLE IS PART OF THE MATCH AND NOT A DETAIL.** A key enrolled as
+      // `primary` must not answer a SECOND-FACTOR step: it is a way IN on its
+      // own, so accepting one here would let somebody satisfy "password AND a
+      // second factor" with a credential this service already considers
+      // sufficient by itself. The filter is the same one `webauthnPage()`
+      // drew `allowCredentials` from, so the ceremony and the check agree by
+      // construction — `allowCredentials` is a HINT to the browser and this is
+      // the enforcement.
+      // ---------------------------------------------------------------
+      const picked = keyForAssertion(step.username,
+        step.passwordless ? 'primary' : 'mfa',
+        String(credential.rawId || credential.id || ''));
+      if (!picked.key) {
+        throw new Error(picked.why);
       }
+      const known = picked.key;
       verdict = webauthnVerifier.verifyAssertion({
         authenticatorData: credential.response.authenticatorData,
         clientDataJSON: credential.response.clientDataJSON,
@@ -3793,12 +4568,29 @@ app.post('/authn/webauthn', function (req, res) {
         expectedChallenge: step.challenge,
         expectedOrigin: expectedOrigin,
         expectedRpId: expectedRpId,
-        requireUserVerification: false,
+        // The same setting as the registration branch above, for the same
+        // reason. Both halves of the ceremony or neither: a service that
+        // demanded user verification to enrol and not to sign in would be
+        // demanding it exactly once, at the moment it matters least.
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
         previousSignCount: known.signCount
       });
       if (verdict.ok) {
-        known.signCount = verdict.signCount;
-        webauthnCredentials.set(step.username, known);
+        // THROUGH `noteKeyUsed()` AND NOT A WRITE OF ITS OWN, which is the
+        // same argument `removeKey()` carries: that function is the one place
+        // the signature counter is recorded, and a second writer here would be
+        // a second answer to what the last counter was — with the replay
+        // defence quietly stopping at whichever one lost. **A failure to
+        // record it is LOGGED and does not undo the sign-in**, for
+        // `noteTotpUsed()`'s reason: the authentication has already succeeded,
+        // and the cost is that one assertion could be replayed rather than
+        // that somebody is refused.
+        if (!credentials.noteKeyUsed(step.username, known.credentialId,
+                                     verdict.signCount)) {
+          log.warn('authn: the signature counter for "' + step.username +
+                   '" could not be recorded. The sign-in stands; the replay ' +
+                   'defence has nothing new to check against next time.');
+        }
       }
     }
   } catch (e) {
@@ -3849,6 +4641,603 @@ app.post('/authn/webauthn', function (req, res) {
             (step.passwordless ? " signed in with a security key alone."
                                : " completed the second factor."));
 });
+
+// ===========================================================================
+// THE ONE-TIME CODE STEP (RFC 6238), 2026-09-10.
+//
+// The other second factor, and the one that needs no browser API, no
+// authenticator attached to this machine and no origin. A form with one field.
+//
+// ---------------------------------------------------------------------------
+// IT IS A PAGE WITH NO SCRIPT, WHICH IS WHY IT IS NOT DRAWN LIKE THE ONE ABOVE.
+//
+// `/authn/webauthn` is one of the six pages in this service that relax
+// `script-src`, because a WebAuthn ceremony IS a browser API call and there is
+// no way to perform one without script. **This page needs none** — a person
+// reads six digits off a phone and types them into an input — so it is served
+// under the service-wide `script-src 'none'` like everything else, and
+// `sendTotpPage()` sets no policy of its own.
+//
+// That is worth saying out loud because the obvious move when adding a second
+// factor beside the first is to copy its `sendWebauthnPage()`. Doing that would
+// have quietly added a seventh scripted page to the inventory in the root
+// `CLAUDE.md` — for a page with no script on it — and the test for a script is
+// that the page CANNOT work without one.
+//
+// ---------------------------------------------------------------------------
+// THERE IS NO ENROLMENT HERE, AND THAT IS THE DIFFERENCE FROM THE SECURITY-KEY
+// PAGE THAT MATTERS MOST.
+//
+// That page enrols on first use: a person who has never registered a key is
+// shown the registration ceremony, and a session comes out of it. **This page
+// only ever VERIFIES.** Enrolling an authenticator means being shown a secret,
+// which means the enrolment must happen somewhere the person is already
+// authenticated — `/portal/mfa` — or somewhere a credential authorises it —
+// `/portal/activate`. A sign-in screen that handed out a shared secret to
+// whoever typed a password would be a second factor anybody could set up for
+// themselves, which is not a second factor.
+//
+// So a person with no enrolment never reaches this page: `mechanismsFor()`
+// reports no second factor and the sign-in completes on one.
+// ===========================================================================
+function totpPage(base, mfaId, username, error, notice) {
+  log.debug('Entering totpPage(). username=' + username);
+  const step = pendingMfa.get(mfaId);
+  // What the AUTHENTICATOR was told, off the person's own enrolment, so the
+  // field asks for the right number of digits. A missing enrolment reads as
+  // six, which is what the page would have said anyway and is only reachable
+  // through an error path where the step has already gone.
+  const enrolled = credentials.mechanismsFor(username);
+  const digits = (enrolled.totpDetail && enrolled.totpDetail.digits) || 6;
+  const alternate = step && step.alternate === 'webauthn';
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    '<title>One-time code — mock authentication service</title><style>' +
+    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
+    'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:28px 32px;width:420px;' +
+    'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 4px}' +
+    'p.sub{color:#666;font-size:.85em;margin:0 0 18px}' +
+    'label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
+    // A WIDE, MONOSPACED, LETTER-SPACED FIELD. `inputmode="numeric"` puts a
+    // phone's number pad up, `autocomplete="one-time-code"` is what lets iOS
+    // and Android offer the code from the notification, and `autofocus` means
+    // somebody arriving here can start typing. None of the three is script.
+    'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #c8c8d0;' +
+    'border-radius:5px;font-size:1.4em;letter-spacing:.35em;text-align:center;' +
+    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-bottom:14px}' +
+    'button{padding:9px 12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
+    'color:#fff;font-size:.95em;cursor:pointer;width:100%}' +
+    '.err{background:#fdecea;border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}' +
+    '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}' +
+    '.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
+    'font-size:.75em;color:#777}.meta div{margin:2px 0}.meta a{color:#12107c}' +
+    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style></head><body>' +
+    '<div class="card"><h1>Your one-time code</h1>' +
+    '<p class="sub">Second factor for <code>' + xmlEscape(username) + '</code></p>' +
+    (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+    (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
+    '<form method="post" action="' + TOTP_PATH + '">' +
+    '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
+    '<label for="code">The ' + digits + '-digit code from your authenticator app</label>' +
+    '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
+    'inputmode="numeric" pattern="[0-9]*" maxlength="' + digits + '" autofocus ' +
+    'placeholder="' + '0'.repeat(digits) + '">' +
+    '<button type="submit" id="totp-submit">Sign in</button>' +
+    '</form>' +
+    '<div class="meta">' +
+    '<div>The code changes every ' +
+    xmlEscape(String((enrolled.totpDetail && enrolled.totpDetail.period) || 30)) +
+    ' seconds. A code can only be used once (RFC 6238 section 5.2), so if you ' +
+    'have just signed in, wait for the next one.</div>' +
+    (alternate
+      ? '<div><a href="/authn/webauthn?mfa=' + encodeURIComponent(mfaId) +
+        '">Use your security key instead</a></div>'
+      : '') +
+    // THE WAY OUT (2026-09-10), drawn only where the step says this person
+    // holds an unspent recovery code. It is LAST on purpose: the codes are a
+    // finite, single-use resource issued once, and a link offered above the
+    // ordinary alternative would spend them on a phone that was merely in the
+    // next room.
+    (step && step.backup
+      ? '<div><a href="' + BACKUP_CODE_PATH + '?mfa=' +
+        encodeURIComponent(mfaId) + '">I cannot use my authenticator app — ' +
+        'use a recovery code</a></div>'
+      : '') +
+    '</div></div></body></html>\n';
+  log.debug('Leaving totpPage().');
+  return html;
+}
+
+// NO `Content-Security-Policy` OF ITS OWN. See the header — this page has no
+// script, so it inherits the `script-src 'none'` that `app.js` puts on every
+// response, which is the whole of what that setting is for.
+//
+// `no-store` for the reason every page in a sign-in carries it: it names the
+// person being authenticated and is reached from shared browsers.
+function sendTotpPage(res, html) {
+  log.debug('Entering sendTotpPage().');
+  res.status(200).type('text/html').set('Cache-Control', 'no-store').send(html);
+  log.debug('Leaving sendTotpPage().');
+}
+
+const TOTP_FORM = vz.object({
+  mfa_id: vt.opt(vt.base64url),
+  // A STRING AND NOT AN INTEGER, deliberately. A code is `007123` and a number
+  // is 7123; parsing it as an integer here would lose the leading zeros that
+  // one code in ten has, and `common/totp.js` refuses anything that is not
+  // exactly the enrolled number of digits — so the shape check belongs where
+  // the digit count is known and not in this schema.
+  code: vz.string().max(32).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+const MFA_STEP_QUERY = vz.object({
+  mfa: vt.opt(vt.base64url)
+});
+
+// ---------------------------------------------------------------------------
+// GET /authn/totp — the *use a code instead* link, and the ONLY thing it does
+// is draw the page for a step that already exists.
+//
+// It creates nothing and decides nothing: the pending record was minted when
+// the password step succeeded, and both mechanisms answer against the same one.
+// A step id naming nothing is refused exactly as the POST refuses it, so this
+// endpoint is not a way to find out whether a sign-in is in progress.
+//
+// **IT CHECKS THAT THE PERSON ACTUALLY HOLDS AN ENROLMENT**, because a link is
+// markup and this is a door: a hand-made GET must not draw a code form for
+// somebody who has no authenticator, which would ask for something that can
+// never be right and would look like a service that has lost their enrolment.
+// ---------------------------------------------------------------------------
+app.get(TOTP_PATH, function (req, res) {
+  log.debug('Entering the one-time code screen.');
+  const asked = validation.check(req, 'query', MFA_STEP_QUERY);
+  if (!asked.ok) {
+    return refuseInvalid(res, asked);
+  }
+  const mfaId = String(asked.value.mfa || '');
+  const step = pendingMfa.get(mfaId);
+  if (!step || step.expires < Date.now()) {
+    pendingMfa.delete(mfaId);
+    log.debug('Leaving the one-time code screen. The step had expired.');
+    return oauthError(res, 400, 'invalid_request',
+      'This second-factor step has expired. Start the request again from the ' +
+      'application that sent you here.');
+  }
+  if (!credentials.mechanismsFor(step.username).totp) {
+    log.info('authn: a one-time code screen was asked for "' + step.username +
+             '", who has no authenticator enrolled. Refused.');
+    log.debug('Leaving the one-time code screen. Nothing is enrolled.');
+    return oauthError(res, 400, 'invalid_request',
+      'No authenticator app is enrolled for that account, so there is no code ' +
+      'to ask for.');
+  }
+  log.debug('Leaving the one-time code screen. Drawn for ' + step.username + '.');
+  return sendTotpPage(res, totpPage(baseUrlOf(req), mfaId, step.username, '', ''));
+});
+
+// ---------------------------------------------------------------------------
+// POST /authn/totp — the code, checked for real.
+//
+// **RATE LIMITED, AND THIS IS THE ENDPOINT IN THIS SERVICE WHERE THAT MATTERS
+// MOST.** A password has an unbounded search space and — in development mode —
+// is not checked at all. A six-digit code has a MILLION values, it is checked
+// properly in both modes, and the window forgives a step either side, so an
+// unthrottled door here is roughly a one-in-333,000 chance per attempt at a
+// second factor. Five attempts a minute is what `security.rateLimitPerIdentity`
+// gives it, by identity AND by address, which is the same pair the sign-in
+// screen uses and for the same reason: either bucket alone is the half an
+// attacker does not use.
+//
+// **A REFUSED CODE REDRAWS THIS PAGE AND KEEPS THE STEP**, rather than sending
+// the person back to the password screen. Mistyping six digits is the ordinary
+// case, and throwing away a password step that succeeded would make the
+// commonest mistake the most expensive one. The step still expires
+// (`MFA_TTL_MS`), so this is a window and not an open door — and the rate
+// limiter is what bounds the attempts inside it.
+//
+// **THE STEP IS SPENT ON SUCCESS AND ONLY ON SUCCESS.**
+// ---------------------------------------------------------------------------
+app.post(TOTP_PATH, function (req, res) {
+  log.debug('Entering the one-time code endpoint.');
+  const base = baseUrlOf(req);
+  const posted = validation.checkParsed(parseBody(req), 'body', TOTP_FORM);
+  if (!posted.ok) {
+    return refuseInvalid(res, posted);
+  }
+  const body = posted.value;
+  const mfaId = String(body.mfa_id || '');
+  const step = pendingMfa.get(mfaId);
+  if (!step || step.expires < Date.now()) {
+    pendingMfa.delete(mfaId);
+    log.debug('Leaving the one-time code endpoint. The step had expired.');
+    return oauthError(res, 400, 'invalid_request',
+      'This second-factor step has expired. Start the request again from the ' +
+      'application that sent you here.');
+  }
+
+  const allowed = websecurity.attempt('mfa-code', req, step.username);
+  if (!allowed.ok) {
+    log.warn('authn: too many one-time code attempts for "' + step.username +
+             '" (' + allowed.kind + ' bucket). Refusing for ' +
+             allowed.retryAfterS + 's.');
+    log.debug('Leaving the one-time code endpoint. Rate limited.');
+    return sendTotpPage(res, totpPage(base, mfaId, step.username,
+                                      allowed.detail, ''));
+  }
+
+  const verdict = credentials.verifyTotp(step.username, String(body.code || ''));
+  if (!verdict.ok) {
+    // THE REASON IS SHOWN HERE, WHERE THE SIGN-IN SCREEN SHOWS NONE. That
+    // screen hides which of "wrong password" and "no such person" happened,
+    // because either answer is account enumeration. **Nothing is enumerable at
+    // this door**: the person has already authenticated with a first factor,
+    // so the only new fact on offer is about their own account — and "that code
+    // has already been used" against "that code is not right" is the difference
+    // between waiting thirty seconds and thinking your authenticator is broken.
+    log.info('authn: the one-time code for "' + step.username +
+             '" was refused (' + verdict.reason + ').');
+    log.debug('Leaving the one-time code endpoint. Refused: ' + verdict.reason + '.');
+    return sendTotpPage(res, totpPage(base, mfaId, step.username,
+                                      verdict.detail, ''));
+  }
+  websecurity.succeeded('mfa-code', req, step.username);
+  pendingMfa.delete(mfaId);
+
+  logArtifact('RFC 6238 one-time code', 'as verified by this server',
+              { username: step.username, step: verdict.counter,
+                drift: verdict.drift });
+
+  // WHAT THE SESSION CLAIMS. `otp` is RFC 8176's value and its registry entry
+  // names RFC 4226 and RFC 6238 explicitly, so there is nothing to invent; the
+  // `acr` is `mfa` because two factors really were presented — a password and a
+  // code — which is the one case where this service can say that honestly.
+  //
+  // There is no passwordless branch here and there cannot be: a one-time code
+  // is never a first factor (see common/totp.js), so `pwd` is always in the
+  // list.
+  const amr = ['pwd', 'otp'];
+  startSession(res, step.username, amr, 'mfa', step.authn.protocol,
+               { request: req });
+  returnToCaller(res, step.authn, null, null);
+  log.debug('Leaving the one-time code endpoint. ' + step.username +
+            ' completed the second factor with a one-time code.');
+});
+
+// ===========================================================================
+// /authn/backup-code — THE WAY BACK IN WHEN THE SECOND FACTOR IS NOT TO HAND
+// (2026-09-10).
+//
+// The third second-factor screen, and the only one that is never what a
+// sign-in ASKS for. `credentials.mechanismsFor().secondFactor` answers
+// `webauthn` or `totp` and never this: a person is CONFIGURED for one of those
+// two, and a recovery code stands in for whichever of them they cannot produce
+// right now. So this screen is reachable only from one of the other two, with
+// a step id they already hold.
+//
+// ---------------------------------------------------------------------------
+// IT IS A PAGE WITH NO SCRIPT, LIKE `/authn/totp` AND UNLIKE `/authn/webauthn`.
+//
+// A person reads a string off a piece of paper and types it into an input.
+// There is no browser API in that, so this is served under the service-wide
+// `script-src 'none'` and `sendBackupCodePage()` sets no policy of its own —
+// which is worth stating rather than leaving to be noticed, because the root
+// `CLAUDE.md` keeps an inventory of the seven pages here that relax the policy
+// and the test for being on it is that the page CANNOT work without a script.
+// `/authn/totp` had to make this argument the same day and this one makes it
+// again rather than citing it.
+//
+// ---------------------------------------------------------------------------
+// THERE IS NO ENROLMENT HERE AND THERE IS NO ISSUE HERE.
+//
+// `/authn/webauthn` enrols on first use. This screen does neither: a set of
+// recovery codes is issued by the act of enrolling a second factor, once, and
+// `common/credentials.js` is where that happens. A sign-in screen that could
+// ISSUE a set would be a door that hands a working second factor to whoever
+// typed a password — which is the same refusal the console is held to for TOTP
+// enrolment.
+//
+// ---------------------------------------------------------------------------
+// **THE CODE IS SPENT AND THE PERSON IS TOLD HOW MANY ARE LEFT**, on the way
+// through rather than afterwards. That is the one thing this screen does that
+// the other two do not, and it is the whole of what makes a finite credential
+// usable: somebody down to their last code needs to know it now, while they
+// are signed in and able to do something about it, rather than the next time
+// they are locked out.
+// ===========================================================================
+function backupCodePage(base, mfaId, username, error, notice) {
+  log.debug('Entering backupCodePage(). username=' + username);
+  const step = pendingMfa.get(mfaId);
+  // WHAT THEY HOLD, off the credential store rather than off the step: the
+  // step was minted before this screen was reached and a code may have been
+  // spent since. It is the COUNT and never the codes — `backupCodeStatus()`
+  // exists so that a page cannot ask for one and receive the other.
+  const status = credentials.mechanismsFor(username).backupCodes ||
+                 { remaining: 0, total: 0 };
+  // WHICH MECHANISM THEY ARE STANDING IN FOR, so the page can say what this
+  // is instead of. It is the step's, because that is what was asked for.
+  const insteadOf = step && step.factor === 'webauthn'
+    ? 'your security key' : 'your authenticator app';
+  const low = status.remaining > 0 && status.remaining <= 3;
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    '<title>Recovery code — mock authentication service</title><style>' +
+    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
+    'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:28px 32px;width:420px;' +
+    'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 4px}' +
+    'p.sub{color:#666;font-size:.85em;margin:0 0 18px}' +
+    'label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
+    // WIDER AND LESS LETTER-SPACED THAN THE ONE-TIME CODE FIELD NEXT DOOR. A
+    // recovery code is ten characters with a dash in the middle rather than
+    // six digits, so the spacing that makes a PIN readable makes this one
+    // overflow. `autocomplete="one-time-code"` is still right — a password
+    // manager that stored the list offers it — and `inputmode` is deliberately
+    // NOT numeric here, because these are letters as well.
+    'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #c8c8d0;' +
+    'border-radius:5px;font-size:1.15em;letter-spacing:.12em;text-align:center;' +
+    'text-transform:uppercase;' +
+    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-bottom:14px}' +
+    'button{padding:9px 12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
+    'color:#fff;font-size:.95em;cursor:pointer;width:100%}' +
+    '.err{background:#fdecea;border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}' +
+    '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}' +
+    '.warn{background:#fff8e6;border:1px solid #f0dca8;color:#7a5a00;padding:8px 10px;' +
+    'border-radius:5px;font-size:.85em;margin-bottom:12px}' +
+    '.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
+    'font-size:.75em;color:#777}.meta div{margin:2px 0}.meta a{color:#12107c}' +
+    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style></head><body>' +
+    '<div class="card"><h1>Use a recovery code</h1>' +
+    '<p class="sub">Instead of ' + xmlEscape(insteadOf) + ', for <code>' +
+    xmlEscape(username) + '</code></p>' +
+    (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+    (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
+    // HOW MANY ARE LEFT, ON THE WAY IN AND NOT ONLY AFTERWARDS. See the
+    // header: somebody down to their last code needs to know while they can
+    // still do something about it.
+    (low
+      ? '<div class="warn">' + xmlEscape('Only ' + status.remaining +
+          ' of your ' + status.total + ' recovery codes are unused. A set is ' +
+          'issued once and is never topped up — after the last one an ' +
+          'administrator has to clear the set before a new one can be ' +
+          'issued.') + '</div>'
+      : '') +
+    '<form method="post" action="' + BACKUP_CODE_PATH + '">' +
+    '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
+    '<label for="code">One of the recovery codes you were given</label>' +
+    '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
+    'autocapitalize="characters" spellcheck="false" maxlength="64" autofocus ' +
+    'placeholder="XXXXX-XXXXX">' +
+    '<button type="submit" id="backup-submit">Sign in</button>' +
+    '</form>' +
+    '<div class="meta">' +
+    '<div>Each code works <strong>once</strong>. The dashes and the case do ' +
+    'not matter — type it however you can read it.</div>' +
+    (status.total
+      ? '<div>' + xmlEscape(String(status.remaining) + ' of ' +
+          String(status.total) + ' unused.') + '</div>'
+      : '') +
+    // BACK TO THE MECHANISM THEY ARE ACTUALLY CONFIGURED FOR. A screen with
+    // no way back is what made this whole family of links necessary, and
+    // arriving here by mistake — the phone was in the next room after all —
+    // must not cost a code.
+    '<div><a href="' +
+    (step && step.factor === 'webauthn' ? WEBAUTHN_PATH : TOTP_PATH) +
+    '?mfa=' + encodeURIComponent(mfaId) + '">Go back and use ' +
+    xmlEscape(insteadOf) + ' after all</a></div>' +
+    '</div></div></body></html>\n';
+  log.debug('Leaving backupCodePage().');
+  return html;
+}
+
+// NO `Content-Security-Policy` OF ITS OWN — see the header. This page has no
+// script, so it inherits the service-wide `script-src 'none'`, which is the
+// whole of what that setting is for. `no-store` because the page names the
+// person being authenticated and is reached from shared browsers.
+function sendBackupCodePage(res, html) {
+  log.debug('Entering sendBackupCodePage().');
+  res.status(200).type('text/html').set('Cache-Control', 'no-store').send(html);
+  log.debug('Leaving sendBackupCodePage().');
+}
+
+const BACKUP_CODE_FORM = vz.object({
+  mfa_id: vt.opt(vt.base64url),
+  // A STRING WITH A GENEROUS BOUND, and no shape check here. A recovery code
+  // is letters, digits, dashes and whatever spaces somebody typed reading it
+  // off paper, and `common/backup_codes.js` is where the alphabet lives —
+  // which is where the refusal belongs, because that is the module that knows
+  // what a code is made of. A schema that spelled the alphabet a second time
+  // would be the second place to edit when it changes.
+  code: vz.string().max(64).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+// ---------------------------------------------------------------------------
+// GET /authn/backup-code — the *use a recovery code* link, and all it does is
+// draw the page for a step that already exists.
+//
+// It creates nothing and decides nothing, exactly as `GET /authn/totp` does:
+// the pending record was minted when the password step succeeded, and all
+// three screens answer against the same one.
+//
+// **IT CHECKS THAT AN UNSPENT CODE ACTUALLY EXISTS**, because a link is markup
+// and this is a door. A hand-made GET must not draw a recovery form for
+// somebody who holds no codes or has spent them all: that would ask for a
+// credential which cannot exist, which reads as a service that has lost it.
+// ---------------------------------------------------------------------------
+app.get(BACKUP_CODE_PATH, function (req, res) {
+  log.debug('Entering the recovery code screen.');
+  const asked = validation.check(req, 'query', MFA_STEP_QUERY);
+  if (!asked.ok) {
+    return refuseInvalid(res, asked);
+  }
+  const mfaId = String(asked.value.mfa || '');
+  const step = pendingMfa.get(mfaId);
+  if (!step || step.expires < Date.now()) {
+    pendingMfa.delete(mfaId);
+    log.debug('Leaving the recovery code screen. The step had expired.');
+    return oauthError(res, 400, 'invalid_request',
+      'This second-factor step has expired. Start the request again from the ' +
+      'application that sent you here.');
+  }
+  const held = credentials.mechanismsFor(step.username).backupCodes;
+  if (!held || !held.remaining) {
+    log.info('authn: a recovery code screen was asked for "' + step.username +
+             '", who has ' + ((held && held.total)
+               ? 'spent every code in their set' : 'no recovery codes')
+             + '. Refused.');
+    log.debug('Leaving the recovery code screen. Nothing left to present.');
+    return oauthError(res, 400, 'invalid_request',
+      (held && held.total)
+        ? 'Every recovery code on that account has been used. A set is issued ' +
+          'once and is never topped up, so an administrator has to clear it ' +
+          'before a new one can be issued.'
+        : 'No recovery codes have been issued for that account, so there is ' +
+          'nothing to ask for.');
+  }
+  log.debug('Leaving the recovery code screen. Drawn for ' + step.username + '.');
+  return sendBackupCodePage(res, backupCodePage(baseUrlOf(req), mfaId,
+                                                step.username, '', ''));
+});
+
+// ---------------------------------------------------------------------------
+// POST /authn/backup-code — the code, checked for real and SPENT.
+//
+// **RATE LIMITED, THROUGH THE SAME BUCKETS AS THE ONE-TIME CODE DOOR.** Fifty
+// bits is not guessable and that is not why the limit is here: this endpoint
+// answers *is this one of your codes* and an unthrottled one would let somebody
+// walk a list at network speed, which is the shape of attack a finite set of
+// static strings actually has. `security.rateLimitPerIdentity` gives it five a
+// minute, by identity AND by address.
+//
+// **A REFUSED CODE REDRAWS THIS PAGE AND KEEPS THE STEP**, for
+// `POST /authn/totp`'s reason: mistyping ten characters off paper is the
+// ordinary case, and throwing away a password step that succeeded would make
+// the commonest mistake the most expensive one.
+//
+// **THE CODE IS SPENT INSIDE `verifyBackupCode()` AND A FAILED SPEND IS A
+// REFUSAL.** That is the one place these three screens differ from each other
+// and it is argued in `common/credentials.js`: a one-time code whose counter
+// fails to write can be replayed inside ninety seconds, and a recovery code
+// that cannot be marked spent works for ever.
+// ---------------------------------------------------------------------------
+app.post(BACKUP_CODE_PATH, function (req, res) {
+  log.debug('Entering the recovery code endpoint.');
+  const base = baseUrlOf(req);
+  const posted = validation.checkParsed(parseBody(req), 'body', BACKUP_CODE_FORM);
+  if (!posted.ok) {
+    return refuseInvalid(res, posted);
+  }
+  const body = posted.value;
+  const mfaId = String(body.mfa_id || '');
+  const step = pendingMfa.get(mfaId);
+  if (!step || step.expires < Date.now()) {
+    pendingMfa.delete(mfaId);
+    log.debug('Leaving the recovery code endpoint. The step had expired.');
+    return oauthError(res, 400, 'invalid_request',
+      'This second-factor step has expired. Start the request again from the ' +
+      'application that sent you here.');
+  }
+
+  const allowed = websecurity.attempt('mfa-code', req, step.username);
+  if (!allowed.ok) {
+    log.warn('authn: too many recovery code attempts for "' + step.username +
+             '" (' + allowed.kind + ' bucket). Refusing for ' +
+             allowed.retryAfterS + 's.');
+    log.debug('Leaving the recovery code endpoint. Rate limited.');
+    return sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
+                                                  allowed.detail, ''));
+  }
+
+  // **THE ASYNCHRONOUS DOOR, SINCE 2026-09-11, AND IT IS NOT AN OPTIMISATION.**
+  // A recovery code is stored as a scrypt hash now, and a WRONG one has to be
+  // compared against every code in the set — ten by default. Measured on this
+  // machine: 860ms with the event loop ticking **zero** times, against 263ms
+  // with it ticking 56. Node runs this service's six listener families on one
+  // thread, so the synchronous door here would mean the KDC, the directory and
+  // every other endpoint answering nobody for most of a second every time
+  // somebody mistypes ten characters off a printed list — which is the
+  // ordinary case at this screen.
+  //
+  // `common/credentials.js`'s `verifyBackupCodeAsync()` puts the candidates on
+  // the worker pool in parallel and refuses in exactly the order the
+  // synchronous door does, because both go through one `backupPrepare()`.
+  credentials.verifyBackupCodeAsync(step.username, String(body.code || ''))
+    .then(function (verdict) {
+      finishBackupCode(req, res, base, mfaId, step, verdict);
+    })
+    .catch(function (e) {
+      // **CAUGHT HERE BECAUSE EXPRESS 4 DOES NOT LOOK AT WHAT A HANDLER
+      // RETURNS.** A rejection would be an unhandled rejection and a request
+      // that never gets an answer — the trap the token endpoint's wrapper
+      // exists for, met again by the second asynchronous door in this file.
+      log.error('authn: checking a recovery code for "' + step.username +
+                '" threw: ' + (e && e.stack ? e.stack : e));
+      sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
+        'That code could not be checked. Try again.', ''));
+    });
+  log.debug('Leaving the recovery code endpoint. Checking.');
+  return undefined;
+});
+
+// The rest of the door, split out so that the asynchronous check above reads
+// as one act. Everything below the comparison is unchanged.
+function finishBackupCode(req, res, base, mfaId, step, verdict) {
+  log.debug('Entering finishBackupCode().');
+  {
+  if (!verdict.ok) {
+    // THE REASON IS SHOWN, where the sign-in screen shows none, for `POST
+    // /authn/totp`'s reason: nothing is enumerable at this door — the person
+    // has already presented a first factor — and "that one has already been
+    // used" against "that is not one of your codes" is the difference between
+    // reading the next line on a printed list and believing the list is dead.
+    log.info('authn: a recovery code for "' + step.username +
+             '" was refused (' + verdict.reason + ').');
+    log.debug('Leaving the recovery code endpoint. Refused: ' +
+              verdict.reason + '.');
+    return sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
+                                                  verdict.detail, ''));
+  }
+  websecurity.succeeded('mfa-code', req, step.username);
+  pendingMfa.delete(mfaId);
+
+  logArtifact('recovery code', 'as verified and spent by this server',
+              { username: step.username, remaining: verdict.remaining,
+                total: verdict.total });
+
+  // ---------------------------------------------------------------------
+  // WHAT THE SESSION CLAIMS, AND `otp` IS A CHOICE RATHER THAN AN OBVIOUS
+  // ANSWER.
+  //
+  // RFC 8176 registers no value for a recovery code, and inventing one would
+  // put a string in `amr` that no relying party can look up — the exact fake
+  // this profile refuses everywhere else. `otp` is the registered value and
+  // its registry entry describes "one-time password", which a single-use
+  // recovery code is by the plainest reading of the words: a password, used
+  // once. So it is the honest choice among the registered ones, and it is
+  // the same value the authenticator-app door asserts.
+  //
+  // **`acr` IS `mfa` BECAUSE TWO FACTORS REALLY WERE PRESENTED** — a password
+  // and something from a list only this person holds. A recovery code is a
+  // WEAKER second factor than the one it stands in for, and there is no
+  // vocabulary here in which to say so: this service will not invent an `acr`
+  // value, and downgrading to `1` would claim ONE factor when two were
+  // checked. The audit row and `/admin/sessions` say which mechanism it was.
+  //
+  // There is no passwordless branch and there cannot be: a recovery code is
+  // never a first factor, so `pwd` is always in the list.
+  const amr = ['pwd', 'otp'];
+  startSession(res, step.username, amr, 'mfa', step.authn.protocol,
+               { request: req });
+  returnToCaller(res, step.authn, null, null);
+  log.debug('Leaving finishBackupCode(). ' + step.username +
+            ' completed the second factor with a recovery code; ' +
+            verdict.remaining + ' of ' + verdict.total + ' left.');
+  }
+}
 // ---------------------------------------------------------------------------
 // WHO POSTED THAT FORM: the audit log's actor, filled from here.
 //
@@ -3898,6 +5287,37 @@ audit.setActorResolver(auditActorOf);
 // ---------------------------------------------------------------------------
 module.exports = {
   LOGIN_PATH: LOGIN_PATH,
+  // WHICH ENROLLED KEY AN ASSERTION IS CHECKED AGAINST, exported for
+  // `tests/webauthn_policy.js` and for no caller. The state that makes it
+  // worth asserting — one person, two keys — cannot be built through any door
+  // this service has, so it cannot be reached over HTTP; see the function's
+  // own header and the vendored job's.
+  keyForAssertion: keyForAssertion,
+  // THE ORIGIN AND THE RP ID, EXPORTED TOGETHER (2026-09-10). `/portal/keys`
+  // runs a registration ceremony of its own and has to tell the verifier what
+  // the browser was talking to — and these are, as `originOf()`'s own header
+  // says, THE SAME MISTAKE WAITING TO BE MADE TWICE: one is the origin, one is
+  // its host, and neither is the base URL, which in a realm carries a path.
+  // A caller computing either for itself is a caller that will get the realm
+  // case wrong exactly as this module once did.
+  originOf: originOf,
+  // The one script this service serves for a WebAuthn ceremony, for
+  // `/portal/keys`, which runs a registration of its own against it rather
+  // than carrying a second copy — see that page's own argument.
+  WEBAUTHN_SCRIPT_PATH: WEBAUTHN_SCRIPT_PATH,
+  // THE RP ID, EXPORTED FOR ONE TEST AND FOR NO CALLER (2026-09-10).
+  //
+  // `webauthn.rpId` may only widen the RP ID to a REGISTRABLE DOMAIN SUFFIX of
+  // the origin's host, and the check that enforces it is four lines that are
+  // easy to write wrongly in a way nothing notices: `endsWith()` alone accepts
+  // `mple.com` as a suffix of `example.com`, which is precisely the confusion
+  // WebAuthn's binding exists to prevent. `tests/webauthn_policy.js` asserts
+  // it, and it cannot be asserted over HTTP — the value only ever appears
+  // inside a ceremony a browser performs.
+  //
+  // Nothing in this service calls it from outside this file, and nothing
+  // should: the RP ID is decided where the ceremony is drawn.
+  rpIdOf: rpIdOf,
   SESSION_COOKIE: SESSION_COOKIE,
   startArrivalSession: startArrivalSession,
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,

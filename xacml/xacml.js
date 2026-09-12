@@ -930,11 +930,20 @@ app.post('/xacml/pep/register', function (req, res) {
         '(xacml.pepRequireCertificate). The certificate does not have to ' +
         'chain to anything — what is proved is that the same key completed ' +
         'the handshake, which is RFC 8705 section 3\'s argument and it holds ' +
+        // THIS CLAUSE CONTRADICTED ITSELF UNTIL IT WAS FIXED, and it is worth
+        // knowing why rather than just that. It said "GET /xacml/pep/policies
+        // requires no credential" and then, eleven words later, "GET
+        // /xacml/pep/policies requires REMOTE_PEPS" — the first half left
+        // over from before 2026-09-06 and the second added on the day that
+        // stopped being true. A refusal is the one message that has to be
+        // right, and this one is quoted VERBATIM into the PEP container's own
+        // `registration.why`, so both halves were read together by exactly
+        // the person trying to work out what to fix.
         'here unchanged. Note that registering is not what lets a PEP ' +
-        'enforce: GET /xacml/pep/policies requires no credential, and what ' +
-        'a registration buys is a row on /admin/xacml/peps and an address ' +
-        'for the change nudge — but you will need a certificate for the ' +
-        'pull as well, since GET /xacml/pep/policies requires REMOTE_PEPS.');
+        'enforce: what a registration buys is a row on /admin/xacml/peps and ' +
+        'an address for the change nudge. You will need a certificate for ' +
+        'the PULL regardless, since GET /xacml/pep/policies requires the ' +
+        'REMOTE_PEPS role.');
     return;
   }
   // THE NAME COMES FROM THE CERTIFICATE WHEN THERE IS ONE, and from the body

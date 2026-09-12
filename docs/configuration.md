@@ -345,11 +345,27 @@ not an exception to *that* sentence — `admin.readGroup` and `admin.writeGroup`
 below are read from the directory by `/admin`, never from this claim, so a token
 carrying `admin-write` still does nothing a token without it cannot.
 
-### `scim.authRequired`, `spiffe.authRequired` and `admin.authRequired`
+### `global.mode` — and the four gate settings it replaced
 
-The three places this service enforces authentication at all. All on by default,
-all three can be turned off, and each is explained under
-[what is not checked](what-is-not-checked.md).
+**`scim.authRequired`, `spiffe.authRequired`, `admin.authRequired` and
+`ssf.authRequired` are gone**, removed on 2026-09-06. They were one question
+with four answers, and a deployment that required a credential at SCIM and not
+at the console was not partly secured — it was unsecured with a longer
+configuration file.
+
+All four gates are now **unconditional**, in both modes: `/scim/v2` takes a
+credential, the SPIRE Server API takes an X509-SVID over mutual TLS, `/admin`
+takes a session and a role, and the Shared Signals endpoints take a credential.
+
+What `global.mode` decides is whether what they ask for is **checked**.
+`development` is the default and is every release of this service before that
+date: a presented password is not verified, anything named is created, and there
+are no public-client restrictions — which is what makes this a mock. `product`
+runs the same protocol implementations with that permissiveness taken out, and
+additionally gates `/admin-api`. It is settable per trust realm, so one process
+can serve a development realm and a product realm at once.
+
+Each gate is explained under [what is not checked](what-is-not-checked.md).
 
 ### `admin.readGroup`, `admin.writeGroup` and `admin.openWhenEmpty`
 
@@ -363,7 +379,10 @@ member: anybody who signs in holds both roles, and every page says so. It is on
 because there is no password anywhere in this service to bootstrap an
 administrator with and the roster dies with the process — off, and a service
 started with an empty roster has a console no browser can reach. `/admin-api` is
-not gated by any of these, which is the way back out of that.
+the way back out of that: it is gated by a credential of its own
+(`adminApi.authRequired`, an OAuth 2.0 access token rather than a console
+session), so getting back in means holding that token — or turning that one
+setting off, which restores the open API this had until 2026-09-09.
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.
@@ -452,6 +471,161 @@ off and `persistence.pollInterval` sets the worst-case lag. It shares **state an
 not sockets** — the KDC, the LDAP listeners, the TLS ports and SPIFFE's four are
 per process — and the replay caches *converge* rather than synchronise. See
 [Persistence](persistence.md).
+
+### The TOTP settings, and the two that behave differently from the rest
+
+Eight `totp.*` rows, drawn on `/admin/totp` under Protocols. Two things about
+them are unlike every other setting in this service.
+
+**Six of them affect NEW enrolments only.** The digest, the digit count, the
+period and the secret length are all copied onto a person's enrolment when they
+scan the QR code, because they are what the QR code TOLD the authenticator app —
+and this service cannot change what an app was told after the fact. So changing
+`totp.digits` from 6 to 8 does not invalidate anybody: the next person to enrol
+gets eight, and everybody already enrolled goes on typing six. A setting that
+silently locked out everybody who had already set an app up would be the worst
+kind of knob.
+
+**`totp.window` is the exception and applies to everybody.** How much a
+deployment forgives a phone with a drifting clock is a policy rather than
+something an app was told, so it is read live. The default is `1` — RFC 6238
+section 5.2's recommended maximum, which makes a code good for about ninety
+seconds. `0` demands a perfectly synchronised clock and is the setting to reach
+for when demonstrating what happens without one.
+
+**Leave `totp.algorithm` at `SHA1` unless that is exactly what you are
+testing.** Several widely used authenticator apps — Google Authenticator among
+them — ignore the `algorithm` parameter in the QR code and always compute SHA-1,
+so any other value produces a code that scans perfectly and then generates codes
+this service refuses, with nothing anywhere saying why. SHA-1 is not a weakness
+here: what RFC 4226 uses it for is a keyed MAC over a counter, not a
+collision-resistant digest.
+
+**`totp.enabled=false` does not disable an existing enrolment.** It stops new
+ones. A person who enrolled while it was on still holds the second factor their
+account is configured for, and the sign-in screen still asks for the code — a
+switch that silently downgraded every one of those accounts to a password alone
+would be a security control whose off position does something other than what it
+says. Clearing an enrolment is on that person's own row under `/admin/users`,
+or `POST
+/admin-api/mfa/clear-totp`.
+
+### The recovery code settings, and the mechanism no specification defines
+
+Four `backupCodes.*` rows, drawn on `/admin/backup-codes` under Protocols. They
+configure the way back in when the second factor is not to hand — the phone is
+lost or flat, the security key is at home.
+
+**This is the only mechanism in this service with no document behind it.**
+Everything else implements somebody's specification; nobody ever wrote one for a
+recovery code. What every identity provider does converges anyway — a handful of
+random strings, each accepted once — so the decisions that are left are this
+service's own and `common/backup_codes.js` argues each.
+
+**A set is issued by an ACT and not by a request.** There is no control
+anywhere — not on `/portal`, not on `/admin`, not on `/admin-api` — that creates
+one. A set is issued the first time a person enrols a second factor: a confirmed
+authenticator app, or a security key in the `mfa` role. A recovery mechanism a
+person has to remember to ask for produces exactly the population it exists to
+protect, one at a time, because the people who did not ask are the people who
+will need it.
+
+**Once. Not once per enrolment.** Enrolling a different second factor later does
+not reissue, and that is the rule to know before reading anything else here.
+Somebody who printed a list in March and replaced their authenticator app in
+June would otherwise be holding strings that had stopped working with nothing
+having said so — a recovery credential that silently expires is worse than none,
+because the person believes they have a way back. **An operator's Clear on that
+person's row under `/admin/users` (or `POST
+/admin-api/users/clear-backup-codes`) is the only route to a second set**, after
+which the next second factor they enrol issues one.
+
+**None of these four invalidates a set that exists**, which is the way the
+`totp.*` rows above differ: those carry a paragraph about NEW enrolments because
+their values were told to an app this service cannot reach. Nothing here is told
+to anybody — a recovery code is a string compared against a stored string — so
+shortening `backupCodes.length` changes what the next set looks like and leaves
+an existing one matching exactly as it did. `backupCodes.enabled=false` likewise
+stops a new set being issued and takes nothing away: a switch that removed the
+only way back into an account whose phone is lost would be the worst one here.
+
+**The codes are encrypted and not hashed.** This repository's rule is that a
+secret the service VERIFIES is hashed and a secret it must PRESENT cannot be;
+`userPassword` is scrypt for that reason. A recovery code is both, and what
+decides it is whether a person may look at their remaining codes again — this
+service says yes, on `/portal/mfa`, because a list shown exactly once at the end
+of an enrolment somebody is rushing through is a list most people close without
+reading, and the moment it matters is months later. They are sealed with
+AES-256-GCM under the same key-encryption key as the signing keys wherever that
+key outlives the process, and stored as the strings they were shown as where it
+does not — sealing under development mode's per-run key would mean a printed
+list that stopped working at the next restart, which is the precise failure this
+mechanism exists to prevent.
+
+**Nothing but the person sees them.** The console reports counts, the management
+API reports counts, and neither has an operation that returns a code. Showing
+them to whoever holds Admin Read would be an administrative door handing out a
+working second factor — the same refusal this service already makes about
+enrolling an authenticator app from the console.
+
+### The WebAuthn settings, and the one of thirteen this service enforces
+
+Thirteen `webauthn.*` rows, drawn on `/admin/webauthn` under Protocols.
+**There were none of these until 2026-09-10**, and this page said so: WebAuthn
+had *no settings at all — what a ceremony does is decided by the specification
+and by the browser.* That is true of the cryptography and false of the ceremony.
+The RP name, the algorithms offered, the user verification requirement, the
+attestation conveyance and the timeout were literals in a string, so there was
+no way to ask this service for a ceremony shaped any other way.
+
+They are three kinds of thing and the page says which each is, because the kind
+decides what it means:
+
+* **THE CEREMONY** — `rpName`, `rpId`, `algorithms`, `userVerification`,
+  `attestation`, `timeoutMs`. Handed to the browser in the options and no more.
+* **CTAP2** — `authenticatorAttachment`, `residentKey`, `credProps`. Also handed
+  to the browser, and translated by it into what it asks the AUTHENTICATOR for:
+  which kind may answer, whether the credential is discoverable (a resident key,
+  which is what a passkey is), and whether the browser is asked to report back
+  which it made.
+* **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`, `maxKeysPerPerson`.
+  Not WebAuthn at all: what THIS service will do with a key once the ceremony is
+  over.
+
+**`webauthn.userVerification` IS THE ONE THIS SERVICE CHECKS.** `required` is
+sent to the browser AND the UV flag in the signed authenticator data is verified
+when the ceremony comes back, so an authenticator that did not verify the person
+is refused rather than quietly accepted. The other ceremony rows cannot be
+checked at all: nothing signed says what the browser was asked for, so a check
+would be a comparison against a value this service itself supplied. What it does
+instead is RECORD what came back — the attachment the browser reported, and the
+`credProps` answer about whether the credential is really discoverable.
+
+**Raising it does not change what a session claims.** A passwordless sign-in
+still records `amr ["hwk"]` and `acr "1"` under `required`. RFC 8176 has no
+value for *the authenticator verified the user* that this service could honestly
+assert, and claiming `mfa` because the ceremony was phishing-resistant would be
+exactly the kind of fake this service refuses everywhere else.
+
+**No attestation statement is verified whatever `webauthn.attestation` asks
+for.** There is no metadata service here, no vendor trust anchor and no model
+allow-list, so the statement is parsed, reported and believed. `direct` is the
+default because this is a debugging service and the object is worth looking at;
+a real deployment with no attestation policy sends `none`.
+
+**`webauthn.rpId` may only WIDEN the RP ID**, to a registrable domain suffix of
+the host this service was reached on — `example.com` at `sts.example.com`. That
+is WebAuthn's own rule and browsers enforce it. This service enforces it too and
+refuses anything else BY NAME in the log, because a browser refuses it with a
+`SecurityError` that a ceremony reports as one of its several indistinguishable
+failures — so a wrong value here would look like a broken authenticator.
+
+**The four policy rows refuse an ENROLMENT and never an authentication.** A key
+already on somebody's entry goes on working when the role that produced it is
+switched off — the same contract `totp.enabled` keeps, and with a sharper edge
+for `primaryAllowed`, where the person's ONLY credential would be the one being
+switched off. Removing a key is on that person's own row under `/admin/users`,
+or `POST /admin-api/users/clear-key`.
 
 ### `oauth2.breakIdTokenNonce`
 

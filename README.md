@@ -87,17 +87,22 @@ is written down in
 | **OpenID Connect 1.0** | `id_token` with `nonce`, `at_hash` and `c_hash` across all three flows, the section 5.3 UserInfo endpoint, **Discovery 1.0** at all three URLs a client may look at, RP-Initiated Logout, and **Front-Channel Logout 1.0** — the provider's side of it: the two discovery members, the two per-client registration members, the `sid` claim on an ID Token issued on a browser session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out. Back-channel logout is a different specification and is not implemented; the metadata says so |
 | **A protocol-independent sign-out** | `GET /logout` lists **everything this service is still holding for one identity across every family** — sessions, relying parties, realms, service providers, revocable tokens, outstanding authorization and pre-authorized codes, directory connections bound as them, and the Kerberos ticket position — with a checkbox against each, and a POST that ticks nothing ends all of it. Two of those mechanisms are new: a **Kerberos sign-out instant**, after which a `TGS-REQ` carrying an older ticket is refused KDC_ERR_TGT_REVOKED (20), and closing the **LDAP connections** bound as that person, which is the only sign-out RFC 4511 has. **What cannot be ended is listed anyway, with the reason** — an assertion, a service ticket or an SVID already issued is beyond recall because nothing consults this service when one is presented, and hiding those would make a global logout look complete when it is not |
 | **WebAuthn Level 3** | the relying party's half, on the login screen, in **both roles**: a second factor after the password, or the **primary credential** with no password at all. Registration and assertion are verified either way, and `amr` / `acr` in the tokens that follow say which happened — `["pwd","hwk"]`/`mfa` for two factors, `["hwk"]`/`1` for a passwordless sign-in, which is one factor however phishing-resistant it is |
+| **TOTP (RFC 6238 over RFC 4226)** | the **other second factor** on that same login screen, and the only credential this service verifies besides a Kerberos ticket. A person enrols an authenticator app from `/portal/mfa` or while spending an activation link: a **QR code this server rendered** (an SVG data: URI — every page of the portal is `script-src 'none'`) and the same secret in base32 beside it, because the phone is often the browser showing the page. **Two steps, and the first writes nothing**: an unconfirmed secret on somebody's entry would be a second factor they cannot produce. Once enrolled, **a password alone stops signing them in** — the sign-in screen asks for a code without being told to — and the session says `amr ["pwd","otp"]` / `acr mfa`, `otp` being RFC 8176's value for exactly this. **Codes are checked FOR REAL in both modes**: all three digests, a settable step and digit count, a symmetric skew window, and section 5.2's accept-once rule enforced against the step last accepted, so the code that set the app up cannot also sign anybody in. It can never be a first factor — this service holds the same shared secret the app does — and there is no self-service reset, because one anybody can use is no second factor: an operator's Clear on that person's row under `/admin/users` is the way back for a lost phone |
+| **Recovery codes** | the **way back in when neither of those is to hand** — the phone is lost or flat, the security key is at home — and **the one mechanism here that no specification defines**. **Since 2026-09-11 a person GENERATES their own set** from `/portal/mfa`: the codes are shown once, on the page that made them, and **nothing is stored until they confirm they have saved them** — at which point what is stored is a **scrypt hash of each code**, so this service can check one and can never show one again. Generating a set REPLACES any set they hold, and the page says so before it generates anything. Enrolling a second factor issues nothing and instead leaves a standing prompt to generate one. (It used to be the other way round — issued automatically and ONCE by the act of enrolling, and stored encrypted so the person could read their remaining codes back. Hashing is what made that impossible: a hash can only be made while the code is in the clear.) The sign-in screen never ASKS for one — it asks for whichever factor the account is configured for and offers `/authn/backup-code` as a link beside it |
 | **DPoP (RFC 9449)** | all twelve section 4.3 proof checks, `cnf.jkt` on access *and* refresh tokens, `dpop_jkt`, replay detection, the nonce handshake |
 | **mTLS client authentication (RFC 8705 §2)** | `tls_client_auth` matches the client certificate's subject DN and `self_signed_tls_client_auth` its thumbprint, beside `private_key_jwt` and `client_secret_jwt` — all six token-endpoint authentication methods are genuinely verified, and the metadata advertises only what the verifier can check |
+| **JWT assertions (RFC 7521, RFC 7523)** | **BOTH halves of the profile, since 2026-09-10.** Section 2.2 is *client authentication*: `client_assertion` in place of a secret, verified against the JWKS the client registered, against a JWKS **this service issued it** from its own certificate authority, or against an `x5c` chain that builds a path to this realm's Root CA. Section 2.1 is the *authorization grant*: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` with an `assertion` naming somebody, and a token comes back **for that person** — no browser, no password and no consent step anywhere in it. **Every optional component is implemented**: `nbf`, `iat` (which also bounds the lifetime, `oauth2.jwtBearerMaxLifetimeS`), `jti` against a replay cache, other claims carried onto the issued token, the requested `scope` narrowed against what the assertion permits and never widened, `aud` as an array, `client_id` omitted where the assertion identifies the party, a `cnf` recorded and not enforced — and **claim 10, an ENCRYPTED assertion**: a nested JWT in any of sixteen key management algorithms against six content encryption ones, to this service's own RSA or EC key, or under the client secret. Every JWS algorithm this service verifies is accepted, the eleven post-quantum ones included. **The one thing that is not permissive** is the assertion ISSUER: it must be declared on an application entry as `oauthAssertionIssuer`, because the signature is the whole of that grant's security, and "accept any signed assertion" means anybody who can reach this port getting a token as anybody. That refusal and federation's are the only two here that default to ON. **And since 2026-09-11 a PERSON may be the issuer too** — a signing key pair issued onto their own `ou=users` entry as `stsAssertion*`, signing an assertion about themselves, which is §3 read literally (claim 2 says the `sub` of an authorization grant typically identifies a resource owner). It comes with the one rule the feature needs: **a person's assertion may only be about themselves**, `iss` and `sub` naming the same person, on the registered key and on a certificate presented in `x5c` alike — a key issued to one resource owner is that person's credential rather than permission to speak for the others, and a party that may assert about OTHER people is an application with the issuer declared on it |
+| **SAML 2.0 assertions (RFC 7521, RFC 7522)** | **BOTH halves of the other profile of that framework, since 2026-09-11, and it is a SEPARATE IMPLEMENTATION rather than the JWT one with a format flag** — the same decision `/saml2` and `/saml11` rest on, for the same reason: a JWT is three base64url parts and a claim set, and this is an XML document with an enveloped XML Signature, a `<Conditions>` element and a `Recipient` attribute that has no JWT equivalent at all. Section 2.1 is the *authorization grant*, `grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer` with a base64url `<saml:Assertion>`; section 2.2 is *client authentication*, `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer` — whose `token_endpoint_auth_method` here is `saml2_bearer`, **this service's own name, because that RFC registers none**, published in `token_endpoint_auth_methods_supported` so a client discovers it rather than reading it in a document. **All eleven items of section 3 are checked**, including the three most implementations get wrong: an expired `<SubjectConfirmation>` is *discarded* and the others still considered rather than making the assertion invalid (item 6's own distinction); an expiry on *either* `NotOnOrAfter` satisfies item 4; and an unrecognised `<Condition>` makes the assertion **Invalid** per SAML core §2.5.1 rather than being ignored (item 11). A whole `<EncryptedAssertion>` and an `<EncryptedID>` are decrypted with this realm's own key (item 10). **TWO things are not permissive**: the `<Issuer>` must be declared on an application entry as `oauthSamlAssertionIssuer`, for the reason RFC 7523's must be — *and* the assertion is verified **only** against a certificate registered against that party under the RFC 7522 attributes. A certificate in `<ds:KeyInfo>` that merely chains to this realm's Root is **not** accepted, which is the one place this service is stricter here than for RFC 7523: a chain proves the *realm* issued a key and says nothing about *which application* holds it, so accepting one would let an application's own RFC 7523 leaf sign a SAML assertion. **The two profiles hold separate key pairs per application**, in two attribute sets no verifier crosses |
+| **A certificate authority, at `/admin/pki`** | **The only surface here that issues an X.509 certificate to something that is not this service.** A **Root CA, an Intermediate CA and an Issuing CA per trust realm** — all three built in one act or none, because a half-built hierarchy is exactly the state in which somebody issues a certificate that verifies here and nowhere else — and a **signing key pair issued from the bottom of it to an application — or, since 2026-09-11, to a PERSON** (`target=person`, written onto their `ou=users` entry as `stsAssertion*`, and their private key handed over once because nothing here opens it again) — which is what makes the two RFCs above usable without an operator moving key material by hand. The key pair goes onto that application's own directory entry: the private key under `oauthAssertionPrivateKey`, **sealed at rest under the same key-encryption key as the hierarchy it came from** wherever that key outlives the process (in the clear in development mode, where it would not survive the restart the entry does), the public half as a JWKS carrying `x5c` and `x5t#S256`, and **this service keeps no second copy** — it is handed over once, at issuance. The encoder is the debugger's own PKI code, vendored byte-identical, so a certificate issued here and one issued on that project's *PKI / X.509* page are built by ONE encoder. **Two things it does not do, both said on the page**: nothing is ever *revoked* — no CRL, no OCSP, so taking a key pair off an application stops this service ACCEPTING what it signs and does not stop the certificate chaining — and in development mode the hierarchy lives exactly as long as the process, which is the rule the signing key already follows |
 | **mTLS-bound tokens (RFC 8705)** | the *other* sender constraint RFC 9700 names: with `global.https` on, the main listener asks for a client certificate and a Token Request made with one is answered with `cnf["x5t#S256"]` — the SHA-256 of its DER — on the access **and** refresh tokens, which the four protected endpoints then check against the certificate the connection was made with. Advertised only where it can actually be done. Section 2's mutual-TLS *client authentication* is deliberately not implemented |
 | **Resource Indicators (RFC 8707)** | `resource` at the authorization endpoint and on **every** grant at the token endpoint becomes the access token's `aud`, so a token can be restricted to one resource server or a small set of them — repeat the parameter for a set — and the resource server here refuses one issued for a different audience |
 | **OpenID4VCI 1.0** | a Credential Issuer: SD-JWT VC (RFC 9901), `jwt_vc_json`, `ldp_vc` with bbs-2023; Credential Offers, the pre-authorized code grant with `tx_code`, `authorization_details` (including its `claims` member, so a wallet can ask for a subset of the claims), batch issuance, response encryption, deferred issuance, the Notification Endpoint |
 | **OpenID4VP 1.0** | a Verifier with DCQL that **actually verifies** what it is sent, check by check |
 | **W3C DID Core 1.0** | its own `did:web` document, and the DIF Well Known DID Configuration that links it to its origin |
 | **TLS / mutual TLS (RFC 8446)** | two **HTTPS listeners of its own** — 8443 asks for a client certificate and never refuses one, 9443 *requires* it — whose entire content is what the **server** saw: the request as it arrived, what TLS negotiated underneath it, and the client certificate exactly as presented, chain and all. It is the half of a handshake a client cannot report. It already knows what it sent; what it cannot know is which chain the server built out of that, which anchor it verified against, or whether the certificate was accepted at all — which, under TLS 1.3, it has not learned by the time its own handshake completes. The client truststore starts **empty** and is filled at runtime through `POST /tls/trust`, because the CA it has to verify is usually generated in a *browser* minutes before the connection and exists nowhere a file could hold it. `GET /tls` describes it; `GET /tls/whoami` over either listener is the report |
-| **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain, in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.authRequired`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
+| **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain, in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.trustLocalSocket`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
 | **LDAP v3 (RFC 4511)** | an embedded **directory on two raw sockets — TCP 389 in the clear and TCP 636 over TLS (LDAPS)**, one set of handlers and one store behind both: simple bind, unbind, add, delete, modify, modifyDN, compare and search with RFC 4515 filters and all three scopes, a root DSE, and result codes 0, 2, 4, 11, 16, 32, 49, 66 and 68 all reachable. Built on the [`ldapjs`](https://github.com/rcbj/node-ldapjs) submodule and used unmodified. It is **schemaless on purpose** and says so, it enforces the four structural rules whose absence would teach a client something false — plus one of its own, that an add under `ou=users` whose username is already there is `LDAP_ENTRY_ALREADY_EXISTS` (68), because one person is one entry however they got in — and it deliberately does not do referential integrity. `GET /admin/ldap/service` describes it and `GET /admin/ldap/directory` lists every entry. **`LDAP_AUTOCREATE_USERS`, on by default, grows an entry under `ou=users` for anybody who authenticates through any of the other twelve families** — and `ou=applications` grows one for the CLIENT, relying party, service provider or Kerberos service on the other side of that authentication, which is a **registry rather than a record**: the RFC 7591 registrations live there, nothing caches them, and an `ldapmodify` of `oauthRedirectUri` changes which redirect URI RFC 9700 mode accepts — one hook on the single funnel they all already pass |
-| **Shared Signals (OpenID SSF 1.0)** | a **transmitter**, and the one family here that TALKS BACK: every other answers a request, and this one agrees a **stream** with a receiver and then delivers a **Security Event Token** (RFC 8417) at the moment something happens. The stream management API at `/ssf/stream` — one path, five methods — with the status, subject and verification endpoints beside it, every one of them DISCOVERED from `/.well-known/ssf-configuration` because SSF fixes no paths. Subjects in all eight **RFC 9493** formats plus SSF's **complex subject**, whose `user`/`device`/`session` members are what make *"this session was revoked"* expressible at all; each format's member set is CLOSED and a subject carrying an extra member is REFUSED BY NAME, because a conforming receiver must reject one and it looks perfectly fine in a log. Delivery by **RFC 8935 push** or **RFC 8936 poll**, and a **receiver of its own** at `/ssf/receive` so that a client can be the transmitter. **SSF is the pipe and not the vocabulary**: it defines two event types, both about the pipe, and **both vocabularies over it are implemented** — CAEP's eight about a SESSION and RISC's fourteen about an ACCOUNT. Two things here therefore send a Security Event Token with nobody having asked, watching two different registers: a sign-in, a single sign-on or a sign-out (CAEP), and a change to the embedded directory — a person deleted, an account marked inactive, a mail address moved (RISC). Eleven of RISC's fourteen carry no payload members at all, so the SUBJECT is the entire message; one of them is deprecated by its own specification in favour of a CAEP event; and RISC section 3.1's own compatibility note — a production transmitter that spells the subject discriminator `subject_type` rather than `format` — is reproducible at `risc.googleSubjectType`, which makes it the only deliberate defect here that a specification asks for by name. Every SET is signed through the same signer everything else here uses, so `ssf.signingAlgorithm` reaches the whole table including ML-DSA and SLH-DSA — which matters more for this document than for any other, because RFC 8417 forbids a SET to expire and it is therefore read long after it was written |
+| **Shared Signals (OpenID SSF 1.0)** | a **transmitter**, and the one family here that TALKS BACK: every other answers a request, and this one agrees a **stream** with a receiver and then delivers a **Security Event Token** (RFC 8417) at the moment something happens. The stream management API at `/ssf/stream` — one path, five methods — with the status, subject and verification endpoints beside it, every one of them DISCOVERED from `/.well-known/ssf-configuration` because SSF fixes no paths. Subjects in all eight **RFC 9493** formats plus SSF's **complex subject**, whose `user`/`device`/`session` members are what make *"this session was revoked"* expressible at all; each format's member set is CLOSED and a subject carrying an extra member is REFUSED BY NAME, because a conforming receiver must reject one and it looks perfectly fine in a log. Delivery by **RFC 8935 push** or **RFC 8936 poll**, and a **receiver of its own** at `/ssf/receive` so that a client can be the transmitter. **AND SINCE 2026-09-10 THIS SERVICE'S OWN ADMIN CONSOLE AND USER PORTAL ARE REGISTERED RECEIVERS**, each with a stream seeded per trust realm asking for every CAEP and every RISC event type, each taking delivery over a REAL RFC 8935 push at an endpoint of its own — this service dials itself, on the loopback interface, with its own certificate pinned — and each drawing what arrived at `/admin/signals` and `/portal/signals`. Handing the event to the page in process would have been a receiver that never parses a body, checks a media type, presents a credential or verifies a signature, so those two pages are the only surfaces here that go EMPTY when delivery is broken and therefore the only ones that can report that it is; the portal shows each person only the events whose subject is THEM, and that filter fails closed. **SSF is the pipe and not the vocabulary**: it defines two event types, both about the pipe, and **both vocabularies over it are implemented** — CAEP's eight about a SESSION and RISC's fourteen about an ACCOUNT. Two things here therefore send a Security Event Token with nobody having asked, watching two different registers: a sign-in, a single sign-on or a sign-out (CAEP), and a change to the embedded directory — a person deleted, an account marked inactive, a mail address moved (RISC). Eleven of RISC's fourteen carry no payload members at all, so the SUBJECT is the entire message; one of them is deprecated by its own specification in favour of a CAEP event; and RISC section 3.1's own compatibility note — a production transmitter that spells the subject discriminator `subject_type` rather than `format` — is reproducible at `risc.googleSubjectType`, which makes it the only deliberate defect here that a specification asks for by name. Every SET is signed through the same signer everything else here uses, so `ssf.signingAlgorithm` reaches the whole table including ML-DSA and SLH-DSA — which matters more for this document than for any other, because RFC 8417 forbids a SET to expire and it is therefore read long after it was written |
 | **SCIM 2.0 (RFC 7642, 7643, 7644)** | a provisioning endpoint at `/scim/v2`, and **the only family here whose purpose is to write**: create, read, list, replace, PATCH (section 3.5.2 in full, `emails[type eq "work"].value` paths included), delete, both shapes of `.search`, bulk, filtering, sorting, pagination, attribute projection, and the three discovery documents. **What it provisions into is the LDAP directory above — the same entries, no second store and no cache** — so a `POST /scim/v2/Users` and an `ldapadd` create the same entry, and somebody provisioned over SCIM turns up on `/admin/users`, in an `ldapsearch`, in whatever group a client puts them in, and in the attributes their next access token carries. The SCIM `id` **is** the entry's DN, because that already is the opaque server-assigned identifier RFC 7643 asks for. **It is the one family here that requires a credential** — all six schemes RFC 7644 section 2 names are offered (OAuth 2.0 bearer and DPoP tokens with `scim:read` / `scim:write`, HTTP Basic, HTTP Digest, HOBA, the session cookie and a TLS client certificate), and every one of them is permissive, so it is a turnstile rather than a lock. `active: false` **deactivates nobody**: it is stored as `scimActive` and read by nothing, which is worth reading twice, because deprovisioning is the commonest thing a SCIM client is built to do |
 
 `GET /admin/sts-metadata` is the authoritative list — every endpoint read from the running
@@ -626,11 +631,12 @@ are refused at both ends.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
+| `global.mode` | `STS_MODE` | `development` | yes — and it is **per trust realm**, so one process can serve a development realm and a product realm at once | What this service IS. `development` is every release before 2026-09-06 and is what makes it a mock: no password is checked, anything named is created, and there are no public-client restrictions. `product` runs the SAME protocol implementations with the permissiveness taken out — a presented password is verified against the hashed `userPassword` on the person's own entry, nothing is created because it was named, every OAuth application holds a secret, and `/admin-api` is gated. **It replaced `admin.authRequired`, `scim.authRequired`, `spiffe.authRequired` and `ssf.authRequired`, which are gone**: "is authentication required here" had four answers and now has one. Those four gates are ON in BOTH modes — what the mode changes is whether the credential they ask for is CHECKED. |
 | `global.host` | `STS_HOST` | `0.0.0.0` | **restart** — the listener is bound when the process starts | The address the HTTP listener binds. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines this service to the machine it runs on. |
 | `global.port` | `STS_PORT` | `8081` | **restart** — the listener is bound when the process starts | The port everything HTTP here answers on: the protocol endpoints, the console and this API. The two TLS listeners are separate and are under TLS below. |
 | `global.https` *(derived)* | `STS_HTTPS` | `false`, but **`true` in every appconfig file shipped here** — see *Running it* | **restart** — the listener is bound when the process starts, and its scheme is decided there | Serve the main port over HTTPS, with the SAME certificate and key the 8443, 9443 and LDAPS 636 listeners use — one self-signed pair generated per start, so a caller trusts this service once rather than four times. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe X-Forwarded-Proto and X-Forwarded-Host — which is what a TLS-terminating reverse proxy sets to say what the CLIENT used. |
-| `logLevel` | `STS_LOG_LEVEL` | `info` | yes | debug is the useful level for a mock whose job is to show what it did: every endpoint call, and every token and assertion both before and after it was signed. |
+| `global.logLevel` | `STS_LOG_LEVEL` | `info` | yes | debug is the useful level for a mock whose job is to show what it did: every endpoint call, and every token and assertion both before and after it was signed. |
 | `workers.count` | `STS_WORKERS_COUNT` | `2` | yes — the pool is reconciled on the next signature | How many child processes the post-quantum signing, verification and key generation are handed to, so that the process holding the sockets is never the one computing an SLH-DSA signature — which takes SECONDS, during which node answers nothing at all, the KDC on port 88 included. `0` means compute in this process, which is what this service did before the pool existed: correct, identical byte for byte, and blocking for as long as each signature takes. Nothing is forked until the first post-quantum job, so a process that never signs one never pays for a pool. **A realm may not carry this**: a pool belongs to the OS process. |
 
 #### OAuth 2.0 / OIDC
@@ -647,7 +653,18 @@ are refused at both ends.
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In RFC 9700 mode, end a browser sign-on session and every refresh token issued ON that session is revoked — the section MAY that names logout and a password change as the examples. |
 | `oauth2.frontchannelLogout` | `STS_OAUTH2_FRONTCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Front-Channel Logout 1.0: the two discovery members, the `sid` claim on an ID Token issued on a browser sign-on session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out — with `iss` and `sid` where the client registered `frontchannel_logout_session_required`. Off, none of the three happens and the tokens are byte-for-byte what this service issued before the feature existed. |
 | `oauth2.eddsaCurve` | `STS_OAUTH2_EDDSA_CURVE` | `Ed25519` | yes | Which Edwards curve an `EdDSA` signature is made on (`Ed25519` or `Ed448`). RFC 8037 registers ONE algorithm value for both curves and puts the curve in the key itself, so a client registering `id_token_signed_response_alg="EdDSA"` has no way to say which it wants — this is that way. BOTH keys are published in the JWKS whatever this is set to, with different kids, so a verifier follows the kid and needs to know nothing about this setting. |
-| `oauth2.clientAssertionSkewS` | `STS_OAUTH2_CLIENT_ASSERTION_SKEW_S` | `60` | yes | How far out a client assertion's exp, nbf and iat may be and still be accepted (RFC 7523 section 3, private_key_jwt and client_secret_jwt). Sixty seconds is the usual allowance for two machines that are not synchronised. |
+| `oauth2.clientAssertionSkewS` | `STS_OAUTH2_CLIENT_ASSERTION_SKEW_S` | `60` | yes | How far out an assertion's exp, nbf and iat may be and still be accepted (RFC 7523 section 3). It applies to BOTH halves of that profile — the `client_assertion` of section 2.2 and the `assertion` of the section 2.1 grant — because it answers "how far out may somebody else's clock be" and this service has no reason to hold two opinions about that. Sixty seconds is the usual allowance for two machines that are not synchronised. |
+| `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Whether the token endpoint performs `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523 section 2.1). The metadata advertises the grant only while it is on, because a `grant_types_supported` member is a promise. It does NOT affect section 2.2 — client authentication by assertion — which is a different feature sharing a document format. |
+| `oauth2.jwtBearerRequireRegisteredIssuer` | `STS_OAUTH2_JWT_BEARER_REQUIRE_REGISTERED_ISSUER` | `true` | yes | Whether that grant is refused when no application in the realm declares the assertion's `iss` on `oauthAssertionIssuer`. **ON, and it is one of only two refusals here that default to on** — federation is the other, for the same reason. Turning it off does not make the grant accept unsigned assertions; the signature still has to verify against a key registered for the issuer or a certificate this service issued. |
+| `oauth2.jwtBearerMaxLifetimeS` | `STS_OAUTH2_JWT_BEARER_MAX_LIFETIME_S` | `300` | yes | The most seconds between an assertion's `iat` and its `exp` that this authorization server accepts. RFC 7521 section 5.2 invites a server to refuse an unreasonable lifetime and leaves "unreasonable" to it. Zero switches the check off, which is how to exercise a client that mints day-long assertions. |
+| `oauth2.saml2BearerGrant` | `STS_OAUTH2_SAML2_BEARER_GRANT` | `true` | yes | Whether the token endpoint performs `grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer` (RFC 7522 section 2.1). The metadata advertises the grant only while it is on. **It is a separate setting from `oauth2.jwtBearerGrant` and not the same switch**: RFC 7522 and RFC 7523 are two profiles of one framework and a deployment legitimately offers one and not the other, so a single switch would make "turn the JWT grant off" also turn off a grant a SAML deployment depends on. It does NOT affect section 2.2 — client authentication by SAML assertion. |
+| `oauth2.saml2BearerRequireRegisteredIssuer` | `STS_OAUTH2_SAML2_BEARER_REQUIRE_REGISTERED_ISSUER` | `true` | yes | Whether that grant is refused when no application in the realm declares the assertion's `<Issuer>` on `oauthSamlAssertionIssuer`. **ON**, for the reason the JWT row above is on. Turning it off does not make the grant accept unsigned assertions, and it does not make it accept a certificate this service holds no registration for: a SAML assertion is only ever verified against a certificate registered against the asserting party under the RFC 7522 attributes, and there is no setting that changes that. |
+| `oauth2.saml2BearerMaxLifetimeS` | `STS_OAUTH2_SAML2_BEARER_MAX_LIFETIME_S` | `300` | yes | The most seconds between a SAML assertion's `IssueInstant` and its expiry that this authorization server accepts. RFC 7522 section 3 item 6 says a server may reject an assertion whose `NotOnOrAfter` is unreasonably far in the future and leaves "unreasonable" to it. Zero switches the check off. The expiry it measures to is the `<Conditions>` `NotOnOrAfter` where there is one and the `<SubjectConfirmationData>` one otherwise, which is item 4's own ordering. |
+| `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | Which key algorithm a new certificate authority is built with when the form names none: `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521` or `ed25519`. RSA 2048 because the LEAF this chain exists to issue signs a client assertion somebody else's OAuth library has to verify. |
+| `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Which signature algorithm the tiers sign each other with. **Empty means "the right one for the key algorithm"**, which is what almost every deployment wants: an EC key's digest is decided by its CURVE, and a fixed value here would hand a P-521 key SHA-256 — legal, verifying, and nobody's intention. |
+| `pki.organisation` | `STS_PKI_ORGANISATION` | `mock-sts` | yes | The `O=` every tier of a new hierarchy carries, and what the tiers are named after when the form gives no common names. |
+| `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long a signing certificate issued to an application is good for. **Clamped** to the Issuing CA's own expiry rather than refused where it would overshoot. |
+| `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` lets a person issue **themselves** an RFC 7523 key pair. The key can only assert about its own holder, so it is a credential for an account they are already signed in to. **Turning it off takes nobody's key away** — one already on an entry goes on verifying — and it stops new ones from the PORTAL only; `/admin/pki` and `POST /admin-api/pki/issue` are an operator's door and are unaffected. |
 | `oauth2.accessTokenTtlS` | `STS_OAUTH2_ACCESS_TOKEN_TTL_S` | `3600` | yes | How long an access token is good for: its `exp` is this many seconds after it was signed, and it is the `expires_in` of every token response that carries one. One hour by default. |
 | `oauth2.idTokenTtlS` | `STS_OAUTH2_ID_TOKEN_TTL_S` | `3600` | yes | How long an ID Token is good for. |
 | `oauth2.refreshTokenTtlS` | `STS_OAUTH2_REFRESH_TOKEN_TTL_S` | `86400` | yes | The ABSOLUTE lifetime of a refresh token — the `exp` on the token itself, enforced in both modes by the refresh grant. |
@@ -657,9 +674,16 @@ are refused at both ends.
 
 #### Admin console
 
+**There is no setting that opens this console, and there used to be.**
+`admin.authRequired` was removed on 2026-09-06 when `global.mode` took over the
+question: every page and every form under `/admin` needs a browser sign-on
+session and one of the two roles below, in BOTH modes, and `mode.gatesConsole()`
+is the one place that is decided. What the mode changes is whether the password
+typed at that screen is CHECKED — in `development` it is not, so the gate is a
+turnstile proving somebody typed a name that holds a role.
+
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `admin.authRequired` | `ADMIN_AUTH_REQUIRED` | `true` | yes | When on, every /admin page and every /admin form needs a browser sign-on session from the authentication service at /authn/login, and the person signed in needs a console role: admin.readGroup to READ a page, admin.writeGroup to POST a form. |
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The cn of the directory group whose members may READ the console — every page, and every ?format=json view of one. It is an ordinary group under ou=groups, so an ldapmodify, a SCIM PATCH and the /admin/rbac screen are three doors onto the same membership. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The cn of the directory group whose members may POST a console form — revoke a token, add a claim, change a setting, grant a role. |
 | `admin.openWhenEmpty` | `ADMIN_OPEN_WHEN_EMPTY` | `true` | yes | What happens while NEITHER role group has a single member: ON, anybody who signs in holds both roles and the console says so in a banner on every page; OFF, nobody can get in at all. |
@@ -822,13 +846,19 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 #### SCIM
 
+**There is no `scim.authRequired` and there used to be.** It was removed on
+2026-09-06 with the other three gate settings: every endpoint under `/scim/v2`
+requires a credential in BOTH modes — one of RFC 7644 section 2's six schemes,
+with the OAuth ones needing `scim:read` or `scim:write` — because those
+endpoints create and DELETE accounts. `global.mode` decides whether the
+credential is CHECKED; `mode.gatesScim()` is the one place the gate is decided.
+
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `scim.enabled` | `SCIM_ENABLED` | `true` | yes | When on, the SCIM 2.0 endpoints under /scim/v2 create, read, replace, patch and delete entries in the embedded directory. On by default, like every other protocol family here. |
 | `scim.maxResults` | `SCIM_MAX_RESULTS` | `200` | yes | The largest page a list or a search will return, published as filter.maxResults in the ServiceProviderConfig and used as the page size when a client asks for none. |
 | `scim.bulkMaxOperations` | `SCIM_BULK_MAX_OPERATIONS` | `100` | yes | How many operations one POST /scim/v2/Bulk may carry, published as bulk.maxOperations. A request carrying more is refused with 413 and the payloadTooLarge scimType, which is a reachable negative worth having. |
 | `scim.bulkMaxPayloadSize` | `SCIM_BULK_MAX_PAYLOAD_SIZE` | `1048576` | yes | The largest BulkRequest body in bytes, published as bulk.maxPayloadSize and CHECKED against that number rather than against the express body parser's service-wide 5 MB. |
-| `scim.authRequired` | `SCIM_AUTH_REQUIRED` | `true` | yes | When on, every SCIM endpoint refuses a request that carries no credential with 401 and a WWW-Authenticate header per offered scheme (RFC 7644 section 2 makes that header a SHALL). |
 | `scim.authDiscovery` | `SCIM_AUTH_DISCOVERY` | `false` | yes | Whether /ServiceProviderConfig, /ResourceTypes and /Schemas need a credential as well. |
 | `scim.authRealm` | `SCIM_AUTH_REALM` | `SCIM` | yes | The protection space named in every WWW-Authenticate challenge, and — for HTTP Digest and HOBA — a value that is hashed or signed OVER, so changing it invalidates every credential computed against the old one. |
 | `scim.scopeRead` | `SCIM_SCOPE_READ` | `scim:read` | yes | The OAuth 2.0 scope an access token must carry to read at /scim/v2 — the first scope requirement anywhere in this service. |
@@ -862,6 +892,167 @@ page rather than in a setting.
 | `roles.remotePepGroup` | `STS_ROLES_REMOTE_PEP_GROUP` | `remote-peps` | yes | The directory group whose members hold the built-in `REMOTE_PEPS` role, which is what `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `POST /xacml/pep/heartbeat` and `POST /xacml/pip` require. A remote Policy Enforcement Point presenting a client certificate this service VERIFIED is somebody it can NAME; membership of this group is what makes them somebody it lets IN, and the two are kept apart on purpose — **the certificate says who and the group says whether**, so a perfectly valid certificate for the wrong common name is refused while being fully authenticated. Setting it to the empty string means nobody holds the role, which closes those four endpoints to every caller including a correctly configured PEP. |
 | `roles.xacmlUserGroup` | `STS_ROLES_XACML_USER_GROUP` | `xacml-users` | yes | The same arrangement for the built-in `XACML_USER` role, which is what the four XACML endpoints proper require — `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` and `GET /xacml/protected`. **It is a SECOND group and not the same one**, because `/xacml/pep/*` publishes the documents this service enforces its own access with and `POST /xacml/pip` publishes a named person's directory attributes; one group granting both would make admitting a caller to the demonstration surface silently admit it to those. A person is granted the role by being put in this group — one line on `/admin/ldap/directory` or one `ldapmodify` — and it takes effect on the very next request, because membership is resolved at decision time. Setting it to the empty string closes those four endpoints to everybody, which is how to take the XACML surface away without turning `xacml.enabled` off and losing the embedded issuance and access PEPs with it. `xacml.enforceAccess` is the other way, and it opens both sets at once. |
 
+#### TOTP MFA
+
+RFC 6238 one-time passwords — the second factor a person enrols from
+`/portal/mfa` or while spending an activation link, and the only credential
+this service checks besides a Kerberos ticket. Drawn on **`/admin/totp`**,
+under Protocols.
+
+**This group was called `Multi-factor authentication` until 2026-09-10**, and
+its page was `/admin/mfa` under Identities. It named a CATEGORY where every
+other group here names a mechanism or a family, and its page mixed these eight
+rows in with a roster of people — so a reader looking for the skew window and a
+reader looking for *who has no second factor* landed on one screen and read past
+each other. There are two mechanisms, each has a group and a page of its own
+now, and the roster is columns on `/admin/users`.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `totp.enabled` | `STS_TOTP_ENABLED` | `true` | yes | Whether a person may enrol an RFC 6238 authenticator app as a second factor, on `/portal/mfa` or while spending an activation link. **Turning it off does NOT disable a secret somebody already enrolled** — that account is still configured for two factors and the sign-in screen still asks for the code. A setting that silently downgraded every enrolled account to a password alone would be a security control whose off switch does something other than what it says. What it stops is new enrolments; an existing one is removed on that person's own row under `/admin/users`. |
+| `totp.issuer` | `STS_TOTP_ISSUER` | *(empty)* | yes | The name an authenticator app shows beside the account — the `issuer` of the otpauth Key Uri Format, written both as a prefix on the label and as a parameter because older apps read one and newer ones the other. **Empty means this realm's own host**, with the realm id after it where there is one, which is deliberate: two realms of one process are two identity providers, and a phone showing two accounts with the same name beside them is a list nobody can use. |
+| `totp.algorithm` | `STS_TOTP_ALGORITHM` | `SHA1` | yes | RFC 6238 section 1.2 defines all three and names HMAC-SHA-1 as the default. **LEAVE IT AT SHA1 UNLESS YOU ARE TESTING EXACTLY THIS.** Several widely used authenticator apps — Google Authenticator among them — IGNORE the `algorithm` parameter in the QR code and always compute SHA-1, so any other value produces a code that scans perfectly and then generates codes this service refuses, with nothing anywhere saying why. SHA-1 is not a weakness here: this is a keyed MAC over a counter, not a collision-resistant digest. Changing it affects NEW enrolments only — an existing secret is verified with the algorithm it was enrolled under, which is the one the app was told. |
+| `totp.digits` | `STS_TOTP_DIGITS` | `6` | yes | Six is what every authenticator app shows and what RFC 4226 section 5.3 recommends; eight is defined and is worth setting only to find out what a client does with it. NEW enrolments only, for the reason the digest gives. |
+| `totp.period` | `STS_TOTP_PERIOD` | `30` | yes | RFC 6238 section 4.1's time step X. Thirty seconds is the default and what every app assumes. NEW enrolments only. |
+| `totp.window` | `STS_TOTP_WINDOW` | `1` | yes | How many steps either side of now are accepted. RFC 6238 section 5.2 recommends at most one, which is the default and makes a code good for about ninety seconds. **This one IS live** and applies to every existing enrolment — how much a deployment forgives a phone with a drifting clock is a policy rather than something the QR code told the app. Zero demands a perfectly synchronised clock and is the setting to reach for when demonstrating what happens without one. |
+| `totp.secretBytes` | `STS_TOTP_SECRET_BYTES` | `20` | yes | RFC 4226 section 4 requirement R6 says at least 128 bits and recommends 160, which is the 20 bytes here and the length of an HMAC-SHA-1 key. Longer is allowed and is transcribed by hand by anybody who cannot scan the QR code — 20 bytes is already 32 base32 characters. |
+| `totp.enrolmentTtlMinutes` | `STS_TOTP_ENROLMENT_TTL_MINUTES` | `10` | yes | How long a secret that has been SHOWN but not yet confirmed with a code stays available. It is held in memory and never written to the directory until a code proves the app really has it — an unconfirmed secret on somebody's entry would be a second factor they cannot produce, which is a lockout rather than a control. Ten minutes is long enough to find a phone and short enough that an abandoned enrolment does not sit in memory. |
+
+Three things about these do not fit in a cell.
+
+* **The digest, the digit count and the period affect NEW enrolments only.** An
+  existing secret is verified with the parameters it was enrolled under, which
+  are the ones the QR code told the app — this service cannot change them
+  retrospectively, and a setting that silently locked out everybody who had
+  already enrolled would be the worst kind of knob. **The skew window is the
+  exception and applies to everybody**: how much a deployment forgives a
+  drifting clock is a policy rather than something the app was told.
+* **Leave `totp.algorithm` at SHA1 unless you are testing exactly that.**
+  Several widely used authenticator apps — Google Authenticator among them —
+  ignore the `algorithm` parameter in the QR code and always compute SHA-1, so
+  any other value produces a code that scans perfectly and then generates codes
+  this service refuses, with nothing anywhere saying why. SHA-1 is not a
+  weakness here: this is a keyed MAC over a counter, not a
+  collision-resistant digest.
+* **`totp.enabled` off does not disable an existing enrolment**, and that is
+  deliberate. A person who enrolled while it was on still holds the second
+  factor their account is configured for, and a setting that silently
+  DOWNGRADED every one of those accounts to a password alone would be a
+  security control with an off switch that does something else. What it stops
+  is new enrolments; an existing one is removed on that person's own row
+  under `/admin/users`.
+
+#### Backup codes
+
+Recovery codes — the way back in when the second factor is not to hand. Drawn
+on **`/admin/backup-codes`**, under Protocols.
+
+**This is the only mechanism on that console that no specification defines.**
+Everything else here implements somebody's document and can be checked against
+it; there is no RFC for a recovery code. What every identity provider does
+converges anyway — a handful of random strings, each accepted once — so the
+decisions that are left are this service's own, and `common/backup_codes.js`
+argues each of them.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `backupCodes.enabled` | `STS_BACKUP_CODES_ENABLED` | `true` | yes | Whether a set of single-use recovery codes is issued the first time a person enrols a second factor — a confirmed authenticator app, or a security key in the `mfa` role. **Turning it off does NOT invalidate a set somebody already holds**, which is the contract `totp.enabled` and `webauthn.enabled` both keep: a person issued ten codes still holds ten and the sign-in door still accepts one. A setting that silently took away the only way back into an account whose phone is lost would be the worst knob in this service. What it stops is a new set being issued. |
+| `backupCodes.count` | `STS_BACKUP_CODES_COUNT` | `10` | yes | How many codes are issued. Ten is what almost every identity provider settles on: enough that losing a printed copy of one does not end the account, few enough to fit on a card in a wallet. **A set is issued ONCE and is never topped up**, so this is also the number of times the mechanism can be used before an operator has to clear it. |
+| `backupCodes.length` | `STS_BACKUP_CODES_LENGTH` | `10` | yes | Out of an alphabet of thirty-two, so ten characters is fifty bits — which is the number that matters rather than the length. |
+| `backupCodes.groupSize` | `STS_BACKUP_CODES_GROUP_SIZE` | `5` | yes | Purely presentational: `A2CDE-FGH3J` rather than `A2CDEFGH3J`, so that a person transcribing one does not lose their place. Every door strips the dashes and the spaces back out before comparing, so a code typed either way is the same code. Zero prints it unbroken. |
+
+Five things about this mechanism do not fit in a cell.
+
+* **A SET IS ISSUED BY AN ACT AND NOT BY A REQUEST.** There is no control
+  anywhere — on `/portal`, on `/admin`, on `/admin-api` — that issues one. The
+  two call sites are a confirmed authenticator enrolment and a security key
+  enrolled in the `mfa` role, both in `common/credentials.js`. A recovery
+  mechanism a person has to remember to ask for produces exactly the population
+  it exists to protect, one person at a time: the ones who did not ask are the
+  ones who will need it.
+* **ONCE. NOT ONCE PER ENROLMENT.** Enrolling a different second factor does
+  not reissue. Somebody who printed a list in March and replaced their
+  authenticator app in June would otherwise be holding a page of strings that
+  had stopped working with nothing having said so, and a recovery credential
+  that silently expires is worse than none — the person believes they have a
+  way back. **An operator's Clear on that person's row under `/admin/users` is
+  the only route to a second set**, after which the next enrolment issues one.
+* **THE CODES ARE ENCRYPTED AND NOT HASHED**, which is the opposite of
+  `userPassword` and is a product decision rather than a cryptographic one.
+  This repository's rule is that a secret this service VERIFIES is hashed and
+  a secret it must PRESENT cannot be; a recovery code is both, and what decides
+  it is whether a person may look at their remaining codes again. This service
+  says yes — a list shown exactly once at the end of an enrolment somebody is
+  rushing through is a list most people close without reading, and the moment
+  it matters is months later. They are sealed with AES-256-GCM under the same
+  key-encryption key as the signing keys wherever that key outlives the
+  process, and stored as the strings they were shown as where it does not,
+  because sealing under development mode's per-run key would mean a printed
+  list that stopped working at the next restart.
+* **THE ALPHABET IS THE BASE32 CHARACTERS AND IS NOT SHARED WITH `totp.*`.**
+  That one is base32 because the `otpauth` URI says so — an interoperability
+  requirement. This one is the same thirty-two characters because none of them
+  is confusable with another: no `0` beside `O`, no `1` beside `I`. A recovery
+  code is the one credential here that somebody writes on paper and types back
+  months later.
+* **A CODE IS NEVER A FIRST FACTOR AND NEVER THE FACTOR A SIGN-IN ASKS FOR.**
+  The screen asks for whichever mechanism the person is CONFIGURED for, and
+  `/authn/backup-code` is reachable only as a link out of one of those two
+  screens. Holding a set does not make a second factor required of anybody.
+
+#### WebAuthn
+
+Security keys — W3C WebAuthn Level 3 over FIDO CTAP2 — as a second factor OR as
+the only credential on an account. Drawn on **`/admin/webauthn`**, under
+Protocols.
+
+**NOT ONE OF THESE EXISTED UNTIL 2026-09-10**, and the sentence they replace is
+worth knowing: this project said WebAuthn had *no settings at all — what a
+ceremony does is decided by the specification and by the browser*. That is true
+of the CRYPTOGRAPHY and false of the CEREMONY. What a browser does with
+`navigator.credentials.create()` is decided almost entirely by the options the
+relying party hands it, and every one of those was a literal inside a string in
+`authn/authn.js` — so a client author trying to find out what their client does
+with `attestation: "none"`, or with a discoverable credential, had no way to ask
+this service for one.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `webauthn.enabled` | `STS_WEBAUTHN_ENABLED` | `true` | yes | Whether this service offers a WebAuthn ceremony at all — the two boxes on the sign-in screen, the enrolment on `/portal/keys`, and the `/authn/webauthn` screen itself. **Turning it off does NOT remove a key somebody already enrolled**, exactly as `totp.enabled` does not remove a shared secret. What it stops is new ceremonies. |
+| `webauthn.rpName` | `STS_WEBAUTHN_RP_NAME` | `Mock authorization server` | yes | The `rp.name` handed to the browser — what a person and their password manager see while deciding whether to create a credential, and what a platform authenticator stores beside it. It has NO security meaning: WebAuthn binds a credential to the RP ID and to nothing else. |
+| `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | *(empty)* | yes | **Empty means the host this service was reached on**, which is almost always right. A value may only WIDEN it to a registrable domain suffix of that host — `example.com` when reached at `sts.example.com` — which is WebAuthn's own rule; anything else is refused here by name in the log, because a browser refuses it with an error indistinguishable from a hardware failure. Widening it means every host under that suffix can assert these credentials. |
+| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | `ES256,RS256` | yes | `pubKeyCredParams`, in preference order, as JOSE names: `ES256`, `ES384`, `ES512`, `EdDSA`, `RS256`, `RS384`, `RS512`. A name outside that table is dropped with a warning rather than sent — offering an algorithm this service cannot verify produces a credential that enrols perfectly and then fails every assertion it is ever used for. |
+| `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `preferred` | yes | Whether the authenticator must verify the PERSON — a PIN, a fingerprint, a face — as well as prove possession. **THIS IS THE ONE CEREMONY SETTING THIS SERVICE ALSO ENFORCES**: `required` is sent to the browser and the UV flag in the signed authenticator data is then checked. **It does not change what a session CLAIMS** — a passwordless sign-in still records `amr ["hwk"]` and `acr "1"`, because RFC 8176 has no value for *the authenticator verified the user* this service could honestly assert. |
+| `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | How much the browser is asked to say about the authenticator. `direct` is the default because this is a debugging service and the attestation object is worth looking at; a real deployment with no attestation policy should send `none`. **NO ATTESTATION STATEMENT IS VERIFIED WHATEVER IS ASKED FOR** — no metadata service, no vendor trust anchor, no model allow-list. |
+| `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` in the options handed to the browser. It is a HINT and clients may clamp it. The pending step this service holds expires on its own five-minute clock regardless, so a longer timeout buys a ceremony that succeeds in the browser and is then refused here. |
+| `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | Which kind of authenticator may answer — `platform` (Touch ID, Windows Hello, a screen lock) or `cross-platform` (a roaming CTAP2 key over USB, NFC or BLE). `any` sends no preference at all, because the options dictionary has no value meaning one. It is a FILTER IN THE BROWSER and not a check here. |
+| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential is stored ON the authenticator — a CTAP2 *resident key*, which is what a passkey is and what a usernameless sign-in needs. `discouraged` is the default because a resident key consumes one of the small number of slots a roaming authenticator has and cannot always be deleted from it. **This service offers no usernameless flow**, so `required` buys a slot and nothing else here. |
+| `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Asks the browser to report whether the credential it made is actually discoverable. It is the only way to find out — `residentKey: "preferred"` may or may not produce one and nothing in the attestation says which. The answer is recorded beside the key and decides nothing. |
+| `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Whether a key may be the ONLY credential on an account — a passwordless sign-in. Off, keys still work as a second factor. **It does not disable a primary key somebody already holds**: an operator flipping a switch must not lock somebody out of their own account. |
+| `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Whether a key may be enrolled as a second factor beside a password. With this and `totp.enabled` both off, this service offers no second factor at all, which is a supported configuration and is what it did before either existed. An enrolled `mfa` key goes on being demanded. |
+| `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many security keys one person may hold. Several is the ordinary case and the specification expects it — an assertion NAMES the credential that produced it, so there is none of the ambiguity two shared secrets would have. It refuses the ENROLMENT and never an authentication. |
+
+Three things about these do not fit in a cell.
+
+* **ONE of them is enforced and the rest are requests.**
+  `webauthn.userVerification` is sent to the browser AND checked against the UV
+  flag when the ceremony returns, because that flag is inside the bytes the
+  authenticator signed. Nothing signed says what the browser was asked about
+  attestation, the resident key or the attachment — so a check on those would be
+  a comparison against a value this service itself supplied. What it does
+  instead is RECORD what came back, beside the key.
+* **The last four rows are not WebAuthn.** `enabled`, `primaryAllowed`,
+  `mfaAllowed` and `maxKeysPerPerson` are what THIS service will do with a key
+  once the ceremony is over, decided here rather than by any specification — and
+  all four refuse an ENROLMENT and never an authentication. A key already on
+  somebody's entry goes on working when the role that produced it is switched
+  off.
+* **The RP ID may be widened and never moved.** It is the host this service was
+  reached on unless `webauthn.rpId` names a registrable domain suffix of that
+  host. That is WebAuthn's rule and browsers enforce it; this service enforces
+  it too, so a wrong value is a line in the log rather than what looks like a
+  broken authenticator.
+
 #### Group claim
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
@@ -890,6 +1081,16 @@ page rather than in a setting.
 
 #### SPIFFE
 
+**There is no `spiffe.authRequired` and there used to be.** It was removed on
+2026-09-06 with the other three gate settings, and with it the restart-only
+caveat that row carried: the SPIRE Server API's TCP port is bound as mutual TLS,
+always, because what comes out of that surface is a credential another service
+will believe. Every method is authorized against SPIRE's own per-method table,
+which `GET /spiffe` publishes in full. **The Workload API is deliberately not on
+that list and must never be**: its specification says it MUST NOT authenticate a
+caller, because a workload has no root of trust until that call gives it one.
+What it lacks there is ATTESTATION, not authentication, and no mode changes it.
+
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `spiffe.enabled` | `STS_SPIFFE_ENABLED` | `true` | yes | Whether the three SPIFFE surfaces answer. |
@@ -903,7 +1104,6 @@ page rather than in a setting.
 | `spiffe.svidSubject` | `STS_SPIFFE_SVID_SUBJECT` | `C=US,O=SPIRE` | yes | The X.501 subject written into every X509-SVID. The SPIFFE ID is in a URI subjectAltName and IS the identity; this is decoration, and it is SPIRE's own value by default so that an SVID from here looks like one from there. |
 | `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | THIS IS THE SETTING THAT MAKES THIS A MOCK. |
 | `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | The Workload Endpoint specification says a client MUST send `workload.spiffe.io: true` on every call and a server MUST refuse one without it. |
-| `spiffe.authRequired` | `STS_SPIFFE_AUTH_REQUIRED` | `true` | **restart** — the SPIRE Server API's TCP port is bound as mutual TLS or as plain gRPC when the process starts, and a setting that changed the checks without changing the socket would report a mode this service was not in | ON, the SPIRE Server API behaves the way a real spire-server does: its TCP port is MUTUAL TLS, a caller presents an X509-SVID from this trust domain, and every method is authorized against SPIRE's own table — local, agent, admin, downstream — which GET /spiffe publishes in full. |
 | `spiffe.trustLocalSocket` | `STS_SPIFFE_TRUST_LOCAL_SOCKET` | `true` | yes | A real SPIRE server trusts its private Unix socket outright — the access control is the socket's filesystem permissions — and a caller there is the `local` entity, which may do everything an admin may and two things an admin may not. |
 | `spiffe.adminIds` | `STS_SPIFFE_ADMIN_IDS` | *(empty)* | yes | SPIFFE IDs whose holders are administrators of the SPIRE Server API, separated by commas or spaces — SPIRE's own `admin_ids`, and like SPIRE's it needs NO registration entry behind it. |
 | `spiffe.clockSkew` | `STS_SPIFFE_CLOCK_SKEW` | `60` | yes | How far out a caller's clock may be when its X509-SVID is checked for validity. |
@@ -2014,7 +2214,7 @@ omits it — must authenticate by whichever of the six methods its entry declare
 |---|---|
 | `client_secret_basic` / `client_secret_post` | the secret, compared in constant time |
 | `client_secret_jwt` | an assertion signed HS256 with the secret |
-| `private_key_jwt` | an assertion signed with the client's key, verified against its registered `jwks` |
+| `private_key_jwt` | an assertion signed with the client's key, verified against its registered `jwks`, against a JWKS **this service issued it** from its own certificate authority (`oauthAssertionJwks`), or against an `x5c` chain the assertion carries that builds a path to this realm's Root CA |
 | `tls_client_auth` | the client certificate's **subject DN** (RFC 8705 §2.1) |
 | `self_signed_tls_client_auth` | the client certificate's **thumbprint** (RFC 8705 §2.2) |
 
@@ -2027,6 +2227,22 @@ the client, audience (the token endpoint *or* the issuer, because RFC 7523 and O
 Core §9 differ and half the client libraries in the world pick one each), expiry with
 a configurable skew, and a `jti` remembered until the assertion expires — a signed
 assertion captured off the wire is a credential until then, so a replay is refused.
+
+**AND SINCE 2026-09-10 AN ASSERTION MAY ARRIVE ENCRYPTED, WHICH IS RFC 7523
+SECTION 3'S CLAIM 10.** A nested JWT — a JWE whose plaintext is the JWS — in any
+of sixteen key management algorithms against six content encryption ones. Which
+key opens it depends on what the sender could possibly have had: an asymmetric
+algorithm is encrypted to the RSA or EC key this service publishes at
+`/oauth2/jwks`, which anybody can fetch, and a symmetric one is encrypted under
+the **client secret**, which is the only shared key that exists between this
+service and a client. The `cty` is checked rather than assumed, and a JWE whose
+plaintext is not a signed JWT is refused citing the claim it breaks —
+**encryption does not stand in for a signature, because an encrypted document
+says nothing about who wrote it.** `RSA1_5` is the one algorithm deliberately
+absent, and the refusal names it: RFC 8017 deprecated PKCS#1 v1.5 encryption,
+and implementing it safely means making an unwrap failure indistinguishable
+from every later failure, which is a property of a whole code path rather than
+of one function.
 
 Two details are worth the ink. **An assertion nominating `HS256` for `private_key_jwt`
 is refused, not verified** — verifying it would use the client's *public* key as an
@@ -2979,6 +3195,78 @@ person is the one the password step named — so it creates nothing and writes a
 on the entry that already exists. See the directory's own section for the three
 attributes that carries.
 
+
+### TOTP: the other second factor, and the one that needs no browser
+
+RFC 6238, over RFC 4226. A WebAuthn ceremony is bound to an origin and runs in a
+browser; a six-digit code is typed into a form — so this one works from a curl
+script, from a test job, and from a phone standing beside a machine that has no
+authenticator attached to it.
+
+**A person enrols it themselves**, on `/portal/mfa` or while spending an
+activation link, and the page hands them the secret two ways: a **QR code this
+server drew** — an SVG arriving as a `data:` URI, because every page of the
+portal is `script-src 'none'` and a QR library running in the browser was never
+available — and the same base32 in groups of four, with the algorithm, digits
+and period written out. The typed form is not a fallback nobody sees: scanning
+is impossible when the phone IS the browser showing the page, when the desktop
+authenticator has no camera, and when a `localhost` QR code photographed off a
+screen points at a host the phone cannot reach. The last is the common case for
+a mock. Any app that implements the specification works — Google Authenticator,
+Microsoft Authenticator, Authy, 1Password, Bitwarden, Aegis, FreeOTP, KeePassXC
+— and nothing here is tied to one.
+
+**Enrolment is two steps and the first writes nothing.** Pressing *Set up* mints
+a secret and holds it in memory; the attribute is written only when a code
+proves the app really has it. An unconfirmed secret on somebody's entry would be
+a second factor they cannot produce — open the page, be interrupted, come back
+tomorrow, and a one-step enrolment has locked somebody out of their own account
+with a form they abandoned.
+
+**Once enrolled, a password alone stops working**, which is what a person means
+by having turned this on: the sign-in screen asks for a code without anybody
+ticking anything, and a checkbox cannot opt out of a factor the account is
+configured for. The session that comes out records `amr ["pwd","otp"]` and `acr
+"mfa"` — `otp` is RFC 8176's registered value and its registry entry names RFC
+4226 and RFC 6238 by number — and `acr "mfa"` is honest here in a way it is not
+for a passwordless key: two factors really were presented.
+
+**The code is verified for real, in every mode.** That is the surprising part of
+a service that accepts any password, any LDAP bind and any UsernameToken, and it
+is the same argument SPNEGO makes: a permissive Kerberos acceptor is a broken
+acceptor and a permissive one-time password verifier is a broken verifier —
+there is nothing left of the specification once the comparison goes, and nothing
+for a client author to test an authenticator integration against. What stays
+permissive is everything around it: the password in front of the code is not
+checked and any name may enrol. All three digests are implemented, the step and
+digit count are settable, the skew window is symmetric and defaults to RFC
+6238 section 5.2's recommended one step either side — and **section 5.2's
+accept-once rule is enforced** against the step last accepted, so the very code
+that confirmed an enrolment cannot also sign anybody in, and signing in twice
+inside one window asks for the next code rather than saying the first was wrong.
+
+**It can never be a first factor.** A WebAuthn credential can be the whole
+account because the authenticator keeps a private key this service never sees; a
+TOTP secret proves possession of something **this service also holds**, which is
+fine for proving somebody still has the app and is not a thing to hang an
+account on. There is no `primary` reading of it and no setting that adds one.
+
+**And there is no self-service reset**, deliberately: a second factor anybody
+can remove is no second factor. The shared secret lives on a device this service
+cannot reach, so an operator clearing the enrolment on that person's row under
+`/admin/users` — or `POST
+/admin-api/mfa/clear-totp` — is the only way back for a lost phone. Clearing
+drops an account to one factor and never to none.
+
+The secret is stored where the password is, on the person's own entry as
+`stsTotpCredential`, and it is **the one attribute in this directory that can
+be read back and used** — verifying a code means computing it, so it cannot be
+hashed the way `userPassword` is. In product mode it is sealed under the same
+key-encryption key that protects the signing keys, so a directory dump shows
+ciphertext; in development it is the base32, because that mode's key is
+generated per run and sealing would mean an authenticator that silently stopped
+working at the next restart.
+
 ### SAML 2.0 Web Browser SSO — the profile this file documented the absence of
 
 For years the note near the top of this file said there was no SAML 2.0 Web SSO
@@ -3583,7 +3871,7 @@ more.
 
 `GET /admin/sts-metadata` answers "what does this thing speak, what can I call, what may I call it with, and which specification is it pretending to implement" — a page the service needed once it had grown to thirteen protocol families across twenty-six modules. `?format=json` gives the same document machine-readably, and the **Download** button at the top of the page is that URL asked for as a file (an `<a download>`, because `script-src 'none'` means nothing cleverer would work).
 
-**It was `/sts-metadata` until 2026-08-24 and it is a page of the admin console now.** Three things changed with it and all three are the reason: it is drawn by `admin.js`'s `page()`, so it has the console's sidebar — it used to be a cul-de-sac with no way back to anything — its breadcrumb and its gate banner; it is **behind `admin.authRequired`** like everything else under `/admin`, so a browser with no session is sent to the sign-in screen and a `?format=json` caller is refused `401 login_required` rather than redirected; and `sts_metadata.js` now builds only the *body* of a page, because `page()` emits the console's one stylesheet and a second one inside `<body>` would be markup no validator accepts. The require goes one way only — `sts_metadata.js` requires `admin.js` for the shell, never the reverse — because this module must stay LAST in `server.js` and a require from the console would drag every console route behind it.
+**It was `/sts-metadata` until 2026-08-24 and it is a page of the admin console now.** Three things changed with it and all three are the reason: it is drawn by `admin.js`'s `page()`, so it has the console's sidebar — it used to be a cul-de-sac with no way back to anything — its breadcrumb and its gate banner; it is **behind the console gate** like everything else under `/admin` — unconditionally, since `global.mode` replaced `admin.authRequired` on 2026-09-06 — so a browser with no session is sent to the sign-in screen and a `?format=json` caller is refused `401 login_required` rather than redirected; and `sts_metadata.js` now builds only the *body* of a page, because `page()` emits the console's one stylesheet and a second one inside `<body>` would be markup no validator accepts. The require goes one way only — `sts_metadata.js` requires `admin.js` for the shell, never the reverse — because this module must stay LAST in `server.js` and a require from the console would drag every console route behind it.
 
 **Thirteen protocol cards sit at the top of it**, which is the one part of the page that cannot be derived: a family is on the router only if it is HTTP, and SAML 2.0 and SAML 1.1 register **no route at all** (their assertions travel inside a WS-Trust RSTR or a WS-Federation wresult), while Kerberos, LDAP, PKI and SPIFFE live mostly on raw sockets. So that list is hand-written, and three drift checks keep a hand-written list on a derived page honest: a card naming an endpoint group that has no rows, a card citing a specification id that does not exist, and — the direction nothing else catches — **a group of endpoints no card claims**, which is what a fourteenth family added without a card looks like. They are reported beside the other three and asserted by the same test.
 
@@ -4022,6 +4310,8 @@ Where there is no entry the section says **which** of the five reasons it is, be
 
 **It is also where somebody is given a way in**, which no screen here could do before. Four choices: no credential at all (the default, and enough in development mode, where no password is checked anywhere); a password you type; **a password generated and shown once**; or **no credential and a single-use, time-limited activation link, shown once**, at which the person chooses a password, a security key or both at `/portal/activate`. The last two are shown in the body of the page that comes back rather than in a redirect, because what is stored is a scrypt hash and the value exists exactly once — a secret in a URL is a secret in the browser's history and in every proxy log on the way. Issuing another activation link invalidates the first, which is also how one that never arrived is replaced.
 
+**The catalogue it offers is NOT the whole schema**, and that is worth knowing before looking for a box that is not there. It is the twenty-seven claim-bearing attributes *Credential claims* chooses from; a person in this directory is filed under `inetOrgPerson`, which allows fifty. So `departmentNumber`, `roomNumber`, `manager`, `carLicense` and the rest reach an entry over **SCIM** or over **LDAP** and not through this form — and all fifty are drawn on that person's own `/portal` Overview whether or not anything set them, with the LDAP name and the RFC under each, so somebody can see what is available before going to write it.
+
 **A username that is already there is refused**, naming the entry that holds it — the same refusal an `ldapadd` gets as `LDAP_ENTRY_ALREADY_EXISTS` (68), because both call one function in `ldap_server.js` and the console is not a second definition of what a user is. `POST /admin-api/users/create` is the same act without a browser and takes the same attributes; `GET /admin-api/users/new` publishes the catalogue it validates them against, so a caller learns what it may send from the service rather than from a copy of the list in a document. One thing the page says outright rather than leaving to be discovered: **the new person does not appear in the table above** until they authenticate somewhere — that list is who this service has *seen*, and the entry is what the directory *holds*. It is the same distinction `/admin/groups` draws when it marks a member *never here*.
 
 **`/admin/groups`** is the one page in this console that reports the *directory* rather than what this service has issued. It lists every group with what it is made of, and `?group=<dn>` drills into one: every attribute the entry holds, operational ones included, and every member resolved to the entry it names. Both views come out of `groupsFor()` in `ldap_server.js` through a third inverted hook — `admin.js` offers `setGroupReader()` and the directory fills it, for the same route-order reason `setDirectoryReader()` exists — and the console renders what it is handed without deciding anything, which matters most for the first decision below.
@@ -4042,7 +4332,7 @@ Three things about them are decided in `ldap_server.js` rather than on the page,
 
 **A group here grants nothing, with exactly two exceptions**, and both pages say so where a reader will see it rather than leaving it to be discovered. No *endpoint* in this service checks a group and nothing in any protocol decides anything on one. On a service that authenticates nobody it could hardly be otherwise — but a console that listed groups a click away from the tokens page without saying it would let somebody conclude that adding a user to `cn=directory-admins` had changed what their token could do.
 
-**The two exceptions are `cn=admin-read` and `cn=admin-write`, and what they grant is the admin console.** They are the roles behind `admin.authRequired` — see *Who may use the console* below — and they are ordinary group entries appearing on `/admin/groups` like any other, deliberately: the alternative was a membership store the console kept for itself, which an `ldapmodify` could not see and which would drift from the directory with nothing comparing the two. Even those two grant nothing outside `/admin`: no token's scopes change, no assertion gains an attribute, no Kerberos PAC is affected, and a member of `admin-write` gets exactly the same answer from `/oauth2/token` as anybody else. `groups.claim` carries `admin-write` into an access token exactly as it carries `developers`, where still nothing reads it.
+**The two exceptions are `cn=admin-read` and `cn=admin-write`, and what they grant is the admin console.** They are the two roles the console gate requires — see *Who may use the console* below — and they are ordinary group entries appearing on `/admin/groups` like any other, deliberately: the alternative was a membership store the console kept for itself, which an `ldapmodify` could not see and which would drift from the directory with nothing comparing the two. Even those two grant nothing outside `/admin`: no token's scopes change, no assertion gains an attribute, no Kerberos PAC is affected, and a member of `admin-write` gets exactly the same answer from `/oauth2/token` as anybody else. `groups.claim` carries `admin-write` into an access token exactly as it carries `developers`, where still nothing reads it.
 
 **A token can carry one, which is a different sentence and the two must not be merged.** That half of the paragraph used to read "no access token, ID Token, SAML assertion, WS-Federation token or Kerberos PAC carries a group from this directory", and `groups.claim` is what made it false. With that setting on — it is **on by default** — every OAuth 2.0 access token, OIDC ID Token, SAML 2.0 assertion and SAML 1.1 assertion this service issues carries a claim naming the groups its subject is in, read out of these entries at the moment the token is minted. It is the same distinction this service already draws between an identity being **recorded** and an identity being **authenticated**, and it is drawn here for the same reason: carrying a fact is not acting on it. No Kerberos PAC carries a group either way.
 
@@ -4215,9 +4505,9 @@ Everything the console holds is **in memory and dies with the process**, like th
 
 #### Who may use the console
 
-**The console is protected now, and every page says which of three states it is in.** With `admin.authRequired` on — it is **on by default** — every page and every form under `/admin` needs a browser sign-on session from `/authn/login` and one of two roles: **Admin Read**, which may look at every page and change nothing, and **Admin Write**, which may post every form. **Write implies read**, because a role that could change a page it was not allowed to see would be a trap rather than a permission.
+**The console is protected, and every page says which of three states it is in.** Every page and every form under `/admin` needs a browser sign-on session from `/authn/login` and one of two roles: **Admin Read**, which may look at every page and change nothing, and **Admin Write**, which may post every form. **Write implies read**, because a role that could change a page it was not allowed to see would be a trap rather than a permission.
 
-**It is a turnstile and not a lock, exactly as SCIM's authentication is.** This service still checks no password anywhere, so what the gate proves is that somebody *typed* a name that holds a role. What it buys is what a mock is for: a client, or a person, can now be driven through a 302 to a sign-in screen, a 401 with no session, a 403 with the wrong role, and a role model that can be granted and revoked — none of which was reachable here before. Turning the setting off restores the completely open console this used to be, which stays deliberately reachable for the reason every refusal here is switchable.
+**It is a turnstile and not a lock, exactly as SCIM's authentication is.** This service still checks no password anywhere, so what the gate proves is that somebody *typed* a name that holds a role. What it buys is what a mock is for: a client, or a person, can now be driven through a 302 to a sign-in screen, a 401 with no session, a 403 with the wrong role, and a role model that can be granted and revoked — none of which was reachable here before. **There is no longer a setting that turns it off**, which there was until 2026-09-06: `admin.authRequired` is gone and `mode.gatesConsole()` answers `true` in both modes. That is the one refusal in this service which stopped being switchable, and the argument for it is `common/mode.js`'s — a deployment that required a credential at SCIM and not at the console was not partly secured, it was unsecured with a longer configuration file. What `global.mode` still changes is whether the password typed at that screen is CHECKED.
 
 **The two roles are two ordinary groups in the embedded LDAP directory** (`admin.readGroup`, `admin.writeGroup`; `cn=admin-read` and `cn=admin-write` by default), not a store of the console's own. So there are **four doors onto one membership** — the `/admin/rbac` screen, `POST /admin-api/rbac/grant`, an `ldapmodify` on 389 or 636, and a SCIM `PATCH` of the group — and a grant made through any of them is visible through all of them. That is the point rather than a side effect: a role no test can grant is a role no test can exercise.
 
@@ -5158,9 +5448,7 @@ allowed to delete an account — it decides that they said who they were first. 
 this port on a public address on the strength of it.
 
 Every switch is a `config.js` row and therefore already on `/admin/scim` and
-`POST /admin-api/config/set`: `scim.authRequired` (on by default; turning it **off**
-restores the unauthenticated behaviour these endpoints used to have, which stays reachable
-on purpose), `scim.authDiscovery`, `scim.authRealm`, `scim.scopeRead`, `scim.scopeWrite`,
+`POST /admin-api/config/set`: `scim.authDiscovery`, `scim.authRealm`, `scim.scopeRead`, `scim.scopeWrite`,
 one flag per scheme, `scim.digestPassword`, `scim.digestNonceSeconds` and
 `scim.hobaMaxAgeSeconds`. **A credential that is presented and fails is refused whether or
 not one was required** — otherwise a client testing its expired-token path would get a 200
@@ -5315,8 +5603,8 @@ NOT require any direct authentication of its clients", and that "Transport Layer
 Security MUST NOT be required". The reason is bootstrapping: a workload has no
 secret and no root of trust until this very call gives it one, so there is
 nothing it could present. A mock that demanded a credential here would refuse
-every conforming client, which is why `spiffe.authRequired` — the mutual TLS the
-other surface grew — deliberately does not reach it.
+every conforming client, which is why the mutual TLS the
+other surface requires deliberately does not reach it.
 
 **The SPIRE Server API is mutual TLS with an X509-SVID, and this service does
 the same.** A real `spire-server` binds a TCP port whose callers present an SVID
@@ -5327,8 +5615,9 @@ port is TLS on this trust domain's own server SVID
 (`spiffe://<trust domain>/spire/server`), the client certificate is verified
 against the trust bundle and its own validity window, the SPIFFE ID comes from
 the **URI subjectAltName** and never from the subject, and the method is checked
-against SPIRE's own table. `spiffe.authRequired` is on by default and is
-**restart-only**, because it decides how the socket is bound.
+against SPIRE's own table. **It is not a setting and cannot be turned off**:
+`spiffe.authRequired` was removed on 2026-09-06 with the other three gate
+settings, and the socket is bound as mutual TLS on every start.
 
 The bootstrapping case is handled the way SPIRE handles it: the port **asks for**
 a client certificate and does not **require** one, because `AttestAgent` is open
@@ -5417,8 +5706,8 @@ Two consequences worth knowing:
 * **`RenewAgent` stopped being unimplemented.** Its refusal used to say "nothing
   here authenticates the caller, so there is no way to know which agent to
   renew". Something does now, so it renews the agent **on the connection** and
-  never one named in the request — and with `spiffe.authRequired` off it answers
-  `Unimplemented` with that same sentence, which is still true in that mode.
+  never one named in the request. It answered `Unimplemented` with that same
+  sentence while the API could be left unauthenticated, which it no longer can.
 
 #### An accepted SPIFFE credential is an identity, and it gets one directory entry
 
@@ -5549,7 +5838,7 @@ some of these methods:
   the token-reading endpoints.
 * **A registration entry** whose SPIFFE ID is invalid, belongs to another trust
   domain, or sits under the reserved `/spire` path.
-* **`AttestAgent` for a banned agent**, and — with `spiffe.authRequired` on — a
+* **`AttestAgent` for a banned agent**, and a
   **join token** this server did not mint, one that has expired, one presented
   twice, and one minted for a named agent and presented by another. A ban that
   did not refuse would make the button on `/admin/spiffe/agents` a lie; and a
@@ -5595,17 +5884,40 @@ produces an identifier that looks right in a log:
   registration entry there is refused: it would be an identifier this service
   also mints on its own account.
 
-#### One process, two PKIs
+#### The authority comes from `/admin/pki` (2026-09-11)
 
-The SPIFFE authority is **not** the certificate that 8443, 9443, LDAPS 636 and
-(under `global.https`) the main port share. That one is a leaf with `CA:FALSE`
-and `extKeyUsage serverAuth`; it cannot sign anything. More to the point, a
-trust domain's CA and a host's TLS identity are two unrelated trust decisions,
-and a service whose SPIFFE root was also its web certificate would teach exactly
-the wrong lesson. So there are two, generated per start, both in memory.
+**This section was headed *One process, two PKIs* and said there were two
+authorities, generated per start, both in memory.** The first half of its
+argument is unchanged and still load-bearing: the SPIFFE authority is **not**
+the certificate that 8443, 9443, LDAPS 636 and (under `global.https`) the main
+port share. That one is a leaf with `CA:FALSE` and `extKeyUsage serverAuth`; it
+cannot sign anything, and a trust domain's CA and a host's TLS identity are two
+unrelated trust decisions.
+
+**What changed is that they now share an ANCHOR rather than being two trees.**
+The SPIFFE authority is this realm's **SPIFFE Issuing CA** under the service
+Root — a *sibling* of the TLS one, with its own key and its own Intermediate —
+so narrowing trust to SPIFFE alone is still sayable, by pinning that Issuing CA
+instead of the Root. It is the one Issuing CA in the hierarchy with `pathLen: 1`
+rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf,
+and the realm Intermediate above it is widened to `2` to match.
+
+**The bundle publishes the Root**, which is what SPIRE publishes with an
+UpstreamAuthority plugin configured, and an X509-SVID carries its Issuing CA and
+the realm's Intermediate in its own chain. The authority is per realm and the
+anchor is not — which is what keeps that coherent with SPIFFE's four shared
+sockets, since every realm's bundle is then the same document.
+
+A realm with **no** certificate authority falls back to the self-signed
+authority this service always had, generated per start and held in memory, and
+says so on `/admin/spiffe` and `GET /spiffe`. `pki.autoBuild: false` reaches
+that state deliberately.
 
 The X.509 half is **EC P-256 by default**, which is what SPIRE issues and what
-the X509-SVID specification recommends. That is why `x509.js`, `key_material.js`,
+the X509-SVID specification recommends — `spiffe.x509KeyType` for the key in
+each SVID, and a key-algorithm preference on the `spiffe` use case for the
+authority's own, honoured whenever an operator has not chosen one for their
+certificate authority. That is why `x509.js`, `key_material.js`,
 `jose_jwe.js` and `crypto_bytes.js` are vendored here from the OAuth2/OIDC
 Debugger — byte-identical, the way `bbs2023.js` already is: `node-forge`, which
 `helpers.js` and `tls_server.js` use, **cannot sign with an EC key at all**. What
@@ -5616,11 +5928,17 @@ reading back what the same code just wrote. Four real defects were found that
 way, and all four produced certificates that parsed perfectly and were refused
 elsewhere with a message about a signature.
 
-**Rotation prepends and never replaces.** A new authority becomes the one
-everything is signed with; the old one stays published in the bundle, because an
-SVID minted a minute ago has to go on verifying. Dropping it is the difference
-between a rotation and an outage. Four are retained, and past that the oldest is
-dropped — which does invalidate whatever it signed, and the page says so.
+**Rotation is two different acts now.** Under the Root, rotating re-issues the
+SPIFFE Issuing CA and leaves the anchor alone — the bundle does not change,
+nothing has to be re-fetched, and SVIDs minted under the old authority go on
+verifying, because their chain still reaches the same Root.
+
+On the **self-signed** fallback it is what it always was: **rotation prepends
+and never replaces.** A new authority becomes the one everything is signed with;
+the old one stays published in the bundle, because an SVID minted a minute ago
+has to go on verifying. Dropping it is the difference between a rotation and an
+outage. Four are retained, and past that the oldest is dropped — which does
+invalidate whatever it signed, and the page says so.
 
 #### The registry is the directory
 
@@ -5690,8 +6008,8 @@ that "a real server knows which agent is calling from the SVID on the mTLS
 connection. Nothing here authenticates the caller, so answering would mean
 renewing whichever agent the *caller named* — a way for anybody to obtain any
 agent's identity." Something authenticates the caller now, so it renews the agent
-on the connection. It still answers `Unimplemented`, with that same sentence,
-when `spiffe.authRequired` is off.
+on the connection. It answered `Unimplemented`, with that same sentence,
+while that API could be left unauthenticated — which it no longer can be.
 
 | Method | Why not |
 |---|---|
@@ -5785,12 +6103,17 @@ Three details in there are load-bearing and each was measured rather than assume
   reachable before anything is trusted; an endpoint that could only be called by
   somebody already trusted would be a chicken-and-egg with a specification citation
   attached.
-* **The server certificate is self-signed and regenerated on every start**, like the
-  signing key, and for the same reason — a certificate committed to a repository is a
-  private key committed to a repository. `GET /tls/server-certificate` hands out the
+* **The server certificate is regenerated on every start**, like the signing key, and
+  for the same reason — a certificate committed to a repository is a private key
+  committed to a repository. Since 2026-09-11 it is **issued by this service's own Root
+  CA** rather than self-signed, so one anchor covers 8443, 9443, LDAPS 636, the main
+  port and every token this service signs. `GET /tls/server-certificate` hands out the
   PEM (`Cache-Control: no-store`, since a cached copy outlives the key it describes)
   so a caller can put it in its own truststore rather than switching verification off,
-  which is the habit this whole workflow exists to break.
+  which is the habit this whole workflow exists to break. **The chain and the Root come
+  with it, and the leaf is first** — a truststore holding only the leaf builds no path
+  now, and fails with `unable to get local issuer certificate` about a Root it was
+  never given.
 * **It is served on three sockets, not two.** The directory's LDAPS listener on 636
   presents this same certificate and key, read from this module rather than generated
   again — so one fetch is one anchor for 8443, 9443 *and* `ldaps://`. Two keypairs
@@ -5798,7 +6121,11 @@ Three details in there are load-bearing and each was measured rather than assume
   with `unable to get local issuer certificate`, which names nothing. The private key
   crosses a module boundary to do it and does not cross a network one: it is generated
   per start, lives in memory, dies with the process, and nothing writes it to a
-  response — `GET /tls/server-certificate` publishes the certificate alone.
+  response — `GET /tls/server-certificate` publishes certificates alone, never a key.
+  **636 is re-keyed on its way into `listen()`** rather than at require time, because
+  this module is required before the certificate authority exists: reading it once at
+  the top left that one socket presenting the self-signed certificate this process had
+  already replaced, while the other three presented the certified one.
 
 **And a verified client certificate is not a login.** It means a chain was built from
 what the client sent to an anchor somebody POSTed to this process, and no more: no
@@ -5893,6 +6220,235 @@ Two consequences worth knowing before changing this:
 
 * **Absent is not empty.** No `claims` member means "whatever you issue" and every authorization made before this existed means exactly that, so `requestedClaimPaths()` returns `null` rather than `[]` and the full configured set goes out. An empty array is not expressible at all — A.1 requires a non-empty one — so a caller that could not tell the two apart would issue an empty credential to every wallet that authorized with a scope.
 * **The Token Request accepts `authorization_details` too**, which is the only route the **pre-authorized code flow** has: it has no authorization request to have sent them in. Section 6.1.1 allows it in both flows. What the **offer** was for bounds it — a detail naming a configuration the Credential Offer did not is refused — and the refresh grant carries the granted details forward, because an access token that dropped them would make the section 14.5 refresh fail at the credential endpoint with "that identifier was not granted".
+
+## RFC 7521 and RFC 7523: an assertion instead of a credential
+
+Added 2026-09-10. **RFC 7521 is a framework and RFC 7523 is the only profile of
+it anybody uses**, which is why they arrive together and why a reader looking
+for "the RFC 7521 part" will find nothing else: 7521 defines two request
+parameters, an error vocabulary and a list of checks, and 7523 says the
+assertion is a JWT and names the claims. Neither is testable without the other.
+
+**TWO USES OF ONE FORMAT, AND THEY ARE NOT THE SAME FEATURE.** Reading one and
+concluding the other is covered is the mistake this section exists to prevent —
+and it is exactly the mistake this service had made, because the metadata named
+RFC 7523, client authentication was complete, and the grant did not exist.
+
+| | Parameter | The `sub` is | What it replaces |
+|---|---|---|---|
+| **§2.2 client authentication** | `client_assertion` + `client_assertion_type` | the CLIENT, necessarily | a client secret |
+| **§2.1 an authorization grant** | `grant_type=…:jwt-bearer` + `assertion` | a PERSON | an authorization code |
+
+```bash
+# Section 2.1. A trusted party signs a document saying "this is alice, issue a
+# token for her", and this authorization server does.
+curl -s -X POST http://localhost:8081/oauth2/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer \
+  -d "assertion=$ASSERTION" \
+  -d scope='openid profile'
+```
+
+### What an assertion grant actually is, because it decides the refusal
+
+There is **no browser, no password and no consent step anywhere in it**. So the
+signature is the entire security of the grant, and the one thing this service
+must not do is accept an assertion from anybody: "accept any signed assertion"
+means anybody who can reach this port gets an access token as anybody.
+
+That puts this feature in the same category as **federation** rather than in the
+category everything else here is in — there is no permissive answer available.
+So an assertion issuer must be CONFIGURED, on an application entry as
+`oauthAssertionIssuer`, and `oauth2.jwtBearerRequireRegisteredIssuer` is ON by
+default. Those two refusals are the only ones in this service that are.
+
+**What is still permissive is everything around it.** The `sub` need not be
+anybody this service has heard of — an assertion for a name nobody has ever
+used mints that person exactly as typing the name at the sign-in screen does —
+and the scope is not checked against anything. What is real is that somebody
+holding a private key this service was told to trust signed the document.
+
+### Every optional component, because "optional" is where implementations differ
+
+| | |
+|---|---|
+| §3 claim 5, `nbf` | checked, against `oauth2.clientAssertionSkewS` |
+| §3 claim 6, `iat` | checked, and it **bounds the lifetime** — `oauth2.jwtBearerMaxLifetimeS`, 300s, which RFC 7521 §5.2 invites and leaves to the server |
+| §3 claim 7, `jti` | checked against a replay cache, and **required** here. That is §3's own last paragraph read literally: it says a server MAY refuse a reused assertion, and one with no `jti` cannot be remembered — so accepting it means accepting a bearer credential this service has no way to spend |
+| §3 claim 8, other claims | carried onto the issued access token. The profile's own twelve are stripped first: an `exp` copied off an assertion would be a token lifetime chosen by whoever signed it |
+| §3 claim 10, **encryption** | a nested JWT, sixteen key management algorithms against six content encryption ones, to this service's own RSA or EC key or under the client secret |
+| RFC 7521 §4.1, `scope` | **narrowed** against what the assertion carries and never widened. Where the assertion names none, the request decides |
+| RFC 7521 §5.2 (5), `aud` | may be an array; any member may match. Both the token endpoint and the issuer are accepted, because RFC 7523 and OpenID Connect Core §9 name different ones |
+| RFC 7521 §6.2, `client_id` | may be omitted where the assertion identifies the party |
+| RFC 7521 §6.3, `cnf` | carried and **reported, never enforced** — this grant has no parameter in which a presenter could prove possession of the named key, so demanding one would refuse every conforming client |
+| RFC 7521 §4.2 | an `error_description` on every refusal, which is most of `oauth-oidc/assertion_grant.js` |
+
+**Every JWS algorithm this service verifies is accepted**, the eleven
+post-quantum ones included; `assertion_signing_alg_values_supported` in the
+metadata is that table. `alg: "none"` is refused **by name**, citing claim 9,
+rather than being left to fall off the end of a list — it is the forgery every
+JWT implementation has had at some point, and a caller sending one deserves to
+be told which rule it broke.
+
+### It is recorded as a delegation, because that is what it is
+
+One party asked this service to issue a credential in **another party's name**,
+so the act lands in the delegation register beside RFC 8693's two shapes and is
+drawn on `/admin/delegation`. It is `delegation` rather than `impersonation`,
+and the distinction is RFC 8693 §1.1's own: impersonation produces a token
+indistinguishable from one the subject obtained themselves, and this one is not
+— the issuer is on the assertion, the assertion's `jti` is in the register, and
+a resource server can be told which trusted party asserted the subject. The
+party is acting **openly**, which is what the word means.
+
+## A certificate authority, at `/admin/pki`
+
+The other half of the same change, and the reason it exists is one sentence: an
+application can authenticate with a signed assertion instead of a shared secret,
+and **a signing key nobody vouched for is a key an operator has to move by
+hand**.
+
+Protocols → PKI builds a **Root CA, an Intermediate CA and an Issuing CA** for
+the trust realm it is reached in, and issues signing key pairs from the bottom
+of it to applications.
+
+```bash
+# Without a browser. Both operations exist because every control on that page
+# has one — the console decides nothing this API does not.
+curl -s -X POST http://localhost:8081/admin-api/pki/build \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"keyAlg":"ec-p384","organisation":"Acme","country":"US"}'
+
+curl -s -X POST http://localhost:8081/admin-api/pki/issue \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"identifier":"webapp1","days":90}'
+```
+
+**ALL THREE TIERS IN ONE ACT OR NONE.** A trust chain is only worth anything
+whole: an Issuing CA with no Intermediate above it is a two-tier chain wearing a
+three-tier name, and a half-built hierarchy is exactly the state in which
+somebody issues a certificate that verifies here and nowhere else. A failure at
+any tier stores nothing, and building again **replaces** — with everything
+issued from the old hierarchy chaining to nothing the moment it does, said out
+loud because there is no honest way to hide it.
+
+**ONE ROOT FOR THE SERVICE, AN INTERMEDIATE PER REALM AND PER THE PROCESS, AND
+AN ISSUING CA UNDER EACH PER USE CASE (2026-09-11).** Every key pair this
+service generates is a leaf of it — the signing keys of every realm, and the
+certificate the TLS listeners serve — so an operator installs ONE anchor and it
+covers 8443, 9443, LDAPS 636, the main port and every token, assertion and
+signed document this service issues. It is built at startup
+(`pki.autoBuild`), and the key generation itself is untouched: the same keys, in
+the same order, at the same moment, with a certificate added afterwards.
+
+**THIS PARAGRAPH SAID THE OPPOSITE UNTIL THAT DATE.** It read: *IT IS PER TRUST
+REALM. A realm is a logical identity service with its own signing key and its
+own applications; a CA shared across realms would be one authority vouching for
+several services, which is the one thing a realm boundary exists to prevent.*
+
+That argument was about the ANCHOR, and **the realm boundary moved down a tier
+when the Root was shared**: each realm has an Intermediate of its own, and a
+path is checked against it. With one Root, *does this chain to our Root* is true
+of every certificate this service has ever issued — so it stopped being a
+boundary on the day it was shared, and a check that still relied on it would
+admit every realm's clients to every other realm's token endpoint with every
+signature verifying. A certificate issued in one realm still does not verify in
+another.
+
+**ONE THING IS DELIBERATELY NOT A LEAF OF IT** and it is said on the page: the
+eleven post-quantum keys per realm, which come from `common/pq_jose.js` — this
+service's own reading of those constructions, independent of the vendored
+encoder on purpose.
+
+**THE SPIFFE X.509 AUTHORITY WAS THE SECOND AND CAME UNDER THE ROOT ON
+2026-09-11.** That sentence read *self-signed, because one process holds two
+PKIs deliberately and because an Issuing CA here carries `pathLen: 0`*, and both
+halves were answered rather than waived: the SPIFFE authority is a SIBLING of
+the TLS one rather than the same certificate, so narrowing trust to SPIFFE alone
+is still sayable by pinning that Issuing CA; and the `pathLen` was moved, the
+`spiffe` use case carrying `1` and the realm Intermediate above it `2` — derived
+from one table so they cannot drift — because `NewDownstreamX509CA` asks that
+authority for a CA rather than a leaf.
+
+So **one anchor now covers every X509-SVID as well**. The SPIFFE bundle
+publishes the Root, which is what SPIRE publishes with an UpstreamAuthority
+plugin configured, and an SVID carries its Issuing CA and its realm's
+Intermediate in its own chain — so rotating the authority no longer changes the
+bundle and nothing has to be re-fetched. The authority is PER REALM and the
+anchor is not, which is what keeps that coherent with SPIFFE's four shared
+sockets. A realm with no hierarchy falls back to the self-signed authority this
+service always had and says so on `/admin/spiffe` and `GET /spiffe`.
+
+**THE KEY PAIR GOES ONTO THE APPLICATION'S OWN ENTRY, AND THIS SERVICE KEEPS NO
+SECOND COPY.** Six attributes — `oauthAssertionPrivateKey` (**sealed at rest**
+under the same key-encryption key as the hierarchy it was issued from, wherever
+that key outlives the process, so a directory dump, an LDIF file, a database row
+or a backup holds `$aesgcm$…`; the console and `/admin-api` open it for a caller
+holding a credential, because the seal protects the store and not the page an
+operator collects the key from. In development mode it is in the clear, where
+the key-encryption key would not survive the restart the entry does — the
+decision `oauthClientSecret` and `GET /krb5/principals` both make and for their
+reason: a debugger whose credentials are unusable without reading the source is
+worse than one that says what they are), `oauthAssertionCertificate`,
+`oauthAssertionCertificateChain`, `oauthAssertionJwks` (carrying `x5c` and
+`x5t#S256`), `oauthAssertionKid` and `oauthAssertionExpiresAt`. It is handed
+over once, at issuance, and forgotten. **`oauthJwks` is never overwritten**: a
+client that registered its own keys and is later issued a pair has two ways to
+sign, both of which somebody deliberately arranged.
+
+**THE LEAF IS A SIGNING CERTIFICATE AND DELIBERATELY NOT A TLS ONE** —
+`digitalSignature` and `nonRepudiation`, no extended key usage. What it signs is
+a JWT; giving it `clientAuth` would make it usable for RFC 8705 as well, which
+is a DIFFERENT credential with a different registration attribute, and one
+certificate quietly doing both is how a deployment ends up unable to revoke
+either.
+
+**A KEY PAIR IS NOT A TRUST DECISION.** It lets an application SIGN, which is
+all §2.2 needs. For §2.1 the `iss` it will use must also be declared. The page
+draws both columns for that reason.
+
+### Two things it does not do, and both are on the page
+
+* **REVOCATION IS PUBLISHED AND NEVER CONSULTED**, which reversed half of this
+  bullet on 2026-09-11. It read *nothing is ever revoked: this service
+  publishes no CRL and answers no OCSP.* Every authority now signs an RFC 5280
+  CRL and answers RFC 6960 OCSP — `/pki/crl/{scope}/{ca}`,
+  `/pki/ocsp/{scope}/{ca}`, `/pki/ca/{scope}/{ca}.cer` and an index at
+  `/pki/revocation`, plus a copy of each list in the directory under `ou=crl` —
+  every certificate names its own in three schemes, a pane on `/admin/pki`
+  revokes one by hand with any of the nine RFC 5280 reasons, and anything
+  rotated goes on its issuer's list as `superseded` automatically. **What this
+  service does not do is CONSULT one, its own included**: a client certificate
+  presented to it is checked against the anchors on `/tls/trust` and no list is
+  fetched, so a certificate revoked here still authenticates here.
+* **AND *TAKE THE KEY PAIR OFF* IS A THIRD ACT, NOT EITHER OF THOSE.** It stops
+  this service **accepting** what that key signs, because the key is no longer
+  registered against the application; it puts nothing on any revocation list
+  and does not stop the certificate chaining, and the reply says so in those
+  words. Somebody dealing with a compromised key pair wants both controls.
+* **IN DEVELOPMENT MODE THE HIERARCHY DIES WITH THE PROCESS**, which is the rule
+  the signing key already follows and for the same reason: a mock is disposable
+  and its credentials are meant to die with it. In **product** mode it is
+  written to `sts_keys`, sealed under the same key-encryption key as the signing
+  keys, in the same row family — a store of its own would have been a second
+  answer to *where does this service keep a private key*, and the second answer
+  is the one nobody remembers to rotate.
+
+### The encoder is the debugger's own, vendored byte-identical
+
+`common/vendored/x509.js` — the same module behind that project's *PKI / X.509*
+workflow page, and what `spiffe/spiffe_ca.js` already issues X509-SVIDs with. So
+a certificate issued here and one issued there are built by **one** encoder, and
+a difference between them is a difference in the arguments rather than in two
+implementations that drifted. The three tiers are its own `root-ca`,
+`intermediate-ca` and `issuing-ca` **profiles** — same `pathLen` (unconstrained,
+1, 0), same key usages, same default lifetimes — rather than a second table.
+
+**THE PAGE HAS NO SCRIPT ON IT**, and that argument is made from scratch rather
+than inherited from the page next door. The debugger's PKI page needs one
+because its whole point is that the key never leaves the browser; this page's
+whole point is the opposite — this process holds the CA private keys and a
+browser must never — so every choice is a form field, every computation is on
+the server, and `script-src 'none'` is untouched.
 
 ## Versioning
 

@@ -1613,6 +1613,98 @@ module.exports = {
   // sequence the write actually landed at, which only the store knows.
   // Whether this process has written any change rows — read either side of a
   // flush to tell "I wrote" from "I had nothing to write", with no query.
+  // ---------------------------------------------------------------------
+  // THE DATABASE METRICS, for `/admin/database` (2026-09-11).
+  //
+  // **A ROUTER AND NOT A COLLECTOR.** Every statement, every catch and every
+  // number is `persistence_postgres.js`'s, because that module owns the pool
+  // and the console must not: a connection string is a credential and `pg` is
+  // a dependency only one mode needs. What this adds is the answer for the
+  // modes that have no database — which is most of them, and which has to be
+  // a SENTENCE rather than an empty object.
+  //
+  // **THE THREE "NO" ANSWERS ARE KEPT APART ON PURPOSE.** A page that showed
+  // one blank table for all of them would be useless in exactly the moment
+  // somebody opens it: *this service is not configured for a database*,
+  // *it is, and the driver never opened one* and *it opened one and this
+  // build of the driver has no metrics* are three different things to do
+  // something about, and only the second is a fault.
+  // ---------------------------------------------------------------------
+  databaseMetrics: function (options) {
+    log.debug('Entering databaseMetrics().');
+    const configured = mode();
+    if (configured !== 'postgres') {
+      log.debug('Leaving databaseMetrics(). Not a database mode.');
+      return Promise.resolve({
+        ok: false, available: false, mode: configured,
+        why: 'persistence.mode is "' + configured + '", so this service has ' +
+             'no database to report on. `memory` writes nothing at all and ' +
+             '`ldif` writes RFC 2849 files — neither has a connection, a ' +
+             'pool or a catalog. Set persistence.mode to `postgres` (it is ' +
+             'restart-only: the store is opened before the listener binds).'
+      });
+    }
+    if (!driver || !enabled()) {
+      log.debug('Leaving databaseMetrics(). No open driver.');
+      return Promise.resolve({
+        ok: false, available: false, mode: configured,
+        why: 'persistence.mode is "postgres" and this process has NO OPEN ' +
+             'STORE. That is a fault rather than a configuration: the store ' +
+             'is opened from persistence.start() before the listener binds, ' +
+             'and a failure there is fatal — so a running service in this ' +
+             'state has had its store stopped underneath it. The startup log ' +
+             'names what happened.'
+      });
+    }
+    if (typeof driver.metrics !== 'function') {
+      log.debug('Leaving databaseMetrics(). The driver has none.');
+      return Promise.resolve({
+        ok: false, available: false, mode: configured,
+        why: 'the open driver reports no metrics function, which means a ' +
+             'build of persistence_postgres.js older than 2026-09-11.'
+      });
+    }
+    return driver.metrics({
+      timeoutMs: Number(config.value('persistence.metricsTimeoutMs'))
+    }).then(function (report) {
+      report.available = true;
+      report.mode = configured;
+      // The target, from the ONE function that already parses a connection
+      // string without printing the password in it. A second reading here
+      // would be a second chance to get that wrong.
+      report.target = describeDatabase();
+      // **THE SCHEMA IS NOT REPORTED HERE AND THERE IS NO SETTING FOR IT.**
+      // The first version of this read `persistence.databaseSchema`, which
+      // does not exist — `config.value()` THROWS for a key it does not know,
+      // so that line would have failed every call on the one mode this
+      // function is for. The schema is chosen by the `search_path` in the
+      // connection string (or by the database's own default), which means the
+      // only honest answer is the SERVER's: the `server` probe asks
+      // `current_schema()`, and that is what every schema probe below it
+      // actually scoped to.
+      // **REQUIRED LAZILY, LIKE THE DRIVER ITSELF.** That module pulls in
+      // `pg` at create() time, and this file is required by every process
+      // that loads the protocol stack — including the ones running in
+      // `memory` mode, which must not be stopped by a missing optional
+      // dependency. By the time this line runs the driver is open, so it is
+      // a cache hit.
+      //
+      // What crosses is the DECLARED schema: the version the driver expects
+      // and the objects it would create. The page reads them against what is
+      // actually in the database, which is the one drift check on that page
+      // that nothing else in this service makes — `tests/postgres_schema.js`
+      // compares the driver against `postgres/schema.sql`, and neither of
+      // them compares either against a running server.
+      const declared = require('./persistence_postgres');
+      report.schemaVersion = declared.SCHEMA_VERSION;
+      report.declaredObjects = declared.SCHEMA_OBJECTS.map(function (one) {
+        return one.name;
+      });
+      log.debug('Leaving databaseMetrics(). ok=' + report.ok);
+      return report;
+    });
+  },
+
   changeRowsWritten: function () {
     if (!driver || typeof driver.changeRowsWritten !== 'function') {
       return 0;

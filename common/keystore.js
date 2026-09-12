@@ -338,8 +338,30 @@ function serialise(keys) {
     version: 1,
     createdAt: keys.createdAt || Date.now(),
     privateKeyPem: keys.privateKeyPem,
-    certPem: keys.certPem,
-    certB64: keys.certB64,
+    // **THE CERTIFICATE THIS KEY SET WAS BORN WITH, AND NOT THE ONE IT
+    // CURRENTLY PUBLISHES (2026-09-11).** `helpers.js`'s `certifiedView()`
+    // makes `certPem` and `certB64` GETTERS that switch to the certificate
+    // `pki.js` issued over this key as soon as it has issued one — so reading
+    // them here wrote a MOVING value into a blob whose whole job is to
+    // identify a fixed key.
+    //
+    // It broke two things, and neither of them failed loudly. `publishShared()`
+    // compares `certB64` to decide whether a second publish is the SAME key set
+    // gaining its post-quantum half or a different process's set losing a race:
+    // after certification the comparison was false for ever, the enrichment was
+    // refused, and every process in a dispatched service kept eleven
+    // post-quantum keys of its own while `/oauth2/jwks` published a sibling's —
+    // so a UserInfo response or an ID Token signed by one worker could not be
+    // verified against the JWKS served by another. And `certifiedView()`
+    // derives the `kid` from whatever certificate it is handed as the
+    // self-signed one, so a restored set would have taken its name from the
+    // certificate rather than from the key, and the `kid` would have moved
+    // across a restart.
+    //
+    // The fallback is for a key set built before this existed and for
+    // `makeStsKeys()`'s raw return, which has no view installed yet.
+    certPem: keys.selfSignedCertPem || keys.certPem,
+    certB64: keys.selfSignedCertB64 || keys.certB64,
     // **THE POST-QUANTUM SET TRAVELS TOO (2026-09-07).** `pqKeysForAsync()`
     // makes these LAZILY and per process, after the key set already exists, so
     // they were the one part of a realm's material that stayed local: every
@@ -439,11 +461,12 @@ async function start() {
     throw new Error('the stored key material could not be read: ' + e.message);
   }
   let loaded = 0;
+  let pkiLoaded = 0;
   rows.forEach(function (row) {
     const realmId = String(row.realm || '');
     let plain;
     try {
-      plain = crypto.decryptWithKek(kek, row.material);
+      plain = crypto.decryptWithKek(kek, row.material, 'signing-keys');
     } catch (e) {
       // THE MOST IMPORTANT ERROR IN THIS FILE. The overwhelmingly likely cause
       // is the wrong key-encryption key — a rotated secret, a different
@@ -465,6 +488,20 @@ async function start() {
     // was made to stop. `JSON.parse` runs too, so a row that decrypts to
     // something malformed also fails at startup rather than at first use.
     const blob = JSON.parse(plain);
+    // ---------------------------------------------------------------------
+    // **A `pki:` ROW IS A CERTIFICATE AUTHORITY AND NOT A KEY SET.** They
+    // share this table on purpose — see attachPki() — and they are told apart
+    // by the row key rather than by a column, because `sts_keys` has one and
+    // adding a second would mean a schema version for a distinction the key
+    // already carries. A row whose realm begins `pki:` is routed here and
+    // never reaches `material`, where it would be handed to `deserialise()`
+    // and come back as a key set with no private key in it.
+    // ---------------------------------------------------------------------
+    if (realmId.indexOf(PKI_ROW_PREFIX) === 0) {
+      pkiHeld.set(realmId.slice(PKI_ROW_PREFIX.length), blob);
+      pkiLoaded += 1;
+      return;
+    }
     material.set(realmId, {
       cipher: row.material,
       // Public metadata, kept in the clear so `report()` and the console can
@@ -474,6 +511,11 @@ async function start() {
     });
     loaded += 1;
   });
+  if (pkiLoaded) {
+    log.info('keystore: ' + pkiLoaded + ' certificate authority/authorities ' +
+             'were read back from the store. A hierarchy built in a previous ' +
+             'run still signs, so everything issued from it still chains.');
+  }
   log.info('keystore: key material is PERSISTED. ' + loaded + ' realm(s) ' +
            'loaded from the ' + config.value('persistence.mode') + ' store, ' +
            'encrypted with AES-256-GCM under a key read from ' +
@@ -483,7 +525,7 @@ async function start() {
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
   log.debug('Leaving start(). ' + loaded + ' realm(s).');
-  return { persisting: true, loaded: loaded,
+  return { persisting: true, loaded: loaded, pki: pkiLoaded,
            provider: secrets.describe().provider };
 }
 
@@ -712,7 +754,8 @@ function storedFor(realmId) {
   }
   let buffer;
   try {
-    buffer = Buffer.from(crypto.decryptWithKek(kek, entry.cipher), 'utf8');
+    buffer = Buffer.from(crypto.decryptWithKek(kek, entry.cipher,
+                                               'signing-keys'), 'utf8');
   } catch (e) {
     // The wrong KEK cannot be the cause here — `start()` decrypted this very
     // record — so this is corruption or a bug, and it is louder for that.
@@ -813,7 +856,8 @@ function remember(realmId, keys) {
   // caller is `helpers.js` in the middle of building a key set and is about to
   // read it, and purging under that would decrypt the record we just made.
   // ---------------------------------------------------------------------
-  const cipher = crypto.encryptWithKek(kek, JSON.stringify(blob));
+  const cipher = crypto.encryptWithKek(kek, JSON.stringify(blob),
+                                       'signing-keys');
   material.set(id, { cipher: cipher, createdAt: blob.createdAt || Date.now(),
                      plain: blob, parsed: null, buffer: null,
                      timer: null, immediate: false });
@@ -926,12 +970,18 @@ realms.onRemove(function (id) {
   // realm re-created under the same name must not be handed the keys a sibling
   // process is still holding for the realm that was deleted.
   shared.delete(realmId);
+  // AND THE CERTIFICATE AUTHORITY, for the same reason: a realm re-created
+  // under the same name must not inherit the last one's CA, or certificates
+  // issued to the applications of a realm that is gone would go on chaining.
+  pkiHeld.delete(realmId);
   if (!store || typeof store.deleteKeys !== 'function') {
     log.debug('Leaving the keystore realm purge. Nothing is stored.');
     return;
   }
   Promise.resolve().then(function () {
     return store.deleteKeys(realmId);
+  }).then(function () {
+    return store.deleteKeys(PKI_ROW_PREFIX + realmId);
   }).then(function () {
     log.info('keystore: the "' + realmId + '" realm was removed, and its ' +
              'stored signing keys went with it.');
@@ -1096,14 +1146,19 @@ function sealed() {
   return !!kek;
 }
 
-function seal(plaintext) {
+// **THE `label` IS FOR ACCOUNTING AND FOR NOTHING ELSE**, which is why it is
+// optional and why nothing here validates it: `/admin/encryption` breaks the
+// operation count down by what KIND of data was sealed, and the only party
+// that knows that is the caller. It reaches `crypto.js`'s tally unchanged; a
+// caller that passes none is still counted, in `(unlabelled)`.
+function seal(plaintext, label) {
   log.debug('Entering seal().');
   if (!kek) {
     log.debug('Leaving seal(). No key-encryption key.');
     return null;
   }
   try {
-    const out = crypto.encryptWithKek(kek, String(plaintext));
+    const out = crypto.encryptWithKek(kek, String(plaintext), label);
     log.debug('Leaving seal(). Sealed.');
     return out;
   } catch (e) {
@@ -1113,14 +1168,14 @@ function seal(plaintext) {
   }
 }
 
-function open(ciphertext) {
+function open(ciphertext, label) {
   log.debug('Entering open().');
   if (!kek) {
     log.debug('Leaving open(). No key-encryption key.');
     return null;
   }
   try {
-    const out = crypto.decryptWithKek(kek, ciphertext);
+    const out = crypto.decryptWithKek(kek, ciphertext, label);
     log.debug('Leaving open(). Opened.');
     return out;
   } catch (e) {
@@ -1134,9 +1189,144 @@ function open(ciphertext) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE CERTIFICATE AUTHORITY MATERIAL (2026-09-10), AND WHY IT IS IN THIS FILE.
+//
+// `common/pki.js` builds a Root, an Intermediate and an Issuing CA per trust
+// realm and issues application signing keys from the bottom of it. Those are
+// PRIVATE KEYS THIS SERVICE GENERATED, which is the exact description of what
+// this file already holds — so they go in the same table, under the same
+// key-encryption key, read back by the same `start()` and shared across the
+// request-worker pool by the same kind of channel. A store of their own would
+// have been a second answer to *where does this service keep a private key*,
+// and the second answer is the one nobody remembers to rotate.
+//
+// **THE ROW KEY IS `pki:<realm>` AND THAT IS THE WHOLE OF THE SCHEMA CHANGE.**
+// `sts_keys` has one key column, `realm`, and a hierarchy is per realm — so
+// prefixing it distinguishes the two kinds of row without a migration and
+// without a column whose only value is a discriminator. `start()` routes them
+// on the way in.
+//
+// **IT IS PLAINTEXT IN THIS PROCESS AND CIPHERTEXT EVERYWHERE ELSE, WHICH IS A
+// WEAKER CLAIM THAN THE SIGNING KEYS GET AND IS SAID RATHER THAN GLOSSED.**
+// The signing keys hold their ciphertext resident and decrypt per signature
+// (see the header); the CA keys do not, because every read of them is an
+// OPERATOR ACTION — build a hierarchy, issue a key pair, draw the page — and a
+// page that had to decrypt to print a serial number would decrypt on every
+// render, which is the opposite of what that policy is for. Narrowing this
+// window the same way is the obvious next increment and is named in
+// `mode.js`'s `NOT_YET` rather than left to be discovered.
+// ---------------------------------------------------------------------------
+const PKI_ROW_PREFIX = 'pki:';
+const pkiHeld = new Map();       // realm id -> the hierarchy, in the clear
+let pkiPublisher = null;
+
+// Filled by whoever owns the IPC channel — `request_pool.js` in the front
+// process and `request_worker.js` in a worker — exactly as `setKeyPublisher()`
+// is, and unset in a service with no pool, where it is inert.
+//
+// **A SECOND CHANNEL RATHER THAN MORE MEMBERS ON THE FIRST**, and the test is
+// rule 3e's read one layer down: the key channel arbitrates FIRST-GENERATOR-
+// WINS, because two processes racing to make a realm's signing keys is a race
+// nobody asked for. A hierarchy is built by an OPERATOR pressing a button, so
+// there is no race and the last write wins — putting it on the key channel
+// would have meant teaching that arbitration to tell an enrichment from a
+// replacement for a second kind of payload, and getting it wrong there would
+// have broken signing.
+function setPkiPublisher(fn) {
+  pkiPublisher = typeof fn === 'function' ? fn : null;
+}
+
+// What another process built, adopted whole. The sender is the authority: see
+// the paragraph above on why there is no arbitration here.
+function adoptPki(realmId, chain) {
+  const id = String(realmId || '');
+  if (chain) {
+    pkiHeld.set(id, chain);
+  } else {
+    pkiHeld.delete(id);
+  }
+  log.debug('adoptPki(): the "' + id + '" realm\'s certificate authority ' +
+            'came from another process in this service.');
+  return true;
+}
+
+// Every hierarchy this process holds, for the fork-time seed.
+function pkiAll() {
+  const out = [];
+  pkiHeld.forEach(function (chain, id) { out.push({ realm: id, chain: chain }); });
+  return out;
+}
+
+// The hierarchy this realm holds, or null. Synchronous, for `pki.js`'s reason:
+// the console draws it inside a render and the token endpoint reads its trust
+// anchors inside a client-authentication check.
+function pkiFor(realmId) {
+  return pkiHeld.get(String(realmId || '')) || null;
+}
+
+// Record it, share it, and write it down. `null` REMOVES the hierarchy, which
+// is what `pki.clearChain()` asks for — and the removal has to reach all three
+// places or a worker goes on issuing from a CA the operator threw away.
+function attachPki(realmId, chain) {
+  log.debug('Entering attachPki(). realm=' + realmId);
+  const id = String(realmId || '');
+  adoptPki(id, chain);
+  if (pkiPublisher) {
+    pkiPublisher(id, chain || null);
+  }
+  if (!persists()) {
+    // Development mode, where a signing key is generated per start and dies
+    // with the process. A hierarchy behaves the same way, which is the honest
+    // answer rather than a gap — `pki.js`'s header and `/admin/pki` both say
+    // so, and `report()` below reports it.
+    log.debug('Leaving attachPki(). Held in memory; nothing persists here.');
+    return;
+  }
+  if (!store || !kek) {
+    log.error('keystore: the "' + id + '" realm\'s certificate authority ' +
+              'CANNOT BE WRITTEN — ' +
+              (!store ? 'no persistence store is open'
+                      : 'no key-encryption key was read') + '. It will be ' +
+              'gone after the next restart, and every certificate issued ' +
+              'from it will chain to nothing.');
+    log.debug('Leaving attachPki(). Nowhere to write.');
+    return;
+  }
+  const row = PKI_ROW_PREFIX + id;
+  Promise.resolve()
+    .then(function () {
+      if (!chain) {
+        return typeof store.deleteKeys === 'function'
+          ? store.deleteKeys(row)
+          // A driver with no delete is told to store an EMPTY hierarchy rather
+          // than being left with the old one. `start()` reads a falsy `tiers`
+          // back as no hierarchy, so the two spellings mean the same thing.
+          : store.saveKeys(row, crypto.encryptWithKek(kek, JSON.stringify({}),
+                                                     'pki-hierarchy'));
+      }
+      return store.saveKeys(row, crypto.encryptWithKek(kek,
+                                                       JSON.stringify(chain),
+                                                       'pki-hierarchy'));
+    })
+    .then(function () {
+      log.info('keystore: the "' + id + '" realm\'s certificate authority ' +
+               'was ' + (chain ? 'written to the store, encrypted'
+                               : 'removed from the store') + '.');
+    })
+    .catch(function (e) {
+      log.error('keystore: the "' + id + '" realm\'s certificate authority ' +
+                'could not be written: ' + e.message + '. It will be ' +
+                'different after the next restart.');
+    });
+  log.debug('Leaving attachPki(). Queued a write.');
+}
+
 function reset() {
   shared.clear();
+  pkiHeld.clear();
   publisher = null;
+  pkiPublisher = null;
   ephemeral = false;
   log.debug('Entering reset().');
   purgeAll();
@@ -1173,5 +1363,12 @@ module.exports = {
   remember: remember,
   deserialise: deserialise,
   rotate: rotate,
+  // The certificate authority material. See the block above attachPki() for
+  // why it is in this file and why it has a channel of its own.
+  setPkiPublisher: setPkiPublisher,
+  adoptPki: adoptPki,
+  pkiAll: pkiAll,
+  pkiFor: pkiFor,
+  attachPki: attachPki,
   report: report
 };

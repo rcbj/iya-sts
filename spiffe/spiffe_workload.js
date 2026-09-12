@@ -22,7 +22,7 @@
 // Security MUST NOT be required". A workload has no secret and no root of trust
 // until this call gives it one, so there is nothing it could present. A mock
 // that demanded a credential here would refuse every conforming client, which
-// is why `spiffe.authRequired` — the mutual TLS the SPIRE Server API grew —
+// is why the mutual TLS the SPIRE Server API requires —
 // deliberately does not reach this surface.
 //
 // What a real endpoint does instead is ASCERTAIN the caller out of band: the

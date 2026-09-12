@@ -936,11 +936,38 @@ async function issuanceAuditRows() {
 // that page names applications too — "sts-user-portal" appears in the sign-in
 // explanation — and a substring match against the whole page would report a
 // row that is not there.
+// The `<a>` in the middle is why this is an exec loop rather than the
+// match-and-strip it was until 2026-09-10: an application whose entry carries
+// `appHomePageUrl` has its name drawn as a link to that page, and one that does
+// not has it drawn in a `<span class="unlinked">`. A pattern anchored on
+// `<td><strong>NAME</strong>` matched neither of those and reported every row
+// missing.
 function listedApplications(text) {
-  return (String(text).match(/<td><strong>([^<]*)<\/strong>/g) || [])
-    .map(function (cell) {
-      return cell.replace(/^<td><strong>/, "").replace(/<\/strong>$/, "");
-    });
+  const names = [];
+  const pattern = /<td><strong>(?:<(?:a|span)\b[^>]*>)?([^<]*)/g;
+  let found = pattern.exec(String(text));
+  while (found) {
+    names.push(found[1]);
+    found = pattern.exec(String(text));
+  }
+  return names;
+}
+
+// The href a named application's row links to, or "" when its name is drawn
+// greyed out instead. Read out of the row rather than off the page, because
+// several rows carry links and "this page contains that URL" would pass for a
+// link on somebody else's row.
+function homePageLinkFor(text, name) {
+  const rows = String(text).split("<tr>");
+  const mine = rows.filter(function (row) { return row.indexOf(">" + name + "<") >= 0; })[0];
+  if (!mine) {
+    return null;
+  }
+  const link = mine.match(/<strong><a class="home" rel="noopener" href="([^"]*)"/);
+  if (link) {
+    return link[1];
+  }
+  return mine.indexOf('<strong><span class="unlinked"') >= 0 ? "" : null;
 }
 
 // How many pages that list runs to, off the pager's own "Page 1 of 3" marker.
@@ -1001,12 +1028,19 @@ async function theApplicationsPageIsDecidedByThePolicy() {
   const openName = "Portal Probe Open " + stamp;
   const narrowedName = "Portal Probe Narrowed " + stamp;
   const role = "portal-probe-role-" + stamp;
+  // The two halves of the link on this page (2026-09-10): an application that
+  // has told this registry where it lives, and one that has not. Both are
+  // LISTED — the issuance policy permits them equally — and the difference is
+  // whether the name is a way in.
+  const openHome = "https://portal-probe-" + stamp + ".example.com/expenses";
+  const nowhereName = "Portal Probe Nowhere " + stamp;
 
   // Three entries: one anybody may reach, one narrowed to a role nobody holds
   // yet, and one that is not a sign-in destination at all.
   let r = await post("/applications/create",
     { identifier: "portal-probe-open-" + stamp, name: openName,
-      protocols: ["oauth2", "oidc"] });
+      protocols: ["oauth2", "oidc"],
+      fields: { appHomePageUrl: openHome } });
   assert.ok(r.status === 200 && r.body && r.body.ok,
     "creating the open application answered " + r.status + " " +
     String(r.raw).slice(0, 300));
@@ -1015,6 +1049,12 @@ async function theApplicationsPageIsDecidedByThePolicy() {
       protocols: ["saml2"], fields: { appRequiredRole: [role] } });
   assert.ok(r.status === 200 && r.body && r.body.ok,
     "creating the narrowed application answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  r = await post("/applications/create",
+    { identifier: "portal-probe-nowhere-" + stamp, name: nowhereName,
+      protocols: ["oauth2"] });
+  assert.ok(r.status === 200 && r.body && r.body.ok,
+    "creating the application with no home page answered " + r.status + " " +
     String(r.raw).slice(0, 300));
   r = await post("/applications/create",
     { identifier: "portal-probe-ssf-" + stamp,
@@ -1074,6 +1114,56 @@ async function theApplicationsPageIsDecidedByThePolicy() {
         "the page names " + narrowedName + " somewhere outside the table, " +
         "which is the disclosure the count exists to avoid.");
     });
+  // ------------------------------------------------------------------
+  // THE LINK ON EACH ROW (2026-09-10), and the greyed-out name beside it.
+  //
+  // This page listed the applications a person may sign in to and gave them no
+  // way to reach any of them. The link is the entry's DECLARED
+  // `appHomePageUrl` and is never computed from the redirect URIs on the entry
+  // — `common/applications.js`'s row for that attribute argues why — so the
+  // assertion here is a pair rather than a value: the application that stated a
+  // home page links to exactly it, and the one that did not is listed with no
+  // link at all rather than with a guess.
+  // ------------------------------------------------------------------
+  check("the application that declared a home page is LINKED to it, exactly " +
+        "as declared", function () {
+      const href = homePageLinkFor(apps.text, openName);
+      assert.strictEqual(href, openHome,
+        openName + " links to " + JSON.stringify(href) + " rather than to " +
+        openHome + ". A home page is what the entry says it is; nothing " +
+        "derives one.");
+    });
+  check("AND THE ONE THAT DECLARED NONE IS LISTED WITH NO LINK — greyed out " +
+        "rather than pointed at a guessed address, which is the whole reason " +
+        "the attribute is declared", function () {
+      assert.ok(listed.indexOf(nowhereName) >= 0,
+        nowhereName + " is not listed at all. Having no home page must not " +
+        "keep an application off this page: it is the ordinary shape of an " +
+        "entry a protocol endpoint created. It listed: " + listed.join(", "));
+      assert.strictEqual(homePageLinkFor(apps.text, nowhereName), "",
+        nowhereName + " is drawn with a link and its entry names no home page.");
+    });
+
+  // A HOME PAGE BECOMES AN `href` ON THIS PAGE, so the write door refuses a
+  // value that is not http or https. The scheme list is an ALLOWLIST rather
+  // than a blocklist and `javascript:` is why: this registry accepts an entry
+  // from a dynamic client registration, so a scheme of somebody's choosing
+  // must not be able to reach an attribute a signed-in person's page renders
+  // as a link. Checked at the door AND again when the page reads it — an
+  // `ldapmodify` on TCP 389 goes through neither.
+  const refused = await post("/applications/set",
+    { application: "portal-probe-nowhere-" + stamp,
+      attribute: "appHomePageUrl", value: "javascript:alert(1)" });
+  check("a home page that is not http or https is REFUSED where it is written",
+    function () {
+      assert.strictEqual(refused.status, 400,
+        "setting a javascript: home page answered " + refused.status +
+        " rather than refusing it. " + String(refused.raw).slice(0, 300));
+      assert.ok(/http/.test(String(refused.raw)),
+        "the refusal does not say what a home page must be: " +
+        String(refused.raw).slice(0, 300));
+    });
+
   check("the Shared Signals receiver is on neither list — it is not a " +
         "sign-in destination, and is counted as one of those instead",
     function () {

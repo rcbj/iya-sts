@@ -78,8 +78,13 @@
 // ---------------------------------------------------------------------------
 // USAGE
 //
-//   node tests/tools/pep-credential.js --url https://localhost:8081 \
-//        --out /tmp/pep-certs --subject "CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+//   node tests/tools/pep-credential.js --url=https://localhost:8081 \
+//        --out=/tmp/pep-certs --subject="CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+//
+// **EVERY FLAG TAKES `=`.** `--url https://…` leaves `--url` empty and reports
+// the URL as an unknown option; this block showed that form until it was fixed,
+// so the documented invocation exited 2 naming the argument the reader had got
+// right. See `parseArgs()` for why the doc moved rather than the parser.
 //
 //   --url       the mock, where the anchor is POSTed. Required.
 //   --out       where the three files go. Required; created if absent.
@@ -113,6 +118,19 @@ const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=mock-sts';
 // The arguments. Hand-parsed for `tests/run.js`'s reason: this directory takes
 // no dependency to run, and five flags do not justify the first one.
 // ---------------------------------------------------------------------------
+// **`--flag=value` ONLY, AND THE HEADER SAID OTHERWISE UNTIL IT WAS FIXED.**
+// Each argument is split on its first `=`, so a bare `--url` is a flag whose
+// value is the empty string and the URL that followed it is an unknown option:
+// the invocation the USAGE block documented exited 2, naming the one argument
+// the reader had typed correctly.
+//
+// **THE DOCUMENTATION MOVED RATHER THAN THIS FUNCTION**, which is worth saying
+// because the other repair is four lines and looks obviously kinder. Nothing
+// calls this file the space way — both launchers pass `=`, `docs/remote-pep.md`
+// passes `=`, and the three tests that want a certificate `require()` this file
+// for `mint()` and never reach a command line at all — so accepting the space
+// form would have been a behaviour change made to rescue a comment, in the one
+// directory whose rule is that it takes no dependency and stays small.
 function parseArgs(argv) {
   const opts = { url: '', out: '', subject: DEFAULT_SUBJECT, years: 1,
                  quiet: false };

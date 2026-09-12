@@ -321,6 +321,14 @@ function verifyRegistration(input) {
     publicKeyJwk: key ? key.jwk : null,
     algorithm: key ? key.alg : null,
     signCount: authData.signCount,
+    // THE FLAGS, AS `verifyAssertion()` BESIDE THIS ALREADY RETURNED THEM
+    // (2026-09-10). Registration did not, so a caller that wanted to record
+    // whether the authenticator VERIFIED THE PERSON at enrolment — which is
+    // what `webauthn.userVerification` is about, and what a relying party
+    // reports beside a key — had the byte parsed, checked and then dropped.
+    // It is the same object from the same parse; the asymmetry was an
+    // oversight rather than a decision.
+    flags: authData.flags,
   };
   log.debug('Leaving verifyRegistration(). ok=' + result.ok);
   return result;

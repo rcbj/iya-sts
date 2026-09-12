@@ -1,6 +1,6 @@
 ---
 title: Persistence
-nav_order: 9
+nav_order: 13
 ---
 
 # Persistence
@@ -8,6 +8,12 @@ nav_order: 9
 Until 2026-08-27 this service wrote nothing down and everything was gone on
 restart. Three things are not, now, when a store is configured — and the list of
 what still is not matters just as much.
+
+**Encryption is a page of its own.** What this service seals before a value
+reaches a store, and what encrypts the rest of the database underneath it —
+LUKS, ZFS, the forks that have TDE — is [Encryption at rest](encryption-at-rest.md).
+That page also answers the question this one invites: there is ONE
+key-encryption key for the whole service rather than one per trust realm.
 
 ## What survives, and what never can
 

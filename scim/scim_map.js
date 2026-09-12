@@ -176,7 +176,9 @@ const USER_ATTRIBUTES = [
   { scim: 'name.givenName', ldap: 'givenName', kind: 'single', schema: 'RFC 4519 2.6' },
   { scim: 'displayName', ldap: 'displayName', kind: 'single', schema: 'RFC 2798 2.3' },
   { scim: 'title', ldap: 'title', kind: 'single', schema: 'RFC 4519 2.38' },
-  { scim: 'userType', ldap: 'employeeType', kind: 'single', schema: 'RFC 2798 2.7' },
+  // RFC 2798 2.7 is `preferredLanguage`; `employeeType` is 2.5. Corrected
+  // 2026-09-11 against the RFC text.
+  { scim: 'userType', ldap: 'employeeType', kind: 'single', schema: 'RFC 2798 2.5' },
   { scim: 'preferredLanguage', ldap: 'preferredLanguage', kind: 'single',
     schema: 'RFC 2798 2.10' },
   { scim: 'profileUrl', ldap: 'labeledURI', kind: 'single', schema: 'RFC 2079 2' },

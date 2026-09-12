@@ -123,8 +123,9 @@ function withWorkers(count, run) {
 
 module.exports = {
   name: 'worker_pool',
-  describe: 'the same bytes, off this thread, on the right worker, and ' +
-            'nothing lost when one dies',
+  describe: 'the same bytes, off this thread, on the right worker, nothing ' +
+            'lost when one dies, and nothing left hanging when one simply ' +
+            'never answers',
 
   run: async function (t) {
 
@@ -374,5 +375,80 @@ module.exports = {
     // running is a test the next one has to reason about.
     await pool.stop();
     t.equal(pool.stats().running, 0, 'and the pool drains at the end');
+    // -----------------------------------------------------------------------
+    t.log.info('F. A JOB THAT DOES NOT COME BACK IS FAILED, NOT LEFT HANGING');
+    // -----------------------------------------------------------------------
+    // **THE POOL HAD NO BOUND AT ALL UNTIL 2026-09-11**, and the gap is the
+    // one this file's own subject line already claimed to cover: `reap()`
+    // rejects every job on a worker that DIES, and nothing covered a worker
+    // that stays ALIVE and never answers. One was observed doing exactly that
+    // — five idle children, no CPU anywhere in the process tree, the service
+    // answering every other request in eleven milliseconds, and one HTTP
+    // request parked until a test runner's 300-second watchdog killed the job.
+    //
+    // There is no way to make a real worker swallow a job, so the bound is
+    // driven from the other side: a genuinely slow job and a bound far shorter
+    // than it. **What is asserted is that the promise SETTLES**, not that it
+    // settles quickly — a pool that hangs and a pool that is slow are the two
+    // outcomes being told apart, and only one of them is a bug.
+    // **RESET FIRST.** Section E drives the give-up path, which leaves the
+    // pool computing in the front process — and work done here has no worker
+    // to time out, so the bound would not fire and this section would pass on
+    // a resolve, recording nothing. That is exactly how its first draft
+    // passed.
+    pool.reset();
+    await withWorkers(1, async function () {
+      const before = config.value('workers.jobTimeoutS');
+      config.setOverride('workers.jobTimeoutS', 1);
+      try {
+        // **A SIGNATURE AND NOT A KEYPAIR.** `pq.generate` for this
+        // algorithm finishes in about six hundred milliseconds, so a
+        // one-second bound never fired and the assertion below passed for the
+        // wrong reason — it recorded "resolved" and the bound went unchecked.
+        // SLH-DSA SIGNING is the slow half (the stalls this pool was built for
+        // were measured on it, at 15 to 23 seconds), so it is reliably longer
+        // than the bound on any machine.
+        //
+        // The worker goes on computing after the bound fires; it is not
+        // waited for, which is the point, and `withWorkers()` stops the pool
+        // on the way out.
+        const pair = pqJose.generate(SLOW_ALG);
+        const started = Date.now();
+        let settled = 'nothing';
+        try {
+          await pool.run('pq.sign',
+                         { alg: SLOW_ALG, priv: pair.priv, message: MESSAGE });
+          settled = 'resolved';
+        } catch (e) {
+          settled = /did not come back within/.test(e.message)
+            ? 'failed on the bound' : 'failed: ' + e.message;
+        }
+        const took = Date.now() - started;
+        t.check(settled !== 'nothing',
+                'the promise SETTLES rather than hanging, which is the whole ' +
+                'property', settled + ' in ' + took + 'ms');
+        t.check(!pool.stats().inProcess,
+                'a WORKER was used rather than the front process — work done ' +
+                'here has no worker to time out, so a bound cannot fire and ' +
+                'the check below would pass on a resolve',
+                JSON.stringify(pool.stats()));
+        t.check(settled === 'failed on the bound',
+                'and it is the BOUND that settled it, with a message naming ' +
+                'the worker and the job kind — a bound that never fires is a ' +
+                'bound nothing is checking', settled);
+        t.check(took < 30000,
+                'and it fired near the bound rather than at some other ' +
+                'timeout further out', took + 'ms');
+      } finally {
+        config.setOverride('workers.jobTimeoutS', before);
+      }
+    });
+
+    // AND THE BOUND IS OFF BY DEFAULT-ABLE: `0` restores exactly what this
+    // pool did before, which is the contract every switch in this service
+    // keeps about its own previous behaviour.
+    t.equal(typeof config.value('workers.jobTimeoutS'), 'number',
+            'the bound is a number of seconds and is settable');
+
   }
 };

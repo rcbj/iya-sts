@@ -37,35 +37,35 @@
 //     and the action names each of its four handlers accepts.
 //
 // ---------------------------------------------------------------------------
-// NOT PROTECTED, deliberately — AND THE CONSOLE NOW IS, so this paragraph is no
-// longer "exactly as the console is not" and the difference has to be argued
-// rather than assumed.
+// **PROTECTED SINCE 2026-09-09, AND THIS HEADER SAID THE OPPOSITE UNTIL THEN.**
+// It read "NOT PROTECTED, deliberately", and gave three reasons. Every one of
+// them was true and the third is what the change was for: anybody who could
+// reach this port could grant themselves both console roles here.
 //
-// `admin.authRequired` gates every page and form under /admin: a sign-on session
-// and one of two roles. It does NOT gate anything here, and that is three
-// decisions rather than an omission:
+// What gates it is an **OAuth 2.0 access token** audienced to this API —
+// `admin:read` to read, `admin:write` to change anything — which become the
+// built-in ADMIN_READ and ADMIN_WRITE roles, so the requirement is stated in the
+// same `access-control` document every other access decision here is. One
+// middleware on the base path covers every operation by construction.
 //
-//   * **A test drives this API.** The parent project's tests/vendored/admin_api.js walks
-//     every operation over HTTP with no browser and no cookie jar. A credential
-//     on this surface would be the only one a test had to hold a secret for, in
-//     a service whose premise is that it authenticates nobody.
-//   * **It is the way back in.** With `admin.openWhenEmpty` off and no role
-//     granted, NO browser can reach the console at all — the screen that grants
-//     the first role is behind the gate the role opens. `POST
-//     /admin-api/rbac/grant` is the only door out of that state, and one that
-//     needed a role would not be a door.
-//   * **The honest consequence, stated rather than buried:** anybody who can
-//     reach this port can grant themselves both roles here and then use the
-//     console. The gate is a turnstile for exercising a client's 302/401/403
-//     paths, not a lock — this service still checks no password anywhere and
-//     /oauth2/token will still mint a token for any username asked of it. Do
-//     not put this service on a public address.
+// **It is a DIFFERENT credential from the console's, not the same gate widened**,
+// and that distinction is the whole design: the console takes a browser session,
+// this takes a token. `adminApi.authRequired` is the off switch and restores the
+// open API exactly.
 //
-// If that ever needs to change it is a SEPARATE setting and a separate argument
-// (`admin.apiAuthRequired` was considered and not built), not a quiet extension
-// of admin.authRequired to this path — a test suite that started failing because
-// a console setting reached an API it never named would be the worst possible
-// way to find out.
+// **THE THREE REASONS IT WAS OPEN ARE KEPT VERBATIM IN `mgmt-api/CLAUDE.md`**
+// rather than here, because they are now the argument for that off switch and
+// an argument in two places is one that will disagree with itself. Both of the
+// things they were defending still hold: a test still drives this API — the
+// launchers mint a token before any job runs — and it is still the way back in
+// when nobody holds a console role.
+//
+// The prediction that header made came true to the letter and is worth reading
+// as one: it said that if this ever changed it would be a SEPARATE setting with
+// a separate argument (`admin.apiAuthRequired` was the name considered) and
+// never a quiet extension of `admin.authRequired` to this path. It was —
+// `adminApi.authRequired`, in a group of its own. `admin.authRequired` itself no
+// longer exists: `global.mode` replaced it on 2026-09-06.
 //
 // ---------------------------------------------------------------------------
 // Route order: this module must come AFTER admin.js, and that is a plain
@@ -92,6 +92,19 @@ const { log, parseBody, baseUrlOf, STS } = require('../common/helpers');
 const stsCrypto = require('../common/crypto');
 const roles = require('../common/roles');
 const admin = require('../admin-ui/admin');
+// THE PKI PAGE'S VIEW AND ITS FOUR ACTIONS. A PLAIN REQUIRE IN THE ORDINARY
+// DIRECTION, which is what rule 3e asks for when one is available: that module
+// is loaded at 18a — before this file — so this is a cache hit, and it
+// registers only `/admin/pki`, which is already in the router by now. Compare
+// `admin-ui/crypto_metadata.js`, which is at 20a and therefore needed a slot.
+const pkiAdmin = require('../admin-ui/pki_admin');
+// 18b, required in the ORDINARY DIRECTION for the same reason as the line
+// above: it registers `/admin/encryption` at its own require time, which
+// `common/protocol_stack.js` reaches before this file, so this is a cache
+// hit and moves no route.
+const encryptionAdmin = require('../admin-ui/encryption_admin');
+// 18c, same ordinary-direction require and the same reason.
+const databaseAdmin = require('../admin-ui/database_admin');
 // The setting table, for the two narrow doors' request schemas: their
 // properties are BUILT from the keys those doors refuse against, and the
 // TYPE of each comes from the row config.js already holds for it. See
@@ -817,6 +830,90 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'arrangement this service is used in. Its `source` is ' +
                  '`default` for that reason and for no other. The DCQL query ' +
                  'itself is `GET /verifier-request`.' },
+  // THE TWO SECOND FACTORS (2026-09-10). Rule 7: `/admin/totp` and
+  // `/admin/webauthn` arrived on the console and owe an operation in the same
+  // change. Both replies carry the page's `status` block — the MECHANISM, read
+  // from the module that performs it — beside the settings, which is why they
+  // are worth fetching rather than reading `GET /config`.
+  { path: '/totp', console: '/admin/totp', tag: 'TOTP MFA',
+    operationId: 'getTotpSettings',
+    summary: 'The authenticator-app second factor\'s settings',
+    description: 'The eight `totp.*` settings — the HMAC digest, the digits, ' +
+                 'the seconds in a step, the steps of clock skew forgiven, ' +
+                 'the shared secret length, the label an app shows, whether ' +
+                 'new enrolments are offered at all, and how long an ' +
+                 'unconfirmed one lives — with the RFC 6238 algorithm table ' +
+                 'in `status`, read from `common/totp.js` rather than written ' +
+                 'down here.\n\n**CHANGING THE DIGEST, THE DIGITS OR THE ' +
+                 'PERIOD AFFECTS NEW ENROLMENTS ONLY.** An existing secret is ' +
+                 'verified with the parameters it was enrolled under — the ' +
+                 'ones the QR code told the app — because this service cannot ' +
+                 'change them retrospectively. `totp.window` is the exception ' +
+                 'and applies to everybody.\n\n**Codes are verified FOR REAL ' +
+                 'in both modes**, which almost nothing else in this service ' +
+                 'is. Who holds an enrolment is `GET /users` (or `GET /mfa`), ' +
+                 'and clearing one is `POST /users/clear-totp`.\n\nThese eight ' +
+                 'were on `GET /admin-api/mfa` until 2026-09-10, when the ' +
+                 'console page that drew them split into a mechanism page and ' +
+                 'a roster.' },
+  // THE THIRD MECHANISM (2026-09-10). Rule 7 again: `/admin/backup-codes`
+  // arrived on the console and owes an operation in the same change.
+  { path: '/backup-codes', console: '/admin/backup-codes',
+    tag: 'Recovery codes', operationId: 'getBackupCodesSettings',
+    summary: 'The recovery-code mechanism\'s settings, and what a code is',
+    description: 'The four `backupCodes.*` settings — whether a set is issued ' +
+                 'at all, how many codes are in one, how long each is, and ' +
+                 'how it is broken up for reading — with the mechanism itself ' +
+                 'in `status`, read from `common/backup_codes.js` rather than ' +
+                 'written down here.\n\n**THIS IS THE ONLY MECHANISM IN THIS ' +
+                 'SERVICE THAT NO SPECIFICATION DEFINES.** There is no RFC for ' +
+                 'a recovery code, so `status` has no specification column: ' +
+                 'every field in it is a decision this service made, and ' +
+                 '`bitsPerCode` is the one worth reading first.\n\n**A SET ' +
+                 'IS ISSUED AUTOMATICALLY AND ONCE**, by the act of enrolling ' +
+                 'a second factor. Nothing on this API issues one on request ' +
+                 'and nothing on it reads a code back; `POST ' +
+                 '/users/clear-backup-codes` deletes a set, which is the only ' +
+                 'route to a second one.\n\n**CHANGING THESE AFFECTS NEW SETS ' +
+                 'ONLY, AND NO EXISTING SET IS INVALIDATED** — unlike ' +
+                 '`totp.*`, this needs no paragraph about enrolments, because ' +
+                 'nothing here was told to an app this service cannot reach. A ' +
+                 'recovery code is a string compared against a stored string.\n\n' +
+                 'Who holds a set is `GET /users`, which reports the counts ' +
+                 'and never the codes.' },
+  { path: '/webauthn', console: '/admin/webauthn', tag: 'WebAuthn',
+    operationId: 'getWebauthnSettings',
+    summary: 'The security-key ceremony\'s settings, and what a key may be here',
+    description: 'The thirteen `webauthn.*` settings, in three kinds. **THE ' +
+                 'CEREMONY**: the RP name, the RP ID override, the algorithms ' +
+                 'offered, the user verification requirement, the attestation ' +
+                 'conveyance and the timeout — handed to the browser in the ' +
+                 '`PublicKeyCredential` options. **CTAP2**: the authenticator ' +
+                 'attachment, whether the credential is discoverable (a ' +
+                 'resident key), and whether `credProps` is asked for. ' +
+                 '**POLICY**: whether a key may be a primary credential, ' +
+                 'whether it may be a second factor, and how many one person ' +
+                 'may hold — which are not WebAuthn at all but what THIS ' +
+                 'service does with a key.\n\n**NOT ONE OF THESE EXISTED ' +
+                 'UNTIL 2026-09-10.** Every ceremony parameter was a literal ' +
+                 'in a string in `authn/authn.js`, and this service said ' +
+                 'there was nothing an operator could usefully turn — true of ' +
+                 'the cryptography and false of the ceremony.\n\n**ONE IS ' +
+                 'ENFORCED AND THE REST ARE REQUESTS.** ' +
+                 '`webauthn.userVerification` is sent to the browser AND ' +
+                 'checked against the UV flag when the ceremony returns, ' +
+                 'because that flag is inside the bytes the authenticator ' +
+                 'signed. Nothing signed says what the browser was asked ' +
+                 'about attestation, the resident key or the attachment, so a ' +
+                 'check on those would compare against a value this service ' +
+                 'itself supplied — what it does instead is RECORD what came ' +
+                 'back.\n\n**NO ATTESTATION STATEMENT IS VERIFIED** whatever ' +
+                 'is asked for: there is no metadata service here, no vendor ' +
+                 'trust anchor and no model allow-list. `status` carries the ' +
+                 'COSE algorithm table, read from `authn/webauthn.js` — the ' +
+                 'module that checks the signature — with the offered ones ' +
+                 'marked.\n\nWho holds a key is `GET /users`, and removing ' +
+                 'one is `POST /users/clear-key`.' },
   { path: '/kerberos', console: '/admin/kerberos', tag: 'Kerberos',
     operationId: 'getKerberosSettings',
     summary: 'The KDC\'s own settings',
@@ -1175,6 +1272,173 @@ const ROUTES = [
       }
       sendJson(res, 200, report);
       log.debug("Leaving the management API crypto metadata endpoint.");
+    } },
+
+  // ---------------------------------------------------------------------
+  // THE ENCRYPTION REPORT. `encryptionAdmin.encryptionView()` and nothing of
+  // its own, which is rule 7 read the same strict way the crypto report above
+  // it is: the console page and this operation must not be able to report
+  // different NUMBERS for the same counters, and one function is the only way
+  // to make that impossible.
+  //
+  // **IT NEEDS NO 503 BRANCH, unlike the operation above it**, and the
+  // difference is worth stating rather than looking like an omission: that one
+  // reaches its reporter across an inverted hook that a process may not have
+  // filled, and this one reaches a module it requires directly. There is no
+  // state in which the route exists and the function does not.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/encryption', tag: 'Service',
+    operationId: 'getEncryption',
+    summary: 'What this service encrypts at rest, and how much of it it has ' +
+             'done',
+    description: 'The at-rest half of this service\'s cryptography: which ' +
+                 'data is sealed, where it lives, under which key and which ' +
+                 'algorithm, and how many encryptions and decryptions have ' +
+                 'happened in this process.\n\nIT IS NOT GET ' +
+                 '/admin-api/crypto WITH FEWER FIELDS. That one answers what ' +
+                 'this service DOES when it signs or encrypts — per protocol ' +
+                 'family, read out of the module that performs each ' +
+                 'algorithm — and reads identically on a service that ' +
+                 'started a second ago. This one is TRAFFIC: `accounting` ' +
+                 'goes up while something is happening, counted at the one ' +
+                 'funnel both operations pass through rather than at the ' +
+                 'call sites, because a total assembled from call sites is ' +
+                 'wrong the first time somebody adds another one and is ' +
+                 'wrong silently.\n\n`classes` LISTS WHAT IS DELIBERATELY ' +
+                 'NOT SEALED BESIDE WHAT IS, each with the reason — ' +
+                 'passwords are hashed rather than encrypted, which is ' +
+                 'stronger; client secrets are in the clear because a ' +
+                 'federation secret is SENT to somebody else\'s token ' +
+                 'endpoint; the post-quantum keys, the TLS certificate and ' +
+                 'the SPIFFE authorities are not persisted at all, so there ' +
+                 'is nothing at rest to seal. A list of only the yeses would ' +
+                 'answer "is X encrypted" by silence.\n\nTHE COUNTERS ARE ' +
+                 'PROCESS-WIDE AND NOT PER REALM — a key-encryption key ' +
+                 'belongs to the process — and they are in memory, so a ' +
+                 'restart is how you get an empty one. Under `workers.' +
+                 'requestCount` each request worker keeps its own, so a ' +
+                 'dispatched service answers this from whichever worker took ' +
+                 'the call.\n\nNO CIPHERTEXT AND NO PLAINTEXT IS IN THE ' +
+                 'REPLY, and there is no operation anywhere that opens a ' +
+                 'sealed value on request: a sealed value is a private key, ' +
+                 'an authenticator\'s shared secret or somebody\'s recovery ' +
+                 'codes. `key.where` names the PROVIDER the key-encryption ' +
+                 'key is read from and never the key.\n\n**`boundaries` IS ' +
+                 'THE PART TO READ BEFORE ACTING ON THE REST**, and it is in ' +
+                 'this reply rather than in a document because a machine ' +
+                 'reader has no page to have read it on. Two limits and one ' +
+                 'deployment mistake: there is ONE key-encryption key for the ' +
+                 'service and NOT one per trust realm (`perRealmKey: false`), ' +
+                 'so a realm is not a cryptographic boundary at rest and ' +
+                 'rotating the key rotates every realm; everything NOT in ' +
+                 '`classes` is plaintext in the store, because the layer that ' +
+                 'covers a whole database belongs under it rather than inside ' +
+                 'it (a column-level answer leaves plaintext in the WAL, in ' +
+                 'spilled sorts, in a pg_dump, on replicas and in query logs) ' +
+                 '— that layer is the operator\'s and ' +
+                 'docs/encryption-at-rest.md is the write-up; and the key ' +
+                 'must not live on the volume it protects, which is what the ' +
+                 '`file` provider invites and why every other provider ' +
+                 'exists.',
+    mirrors: 'GET /admin/encryption',
+    responseDescription: 'The whole report.',
+    responseSchema: { type: 'object',
+      description: 'The encryption report: `mode`, `key` (present, durable ' +
+                   'or ephemeral, and which provider), `algorithm` (read ' +
+                   'from common/crypto.js\'s own table), `store`, `classes` ' +
+                   '(what is sealed and what is not, each with its counts), ' +
+                   '`accounting` (the totals and the breakdown by label), ' +
+                   '`unclassified` (labels counted that the page has no row ' +
+                   'for, reported rather than dropped) and `boundaries` — ' +
+                   'the two limits of everything else in the reply, as ' +
+                   'sentences plus the one field worth asserting on ' +
+                   '(`perRealmKey: false`).' },
+    handler: function (req, res) {
+      log.debug("Entering the management API encryption report endpoint.");
+      sendJson(res, 200, encryptionAdmin.encryptionView(req));
+      log.debug("Leaving the management API encryption report endpoint.");
+    } },
+
+  // ---------------------------------------------------------------------
+  // THE DATABASE REPORT. `databaseAdmin.databaseView()` and nothing else,
+  // which is rule 7 read the strict way: the page and this operation must not
+  // be able to report different numbers, and one function is the only way to
+  // make that impossible.
+  //
+  // **IT IS THE ONE OPERATION ON THIS API WHOSE REPLY SHAPE IS DECIDED BY
+  // SOMETHING OUTSIDE THIS SERVICE**, and a client has to be told so rather
+  // than discovering it: the members under `probes.*.row` and `probes.*.rows`
+  // are PostgreSQL's own columns, so they differ between major versions. A
+  // client reading a named column should treat its absence as ordinary.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/database', tag: 'Service',
+    operationId: 'getDatabase',
+    summary: 'Everything PostgreSQL reports about itself, and this ' +
+             'service\'s schema in it',
+    description: 'Twenty probes against PostgreSQL\'s catalog views, each ' +
+                 'run, timed and caught SEPARATELY: the server and its ' +
+                 'uptime, the database size, every counter in ' +
+                 '`pg_stat_database`, the backends and locks, the background ' +
+                 'writer, the checkpointer, the write-ahead log and the ' +
+                 'archiver, then per-table and per-index statistics, sizes, ' +
+                 'columns and constraints for the schema this service ' +
+                 'owns.\n\n**THE COLUMNS ARE THE SERVER\'S AND NOT THIS ' +
+                 'API\'S.** Every statement is a `SELECT *`, because ' +
+                 'PostgreSQL moves these views between major versions — ' +
+                 '`pg_stat_bgwriter` has eleven columns on 16 and four on 17 ' +
+                 'and later, when the checkpoint counters moved to a view ' +
+                 'that does not exist before 17. So a client reading a named ' +
+                 'column must treat its absence as ordinary rather than as ' +
+                 'an error, and the reply is the right place to learn what ' +
+                 'this server actually has.\n\n**A PROBE THAT FAILED IS A ' +
+                 'MEMBER AND NOT AN ABSENCE**: `probes.<id>.ok` is false and ' +
+                 '`code` carries PostgreSQL\'s SQLSTATE, because 42P01 (no ' +
+                 'such relation — an older server) and 42501 (insufficient ' +
+                 'privilege — this service does not hold `pg_monitor`) are ' +
+                 'completely different things to do something about. `failed` ' +
+                 'lists them.\n\n`derived` carries four RATIOS PostgreSQL ' +
+                 'deliberately does not keep — cache hit, rollback share, ' +
+                 'dead-tuple share, and indexes nothing has ever scanned — ' +
+                 'all of them cumulative since `stats_reset`, which is in ' +
+                 'the reply beside them. `schemaDrift` is the one ASSERTION ' +
+                 'here rather than a measurement: the objects the driver ' +
+                 'declares against the ones the server actually has, a check ' +
+                 'nothing else in this service makes.\n\n**IT ANSWERS 200 ' +
+                 'WITH `available: false` WHEN THERE IS NO DATABASE**, which ' +
+                 'is the ordinary case: `persistence.mode` defaults to ' +
+                 '`memory`. That is not an error — the question was ' +
+                 'answerable and the answer is that there is nothing to ' +
+                 'report — and `why` says which of three reasons it ' +
+                 'is.\n\nNOTHING HERE CHANGES ANYTHING and no connection ' +
+                 'string is in the reply: `target` names the host, port, ' +
+                 'database and user, parsed by the one function in this ' +
+                 'service that already does that without printing the ' +
+                 'password.',
+    mirrors: 'GET /admin/database',
+    responseDescription: 'The whole report.',
+    responseSchema: { type: 'object',
+      description: 'The database report: `available` and `why`, `target`, ' +
+                   '`pool` (this process\'s client-side pool, sampled before ' +
+                   'the page borrows a connection), `probes` keyed by probe ' +
+                   'id with the server\'s own columns inside, `derived`, ' +
+                   '`schemaDrift` and `failed`.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API database report endpoint.");
+      // **AWAITED, AND THE HANDLER CATCHES.** Express 4 does not look at what
+      // a handler returns, so a rejection here would be an unhandled
+      // rejection and a request that never gets an answer — the same trap the
+      // token endpoint's wrapper exists for. This is the only operation on
+      // this API that talks to a database, so it is the only one that can
+      // reject for a reason outside this process.
+      databaseAdmin.databaseView().then(function (report) {
+        sendJson(res, 200, report);
+        log.debug("Leaving the management API database report endpoint.");
+      }).catch(function (e) {
+        sendJson(res, 500, { ok: false, errors: [
+          'The database report could not be built: ' +
+          (e && e.message ? e.message : String(e))] });
+        log.debug("Leaving the management API database report endpoint. It threw.");
+      });
     } },
 
   // ---------------------------------------------------------------------
@@ -1568,7 +1832,12 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API users action endpoint.");
       const body = parseBody(req);
-      const result = admin.usersAction(withAction(req, body));
+      // `via: 'api'` and whatever actor the caller named, for the audit rows
+      // the two second-factor clears write — the same honesty `rbacAction`'s
+      // caller keeps: this API authenticates a CLIENT rather than a person, so
+      // an empty actor is the true answer rather than an inconvenient one.
+      const result = admin.usersAction(withAction(req, body),
+                                       { via: 'api', actor: '' });
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API users action endpoint.");
     },
@@ -1808,7 +2077,120 @@ const ROUTES = [
         responseDescription: 'Whether it was set, and — only where it was ' +
                              'GENERATED — the password, once. A password you ' +
                              'sent is never echoed back: you already hold it, ' +
-                             'and returning it would put it in a second place.' }
+                             'and returning it would put it in a second place.' },
+
+      // -----------------------------------------------------------------
+      // THE TWO SECOND-FACTOR REMOVALS (2026-09-10). They are `POST
+      // /admin-api/mfa/clear-totp` and `/clear-key` as well — the same two
+      // acts through the same switch — and both spellings work because the
+      // console control moved and a caller's script did not.
+      //
+      // **THERE IS NO ENROL BESIDE THEM AND THERE CANNOT BE.** Enrolling an
+      // authenticator means being shown a shared secret, and a management
+      // API that handed one out would be an administrative door that mints a
+      // working second factor for any account — which is not a second factor
+      // at all. A WebAuthn ceremony happens in the person's own browser
+      // against their own authenticator, which no API can stand in for.
+      // Both are `/portal`, or `/portal/activate` with a link that is itself
+      // a credential.
+      // -----------------------------------------------------------------
+      { action: 'clear-totp', operationId: 'clearUserAuthenticatorApp',
+        summary: 'Clear somebody\'s authenticator app enrolment',
+        description: '**THE ONLY WAY BACK FOR SOMEBODY WHO HAS LOST THEIR ' +
+                     'PHONE.** The shared secret lives on that device and ' +
+                     'this service cannot reach it, and there is deliberately ' +
+                     'no self-service reset anywhere — a second factor ' +
+                     'anybody can remove is not a second factor.\n\nIt ' +
+                     'CANNOT lock anybody out: a one-time code is never a ' +
+                     'primary credential here, so clearing one drops the ' +
+                     'account to one factor rather than to none. The person ' +
+                     'sets a new one up at `/portal/mfa`.\n\nClearing an ' +
+                     'enrolment nobody holds answers 400 rather than 200: the ' +
+                     'caller asked to clear a specific thing and it was not ' +
+                     'there.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description: 'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whose enrolment was cleared.' },
+
+      // -----------------------------------------------------------------
+      // THE THIRD REMOVAL (2026-09-10), AND IT IS ALSO THE ONLY ISSUING
+      // CONTROL THIS API HAS FOR RECOVERY CODES.
+      //
+      // There is no `issue-backup-codes` beside it and there will not be, for
+      // the reason the two above have no `enrol`: a set is created by the ACT
+      // of enrolling a second factor and by nothing else, and a management
+      // API that minted one would be an administrative door handing a working
+      // second factor to any account. What this operation does is DELETE a
+      // set, which re-arms the automatic issue — the next second factor that
+      // person enrols creates a new one.
+      // -----------------------------------------------------------------
+      { action: 'clear-backup-codes', operationId: 'clearUserBackupCodes',
+        summary: 'Clear somebody\'s recovery codes',
+        description: '**THE ONLY ROUTE TO A SECOND SET.** A set is issued ' +
+                     'automatically, and ONCE, the first time somebody ' +
+                     'asks for one from the user portal; ' +
+                     'does nothing while a set exists, so clearing is what ' +
+                     'lets the next enrolment issue one.\n\n**It cannot lock ' +
+                     'anybody out** — a recovery code is never a way in on ' +
+                     'its own — but it removes the way BACK, so somebody ' +
+                     'whose set is cleared and who then loses their phone ' +
+                     'needs an operator again.\n\n**There is no operation ' +
+                     'that READS the codes and there will not be.** They are ' +
+                     'a working second factor; `GET /users` reports how many ' +
+                     'remain and never what they are. The person reads their ' +
+                     'own set back on `/portal/mfa`, which is the only place ' +
+                     'in this service that shows one.\n\nClearing a set ' +
+                     'nobody holds answers 400 rather than 200, for ' +
+                     '`clear-totp`\'s reason.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description: 'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whose set was cleared.' },
+
+      { action: 'clear-key', operationId: 'clearUserSecurityKey',
+        summary: 'Remove one of somebody\'s security keys',
+        description: 'Goes through the same `removeKey()` the person\'s own ' +
+                     'portal calls, which is what carries the refusal that ' +
+                     'matters: **it will not remove the last way in.** A ' +
+                     'person with no password whose only PRIMARY key this is ' +
+                     'would be locked out by an operator\'s call, and an ' +
+                     'operator must not be able to do what the owner is ' +
+                     'stopped from doing.\n\nThe credential id is the ' +
+                     'base64url one on this person\'s `factors.keys`, on ' +
+                     '`GET /admin-api/mfa`\'s rows, and on `/portal/keys`.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string' },
+            username: { type: 'string', description: 'Accepted for `user`.' },
+            credentialId: { type: 'string',
+                            description: 'base64url, as WebAuthn produced it.' }
+          },
+          required: ['user', 'credentialId'],
+          examples: [{ user: 'alice', credentialId: 'q1w2e3r4' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether the key was removed, or why it was not.' }
     ] },
 
   // ---------------------------------------------------------------------
@@ -2635,18 +3017,19 @@ const ROUTES = [
   // LESS. Rule 7 says a console control gets an operation in the same change;
   // here the API half is not merely parity, it is the ONLY door onto the roster
   // that still works when nobody holds a role and `admin.openWhenEmpty` is off.
-  // The console cannot let you fix that — you cannot reach it — so this can, and
-  // `/admin-api` is deliberately not gated by `admin.authRequired`.
+  // The console cannot let you fix that — you cannot reach it — so this can. It
+  // reaches it with a DIFFERENT credential: an access token carrying
+  // `admin:write`, rather than the console session the roster gates.
   //
-  // Which is worth saying plainly rather than leaving to be discovered: WITH THE
-  // CONSOLE PROTECTED AND THIS API OPEN, ANYBODY WHO CAN REACH THIS PORT CAN
-  // GRANT THEMSELVES BOTH ROLES. That is not an oversight in the gate, it is the
-  // same decision the whole service is built on — this is a mock whose value is
-  // exercising clients, the management API is how a test drives it, and a port
-  // that mints a token for any username asked of it is not made safe by a
-  // password on one of its web pages. The gate exists so a client can be driven
-  // through 302 / 401 / 403 and a role model, not to make this service safe to
-  // expose. Do not put this port on a public address.
+  // **THIS COMMENT SAID `/admin-api` WAS UNGATED AND THAT WAS TRUE UNTIL
+  // 2026-09-09.** It went on: WITH THE CONSOLE PROTECTED AND THIS API OPEN,
+  // ANYBODY WHO CAN REACH THIS PORT CAN GRANT THEMSELVES BOTH ROLES — which is
+  // exactly what `adminApi.authRequired` closed. What has NOT changed is that
+  // the console's gate exists so a client can be driven through 302 / 401 / 403
+  // and a role model, not to make this service safe to expose: in the default
+  // development mode no password is checked anywhere and `/oauth2/token` will
+  // mint a token for any username asked of it. Do not put this port on a public
+  // address.
   { method: 'GET', path: BASE + '/rbac', tag: 'Admin roles',
     operationId: 'getAdminRoles',
     summary: 'Who may use the admin console, and how the gate is set',
@@ -2667,9 +3050,10 @@ const ROUTES = [
                  'rather than closes. `admin.openWhenEmpty` turns that off, ' +
                  'and `closedToEveryone` reports the state it produces: a ' +
                  'console no browser can reach, which is what this resource ' +
-                 'is the way out of.\n\nNONE OF IT IS IN FORCE while ' +
-                 '`admin.authRequired` is off (`enforced: false`). The ' +
-                 'grants are still real and can be made in advance.',
+                 'is the way out of.\n\n`enforced` reports whether the roster ' +
+                 'decides anything. It is always true now — the console gate ' +
+                 'became unconditional on 2026-09-06 — and the field is kept ' +
+                 'because a client reading it should not have to know that.',
     mirrors: 'GET /admin/rbac',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -2773,6 +3157,156 @@ const ROUTES = [
         },
         responseDescription: 'What was removed, and whether the roster is ' +
                              'now empty.' }
+    ] },
+
+
+  // ---------------------------------------------------------------------
+  // MULTI-FACTOR AUTHENTICATION (2026-09-10).
+  //
+  // **THE CONSOLE PAGE THIS MIRRORED IS GONE AND THIS RESOURCE IS NOT.**
+  // `/admin/mfa` lasted hours: it edited the `totp.*` settings AND drew a
+  // roster of who held a second factor, and one page could not be filed by
+  // both halves. The settings are `/admin/totp` and `/admin/webauthn` under
+  // Protocols; the roster is columns on `/admin/users` and the per-person
+  // detail is on that person's own row.
+  //
+  // Rule 7 says a console control owes an operation. It says nothing about an
+  // operation whose page moved, and deleting a working one to tidy a table
+  // would be a regression dressed as consistency — the same argument `GET
+  // /admin-api/users/new` is kept on. So this stays, `mirrors` points at the
+  // page that absorbed it, and `admin.mfaView()` answers OUT OF THAT VIEW so
+  // there is one tally rather than two scans that agree until they do not.
+  //
+  // **THE READ IS A REPORT AND THE WRITE IS A RESET**, and there is
+  // deliberately no ENROL operation here. Enrolling means being shown a shared
+  // secret, and a management API that handed one out would be an
+  // administrative door that mints a working second factor for any account —
+  // which is not a second factor at all. Enrolment happens where the person
+  // is: `/portal/mfa`, or `/portal/activate` with a link that is itself a
+  // credential.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/mfa', tag: 'Multi-factor authentication',
+    operationId: 'getMultiFactor',
+    summary: 'Who holds a second factor, and how RFC 6238 is configured here',
+    description: 'One row per person — this realm\'s directory people and ' +
+                 'everybody this service has SEEN, unioned — saying whether ' +
+                 'they hold a password, how many security keys are marked as ' +
+                 'a SECOND factor, and whether an authenticator app is ' +
+                 'enrolled.\n\n**TWO MECHANISMS COUNT AS A SECOND FACTOR ' +
+                 'HERE**: a WebAuthn credential enrolled in the `mfa` role, ' +
+                 'and an RFC 6238 authenticator app. A person holding either ' +
+                 'is asked for it at the sign-in screen and a password alone ' +
+                 'will not sign them in; `secondFactor` says which one they ' +
+                 'will be asked for, and somebody holding both is asked for ' +
+                 'the key with the code offered as the alternative.\n\n' +
+                 '**`totpUsable: false` IS THE ROW TO LOOK FOR.** It means ' +
+                 'an enrolment exists that this process cannot read — almost ' +
+                 'always a shared secret sealed under a key-encryption key ' +
+                 'that has since been rotated. Those people are REFUSED at ' +
+                 'the code step rather than let through on one factor, so ' +
+                 'they cannot sign in at all until the enrolment is ' +
+                 'cleared.\n\n**CODES ARE VERIFIED FOR REAL IN BOTH MODES**, ' +
+                 'which almost nothing else in this service is. `totp` ' +
+                 'carries the algorithm table, read from the module that ' +
+                 'performs the algorithm.\n\nThe scan stops at 5,000 people ' +
+                 '(`capped`), because reading a credential per person happens ' +
+                 'on the one thread that answers every socket this service ' +
+                 'holds.',
+    mirrors: 'GET /admin/users',
+    parameters: [
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of the person\'s name, case-insensitive.' },
+      { name: 'factor', in: 'query', required: false,
+        schema: { type: 'string',
+                  enum: ['any', 'totp', 'key', 'none'] },
+        description: '`any` is anybody holding a second factor of either ' +
+                     'kind; `none` is the complement of it.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The roster, the counts, and the RFC 6238 settings.',
+    handler: function (req, res) {
+      log.debug("Entering the management API multi-factor endpoint.");
+      sendJson(res, 200, admin.mfaView(req).json);
+      log.debug("Leaving the management API multi-factor endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/mfa/:action',
+    tag: 'Multi-factor authentication',
+    mirrors: 'POST /admin/users',
+    handler: function (req, res) {
+      log.debug("Entering the management API multi-factor action endpoint.");
+      const body = parseBody(req);
+      // `via: 'api'` and whatever actor the caller named, for the audit row —
+      // the same honesty `rbacAction`'s caller keeps: this API authenticates a
+      // CLIENT rather than a person, so an empty actor is the true answer
+      // rather than an inconvenient one.
+      const result = admin.mfaAction(withAction(req, body),
+                                     { via: 'api', actor: '' });
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API multi-factor action endpoint.");
+    },
+    actions: [
+      { action: 'clear-totp', operationId: 'clearAuthenticatorApp',
+        summary: 'Clear somebody\'s authenticator app enrolment',
+        description: '**THE ONLY WAY BACK FOR SOMEBODY WHO HAS LOST THEIR ' +
+                     'PHONE.** The shared secret lives on that device and ' +
+                     'this service cannot reach it, and there is deliberately ' +
+                     'no self-service reset anywhere — a second factor ' +
+                     'anybody can remove is not a second factor.\n\nIt ' +
+                     'CANNOT lock anybody out: a one-time code is never a ' +
+                     'primary credential here, so clearing one drops the ' +
+                     'account to one factor rather than to none. The person ' +
+                     'sets a new one up at `/portal/mfa`.\n\nClearing an ' +
+                     'enrolment nobody holds answers 400 rather than 200, ' +
+                     'because unlike a role grant there is no idempotent ' +
+                     'reading of it that is useful: the caller asked to ' +
+                     'clear a specific thing and it was not there.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            username: { type: 'string',
+                        description: 'The name they sign in as.' },
+            // BOTH SPELLINGS, because this action and
+            // `POST /admin-api/users/clear-totp` are ONE SWITCH reached two
+            // ways — and the users resource names the person `user`, as every
+            // other operation on it does. A schema that took one spelling
+            // here and the other there would refuse a caller that had merely
+            // followed the other path's example, with a message about a
+            // member of the request rather than about the person.
+            user: { type: 'string', description: 'Accepted for `username`.' }
+          },
+          required: ['username'],
+          examples: [{ username: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whose enrolment was cleared.' },
+
+      { action: 'clear-key', operationId: 'clearSecurityKey',
+        summary: 'Remove one of somebody\'s security keys',
+        description: 'Goes through the same `removeKey()` the person\'s own ' +
+                     'portal calls, which is what carries the refusal that ' +
+                     'matters: **it will not remove the last way in.** A ' +
+                     'person with no password whose only PRIMARY key this is ' +
+                     'would be locked out by an operator\'s call, and an ' +
+                     'operator must not be able to do what the owner is ' +
+                     'stopped from doing.\n\nThe credential id is the ' +
+                     'base64url one on `GET /admin-api/mfa`\'s rows and on ' +
+                     '`/portal/keys`.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            username: { type: 'string' },
+            // See `clear-totp` above: one switch, two paths, one body shape.
+            user: { type: 'string', description: 'Accepted for `username`.' },
+            credentialId: { type: 'string',
+                            description: 'base64url, as WebAuthn produced it.' }
+          },
+          required: ['username', 'credentialId'],
+          examples: [{ username: 'alice', credentialId: 'q1w2e3r4' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many keys are left.' }
     ] },
 
   { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
@@ -8020,6 +8554,997 @@ const ROUTES = [
   // forgotten — a console that could zero its own monitoring would make every
   // number on it a number somebody might have zeroed, and the audit log, which
   // is the durable record, cannot be reset either.
+  // ---------------------------------------------------------------------------
+  // PKI — the certificate authority this service maintains per trust realm.
+  //
+  // Rule 7: `/admin/pki` has four controls, so this API has the same four
+  // through the SAME functions — `pkiAction()` in `admin-ui/pki_admin.js` —
+  // and decides nothing that console does not.
+  //
+  // **THE MODULE IS REQUIRED IN THE ORDINARY DIRECTION AND NEEDS NO SLOT**,
+  // which is the one thing about this resource worth knowing. That module sits
+  // at 18a in `common/protocol_stack.js` — after `admin-ui/admin` and BEFORE
+  // this file — so by the time this require runs it is a cache hit and
+  // registers nothing. It requires only `admin.js` and `common/pki.js`, and
+  // `pki.js` is a LIBRARY (rule 3), so there is no route this could move and
+  // no cycle it could close.
+  // ---------------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/pki', tag: 'PKI',
+    operationId: 'getPki',
+    summary: 'The certificate authority this trust realm holds, and what has ' +
+             'been issued from it',
+    description: 'Everything /admin/pki draws: the three CA tiers with their ' +
+                 'subjects, serials, validity, key and signature algorithms, ' +
+                 'thumbprints and CERTIFICATES; the key and signature ' +
+                 'algorithms a build may ask for; the two assertion ' +
+                 'PROFILES a key pair may be issued for, with the attributes ' +
+                 'each one writes; and every application in this realm that ' +
+                 'holds an issued key pair or declares an assertion issuer — ' +
+                 '**ONE ROW PER APPLICATION AND PER PROFILE**, so an ' +
+                 'application holding both an RFC 7523 and an RFC 7522 key ' +
+                 'pair appears twice. A single row with a pair of columns was ' +
+                 'the first shape of this and was wrong for a reason worth ' +
+                 'keeping: every fact on it — the key handle, the expiry, the ' +
+                 'declared issuer, whether there is a key pair to take off — ' +
+                 'is per profile.\n\n**NO PRIVATE KEY IS EVER IN THIS ' +
+                 'REPLY.** `common/pki.js` drops every one of them on the way ' +
+                 'out, so a caller here could not leak the Root\'s key by ' +
+                 'forgetting. The CERTIFICATES are in full, because a ' +
+                 'certificate is the half of a key pair that is meant to be ' +
+                 'handed around and the Root is the one thing a relying party ' +
+                 'has to be given out of band. An application\'s own private ' +
+                 'key is on its directory entry as ' +
+                 '`oauthAssertionPrivateKey`, sealed under the same ' +
+                 'key-encryption key as the hierarchy wherever that key ' +
+                 'outlives the process, and opened for a caller that holds ' +
+                 'a credential.\n\n**IT IS PER ' +
+                 'REALM.** A trust realm is a logical identity service with ' +
+                 'its own signing key and its own applications, so a CA ' +
+                 'shared across realms would be one authority vouching for ' +
+                 'several services. Reach this under a realm prefix for that ' +
+                 'realm\'s hierarchy.\n\n**AND SO IS `tree`, SINCE ' +
+                 '2026-09-11 — IT NARROWED AND THIS IS THE RECORD OF IT.** ' +
+                 'It carried the Root, the process branch and EVERY REALM\'S ' +
+                 'Intermediate for a day; it now carries the Root, the ' +
+                 'process branch (TLS and SPIFFE, which certify sockets ' +
+                 'every realm answers on) and the Intermediate of the realm ' +
+                 'THIS REQUEST WAS REACHED IN, with its Issuing CAs. ' +
+                 '`revocation` narrowed with it, so a Revoke here can only ' +
+                 'name an authority this realm is under. Reach the resource ' +
+                 'under another realm\'s prefix for that realm\'s branch — ' +
+                 'which is the same answer the console gives, because this ' +
+                 'reply and that page are one function.\n\n**REVOCATION IS PUBLISHED AND ' +
+                 'NEVER CONSULTED, SINCE 2026-09-11.** Every authority signs ' +
+                 'a CRL (/pki/crl/{scope}/{ca}) and answers OCSP ' +
+                 '(/pki/ocsp/{scope}/{ca}); `revocation` in the reply is the ' +
+                 'REGISTER — one entry per authority with what it issued, ' +
+                 'what is on its list, and its addresses in three schemes — ' +
+                 'and `revocation-certificate` below puts a serial on one. ' +
+                 'What this service does NOT do is consult a list, its own ' +
+                 'included, so a certificate revoked here still ' +
+                 'authenticates here. **AND `revoke` BELOW IS A DIFFERENT ' +
+                 'ACT WITH THE SAME WORD IN IT**: it takes a key pair off an ' +
+                 'application and puts nothing on any list. ' +
+                 '`revocationNote` and `residency` are the durable ' +
+                 'statement of what each means.',
+    mirrors: 'GET /admin/pki',
+    responseDescription: 'The hierarchy, the algorithm vocabularies, the two ' +
+                         'assertion profiles, and one row per application per ' +
+                         'profile for those holding an issued key pair.',
+    handler: function (req, res) {
+      log.debug("Entering the management API PKI endpoint.");
+      sendJson(res, 200, pkiAdmin.pkiView(req));
+      log.debug("Leaving the management API PKI endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/pki/:action', tag: 'PKI',
+    // TWO CONSOLE PATHS, because the pane answers with a PAGE rather than a
+    // redirect and needs a route of its own to do it. This field is how the
+    // console suite builds "console paths that take a POST", so a control
+    // posting somewhere other than its list page has to be named here or that
+    // check quietly stops covering it — which is what /admin/users/new
+    // records.
+    mirrors: 'POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person',
+    handler: function (req, res) {
+      log.debug("Entering the management API PKI action endpoint.");
+      const body = parseBody(req);
+      // **AWAITED, AND THE REJECTION IS TURNED INTO A REFUSAL.** Issuing a
+      // certificate is Web Crypto all the way down, so this is the second
+      // action handler in this API that resolves rather than returning
+      // (`/ssf/:action` is the first, and for a related reason: it signs and
+      // then POSTs). Express 4 does not look at what a handler returns, so an
+      // unhandled rejection here would be a request that never gets an answer.
+      pkiAdmin.pkiAction(withAction(req, body)).then(function (result) {
+        sendJson(res, result.ok ? 200 : 400, result);
+        log.debug("Leaving the management API PKI action endpoint.");
+      }).catch(function (e) {
+        log.error('the management API PKI action threw: ' +
+                  (e && e.stack ? e.stack : e));
+        sendJson(res, 500, { ok: false,
+                             errors: ['That action failed: ' +
+                                      (e && e.message ? e.message : e)] });
+      });
+    },
+    actions: [
+      { action: 'build', operationId: 'buildPkiChain',
+        summary: 'Build this realm\'s certificate authority — all three tiers',
+        description: 'Root CA, Intermediate CA and Issuing CA, generated and ' +
+                     'signed in one act.\n\n**ALL THREE OR NONE, and that ' +
+                     'is not laziness.** A trust chain is only worth anything ' +
+                     'whole: an Issuing CA with no Intermediate above it is a ' +
+                     'two-tier chain wearing a three-tier name, and a ' +
+                     'half-built hierarchy is exactly the state in which ' +
+                     'somebody issues a certificate that verifies here and ' +
+                     'nowhere else. A failure at any tier stores ' +
+                     'nothing.\n\n**CALLING IT AGAIN REPLACES WHAT IS ' +
+                     'THERE**, and everything issued from the old hierarchy ' +
+                     'chains to nothing the moment it does. This service ' +
+                     'keeps no copy of what it issued, so none of it can be ' +
+                     'listed — the key pairs are on the application entries ' +
+                     'and go on SIGNING; what stops is this service being ' +
+                     'able to see that it issued them.\n\n**WHERE IT ' +
+                     'SURVIVES A RESTART depends on the mode.** In product ' +
+                     'mode the hierarchy is written to `sts_keys`, sealed ' +
+                     'under the same key-encryption key as the signing keys. ' +
+                     'In development — the default — it lives exactly as long ' +
+                     'as the process, which is the rule the signing key ' +
+                     'follows and for the same reason.',
+        requestBodyRequired: false,
+        requestBody: {
+          type: 'object',
+          properties: {
+            keyAlg: { type: 'string',
+                      description: 'One of the ids in `keyAlgorithms` on GET ' +
+                                   '/admin-api/pki: rsa-2048, rsa-3072, ' +
+                                   'rsa-4096, ec-p256, ec-p384, ec-p521 or ' +
+                                   'ed25519. One algorithm for all three ' +
+                                   'tiers — the LEAF\'s signature algorithm ' +
+                                   'is decided by the Issuing CA\'s key, and ' +
+                                   'that is what a client library has to be ' +
+                                   'able to verify. Defaults to ' +
+                                   '`pki.keyAlgorithm`.' },
+            signatureAlg: { type: 'string',
+                            description: 'One of the ids in ' +
+                                         '`signatureAlgorithms`. OMIT IT for ' +
+                                         '"the right one for the key ' +
+                                         'algorithm", which is almost always ' +
+                                         'what is wanted: an EC key\'s digest ' +
+                                         'is decided by its CURVE, so naming ' +
+                                         'one here can hand a P-521 key ' +
+                                         'SHA-256 — legal, verifying, and ' +
+                                         'nobody\'s intention. A pair whose ' +
+                                         'families disagree is refused with ' +
+                                         'the list beside it.' },
+            organisation: { type: 'string',
+                            description: 'The O= every tier carries, and what ' +
+                                         'the tiers are named after when no ' +
+                                         'common name is given. Defaults to ' +
+                                         '`pki.organisation`.' },
+            country: { type: 'string',
+                       description: 'The C=, two letters, optional. It is ' +
+                                    'encoded as a PrintableString, which is ' +
+                                    'interoperability rather than taste — ' +
+                                    'several validators refuse a UTF8String ' +
+                                    'country and report it as a signature ' +
+                                    'problem.' },
+            cn_root: { type: 'string', description: 'The Root CA\'s common name.' },
+            cn_intermediate: { type: 'string',
+                               description: 'The Intermediate CA\'s common name.' },
+            cn_issuing: { type: 'string',
+                          description: 'The Issuing CA\'s common name.' },
+            years_root: { type: 'integer',
+                          description: 'How long the Root is valid. Defaults ' +
+                                       'to the certificate profile\'s own ' +
+                                       'twenty years.' },
+            years_intermediate: { type: 'integer',
+                                  description: 'Ten by default.' },
+            years_issuing: { type: 'integer', description: 'Five by default.' }
+          },
+          examples: [{ keyAlg: 'ec-p384', organisation: 'Acme', country: 'US' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The hierarchy that was built, without its ' +
+                             'private keys.' },
+
+      { action: 'issue', operationId: 'issuePkiKeyPair',
+        summary: 'Issue a signing key pair to an application — or, with ' +
+                 'target=person, to somebody in ou=users — from the ' +
+                 'Issuing CA',
+        description: 'Generates a key pair, signs a leaf certificate for it ' +
+                     'with this realm\'s Issuing CA, and writes the whole lot ' +
+                     'onto that application\'s directory entry.\n\n**WHICH ' +
+                     'ATTRIBUTES DEPENDS ON `purpose`, AND THE TWO SETS SHARE ' +
+                     'NONE.** `jwt` (the default, RFC 7523) writes six — ' +
+                     '`oauthAssertionPrivateKey`, ' +
+                     '`oauthAssertionCertificate`, ' +
+                     '`oauthAssertionCertificateChain`, ' +
+                     '`oauthAssertionJwks` (with `x5c` and `x5t#S256` on the ' +
+                     'key), `oauthAssertionKid` and ' +
+                     '`oauthAssertionExpiresAt`. `saml` (RFC 7522) writes ' +
+                     'five under `oauthSamlAssertion*`, with no JWKS among ' +
+                     'them because SAML has none — what a party registers for ' +
+                     'that profile IS a certificate — and with a ' +
+                     '`oauthSamlAssertionThumbprint` where the other has a ' +
+                     '`kid`, because those are the handles the two formats ' +
+                     'actually carry.\n\n**AN APPLICATION MAY HOLD BOTH KEY ' +
+                     'PAIRS AND NEITHER CAN SIGN FOR THE OTHER\'S ' +
+                     'PROFILE.** No verifier reads the other set, so issuing ' +
+                     'one leaves the other untouched and taking one off ' +
+                     'leaves the other working. The SAML leaf also carries ' +
+                     'the RFC 7522 grant-type URI as a second URI ' +
+                     'subjectAltName, so a certificate read out of context ' +
+                     'says which profile it was issued for.\n\n**THIS ' +
+                     'SERVICE KEEPS NO ' +
+                     'SECOND COPY OF THE PRIVATE KEY.** `common/pki.js` hands ' +
+                     'it over once and forgets it, so the entry is where it ' +
+                     'lives.\n\n**AND IT IS SEALED THERE.** AES-256-GCM ' +
+                     'under the key-encryption key, through ' +
+                     '`common/keystore.js` — the same mechanism and the same ' +
+                     'key that seal this service\'s own signing keys and the ' +
+                     'CA hierarchy this leaf was issued from — wherever that ' +
+                     'key outlives the process, which is product mode. So an ' +
+                     'ldapsearch on TCP 389 where every bind succeeds, an ' +
+                     'ldif file, a database row and a backup of either hold ' +
+                     '`$aesgcm$…`. `GET /admin-api/applications` opens it for ' +
+                     'you, because it comes through `common/applications.js` ' +
+                     'and you are holding an `admin:read` token; in ' +
+                     'development mode it is in the clear, where the ' +
+                     'key-encryption key is ephemeral and would not survive ' +
+                     'the restart the entry does. Issuing again ' +
+                     'replaces.\n\n**THE LEAF IS A `digital-signature` ' +
+                     'CERTIFICATE and deliberately carries no extended key ' +
+                     'usage.** What it signs is a JWT, not a TLS handshake; ' +
+                     'giving it `clientAuth` would make it usable for RFC ' +
+                     '8705 as well, which is a DIFFERENT credential with a ' +
+                     'different registration attribute, and one certificate ' +
+                     'quietly doing both is how a deployment ends up unable ' +
+                     'to revoke either.\n\n**A KEY PAIR IS NOT A TRUST ' +
+                     'DECISION.** It lets the application SIGN, which is all ' +
+                     'RFC 7523 section 2.2 (client authentication) needs. For ' +
+                     'section 2.1 — the authorization grant — the `iss` it ' +
+                     'will use must also be declared on ' +
+                     '`oauthAssertionIssuer`, through POST ' +
+                     '/admin-api/applications/add. RFC 7522 is the same two ' +
+                     'acts with its own declaration, ' +
+                     '`oauthSamlAssertionIssuer`.\n\n**THE LIFETIME IS ' +
+                     'CLAMPED to the Issuing CA\'s own expiry** rather than ' +
+                     'refused where it would overshoot: the ordinary cause is ' +
+                     'a five-year Issuing CA in its fifth year.\n\n**AND ' +
+                     'SINCE 2026-09-11 THE SUBJECT MAY BE A PERSON.** ' +
+                     '`target=person` issues to somebody in `ou=users` ' +
+                     'instead: the same hierarchy, the same profile, the same ' +
+                     'certificate, written onto their own entry as ' +
+                     '`stsAssertionJwks`, `stsAssertionCertificate`, ' +
+                     '`stsAssertionCertificateChain`, `stsAssertionKid`, ' +
+                     '`stsAssertionExpiresAt` and a SEALED ' +
+                     '`stsAssertionPrivateKey` — an attribute set that shares ' +
+                     'no name with the application\'s and is read by nothing ' +
+                     'else, which is the same rule the two profiles above ' +
+                     'follow. RFC 7523 section 3 asks only that `iss` be a ' +
+                     'unique identifier for the issuer and says the `sub` of ' +
+                     'an authorization grant typically identifies a resource ' +
+                     'owner, so a person signing for themselves is the ' +
+                     'profile read literally.\n\n**A PERSON MAY ONLY ' +
+                     'ASSERT ABOUT THEMSELVES**, and the grant refuses ' +
+                     'anything else: a key issued to one resource owner is ' +
+                     'that person\'s credential rather than permission to ' +
+                     'speak for the others, and the certificate carries ' +
+                     '`urn:sts-mock:person:<name>` as a URI subjectAltName so ' +
+                     'that the rule holds for an assertion presented on its ' +
+                     '`x5c` alone. A party that may assert about OTHER people ' +
+                     'is an application with `oauthAssertionIssuer` declared ' +
+                     'on it.\n\n**AND THIS REPLY CARRIES THE PRIVATE KEY, ' +
+                     'WHICH THE APPLICATION\'S DOES NOT.** An application\'s ' +
+                     'is readable through `GET /admin-api/applications`, ' +
+                     'which opens the seal for an `admin:read` token; a ' +
+                     'person\'s entry is not drawn through any module that ' +
+                     'would open it, so the alternatives were a page that ' +
+                     'prints somebody\'s private key on every visit or a key ' +
+                     'nobody can ever obtain. `privateKeyPem` is in the reply ' +
+                     'to `target=person` and in no other answer this API ' +
+                     'gives, and it is not shown again. `target=person` also ' +
+                     'refuses `purpose=saml`: RFC 7522\'s verifier reads ' +
+                     'nothing off a person, so that key pair would be one ' +
+                     'nothing here can use.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            identifier: { type: 'string',
+                          description: 'The application to issue to — or the ' +
+                                       'USERNAME, with `target=person`. It ' +
+                                       'must ALREADY EXIST in this realm — ' +
+                                       'creating one here would be this ' +
+                                       'endpoint inventing an application, or ' +
+                                       'a person, in order to give it a ' +
+                                       'credential.' },
+            target: { type: 'string', enum: ['application', 'person'],
+                      description: 'WHO the key pair is for. Defaults to ' +
+                                   '`application`, which is what every ' +
+                                   'caller written before this field existed ' +
+                                   'sends. `person` writes `stsAssertion*` ' +
+                                   'onto a `ou=users` entry instead, returns ' +
+                                   'the private key once, and refuses ' +
+                                   '`purpose=saml`.' },
+            issuer: { type: 'string',
+                      description: '`target=person` only: the `iss` their ' +
+                                   'assertions will carry, written as ' +
+                                   '`stsAssertionIssuer`. Defaults to their ' +
+                                   'username, which the grant accepts ' +
+                                   'without anything being declared — asking ' +
+                                   'an operator to write a name down twice ' +
+                                   'is a configuration step with no decision ' +
+                                   'in it.' },
+            purpose: { type: 'string', enum: ['jwt', 'saml'],
+                       description: 'Which assertion profile the key pair is ' +
+                                    'for: `jwt` for RFC 7523 and `saml` for ' +
+                                    'RFC 7522. Defaults to `jwt`, which is ' +
+                                    'what every caller written before this ' +
+                                    'field existed sends and is why it is the ' +
+                                    'default rather than a required field. A ' +
+                                    'value this service does not know is ' +
+                                    'REFUSED rather than defaulted — a caller ' +
+                                    'that asked for a profile wants a ' +
+                                    'certificate for something, and quietly ' +
+                                    'handing back the other one would put a ' +
+                                    'key pair on the wrong attribute set with ' +
+                                    'nothing saying so.' },
+            commonName: { type: 'string',
+                          description: 'The leaf\'s CN. Defaults to the ' +
+                                       'identifier. The identifier also goes ' +
+                                       'into a URI subjectAltName either way, ' +
+                                       'because a CN is a display name and a ' +
+                                       'SAN is the machine-readable one.' },
+            keyAlg: { type: 'string',
+                      description: 'The LEAF\'s key algorithm. Defaults to ' +
+                                   'the Issuing CA\'s, which is the chain a ' +
+                                   'client library is least likely to be ' +
+                                   'surprised by.' },
+            days: { type: 'integer',
+                    description: 'How long the certificate is valid. Defaults ' +
+                                 'to `pki.leafLifetimeDays`.' }
+          },
+          required: ['identifier'],
+          examples: [{ identifier: 'webapp1', days: 90 },
+                     { identifier: 'webapp1', purpose: 'saml', days: 90 }],
+          additionalProperties: false
+        },
+        responseDescription: 'The `purpose`, the attributes it wrote, the key ' +
+                             'handle (`kid` and `thumbprint` — both are ' +
+                             'returned whichever profile was asked for, ' +
+                             'because both are computed at issuance), the ' +
+                             'expiry and the JWS algorithm the issued key ' +
+                             'signs with. The key material itself is on the ' +
+                             'application entry.' },
+
+      { action: 'revoke', operationId: 'revokePkiKeyPair',
+        summary: 'Take an issued key pair off an application, or off a ' +
+                 'person — which is NOT revocation',
+        description: 'Clears the attributes the issue wrote FOR ONE PROFILE ' +
+                     '— six for `jwt` and five for `saml`. An application ' +
+                     'commonly holds both key pairs and this takes ONE off; ' +
+                     'clearing both would be an operation whose name said one ' +
+                     'thing and did two.\n\n**THIS OPERATION IS NOT THE ' +
+                     'ONE THAT REVOKES A CERTIFICATE, AND SINCE 2026-09-11 ' +
+                     'THERE IS ONE.** `revoke-certificate` puts a serial on ' +
+                     'an issuer\'s revocation list; this takes a key pair ' +
+                     'off an application entry and puts nothing on any list. ' +
+                     'After it the certificate is still valid, still chains ' +
+                     'to this ' +
+                     'realm\'s Root, and would still verify anywhere that ' +
+                     'trusts that Root. What changes is that THIS service ' +
+                     'will no longer accept an assertion signed with that ' +
+                     'key, because the key is no longer registered against ' +
+                     'the application. The name is `revoke` because that is ' +
+                     'the word on the button; the description is where the ' +
+                     'claim is kept honest.\n\n**`target=person` TAKES A ' +
+                     'PERSON\'S KEY PAIR OFF INSTEAD**, and it clears the ' +
+                     '`stsAssertionIssuer` DECLARATION with it where the ' +
+                     'application arm deliberately leaves ' +
+                     '`oauthAssertionIssuer` alone. The difference is a fact ' +
+                     'about the two: an application may hold a JWKS it ' +
+                     'registered itself beside the one this service issued, ' +
+                     'and a person may not — everything in `stsAssertion*` ' +
+                     'was put there by the issue, so leaving the declaration ' +
+                     'would leave somebody declared as an issuer with no key ' +
+                     'to issue with.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            identifier: { type: 'string',
+                          description: 'The application to take the key pair ' +
+                                       'off — or the USERNAME, with ' +
+                                       '`target=person`.' },
+            target: { type: 'string', enum: ['application', 'person'],
+                      description: 'WHOSE key pair. Defaults to ' +
+                                   '`application`, which is what every caller ' +
+                                   'written before this field existed sends. ' +
+                                   '`person` clears `stsAssertion*` off a ' +
+                                   '`ou=users` entry, the declaration ' +
+                                   'included, and ignores `purpose` — a ' +
+                                   'person holds one key pair, because RFC ' +
+                                   '7522\'s verifier reads nothing off a ' +
+                                   'person.' },
+            purpose: { type: 'string', enum: ['jwt', 'saml'],
+                       description: 'Which profile\'s key pair to take off. ' +
+                                    'Defaults to `jwt`. The other one is ' +
+                                    'untouched either way.' }
+          },
+          required: ['identifier'],
+          examples: [{ identifier: 'webapp1' },
+                     { identifier: 'webapp1', purpose: 'saml' },
+                     { identifier: 'alice', target: 'person' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether anything was taken off, and the ' +
+                             'sentence saying what that did and did not do.' },
+
+      { action: 'clear', operationId: 'clearPkiChain',
+        summary: 'Remove this realm\'s certificate authority entirely',
+        description: 'Destructive, and it says so: every certificate issued ' +
+                     'from the hierarchy chains to nothing the moment this ' +
+                     'returns, and this service keeps no copy of what it ' +
+                     'issued, so nothing here can list what broke. The key ' +
+                     'pairs stay on the application entries and go on ' +
+                     'signing; what stops is this service being able to see ' +
+                     'that it issued them.',
+        requestBodyRequired: false,
+        requestBody: { type: 'object', properties: {}, examples: [{}],
+                       additionalProperties: false },
+        responseDescription: 'How many certificates had been issued from the ' +
+                             'hierarchy that was removed.' },
+
+      // =====================================================================
+      // THE CERTIFICATE & KEY CONFIGURATION PANE (2026-09-10).
+      //
+      // Eight operations, and every one of them takes and returns THE WHOLE
+      // FORM. That is not an API shaped by a page: the pane has a hundred and
+      // fifteen fields, `apply-profile` rewrites twenty-two of them, and a
+      // caller that had to reconstruct the result itself would be a second
+      // implementation of what a profile MEANS. So the reply carries `draft`
+      // — the form as it should now be — and a caller does `apply-profile`,
+      // edits three fields of what came back, and posts it to
+      // `issue-certificate`.
+      //
+      // **THE FIELD NAMES ARE THE DEBUGGER PKI / X.509 PAGE'S, VERBATIM**
+      // (`pki_dn_cn`, `pki_ext_bc`, `pki_ku_keyCertSign`). The two are one
+      // form over one encoder; `GET /admin-api/pki` publishes the whole list
+      // as `workbench.fields`, so a client reads the vocabulary from the
+      // service rather than from a copy of it in a document.
+      // =====================================================================
+      { action: 'apply-profile', operationId: 'applyPkiProfile',
+        summary: 'Fill the certificate form in from a profile',
+        description: 'Rewrites the twenty-two extension boxes, the default ' +
+                     'validity and the profile’s Common Name from the ' +
+                     'profile named in `pki_profile`, and narrows the two ' +
+                     'algorithm menus to the approach in `pki_pq_mode`. ' +
+                     'Nothing is issued.\n\n**A COMMON NAME SOMEBODY TYPED ' +
+                     'IS NEVER OVERWRITTEN** — an empty one, or one still ' +
+                     'holding ANY profile’s own default, is replaced. ' +
+                     'Picking Intermediate CA after Root CA would otherwise ' +
+                     'issue an intermediate called "RootCA", which chains ' +
+                     'correctly and reads as a bug for as long as it takes ' +
+                     'somebody to notice.\n\nPost the whole form back; ' +
+                     'anything omitted falls to its default rather than ' +
+                     'being kept.',
+        requestBodyRequired: false,
+        requestBody: { type: 'object', properties: {},
+                       examples: [{ pki_profile: 'tls-server',
+                                    pki_pq_mode: 'classical' }],
+                       additionalProperties: true },
+        responseDescription: 'The form, as it should now be drawn, in ' +
+                             '`draft`.' },
+
+      { action: 'generate-keys', operationId: 'generatePkiKeyPair',
+        summary: 'Generate a key pair into the form without issuing anything',
+        description: 'Puts a fresh pair in `pki_private_key` and ' +
+                     '`pki_public_key`, in the algorithm named by ' +
+                     '`pki_key_alg`.\n\n**IT EXISTS BECAUSE GENERATION CAN ' +
+                     'BE SLOW.** An SLH-DSA pair takes seconds and this ' +
+                     'process is single-threaded, so making one and then ' +
+                     'issuing four certificates from it (with ' +
+                     '`pki_reuse_key`) is the difference between a usable ' +
+                     'surface and one that stalls the whole service four ' +
+                     'times over.',
+        requestBodyRequired: false,
+        requestBody: { type: 'object', properties: {},
+                       examples: [{ pki_key_alg: 'ec-p384' }],
+                       additionalProperties: true },
+        responseDescription: 'The form with the new pair in it, in `draft`.' },
+
+      { action: 'generate-alt-keys', operationId: 'generatePkiAltKeyPair',
+        summary: 'Generate the alternative (hybrid) key pair',
+        description: 'The second key of a hybrid certificate — ITU-T X.509 ' +
+                     '(2019) clause 9.8’s `subjectAltPublicKeyInfo`. ' +
+                     'The list is the post-quantum algorithms that can sign, ' +
+                     'because a hybrid certificate whose second key is also ' +
+                     'RSA is a certificate signed twice by the same century. ' +
+                     'Issuing with `pki_pq_mode=hybrid` generates one anyway ' +
+                     'if the boxes are empty.',
+        requestBodyRequired: false,
+        requestBody: { type: 'object', properties: {},
+                       examples: [{ pki_alt_key_alg: 'ml-dsa-65' }],
+                       additionalProperties: true },
+        responseDescription: 'The form with the alternative pair in it.' },
+
+      { action: 'issue-certificate', operationId: 'issuePkiCertificate',
+        summary: 'Issue a certificate from the form — any profile, any ' +
+                 'issuer, every extension',
+        description: 'The pane’s own button. Generates a key pair ' +
+                     '(unless `pki_reuse_key` names one in the boxes), ' +
+                     'builds the certificate from the subject, the validity ' +
+                     'and the twenty-two extensions, signs it with the ' +
+                     'authority `pki_issuer` names — or with its own key ' +
+                     'under a self-signed profile — and keeps both in this ' +
+                     'realm’s store.\n\n**THE SIGNATURE IS CONSTRAINED ' +
+                     'BY THE ISSUER’S KEY AND NOT THE SUBJECT’S.** ' +
+                     'A pair whose families disagree is refused HERE with ' +
+                     'the list of what that key can produce, rather than by ' +
+                     'the primitive, which reports it as a key-usage error ' +
+                     'naming neither.\n\n**A REFUSAL CARRIES THE FORM BACK** ' +
+                     'in `draft`: a hundred and fifteen fields discarded ' +
+                     'because one line of a subjectAltName would not parse ' +
+                     'is not a refusal anybody can act on.',
+        requestBodyRequired: true,
+        requestBody: { type: 'object', properties: {},
+                       examples: [{ pki_profile: 'tls-server',
+                                    pki_issuer: 'tier:issuing',
+                                    pki_key_alg: 'ec-p256',
+                                    pki_dn_cn: 'www.example.test',
+                                    pki_ext_san: '1',
+                                    pki_san: 'dns:www.example.test',
+                                    pki_ext_ku: '1',
+                                    pki_ku_digitalSignature: '1',
+                                    pki_ext_eku: '1',
+                                    pki_eku_serverAuth: '1',
+                                    pki_save_keys: '1' }],
+                       additionalProperties: true },
+        responseDescription: 'The stored object (no private key in it), and ' +
+                             'the form with a FRESH SERIAL in it — a serial ' +
+                             'that stayed put would be re-used by the next ' +
+                             'certificate the same authority signs, and two ' +
+                             'certificates from one issuer sharing a serial ' +
+                             'are indistinguishable to anything that ' +
+                             'revokes, caches or pins by (issuer, serial).' },
+
+      { action: 'use-key', operationId: 'usePkiStoredKey',
+        summary: 'Load a stored object’s key pair back into the form',
+        description: 'What a CA renewing its own certificate does. It ticks ' +
+                     '`pki_reuse_key` itself, because a pair loaded into the ' +
+                     'boxes and then silently replaced by a fresh one at the ' +
+                     'next issue is the most confusing thing this surface ' +
+                     'could do. Everything else on the form is kept.',
+        requestBodyRequired: true,
+        requestBody: { type: 'object',
+                       properties: {
+                         objectId: { type: 'string',
+                                     description: 'The `id` of a row in ' +
+                                                  '`workbench.objects`.' } },
+                       required: ['objectId'],
+                       examples: [{ objectId: 'ca-1f2e3d4c5b6a7980' }],
+                       additionalProperties: true },
+        responseDescription: 'The form with that key pair in it.' },
+
+      { action: 'remove-object', operationId: 'removePkiObject',
+        summary: 'Remove one object from this realm’s store',
+        description: 'The key pair is gone. **Anything it ISSUED is kept** — ' +
+                     'those certificates are still valid documents — and ' +
+                     'will now say that their issuer is missing.',
+        requestBodyRequired: true,
+        requestBody: { type: 'object',
+                       properties: {
+                         objectId: { type: 'string',
+                                     description: 'The `id` of a row in ' +
+                                                  '`workbench.objects`.' } },
+                       required: ['objectId'],
+                       examples: [{ objectId: 'leaf-1f2e3d4c5b6a7980' }],
+                       additionalProperties: true },
+        responseDescription: 'The sentence saying what that did and did not ' +
+                             'do.' },
+
+      { action: 'clear-store', operationId: 'clearPkiObjects',
+        summary: 'Empty this realm’s object store',
+        description: 'Every key pair and certificate the pane issued in this ' +
+                     'realm is discarded. **The three-tier hierarchy is NOT ' +
+                     'touched** — that is `clear` — and anything these keys ' +
+                     'signed is still a valid document that still chains to ' +
+                     'whatever signed IT.',
+        requestBodyRequired: false,
+        requestBody: { type: 'object', properties: {}, examples: [{}],
+                       additionalProperties: true },
+        responseDescription: 'How many objects were discarded.' },
+
+      { action: 'export', operationId: 'exportPkiKeyPair',
+        summary: 'Write a key pair out as PEM, DER, a JWK set or a PKCS#12',
+        description: 'The same export `/admin/keys` uses ' +
+                     '(`common/vendored/key_material.js`), so a `.p12` from ' +
+                     'here imports identically into keytool, OpenSSL, ' +
+                     'Windows and macOS.\n\n**THE CONSOLE DOES NOT COME ' +
+                     'THROUGH HERE**: `POST /admin/pki/export` answers with ' +
+                     'the FILE, because that is what a browser asked for. ' +
+                     'This arm answers JSON with the bytes base64’d, ' +
+                     'which is what a machine asked for. One function ' +
+                     'underneath either way.\n\n**IT HANDS OVER A PRIVATE ' +
+                     'KEY**, so like every other such door here it needs ' +
+                     '`admin:write` rather than `admin:read`.',
+        requestBodyRequired: false,
+        requestBody: { type: 'object',
+                       properties: {
+                         objectId: { type: 'string',
+                                     description: 'The object to write out. ' +
+                                                  'Omitted, the key pair in ' +
+                                                  '`pki_private_key` and ' +
+                                                  '`pki_public_key` is ' +
+                                                  'used.' } },
+                       examples: [{ objectId: 'leaf-1f2e3d4c5b6a7980',
+                                    pki_ks_format: 'pkcs12',
+                                    pki_ks_password: 'changeit',
+                                    pki_ks_include_chain: '1' }],
+                       additionalProperties: true },
+        responseDescription: 'One entry per member of `files`: its name, its ' +
+                             'media type and its bytes as base64. A DER ' +
+                             'export is two files and the console’s own ' +
+                             'door sends only the private one, which is the ' +
+                             'single difference between them.' },
+
+      // =====================================================================
+      // THE HIERARCHY ITSELF (2026-09-11). One Root for the service, an
+      // Intermediate per scope, an Issuing CA per use case — and every key
+      // pair this service generates as a leaf of it.
+      //
+      // **`scope` IS A REALM ID, `*service` OR `*process`.** A realm id is
+      // `[a-z0-9-]` and must start with a letter or a digit, so the two
+      // starred names cannot collide with one. Omitted, it means the realm the
+      // request arrived in, which is what every other control here means by
+      // saying nothing.
+      // =====================================================================
+      { action: 'build-root', operationId: 'buildPkiRoot',
+        summary: 'Build or replace the Root CA for the whole service',
+        description: 'One Root, shared by every realm and by the process ' +
+                     'branch — which is what lets an operator install ONE ' +
+                     'anchor and have it cover 8443, 9443, LDAPS 636, the ' +
+                     'main port and every token this service signs.\n\n' +
+                     '**REPLACING IT RE-ISSUES EVERY BRANCH IN THE SAME ' +
+                     'ACT**, because an Intermediate still hanging from the ' +
+                     'old Root chains to nothing — a new Root with the old ' +
+                     'branches under it is a service whose tree does not ' +
+                     'reach its own anchor, and every path check fails while ' +
+                     'the page looks right.\n\n**ANYTHING TRUSTING THE OLD ' +
+                     'ROOT STOPS TRUSTING THIS SERVICE.** That is the cost of ' +
+                     'one anchor covering everything. The signing keys ' +
+                     'themselves are untouched, so nothing that verifies ' +
+                     'against the published JWKS is affected.',
+        requestBodyRequired: false,
+        requestBody: {
+          type: 'object',
+          properties: {
+            keyAlg: { type: 'string',
+                      description: 'One of the ids in `keyAlgorithms`. ' +
+                                   'Defaults to `pki.keyAlgorithm`.' },
+            commonName: { type: 'string',
+                          description: 'The Root’s CN. Defaults to the ' +
+                                       'organisation followed by "Root CA".' },
+            years: { type: 'integer',
+                     description: 'How long it is valid for. Defaults to the ' +
+                                  'root-ca profile’s own twenty years.' }
+          },
+          examples: [{ keyAlg: 'ec-p384', years: 30 }],
+          additionalProperties: false },
+        responseDescription: 'The new Root, and how many branches were ' +
+                             're-issued under it.' },
+
+      { action: 'build-scope', operationId: 'buildPkiScope',
+        summary: 'Build or rebuild one scope’s branch — its Intermediate and ' +
+                 'every Issuing CA under it',
+        description: 'A scope is a trust realm or the process. **ALL OF IT OR ' +
+                     'NONE OF IT**: a branch with an Intermediate and two of ' +
+                     'its three Issuing CAs is the state in which one use ' +
+                     'case silently has no authority and its keys come out ' +
+                     'uncertified, so a failure anywhere stores nothing.\n\n' +
+                     '**THE ROOT IS NOT TOUCHED** — every other scope hangs ' +
+                     'from it — and an IMPORTED authority in this branch is ' +
+                     'left alone unless `replaceImported` says otherwise: ' +
+                     'somebody who pasted a corporate CA in did not press ' +
+                     'this to have it thrown away.\n\nEverything the old ' +
+                     'authorities had certified is re-minted from the new ' +
+                     'ones in the same act.',
+        requestBodyRequired: false,
+        requestBody: {
+          type: 'object',
+          properties: {
+            scope: { type: 'string',
+                     description: 'A realm id, `*process`, or omitted for the ' +
+                                  'realm this request arrived in.' },
+            keyAlg: { type: 'string',
+                      description: 'The key algorithm every CA in this branch ' +
+                                   'is generated with.' },
+            replaceImported: { type: 'boolean',
+                               description: 'Replace an imported authority ' +
+                                            'too. Default false.' }
+          },
+          examples: [{ scope: '*process', keyAlg: 'ec-p256' }],
+          additionalProperties: false },
+        responseDescription: 'The branch, and how many certificates were ' +
+                             're-minted under it.' },
+
+      { action: 'reissue-use-case', operationId: 'reissuePkiUseCase',
+        summary: 'Give one use case’s Issuing CA a new key pair',
+        description: 'Re-issues that one authority from its scope’s ' +
+                     'Intermediate with a NEW KEY, then re-certifies ' +
+                     'everything that hung under it. **The other use cases ' +
+                     'are untouched**, which is the whole reason each has an ' +
+                     'authority of its own rather than sharing one: an ' +
+                     'operator who wants to replace what signs their SAML ' +
+                     'documents should not thereby replace what signs their ' +
+                     'tokens.\n\nIt is NOT the same as `recertify` — see ' +
+                     'that one.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            scope: { type: 'string', description: 'A realm id or `*process`.' },
+            useCase: { type: 'string',
+                       description: 'One of `jose`, `xml`, `assertions` (a ' +
+                                    'realm) or `tls`, `spiffe` (the ' +
+                                    'process). Asking for one in the wrong ' +
+                                    'scope is refused and the refusal says ' +
+                                    'which scope it belongs to.' }
+          },
+          required: ['useCase'],
+          examples: [{ scope: '', useCase: 'jose' }],
+          additionalProperties: false },
+        responseDescription: 'How many certificates were re-minted under the ' +
+                             'new authority.' },
+
+      { action: 'recertify', operationId: 'recertifyPkiUseCase',
+        summary: 'Renew the certificates under one Issuing CA, keeping the keys',
+        description: 'Re-issues every certificate that authority has minted, ' +
+                     'from the SAME authority, with fresh serials and a fresh ' +
+                     'validity window.\n\n**THE KEYS ARE UNTOUCHED, WHICH IS ' +
+                     'WHAT MAKES THIS A RENEWAL**: the subject public key is ' +
+                     'read back out of the certificate being replaced, so ' +
+                     'nothing that verifies against the published JWKS stops ' +
+                     'verifying. `reissue-use-case` is the other one — it ' +
+                     'replaces the authority, and everything it had signed ' +
+                     'chains to nothing until it is re-minted.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            scope: { type: 'string', description: 'A realm id or `*process`.' },
+            useCase: { type: 'string', description: 'The use case to renew.' }
+          },
+          required: ['useCase'],
+          examples: [{ scope: '', useCase: 'jose' }],
+          additionalProperties: false },
+        responseDescription: 'How many certificates were renewed.' },
+
+      { action: 'import-ca', operationId: 'importPkiCa',
+        summary: 'Use a certificate authority this service did not generate',
+        description: 'Paste a CA certificate and its private key. With ' +
+                     '`useCase: "root"` it becomes the service Root and ' +
+                     '**every branch must then be rebuilt under it**; ' +
+                     'otherwise it becomes one scope’s Issuing CA for one use ' +
+                     'case, and everything under that authority is re-minted ' +
+                     'from it.\n\n**THREE CHECKS HAPPEN BEFORE ANYTHING IS ' +
+                     'STORED**, and the middle one is the one that matters: ' +
+                     'both halves must be present (a certificate with no key ' +
+                     'is a trust anchor rather than an authority), the KEY ' +
+                     'MUST BELONG TO THE CERTIFICATE (an authority whose key ' +
+                     'is somebody else’s issues certificates that verify ' +
+                     'nowhere, and the failure arrives at a relying party ' +
+                     'rather than here), and the certificate must be a CA at ' +
+                     'all — `cA:FALSE` means nothing it signs is accepted by ' +
+                     'a path validator.\n\n**THE KEY IS STORED AS THIS ' +
+                     'SERVICE STORES ITS OWN**: in the keystore row, sealed ' +
+                     'under the key-encryption key wherever that key outlives ' +
+                     'the process.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            scope: { type: 'string',
+                     description: '`*service` for the Root, otherwise a realm ' +
+                                  'id or `*process`.' },
+            useCase: { type: 'string',
+                       description: '`root`, or one of the use cases.' },
+            certificatePem: { type: 'string', description: 'The CA certificate.' },
+            privateKeyPem: { type: 'string', description: 'Its private key.' }
+          },
+          required: ['useCase', 'certificatePem', 'privateKeyPem'],
+          examples: [{ scope: '*service', useCase: 'root',
+                       certificatePem: '-----BEGIN CERTIFICATE-----…',
+                       privateKeyPem: '-----BEGIN PRIVATE KEY-----…' }],
+          additionalProperties: false },
+        responseDescription: 'The authority as it was read, and what has to ' +
+                             'happen next.' },
+
+      { action: 'pin-key', operationId: 'pinPkiKeyPair',
+        summary: 'Use a key pair of your own for one slot',
+        description: 'A SLOT is a use case and an algorithm — `jose` / ' +
+                     '`ES256:P-256`, say — which is the granularity an ' +
+                     'operator actually wants: *what signs my ES384*, not ' +
+                     '*the key that happened to be there on Tuesday*. A `kid` ' +
+                     'would not do, because it changes whenever the key ' +
+                     'does.\n\n**WITH NO CERTIFICATE THIS SERVICE ISSUES ' +
+                     'ONE** from that use case’s Issuing CA, so your key ' +
+                     'chains to this service’s Root exactly as a generated ' +
+                     'one would — which is what somebody who wants their own ' +
+                     'key under this hierarchy is asking for. **WITH a ' +
+                     'certificate** the pair is used as supplied and chains ' +
+                     'wherever that certificate chains, which is the other ' +
+                     'thing somebody might mean.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            scope: { type: 'string', description: 'A realm id or `*process`.' },
+            useCase: { type: 'string', description: 'The use case.' },
+            slot: { type: 'string',
+                    description: 'The algorithm, as it appears in that use ' +
+                                 'case’s certified list — `RS256`, ' +
+                                 '`ES256:P-256`, `EdDSA:Ed25519`.' },
+            privateKeyPem: { type: 'string', description: 'Your private key.' },
+            certificatePem: { type: 'string',
+                              description: 'Optional. Omit it and this ' +
+                                           'service issues one from its own ' +
+                                           'authority.' }
+          },
+          required: ['useCase', 'slot', 'privateKeyPem'],
+          examples: [{ scope: '', useCase: 'jose', slot: 'ES256:P-256',
+                       privateKeyPem: '-----BEGIN PRIVATE KEY-----…' }],
+          additionalProperties: false },
+        responseDescription: 'What this service will now use for that slot, ' +
+                             'and whether it chains to this service’s Root ' +
+                             'or to yours.' },
+
+      // ---------------------------------------------------------------
+      // THE REVOCATION PANE'S TWO, SINCE 2026-09-11.
+      //
+      // They arrived on `/admin/pki` and on `PKI_ACTIONS` and NOT here,
+      // which is rule 7 unpaid — and the thing that caught it was not the
+      // parity check: `tests/vendored/sts_admin_api_operations.js` compares
+      // the refusal SENTENCE this endpoint prints for an unknown action
+      // against the actions this document declares, and the sentence is
+      // generated from `PKI_ACTIONS`. So the console had two controls whose
+      // operations nothing could find, and the API accepted both of them
+      // the whole time: the route is `/pki/:action`, so an undeclared action
+      // still WORKS — what it does not do is appear in the document, which
+      // is the only place a machine driving this API can read the repertoire
+      // from.
+      // ---------------------------------------------------------------
+      { action: 'revoke-certificate', operationId: 'revokePkiCertificate',
+        summary: 'Put a serial on one certificate authority\'s revocation ' +
+                 'list — which is NOT `revoke`',
+        description: 'RFC 5280 revocation: the serial goes on the named ' +
+                     'authority\'s CRL and its OCSP responder answers ' +
+                     '`revoked` for it from that moment. The list is rebuilt ' +
+                     'and signed on demand at `/pki/crl/{scope}/{ca}`, so ' +
+                     'the next fetch there already carries the entry, and ' +
+                     'the copy published into the directory under `ou=crl` ' +
+                     'is rewritten too — the `ldap://` and `ldaps://` ' +
+                     'addresses in every certificate this authority signed ' +
+                     'point at a DOCUMENT, and a document goes on saying ' +
+                     'what it said before unless somebody rewrites ' +
+                     'it.\n\n**THIS IS NOT `revoke`, WHICH IS A DIFFERENT ' +
+                     'ACT WITH THE SAME WORD IN IT.** That one takes an ' +
+                     'issued key pair off an application\'s directory entry ' +
+                     'and puts nothing on any list. This one puts a serial ' +
+                     'on a list and takes nothing off anybody. The names are ' +
+                     'deliberately not `revoke` and `revoke-key`: this ' +
+                     'action list is published and a machine chooses from ' +
+                     'it, so renaming the older one to make room would have ' +
+                     'broken every caller that already had ' +
+                     'it.\n\n**IT IS IDEMPOTENT AND THE EARLIER ENTRY ' +
+                     'WINS** — revoking twice answers 200 with ' +
+                     '`already: true` and does not move the date, because a ' +
+                     'validator is entitled to act on the first moment it ' +
+                     'was told about.\n\n**AND THIS SERVICE DOES NOT ' +
+                     'CONSULT ITS OWN LISTS.** A client certificate revoked ' +
+                     'here still authenticates on 8443, 9443, the main port ' +
+                     'and LDAPS 636, because those check the anchors on ' +
+                     '`/tls/trust` and fetch nothing. What this operation ' +
+                     'buys is that a relying party which DOES check can now ' +
+                     'find out.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            scope: { type: 'string',
+                     description: 'Which branch the issuer is in: a realm ' +
+                                  'id, `*service` for the one Root, ' +
+                                  '`*process` for the process branch, or ' +
+                                  'omitted for the realm this request ' +
+                                  'arrived in.' },
+            ca: { type: 'string',
+                  description: 'The issuing authority, as `GET ' +
+                               '/admin-api/pki` names it in `revocation`: ' +
+                               '`root`, `intermediate`, or a use case id for ' +
+                               'an Issuing CA. **A revocation is made BY AN ' +
+                               'ISSUER** — a serial is only unique within ' +
+                               'one, which is why there is a list per CA and ' +
+                               'not one per realm.' },
+            serialHex: { type: 'string',
+                         description: 'The certificate\'s serial number in ' +
+                                      'hex. Case, leading zeros and ' +
+                                      'separators are all ignored: a CRL ' +
+                                      'carries a DER integer and an OCSP ' +
+                                      'request carries a string somebody ' +
+                                      'typed, and two spellings of one ' +
+                                      'serial is a certificate that is ' +
+                                      'revoked and reports as good.' },
+            reason: { type: 'string',
+                      enum: ['unspecified', 'keyCompromise', 'cACompromise',
+                             'affiliationChanged', 'superseded',
+                             'cessationOfOperation', 'certificateHold',
+                             'privilegeWithdrawn', 'aACompromise'],
+                      description: 'RFC 5280 section 5.3.1. Defaults to ' +
+                                   '`superseded`, which is what this service ' +
+                                   'uses when it rotates or reissues ' +
+                                   'something itself. `certificateHold` is ' +
+                                   'the only one `release-hold` can undo; ' +
+                                   '`unspecified` writes no reason code at ' +
+                                   'all, which is what that value means on ' +
+                                   'the wire.' },
+            subject: { type: 'string',
+                       description: 'Optional. The subject DN, kept for the ' +
+                                    'operator reading the list — it is not ' +
+                                    'on the CRL, which carries serials.' },
+            note: { type: 'string',
+                    description: 'Optional. Why, in your own words, for the ' +
+                                 'same reader.' }
+          },
+          required: ['ca', 'serialHex'],
+          examples: [{ ca: 'intermediate', serialHex: '0a1b2c3d',
+                       reason: 'keyCompromise' },
+                     { scope: '*service', ca: 'root', serialHex: '1f',
+                       reason: 'certificateHold', note: 'pending review' }],
+          additionalProperties: false },
+        responseDescription: 'The entry as it now stands, `already` when it ' +
+                             'was on the list before, and the sentence ' +
+                             'saying what this did and did not change.' },
+
+      { action: 'release-hold', operationId: 'releasePkiCertificateHold',
+        summary: 'Lift a `certificateHold` — the one revocation RFC 5280 ' +
+                 'lets you undo',
+        description: 'Takes the serial back off the authority\'s list and ' +
+                     'bumps the CRL number, so the next CRL and the next ' +
+                     'OCSP answer call it good again.\n\n**ONLY A HOLD.** A ' +
+                     'serial revoked for any other reason is refused with ' +
+                     'the reason named: everything else RFC 5280 defines is ' +
+                     'PERMANENT, and a validator is entitled to cache a ' +
+                     'permanent revocation for as long as the CRL it read ' +
+                     'says it is fresh — so undoing one here would produce a ' +
+                     'certificate this service calls good and half the world ' +
+                     'still calls revoked.\n\n**AND EVEN A HOLD IS NOT ' +
+                     'LIFTED INSTANTLY ANYWHERE BUT HERE**: a validator ' +
+                     'holding the previous list goes on refusing until that ' +
+                     'copy expires, which is `pki.crlLifetimeMinutes`.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            scope: { type: 'string',
+                     description: 'As on `revoke-certificate`: a realm id, ' +
+                                  '`*service`, `*process`, or omitted for ' +
+                                  'the realm this request arrived in.' },
+            ca: { type: 'string',
+                  description: 'The issuing authority the hold is on. It has ' +
+                               'to be the same one that took it — a serial ' +
+                               'is only unique within an issuer.' },
+            serialHex: { type: 'string',
+                         description: 'The held certificate\'s serial, ' +
+                                      'spelt however you like.' }
+          },
+          required: ['ca', 'serialHex'],
+          examples: [{ ca: 'intermediate', serialHex: '0a1b2c3d' }],
+          additionalProperties: false },
+        responseDescription: 'The sentence saying the hold is lifted, and ' +
+                             'that a validator which cached the earlier list ' +
+                             'still has it.' }
+    ] },
+
   { method: 'GET', path: BASE + '/scim/monitor', tag: 'SCIM',
     operationId: 'getScimMonitor',
     summary: 'How many SCIM calls there have been, from whom, of what kind, ' +
@@ -8066,6 +9591,105 @@ const ROUTES = [
       sendJson(res, 200, admin.scimMonitorJson(req));
       log.debug("Leaving the management API SCIM monitor endpoint.");
     } },
+
+  // ---------------------------------------------------------------------
+  // WHAT THE CONSOLE WAS TOLD, AND WHY IT IS A RESOURCE OF ITS OWN RATHER
+  // THAN A MEMBER OF /admin-api/ssf.
+  //
+  // That resource is the TRANSMITTER's: the streams, their subjects, their
+  // queues and what went out on each. This one is the RECEIVER's, and the
+  // whole value of keeping them apart is that this one goes empty when
+  // delivery is broken while the other does not — a reply that carried both
+  // would answer "what has been said" and "what has been heard" with one
+  // document and lose exactly the disagreement worth having.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/signals', tag: 'Shared Signals',
+    operationId: 'getSignals',
+    summary: 'Every security event delivered TO this console',
+    description: 'This service\'s own admin console is a registered Shared ' +
+                 'Signals receiver: it has a stream of its own ' +
+                 '(`sts-admin-console`), seeded in EVERY trust realm, asking ' +
+                 'for every CAEP and every RISC event type, and each event is ' +
+                 'POSTed to it over RFC 8935 push at /admin/signals/receive ' +
+                 'with that stream\'s own bearer token. This is what ' +
+                 'arrived.\n\n**IT IS SEEDED IN EVERY REALM AND THE ' +
+                 'CONSOLE\'S CLIENT ENTRY IS IN ONE**, and the disagreement ' +
+                 'is deliberate: a client entry is about signing somebody IN, ' +
+                 'and this console\'s gate reads the DEFAULT realm\'s ' +
+                 'session wherever it is reached; a stream is about what ' +
+                 'HAPPENED, and events happen in the realm they happen ' +
+                 'in.\n\n**READ `status.why` BEFORE CONCLUDING NOTHING HAS ' +
+                 'HAPPENED.** An empty `received` has five causes and only ' +
+                 'one of them is that: `ssf.enabled` off, ' +
+                 '`ssf.internalReceivers` off, the stream deleted (it is an ' +
+                 'ORDINARY stream — delete it here or at /admin/ssf and it ' +
+                 'stays deleted until a restart), `ssf.pushDelivery` off, or ' +
+                 '`caep.enabled` / `risc.enabled` off under it.\n\n**WHAT A ' +
+                 'PERSON SEES IS A DIFFERENT RECEIVER.** The user portal has ' +
+                 'a stream of its own and shows each person only the events ' +
+                 'whose subject is them; there is no operation here for that ' +
+                 'view, because it is a person\'s own page and not an ' +
+                 'administrative one.\n\nThe inbox is IN MEMORY, per trust ' +
+                 'realm, capped at `ssf.maxReceivedEvents`. The durable ' +
+                 'record of every delivery is GET /admin-api/audit, which ' +
+                 'cannot be cleared.',
+    mirrors: 'GET /admin/signals',
+    parameters: [
+      { name: 'sigq', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Narrows the list to rows whose event name, type URI, ' +
+                     'subject, issuer, audience, `jti` or stream id contains ' +
+                     'this. One box over all of them, because a reader ' +
+                     'arrives holding one and does not know which column it ' +
+                     'is in.' },
+      { name: 'receivedPage', in: 'query', required: false,
+        schema: { type: 'integer', minimum: 1 },
+        description: 'Which page of the delivered events. Clamped, like ' +
+                     'every page parameter here.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'This receiver and its stream, and the delivered ' +
+                         'events.',
+    responseSchema: { $ref: '#/components/schemas/Signals' },
+    handler: function (req, res) {
+      log.debug("Entering the management API signals endpoint.");
+      sendJson(res, 200, admin.signalsView(req));
+      log.debug("Leaving the management API signals endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/signals/:action', tag: 'Shared Signals',
+    mirrors: 'POST /admin/signals',
+    handler: function (req, res) {
+      log.debug("Entering the management API signals action endpoint.");
+      const body = parseBody(req);
+      const result = admin.signalsAction(withAction(req, body));
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API signals action endpoint.");
+    },
+    actions: [
+      { action: 'clear', operationId: 'clearSignalsInbox',
+        summary: 'Empty the console\'s Shared Signals inbox',
+        description: 'Drops every delivered event held for the admin ' +
+                     'console in this trust realm.\n\n**IT DOES NOT TOUCH ' +
+                     'THE STREAM.** Clearing what a receiver has been shown ' +
+                     'and tearing down the agreement to send it more are two ' +
+                     'different acts; the second one is ' +
+                     'POST /admin-api/ssf/delete-stream. This receiver goes ' +
+                     'on taking delivery the moment this ' +
+                     'returns.\n\n**AND IT DOES NOT TOUCH THE RECORD.** ' +
+                     'Every delivery wrote an `ssf.event.receive` row to the ' +
+                     'audit log, which has no clear operation anywhere — ' +
+                     'which is what makes it the durable half.',
+        requestBodyRequired: false,
+        // THE EMPTY EXAMPLE IS WHAT DRIVES IT.
+        // `tests/vendored/sts_admin_api_operations.js` replays every POST that
+        // carries an example and then asserts that every documented operation
+        // was driven by something — so an action taking no parameters and
+        // declaring no example is covered by nothing and reported by nothing,
+        // which is what this one was until that ledger went red on it. `{}` is
+        // the shape `revoke-all` and `clear-store` use for the same reason.
+        requestBody: { type: 'object', properties: {}, examples: [{}],
+                       additionalProperties: true },
+        responseDescription: 'How many delivered events were dropped.' }
+    ] },
 
   { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
     operationId: 'getAudit',
@@ -9155,7 +10779,7 @@ const ROUTES = [
                  'nor GET /admin/sts-metadata can see a socket.\n\nThe ' +
                  'reply also ' +
                  'carries `authentication`: whether the SPIRE Server API is ' +
-                 'enforcing mutual TLS (`spiffe.authRequired`), which ' +
+                 'enforcing mutual TLS, which ' +
                  'identities are administrators, and the whole per-method ' +
                  'authorization table, which is SPIRE\'s own ' +
                  '`policy_data.json` row for row.\n\n**Nothing here attests ' +
@@ -9163,8 +10787,8 @@ const ROUTES = [
                  'only by the transport it arrived on, the endpoint it ' +
                  'reached and its peer address — node cannot read a Unix ' +
                  'socket\'s peer credentials — and an agent\'s attestation ' +
-                 'payload is taken on trust. With `spiffe.authRequired` off, ' +
-                 'the SPIRE Server API authenticates nobody either and any ' +
+                 'payload is taken on trust. Where the SPIRE Server API ' +
+                 'authenticates nobody, any ' +
                  'caller that reaches its port can create a registration ' +
                  'entry granting any identity here. GET /spiffe carries the ' +
                  'full list of what is and is not checked.\n\nNo private key ' +
@@ -9988,7 +11612,7 @@ log.info('The management API is at ' + BASE + ': ' +
              'the start — a secret minted per start is readable only through ' +
              'the API it unlocks.'
            : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
-             'console IS (admin.authRequired), so this is the surface to ' +
+             'console is gated unconditionally, so this is the surface to ' +
              'reach for when nobody holds a console role: POST ' + BASE +
              '/rbac/grant.'));
 

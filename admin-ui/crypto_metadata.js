@@ -145,6 +145,17 @@ const bbs2023 = require('../common/vendored/bbs2023.js');
 const krb5crypto = require('../kerberos/krb5_crypto');
 const spiffeCa = require('../spiffe/spiffe_ca');
 const webauthn = require('../authn/webauthn');
+// The ceremony's OPTIONS, for the row below. A LIBRARY (rule 3): it registers
+// no route, and it requires only `config`, `helpers` and the verifier above —
+// so this line can neither move a route nor close a cycle, which is the test
+// every require in this file's list has to pass.
+const webauthnPolicy = require('../authn/webauthn_policy');
+// RFC 6238's own algorithm table, read from the module that performs the
+// algorithm — this page's whole design. A LIBRARY (rule 3) that registers no
+// route, so requiring it here cannot move one, and it is already loaded by
+// `common/credentials.js` long before this line.
+const totp = require('../common/totp');
+const backupCodes = require('../common/backup_codes');
 const dpop = require('../oauth-oidc/dpop');
 const clientAuth = require('../oauth-oidc/client_auth');
 const mtls = require('../oauth-oidc/mtls');
@@ -196,6 +207,125 @@ const ssfAuth = require('../ssf/ssf_auth');
 // them as "—" and the `whatItDoesNot` line beside them says which.
 // ---------------------------------------------------------------------------
 const FAMILIES = [
+  // ---------------------------------------------------------------------------
+  // PKI IS THE ONLY FAMILY HERE THAT MINTS AN X.509 CERTIFICATE FOR SOMETHING
+  // THAT IS NOT THIS SERVICE. TLS issues its own listener certificate and
+  // SPIFFE issues SVIDs for workloads it also authenticates; this issues a
+  // signing key pair to an APPLICATION and hands both halves over.
+  //
+  // The algorithm tables are read from `common/vendored/x509.js` — the module
+  // that performs the encoding — through `common/pki.js`'s `report()`, which
+  // is this page's rule applied to its newest family: a list written out here
+  // would describe something this service does not do the first time an
+  // algorithm was added to that table.
+  // ---------------------------------------------------------------------------
+  {
+    name: 'PKI',
+    signs: 'CERTIFICATES. Three of them when a hierarchy is built — the Root ' +
+           'signs itself, the Intermediate, then the Issuing CA — and one per ' +
+           'application key pair issued afterwards, signed by the Issuing CA. ' +
+           'The signature algorithm is the one chosen for the hierarchy and ' +
+           'is constrained by the ISSUER\'s key family rather than the ' +
+           'subject\'s, which is the mistake `common/vendored/x509.js`\'s own ' +
+           'header spends a paragraph on: importing a key under one digest ' +
+           'and signing with another produces a certificate whose declared ' +
+           'algorithm and actual signature disagree, and `openssl verify` ' +
+           'reports it as a bad signature naming neither.',
+    verifies: 'A CERTIFICATE PATH. When an RFC 7523 assertion arrives ' +
+              'carrying an `x5c` header, every link is checked — the ' +
+              'signature, the issuer name and the validity window — and the ' +
+              'path must END AT THIS REALM\'S OWN ROOT. That last check is ' +
+              'the one the security claim rests on: a chain that is ' +
+              'internally consistent and anchored somewhere else verifies ' +
+              'every link and proves nothing here.',
+    encrypts: 'Nothing itself. In PRODUCT mode the hierarchy it built is ' +
+              'sealed AES-256-GCM under the key-encryption key, by ' +
+              'common/keystore.js, in the same `sts_keys` row family as the ' +
+              'signing keys — this module hands it over and does not do the ' +
+              'encryption.',
+    decrypts: 'Nothing.',
+    keys: 'THREE CA KEY PAIRS PER TRUST REALM, plus one per application key ' +
+          'pair issued. The CA private keys never leave this process. An ' +
+          'application\'s DOES: it is handed over once, at issuance, and ' +
+          'written onto that application\'s directory entry under ' +
+          '`oauthAssertionPrivateKey` — **sealed AES-256-GCM under the same ' +
+          'key-encryption key as the hierarchy above it wherever that key ' +
+          'outlives the process**, so a directory dump, an ldif file, a ' +
+          'database row or a backup holds ciphertext. The console and the ' +
+          'management API open it for a caller that holds a credential, ' +
+          'because an issued key pair an operator cannot collect is an ' +
+          'issued key pair nobody can use. In DEVELOPMENT mode it is written ' +
+          'in the clear, where the key-encryption key is ephemeral and would ' +
+          'not survive the restart the entry does. This service keeps NO ' +
+          'second copy either way. AND SINCE 2026-09-11 A PERSON MAY HOLD ' +
+          'ONE TOO, under `stsAssertionPrivateKey` on their own `ou=users` ' +
+          'entry, sealed under the same key and by the same mechanism. The ' +
+          'difference is the way OUT: an application\'s is opened for a ' +
+          'credentialed reader by `applications.js`, and a person\'s is ' +
+          'handed over once by the issue and never again, because nothing ' +
+          'here draws a person\'s entry through a module that would open ' +
+          'it.',
+    hashes: 'SHA-256 by default for the certificate signature, and SHA-384 ' +
+            'or SHA-512 where the hierarchy was built with them. SHA-256 ' +
+            'again for the certificate thumbprints and for the RFC 7638 JWK ' +
+            'thumbprint the issued `kid` is derived from — a kid is derived ' +
+            'from the key material everywhere in this service, so two ' +
+            'instances cannot publish one name over two keys. **SHA-1 IS ' +
+            'OFFERED AND IS MARKED WEAK**: "does my stack refuse a SHA-1 ' +
+            'certificate?" is a question a debugger should be able to ask, ' +
+            'and nothing defaults to it.',
+    // The KEY from STANDARDS, not the display name — the drift check compares
+    // these against `STANDARDS`'s `key` in both directions, and 'X.509' was
+    // reported as an envelope with no row within a minute of being written.
+    // `jwk` is here beside it because what an issued key pair is HANDED OVER
+    // as is a JWK Set carrying `x5c` and `x5t#S256`.
+    envelopes: ['x509', 'jwk'],
+    algorithms: function () {
+      const report = pki.report();
+      return [
+        { what: 'Certificate encoding',
+          how: 'X.509 v3, DER, through pkijs and asn1js — ' +
+               'common/vendored/x509.js, the parent project\'s own PKI code, ' +
+               'byte-identical. One encoder for this service and for that ' +
+               'project\'s PKI / X.509 page.' },
+        { what: 'CA key algorithms offered',
+          how: report.keyAlgorithms.map(function (one) { return one.id; })
+            .join(', ') },
+        { what: 'Certificate signature algorithms offered',
+          how: report.signatureAlgorithms.map(function (one) {
+            return one.id + (one.weak ? ' (weak, on purpose)' : '');
+          }).join(', ') },
+        { what: 'The three tiers',
+          how: report.tiers.map(function (one) {
+            return one.label + ' (pathLen ' +
+              (one.pathLen === null || one.pathLen === undefined
+                ? 'unconstrained' : one.pathLen) + ', ' + one.years + ' years)';
+          }).join('; ') },
+        { what: 'Certificate thumbprint', how: 'SHA-256 over the DER' },
+        { what: 'The issued key\'s `kid`',
+          how: 'RFC 7638 JWK thumbprint, SHA-256, truncated to 16 characters' },
+        // Two rows rather than one since 2026-09-11, because the one row
+        // said `NONE` and the answer is now different in the two directions.
+        // Collapsing them would lose exactly the distinction that matters.
+        { what: 'Revocation published',
+          how: 'RFC 5280 CRLs and RFC 6960 OCSP, ONE OF EACH PER ' +
+               'CERTIFICATE AUTHORITY — a list is signed by an issuer, so a ' +
+               'list per realm would have no valid issuer. Signed with the ' +
+               'CA itself rather than a delegated responder certificate ' +
+               '(RFC 6960 section 4.2.2.2), so a client verifies with the ' +
+               'anchor it already has. Every certificate this service issues ' +
+               'names its own CRL in three schemes (http, ldap, ldaps) and ' +
+               'its responder in an Authority Information Access.' },
+        { what: 'Revocation checked',
+          how: 'NONE. When a CLIENT presents a certificate to this service ' +
+               'nothing fetches a CRL and nothing asks a responder — so a ' +
+               'certificate revoked on this service\'s own /admin/pki still ' +
+               'authenticates here. Publishing revocation and consulting it ' +
+               'are different work and only the first is done.' },
+        { what: 'Where the CA private keys live', how: report.residency }
+      ];
+    }
+  },
   // THE USER PORTAL IS THE ONLY FAMILY HERE WHOSE CRYPTOGRAPHY IS ENTIRELY
   // ABOUT SECRETS AT REST. Every other row on this page is about a credential
   // being SIGNED, VERIFIED or ENCRYPTED in flight; this one signs nothing and
@@ -308,7 +438,17 @@ const FAMILIES = [
     verifies: 'DPoP proofs (RFC 9449), `private_key_jwt` and ' +
               '`client_secret_jwt` client assertions, and every access token ' +
               'it is handed at a protected endpoint — against its own JWKS, ' +
-              'with `oauth2.clockSkewS` applied.',
+              'with `oauth2.clockSkewS` applied. **AND AN XML SIGNATURE**, ' +
+              'which is the one thing in this family that is not a JWS: RFC ' +
+              '7522 puts a SAML 2.0 assertion in the same two request ' +
+              'parameters RFC 7523 puts a JWT in, so the token endpoint ' +
+              'verifies an enveloped XML Signature over a <saml:Assertion> ' +
+              'through the same vendored engine `/saml2` signs with. It is ' +
+              'checked against a certificate REGISTERED against the asserting ' +
+              'party and never against one that merely chains to this ' +
+              'realm\'s CA — which is stricter than the `x5c` path RFC 7523 ' +
+              'allows, because a chain proves the realm issued a key and says ' +
+              'nothing about which application holds it.',
     encrypts: 'A UserInfo response for a client that registered ' +
               '`userinfo_encrypted_response_alg`: JWE compact, RSA-OAEP or ' +
               'ECDH-ES to the client\'s own key.',
@@ -331,7 +471,19 @@ const FAMILIES = [
         ['DPoP proof', dpop.SIGNING_ALGS],
         ['Client assertion', clientAuth.SYMMETRIC_METHODS
           .concat(clientAuth.ASYMMETRIC_METHODS)],
-        ['JWE key management (out)', stsCrypto.JWE_ALGS],
+        // **OUT IS THE ASYMMETRIC HALF AND IN IS THE WHOLE TABLE, AND THEY
+        // WERE THE SAME LIST UNTIL crypto.js GREW ONE.** This row read
+        // `JWE_ALGS` and was right while that constant held only the RSA and
+        // ECDH families; the day the AESKW, AESGCMKW, PBES2 and `dir`
+        // families arrived it started advertising, on the page that is meant
+        // to describe what this service DOES, key management no outward
+        // surface here will ever use — both callers of
+        // `encryptJweCompact()` encrypt to a recipient's published key and
+        // hold no shared secret with it, which is the argument
+        // `JWE_ASYMMETRIC_ALGS` exists to carry. `userinfo_encryption_alg_
+        // values_supported` never moved, and
+        // `tests/vendored/admin_api.js` is what compared the two.
+        ['JWE key management (out)', stsCrypto.JWE_ASYMMETRIC_ALGS],
         ['JWE key management (in)', stsCrypto.JWE_DECRYPT_ALGS],
         ['JWE content encryption', Object.keys(stsCrypto.JWE_ENCS)]
       ];
@@ -717,23 +869,184 @@ const FAMILIES = [
     hashes: 'SHA-256 twice over — the client data hash the signature covers, ' +
             'and the RP ID hash inside the authenticator data that is ' +
             'compared byte for byte against SHA-256 of the origin\'s domain.',
-    whatItDoesNot: 'It validates no attestation STATEMENT — the certificate ' +
-                   'chain a packed or TPM attestation carries is parsed and ' +
-                   'not chased. The sign-in screen offers two algorithms and ' +
-                   'accepts more, which is deliberate: what a platform ' +
-                   'authenticator actually produces is what a person came ' +
-                   'here to see.',
+    whatItDoesNot: 'It validates no attestation STATEMENT whatever ' +
+                   '`webauthn.attestation` asks for — the certificate chain a ' +
+                   'packed or TPM attestation carries is parsed and not ' +
+                   'chased, and there is no metadata service, no vendor trust ' +
+                   'anchor and no model allow-list here. The registration ' +
+                   'offers fewer algorithms than the verifier ACCEPTS, which ' +
+                   'is deliberate: what a platform authenticator actually ' +
+                   'produces is what a person came here to see. The one ' +
+                   'ceremony option this service also CHECKS is ' +
+                   '`webauthn.userVerification`, because the UV flag is inside ' +
+                   'the bytes the authenticator signed.',
     envelopes: ['cose', 'webauthn'],
+    // ---------------------------------------------------------------------
+    // THE OFFERED LIST WAS TYPED HERE UNTIL 2026-09-10 AND IT IS A SETTING NOW.
+    //
+    // It read `['ES256 (-7)', 'RS256 (-257)']` — correct while the ceremony's
+    // `pubKeyCredParams` was a literal in a string in `authn/authn.js`, and
+    // wrong the moment `webauthn.algorithms` could move it. That is precisely
+    // the drift this page exists to prevent, so it is read from the module that
+    // BUILDS the offer, exactly as the TOTP row below reads `inUse` off the
+    // live setting. The ACCEPTED list stays the verifier's own table, because
+    // those are two different facts and the gap between them is what the row's
+    // last sentence is about.
+    // ---------------------------------------------------------------------
     algorithms: function () {
       return [
-        ['Offered at registration', ['ES256 (-7)', 'RS256 (-257)']],
+        ['Offered at registration',
+         webauthnPolicy.algorithmsOffered().map(function (name) {
+           return name + ' (' + webauthnPolicy.ALG_IDS[name] + ')';
+         })],
         ['Accepted at verification',
          Object.keys(webauthn.COSE_ALGS).map(function (k) {
            return webauthn.COSE_ALGS[k] + ' (' + k + ')';
          })],
         ['Curves', Object.keys(webauthn.COSE_CURVES).map(function (k) {
           return webauthn.COSE_CURVES[k];
-        })]
+        })],
+        ['User verification',
+         [webauthnPolicy.settings().userVerification +
+          (webauthnPolicy.requireUserVerification()
+            ? ' — requested AND checked against the signed UV flag'
+            : ' — requested only; nothing is refused on it')]]
+      ];
+    } },
+
+  // ---------------------------------------------------------------------
+  // ONE-TIME PASSWORDS (2026-09-10). The row that most needs saying out loud,
+  // because it is the one place on this page where SHA-1 is the RECOMMENDED
+  // value rather than a legacy one — and the reason is not compatibility with
+  // something old, it is that HMAC-SHA-1 over a counter is a keyed MAC and not
+  // a collision-resistant digest, so SHA-1's weaknesses do not reach it.
+  //
+  // The algorithm table is READ FROM `common/totp.js`, which is this page's
+  // whole design: the table lives with the code that performs the algorithm,
+  // and `inUse` comes off the live setting so the report says what this
+  // deployment actually does rather than what the module can do.
+  { name: 'One-time passwords (TOTP)',
+    signs: 'Nothing that leaves this service. An HOTP value IS a truncated ' +
+           'HMAC — RFC 4226 section 5.3 — so this family computes a keyed ' +
+           'MAC and then compares it, which is why the primitive lives in ' +
+           'common/crypto.js beside every other signature here rather than ' +
+           'in the module that decides the policy.',
+    verifies: 'A presented code, by computing the HMAC for every time step ' +
+              'in the skew window and comparing in constant time. EVERY step ' +
+              'is computed even after a match, deliberately: returning early ' +
+              'would make the time taken depend on WHICH step matched, which ' +
+              'is a better oracle than the digit comparison this bothers to ' +
+              'make constant-time.',
+    encrypts: 'The shared secret at rest, in PRODUCT mode — AES-256-GCM ' +
+              'under the same key-encryption key that protects the signing ' +
+              'keys, through common/keystore.js. In DEVELOPMENT mode it is ' +
+              'stored as base32, because the key-encryption key there is ' +
+              'generated per run and sealing would mean an authenticator ' +
+              'that silently stopped working at the next restart.',
+    decrypts: 'The same secret, to verify a code. **THIS IS THE ONE ' +
+              'CREDENTIAL IN THIS SERVICE THAT CAN BE READ BACK** — a ' +
+              'password is a scrypt hash and can only be compared against, ' +
+              'and verifying a one-time code means COMPUTING it. That is not ' +
+              'a weakness in RFC 6238; it is what "shared secret" means, and ' +
+              'it is exactly why this mechanism is a SECOND factor here and ' +
+              'can never be made a first one.',
+    hashes: 'SHA-1, SHA-256 or SHA-512, inside the HMAC and nowhere else.',
+    whatItDoesNot: 'It never tells anybody what the current code is, and it ' +
+                   'never enrols anybody at a sign-in screen — enrolment ' +
+                   'means being shown a secret, so it happens where the ' +
+                   'person is already authenticated or holds an activation ' +
+                   'link. There is no counter-based HOTP as an ' +
+                   'authentication mechanism, and no resynchronisation ' +
+                   'protocol: the skew window is the whole of what is ' +
+                   'offered for a drifting clock.',
+    envelopes: [],
+    algorithms: function () {
+      const report = totp.report();
+      return [
+        ['HMAC (the enrolled parameter, not a live one)',
+         report.algorithms.map(function (one) {
+           return one.name + (one.inUse ? ' — what a NEW enrolment gets' : '');
+         })],
+        ['Truncation', [report.truncation]],
+        ['Shared secret', [String(report.secretBits) + '-bit, ' +
+                           report.encoding]],
+        ['Live settings', [String(report.digits) + ' digits, every ' +
+                           String(report.period) + ' seconds, ' +
+                           String(report.window) + ' step(s) of skew ' +
+                           'forgiven either side']]
+      ];
+    } },
+
+  // ---------------------------------------------------------------------
+  // RECOVERY CODES (2026-09-10). **THE ONLY FAMILY ON THIS PAGE THAT SIGNS
+  // NOTHING, VERIFIES NO SIGNATURE AND HASHES NOTHING**, and it has a row
+  // anyway because it ENCRYPTS — a set of live credentials sealed at rest,
+  // under the same key-encryption key as the signing keys.
+  //
+  // That is the whole reason it is worth a row rather than a footnote on the
+  // TOTP one: this page's question is *when this service signs, verifies,
+  // encrypts or decrypts something, with what* — and this family answers two
+  // of the four with something a reader would not otherwise find.
+  //
+  // The table is read from `common/backup_codes.js`, which is this page's
+  // design everywhere: the facts live with the code that performs them.
+  // ---------------------------------------------------------------------
+  { name: 'Recovery codes',
+    signs: 'Nothing. There is no MAC and no signature anywhere in this ' +
+           'mechanism — a recovery code is a random string compared against a ' +
+           'stored one, which is the whole difference from the TOTP row above ' +
+           'where the "code" is a truncated HMAC.',
+    verifies: 'A presented code, against every code in the person\'s set, in ' +
+              'constant time through common/crypto.js\'s ' +
+              'constantTimeEquals(). EVERY code is compared even after a ' +
+              'match, deliberately: returning early would make the time taken ' +
+              'depend on WHICH code matched. The shape is checked first, so a ' +
+              'password typed into the box is refused on its characters ' +
+              'rather than compared against the set.',
+    encrypts: 'THE WHOLE SET AS ONE BLOB — AES-256-GCM under the same ' +
+              'key-encryption key that protects the signing keys, through ' +
+              'common/keystore.js, wherever that key outlives the process. ' +
+              'The counts sit OUTSIDE the ciphertext in the clear, so a ' +
+              'console can say "7 of 10 unused" about a set it cannot open. ' +
+              'In development mode the codes are stored as the strings they ' +
+              'were shown as, because the key-encryption key there is ' +
+              'generated per run and sealing would mean a printed recovery ' +
+              'list that stopped working at the next restart — which is the ' +
+              'precise failure this mechanism exists to prevent.',
+    decrypts: 'The same set, to check a code AND to show it to the person it ' +
+              'belongs to. **THIS IS THE SECOND CREDENTIAL IN THIS SERVICE ' +
+              'THAT CAN BE READ BACK, AND THE ONLY ONE WHOSE REASON IS NOT ' +
+              'ARITHMETIC.** A TOTP secret cannot be hashed because verifying ' +
+              'a code means COMPUTING it. A recovery code COULD be hashed, ' +
+              'and is not, because a person may look at their remaining codes ' +
+              'again on /portal/mfa — a list shown exactly once at the end of ' +
+              'an enrolment is a list most people close without reading, and ' +
+              'the moment it matters is months later.',
+    hashes: 'Nothing. Unlike userPassword (scrypt) and stsActivationToken ' +
+            '(scrypt), and see the row above for why.',
+    whatItDoesNot: 'It never issues a set on request — not from the portal, ' +
+                   'the console or /admin-api — because a set is created by ' +
+                   'the ACT of enrolling a second factor and by nothing else. ' +
+                   'It never issues a SECOND set: an operator\'s Clear is the ' +
+                   'only route to one, so a printed list cannot stop working ' +
+                   'underneath somebody. It never shows a code to anybody but ' +
+                   'its owner. And there is no counter-based or derived ' +
+                   'scheme here: these are random strings and nothing about ' +
+                   'one code says anything about the next.',
+    envelopes: [],
+    algorithms: function () {
+      const report = backupCodes.report();
+      return [
+        ['Generation', [report.source]],
+        ['Entropy', [String(report.bitsPerCode) + ' bits per code, ' +
+                     String(report.count) + ' codes of ' +
+                     String(report.length) + ' characters out of an alphabet ' +
+                     'of ' + String(report.alphabetSize)]],
+        ['Alphabet', [report.alphabet + ' — the base32 characters, chosen ' +
+                      'here because no pair of them is confusable and NOT ' +
+                      'shared with the TOTP row above']],
+        ['Comparison', [report.comparison]],
+        ['At rest', [report.atRest]]
       ];
     } },
 
@@ -1183,11 +1496,32 @@ function keyMaterial() {
     spiffe: {
       enabled: spiffe.enabled,
       ready: spiffe.ready,
-      perRealm: false,
+      // **PER REALM SINCE 2026-09-11, AND THE TRUST DOMAIN IS NOT.** The
+      // authority that SIGNS an SVID is this realm's SPIFFE Issuing CA; the
+      // trust domain name, the four sockets and the anchor are the service's.
+      // Reporting `perRealm: false` as this row did would say the whole
+      // family was shared, which is the half of it that stopped being true.
+      perRealm: true,
       trustDomain: spiffe.trustDomain,
+      // WHERE THE AUTHORITY CAME FROM — `pki` (this realm's SPIFFE Issuing CA
+      // under the service Root) or `self-signed` (a realm with no branch).
+      // The whole subject of this page is *what does this service actually
+      // do when it signs*, and "signed by an authority nobody vouched for"
+      // versus "by one that chains to the Root on /admin/pki" is exactly that
+      // question for SVIDs.
+      authoritySource: spiffe.authoritySource || '',
+      // The SVID's OWN key algorithm, which is still `spiffe.x509KeyType`.
+      svidKeyType: String(config.value('spiffe.x509KeyType')),
+      // What the AUTHORITY holds, which is the Issuing CA's key and is chosen
+      // on /admin/pki. These were one field while this module built its own
+      // authority out of `spiffe.x509KeyType`; they are two keys now and a
+      // single field would report one of them under the other's name.
+      authorityKeyType: (spiffe.x509Authorities || [])[0]
+        ? String((spiffe.x509Authorities || [])[0].keyType) : '',
       x509KeyType: String(config.value('spiffe.x509KeyType')),
       jwtKeyType: String(config.value('spiffe.jwtKeyType')),
       x509Authorities: (spiffe.x509Authorities || []).length,
+      trustAnchors: (spiffe.trustAnchors || []).length,
       jwtAuthorities: (spiffe.jwtAuthorities || []).length
     }
   };
@@ -1425,7 +1759,10 @@ function encryption() {
   log.debug("Entering encryption().");
   const out = {
     jwe: {
-      keyManagementOut: stsCrypto.JWE_ALGS.slice(0),
+      // The asymmetric half, on the row above's argument: what this service
+      // may use when IT encrypts is decided by holding the recipient's public
+      // key, and what it will open is the whole table.
+      keyManagementOut: stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0),
       keyManagementIn: stsCrypto.JWE_DECRYPT_ALGS.slice(0),
       contentEncryption: Object.keys(stsCrypto.JWE_ENCS).map(function (enc) {
         const spec = stsCrypto.JWE_ENCS[enc];
@@ -1850,10 +2187,20 @@ function renderKeys(report) {
     '<code>SHA-256</code></td><td><code>' + esc(keys.tls.fingerprint256) +
     '</code></td><td>the process</td></tr>' +
     '<tr><td class="n">SPIFFE X.509 authority</td><td><code>' +
-    esc(keys.spiffe.x509KeyType) + '</code></td><td>' +
-    (keys.spiffe.ready ? esc(keys.spiffe.x509Authorities) + ' authority/ies'
-                       : '<span class="why">not started</span>') +
-    '</td><td>the process</td></tr>' +
+    esc(keys.spiffe.authorityKeyType || keys.spiffe.x509KeyType) +
+    '</code></td><td>' +
+    (keys.spiffe.ready
+      ? esc(keys.spiffe.x509Authorities) + ' authority/ies, ' +
+        (keys.spiffe.authoritySource === 'pki'
+          ? 'this realm\'s <a href="/admin/pki">SPIFFE Issuing CA</a>'
+          : '<span class="why">self-signed &mdash; this realm has no ' +
+            'certificate authority</span>')
+      : '<span class="why">not started</span>') +
+    '</td><td>this realm</td></tr>' +
+    '<tr><td class="n">SPIFFE X509-SVID key</td><td><code>' +
+    esc(keys.spiffe.svidKeyType) + '</code></td><td><span class="why">the ' +
+    'key in each SVID, generated per mint &mdash; not the authority\'s' +
+    '</span></td><td>this realm</td></tr>' +
     '<tr><td class="n">SPIFFE JWT authority</td><td><code>' +
     esc(keys.spiffe.jwtKeyType) + '</code></td><td>' +
     (keys.spiffe.ready ? esc(keys.spiffe.jwtAuthorities) + ' authority/ies'
@@ -2025,9 +2372,17 @@ function renderEncryption(report) {
     '<tr><th class="n">Key management, encrypting</th><td>' +
     chips(e.jwe.keyManagementOut) + '</td></tr>' +
     '<tr><th class="n">Key management, decrypting</th><td>' +
-    chips(e.jwe.keyManagementIn) + ' <span class="why">shorter on purpose: ' +
-    'what it receives is encrypted to the RSA key it publishes, and it holds ' +
-    'no EC private key to agree with</span></td></tr>' +
+    // **IT IS THE LONGER LIST NOW AND THIS NOTE SAID "shorter on purpose".**
+    // It was written when the decrypt list was `['RSA-OAEP-256']` alone; the
+    // symmetric families arrived in `crypto.js` and the two lists swapped
+    // ends, leaving the page explaining an asymmetry in the direction it no
+    // longer has.
+    chips(e.jwe.keyManagementIn) + ' <span class="why">longer on purpose, ' +
+    'and it is the row above that is narrow: this service encrypts OUTWARD ' +
+    'to a recipient\'s published key and shares no secret with it, so it ' +
+    'offers the asymmetric families only — while what ARRIVES may be wrapped ' +
+    'with a key the sender already holds, and a caller picks by what it has ' +
+    'rather than by what this table permits</span></td></tr>' +
     '</tbody></table>' +
     '<table><thead><tr><th class="n">enc</th><th>Bits</th><th>Mode</th>' +
     '<th>CEK</th><th>Note</th></tr></thead><tbody>' +
@@ -2481,6 +2836,10 @@ const nodeCrypto = require('crypto');
 // thing that EXPORTS them — two different jobs that would otherwise share a
 // name three hundred lines apart.
 const keystore = require('../common/vendored/key_material.js');
+// THE CERTIFICATE AUTHORITY'S OWN REPORT. A LIBRARY (rule 3) requiring
+// `config`, `crypto`, `keystore`, `realms` and the two vendored PKI modules —
+// it registers no route, so this require can move nothing and close nothing.
+const pki = require('../common/pki');
 // **AND `stsKeystore` FOR THIS SERVICE'S OWN, WHICH IS A THIRD NAME IN THE
 // SAME NEIGHBOURHOOD ON PURPOSE.** `keyMaterial()` reports on the keys,
 // `keystore` above EXPORTS them, and this one decides whether they persist and
@@ -2490,11 +2849,31 @@ const keystore = require('../common/vendored/key_material.js');
 // A LEAF (rule 3): it registers nothing and requires nothing this file does
 // not already have loaded.
 const stsKeystore = require('../common/keystore');
+// The certificate authority, for WHICH AUTHORITY certified each key. A LEAF
+// (rule 3w): it registers no route, so requiring it here moves nothing.
+const stsPki = require('../common/pki');
 
 // One row per key pair this process holds. `formats` is computed rather than
 // listed, because the answer differs per key for two different reasons — no
 // certificate, or no PKCS#8 encoding — and a hand-kept list would have to
 // repeat both.
+// The authority that certified one slot in the current realm, or null where
+// the key is still carrying the self-signed certificate it was born with. A
+// LEAF read (rule 3w): `pki.js` registers no route and this is a map lookup.
+function certifierOf(useCaseId, slot) {
+  try {
+    const held = stsPki.certificateFor(realms.currentId() === 'default' ? ''
+                                         : realms.currentId(),
+                                       useCaseId, slot);
+    return held ? { subject: held.subject, issuedBy: held.useCase,
+                    notAfter: held.notAfter, pinned: !!held.pinned } : null;
+  } catch (e) {
+    // No hierarchy in this process. The key reports none, which is what this
+    // service did before one existed.
+    return null;
+  }
+}
+
 function keyInventory() {
   log.debug("Entering keyInventory().");
   const keys = stsKeysFor();
@@ -2508,6 +2887,11 @@ function keyInventory() {
     kid: String(keys.kid || ''),
     scope: 'realm', realm: realms.currentId(),
     hasCertificate: true,
+    // WHICH AUTHORITY CERTIFIED IT (2026-09-11). A key that reports no issuer
+    // is one still carrying the self-signed certificate it was born with, and
+    // the difference is the whole of what the hierarchy bought — so it is a
+    // field rather than something a reader infers from a subject line.
+    certifiedBy: certifierOf('jose', 'RS256'),
     formats: ['pem', 'der', 'jwk', 'pkcs12'],
     usedFor: [
       'Every access token and refresh token, and the default ID Token (RS256).',
@@ -2527,9 +2911,17 @@ function keyInventory() {
       alg: one.alg, kty: jwk.kty, crv: jwk.crv || '', bits: 0,
       kid: String(jwk.kid || ''),
       scope: 'realm', realm: realms.currentId(),
-      hasCertificate: false,
-      // No certificate, so no PKCS#12 — see the header.
-      formats: ['pem', 'der', 'jwk'],
+      certifiedBy: certifierOf('jose', jwk.crv ? (one.alg + ':' + jwk.crv)
+                                               : one.alg),
+      // **A CURVE KEY HAS A CERTIFICATE SINCE 2026-09-11**, issued by this
+      // realm's JOSE Issuing CA — so PKCS#12, which needs one, is offered
+      // where there is one. It was `false` and three formats for as long as
+      // these keys existed, because nothing had ever certified them.
+      hasCertificate: !!certifierOf('jose', jwk.crv ? (one.alg + ':' + jwk.crv)
+                                                    : one.alg),
+      formats: certifierOf('jose', jwk.crv ? (one.alg + ':' + jwk.crv)
+                                           : one.alg)
+        ? ['pem', 'der', 'jwk', 'pkcs12'] : ['pem', 'der', 'jwk'],
       usedFor: [
         'An ID Token for a client that registered ' +
         'id_token_signed_response_alg: ' + one.alg + '.',
@@ -2622,7 +3014,9 @@ function pemsFor(id) {
     log.debug("Leaving pemsFor(). The signing key.");
     return { privatePem: toPkcs8(keys.privateKeyPem), publicPem: pub,
              desc: { kind: 'rsa', hash: 'SHA-256' },
-             certs: [keys.certPem] };
+             // The chain with it where the key is certified — see the curve
+             // branch below for why a `.p12` wants the path and not the leaf.
+             certs: [keys.certPem].concat(keys.certChainPem || []) };
   }
   if (id === 'tls-server') {
     const cert = tlsServer.serverCertificate();
@@ -2640,11 +3034,26 @@ function pemsFor(id) {
     const priv = extra.privateKey.export({ type: 'pkcs8', format: 'pem' });
     const pub = nodeCrypto.createPublicKey(extra.privateKey)
       .export({ type: 'spki', format: 'pem' });
+    // **AND ITS CERTIFICATE, SINCE 2026-09-11.** A curve key had none for as
+    // long as it existed, so `certs` was empty and PKCS#12 — which has
+    // nowhere to put a bare key — was not offered. It is issued by this
+    // realm's JOSE Issuing CA now, so the format is offered and the file has
+    // to contain what the format needs. **THE CHAIN GOES IN TOO**: a `.p12`
+    // holding a leaf and no path is importable as a key rather than as an
+    // identity, which is the difference keytool and Windows both care about.
+    const certified = certifierOf('jose', extra.publicJwk.crv
+      ? (extra.alg + ':' + extra.publicJwk.crv) : extra.alg);
+    const held = certified
+      ? stsPki.publishedCertificateFor(
+          realms.currentId() === 'default' ? '' : realms.currentId(),
+          'jose', extra.publicJwk.crv
+            ? (extra.alg + ':' + extra.publicJwk.crv) : extra.alg)
+      : null;
     log.debug("Leaving pemsFor(). A curve key.");
     return { privatePem: priv, publicPem: pub,
              desc: { kind: extra.publicJwk.kty === 'OKP' ? 'okp' : 'ec',
                      curve: extra.publicJwk.crv },
-             certs: [] };
+             certs: held ? [held.certificatePem].concat(held.chainPem) : [] };
   }
   log.debug("Leaving pemsFor(). No PEM pair for this key.");
   return null;

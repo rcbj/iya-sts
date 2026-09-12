@@ -3413,7 +3413,9 @@ const SCHEMAS = {
                      'showed only receivers with streams would answer "where ' +
                      'is my application" with silence. A row named `(no ' +
                      'application …)` is the collected total for streams ' +
-                     'agreed while `ssf.authRequired` was off: there was no ' +
+                     'agreed while these endpoints could be left ' +
+                     'unauthenticated — `ssf.authRequired`, removed ' +
+                     '2026-09-06: there was no ' +
                      'principal to record and the events are real.\n\n`counts` ' +
                      'is per event type and never forgets; it is counted when ' +
                      'the Security Event Token is built and QUEUED, so a poll ' +
@@ -3590,7 +3592,8 @@ const SCHEMAS = {
                      'same three rules hold: an application with no stream ' +
                      'is a row rather than an omission, a row named `(no ' +
                      'application …)` collects the streams agreed while ' +
-                     '`ssf.authRequired` was off, and `counts` is counted ' +
+                     'these endpoints could be left unauthenticated ' +
+                     '(`ssf.authRequired`, removed 2026-09-06), and `counts` is counted ' +
                      'when the token is built and QUEUED rather than when it ' +
                      'is delivered.',
         items: { type: 'object' }
@@ -3699,10 +3702,11 @@ const SCHEMAS = {
         {
           required: {
             type: 'boolean',
-            description: 'The `scim.authRequired` setting. When false these ' +
-                         'endpoints answer an unauthenticated request, which ' +
-                         'is the behaviour they had before authentication ' +
-                         'existed and stays reachable on purpose. A ' +
+            description: 'Whether these endpoints require a credential — ' +
+                         '`mode.gatesScim()`, which is where ' +
+                         '`scim.authRequired` went on 2026-09-06. It is ' +
+                         'true in both modes; the field is kept because a ' +
+                         'client reading it should not have to know that. A ' +
                          'credential that IS presented is checked either way.'
           },
           discoveryOpen: {
@@ -3873,6 +3877,54 @@ const SCHEMAS = {
   // the TRAFFIC, and the two are views over ONE set of counters rather than two
   // tallies. Three things in here are easy to get wrong from the outside and
   // each is written out rather than left open for that reason.
+  // WHAT THIS CONSOLE HAS BEEN TOLD. It is the receiving half of Shared
+  // Signals and is deliberately not folded into `Ssf`, which is the
+  // TRANSMITTER's view — the streams, the subjects, the queues and what went
+  // out on each. A reply that carried both would answer "what has been said"
+  // and "what has been heard" with one document, and the whole value of this
+  // resource is that it goes empty when delivery is broken while the other
+  // one does not.
+  Signals: openObject(
+    'Every Security Event Token DELIVERED to this service\'s own admin ' +
+    'console, in the realm the request was made in. Mirrors ' +
+    '/admin/signals.\n\n**THIS CONSOLE IS A REGISTERED RECEIVER.** It has a ' +
+    'Shared Signals stream of its own (`sts-admin-console`), seeded in every ' +
+    'trust realm, asking for every CAEP and every RISC event type, and each ' +
+    'event is POSTed to it over RFC 8935 push at /admin/signals/receive ' +
+    'carrying that stream\'s own bearer token. What is in `received` is ' +
+    'therefore what came back through the door, verified against this ' +
+    'service\'s signing key and checked for this receiver\'s name in ' +
+    '`aud`.\n\n**`status.why` IS THE MEMBER TO READ WHEN `received` IS ' +
+    'EMPTY.** An empty inbox has five causes and only one of them is ' +
+    '"nothing has happened": the transmitter off, the internal receivers ' +
+    'off, the stream deleted, `ssf.pushDelivery` off, or a vocabulary turned ' +
+    'off under it. Each is a sentence in that array, in the order a reader ' +
+    'should check them, and the array is empty when none of them ' +
+    'applies.\n\n**A REFUSED DELIVERY IS STILL IN `received`.** A token ' +
+    'that would not decode, or that was addressed to another audience, is ' +
+    'recorded with `problem` or `audienceOk: false` and answered 400 — ' +
+    'because what arrived is the question being asked, and a receiver that ' +
+    'dropped what it refused would leave the transmitter\'s log as the only ' +
+    'evidence.',
+    {
+      status: openObject(
+        'This receiver and its stream: which realm, whether the feature is ' +
+        'on, how many events are held and of what the ceiling is, the ' +
+        'stream\'s identifiers and counters, and `why` — see above.', {}),
+      received: { type: 'array',
+        description: 'One row per delivered Security Event Token, newest ' +
+                     'first, filtered by `sigq` and paged by `receivedPage`. ' +
+                     'The token itself is NOT included: it is the whole ' +
+                     'document, 1-4kB of base64url per row, and a list of ' +
+                     'two hundred of them is a reply nobody wanted.',
+        items: openObject('One delivered event, opened out.', {}) },
+      total: { type: 'integer',
+               description: 'How many are held before paging — the figure ' +
+                            'the Clear on the console would drop.' },
+      filter: openObject('The search this reply was narrowed by, or null.', {}),
+      paging: openObject('Where in the list this page is.', {})
+    }),
+
   ScimMonitor: openObject(
     'How much traffic the SCIM 2.0 endpoints have taken, from whom, of what ' +
     'kind, and how much of it failed. Mirrors /admin/scim/monitor.\n\n**A ' +
@@ -3908,7 +3960,7 @@ const SCHEMAS = {
                       description: 'Whether the SCIM gate asks for a ' +
                                    'credential at all — `mode.gatesScim()`, ' +
                                    'which since 2026-09-06 is where ' +
-                                   '`scim.authRequired` went. When it is off, ' +
+                                   '`scim.authRequired` went. Where it is off, ' +
                                    'callers are counted as anonymous rather ' +
                                    'than as clients and `clients` stays empty ' +
                                    'however much traffic there is. Note that ' +
@@ -4328,12 +4380,28 @@ const SCHEMAS = {
     'Kerberos ones.\n\nWalk it with `seq` rather than with `page`: acts are ' +
     'still being recorded while you page.',
     Object.assign({
-      held: { type: 'integer', description: 'Acts currently held.' },
+      held: { type: 'integer',
+              description: 'Acts currently held, across every process in this ' +
+                           'service. The store is per process and the merge ' +
+                           'happens on the way out, so with request workers ' +
+                           'this is a fan-in of all of them.' },
+      heldHere: { type: 'integer',
+                  description: 'How many of `held` are this process\'s own. ' +
+                               'Equal to `held` in a single-process ' +
+                               'deployment, where it is noise; with several, ' +
+                               'the difference is what coordination is doing.' },
+      processes: { type: 'integer',
+                   description: 'How many processes contributed to `held`. ' +
+                                '1 unless `workers.requestCount` is set.' },
       recorded: {
         type: 'integer',
-        description: 'Acts recorded since this process started. Greater than ' +
-                     '`held` once the cap has bitten — `held` alone would ' +
-                     'read as "this is all there ever was".'
+        description: 'Acts recorded BY THIS PROCESS since it started, which ' +
+                     'is not comparable with `held` when `processes` is ' +
+                     'greater than 1 — there is no counter store to fan in, ' +
+                     'deliberately, and inventing one to make the two numbers ' +
+                     'match would be a store nothing else reads. Greater than ' +
+                     '`heldHere` once the cap has bitten — that number alone ' +
+                     'would read as "this is all there ever was".'
       },
       dropped: { type: 'integer',
                  description: 'Acts discarded to stay under the cap, oldest ' +

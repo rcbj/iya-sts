@@ -1,6 +1,6 @@
 ---
 title: Signing out
-nav_order: 6
+nav_order: 9
 ---
 
 # Signing out of everything
@@ -146,7 +146,11 @@ metadata says so.
 
 This service's own two web surfaces each have a **Sign out** button of their
 own — at the top of every page of `/admin`, and at the top of every page of
-`/portal`:
+`/portal`. On the console it is in the **account menu**, the drop-down in the
+head row labelled with the name you are signed in as; the menu's other row is a
+link to your own account in the user portal. (It is a `<details>` element, so it
+opens with no JavaScript — this console ships none — and closes when you click
+its label again rather than when you click elsewhere on the page.)
 
 | Endpoint | What it ends |
 |---|---|

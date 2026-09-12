@@ -292,7 +292,7 @@ function authenticate(req, need) {
     return { ok: true, status: 200, scheme: 'anonymous', principal: '',
       scopes: scopeRead() + ' ' + scopeWrite(), anonymous: true, err: '',
       description: '', headers: {},
-      note: 'authentication is turned off (ssf.authRequired)' };
+      note: 'authentication is turned off' };
   }
   if (wanted === 'none') {
     log.debug('Leaving authenticate(). Open endpoint.');
